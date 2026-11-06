@@ -60,27 +60,82 @@ namespace VmsMap.Db
         return result;
       }
 
-      var roots = new Dictionary<Guid, RootState>();
       var original = new Dictionary<Guid, string>();
       foreach (var id in requested)
       {
         var guid = Utils.ConvertObjectIdToGuid(id);
-        if (guid is null || !original.TryAdd(guid.Value, id))
+        if (guid is null)
           continue;
-
-        roots[guid.Value] = new RootState(guid.Value);
+        original.TryAdd(guid.Value, id);
       }
 
-      if (roots.Count == 0)
+      if (original.Count == 0)
         return result;
 
       var mode = await GetModeAsync(ct);
       var subjects = caller.Subjects.ToList();
 
-      while (roots.Values.Any(r => r.Frontier.Count > 0))
+      var allowed = await WalkAsync(original.Keys.ToHashSet(), action, subjects, mode, ct);
+      foreach (var (guid, id) in original)
       {
-        var current = roots.Values
-          .SelectMany(r => r.Frontier)
+        if (allowed.Contains(guid))
+          result.Add(id);
+      }
+
+      // A device node stands under its server, where the rights granted on the space it is drawn
+      // in cannot reach it. Its reference replica stands in that space, so the device is allowed
+      // whatever the replica is: the walk above cannot see the space, this one can. A device with
+      // no reference replica has only the path above, which ends at its server's node -- exactly
+      // the anchor the model names for it.
+      var anchors = await ReferenceAnchorsAsync(original.Keys.ToHashSet(), ct);
+      if (anchors.Count > 0)
+      {
+        var anchorAllowed = await WalkAsync(anchors.Values.ToHashSet(), action, subjects, mode, ct);
+        foreach (var (node, anchor) in anchors)
+        {
+          if (anchorAllowed.Contains(anchor))
+            result.Add(original[node]);
+        }
+      }
+
+      return result;
+    }
+
+    /// <summary>
+    /// The reference replica of every requested device node: the node whose space a device's rights
+    /// belong to. A part is a device row too, and resolves through the same camera id.
+    /// </summary>
+    private async Task<Dictionary<Guid, Guid>> ReferenceAnchorsAsync(
+      HashSet<Guid> requested,
+      CancellationToken ct)
+    {
+      var rows = await (from node in _db.DeviceNodes.AsNoTracking()
+                        join placement in _db.CameraPlacements.AsNoTracking()
+                          on node.source_id equals placement.camera_id
+                        where requested.Contains(node.object_id) && placement.is_reference
+                        select new { node.object_id, anchor = placement.object_id }).ToListAsync(ct);
+
+      return rows.ToDictionary(row => row.object_id, row => row.anchor);
+    }
+
+    /// <summary>
+    /// Which of <paramref name="roots"/> are allowed: a row on the node or on any ancestor, through
+    /// parents and replica owners. In open mode a node with no row anywhere above it is open, while
+    /// a row above it closes it even when it names somebody else.
+    /// </summary>
+    private async Task<HashSet<Guid>> WalkAsync(
+      HashSet<Guid> roots,
+      string action,
+      IReadOnlyList<string> subjects,
+      RightsMode mode,
+      CancellationToken ct)
+    {
+      var states = roots.ToDictionary(guid => guid, guid => new RootState(guid));
+
+      while (states.Values.Any(state => state.Frontier.Count > 0))
+      {
+        var current = states.Values
+          .SelectMany(state => state.Frontier)
           .Distinct()
           .ToList();
 
@@ -98,7 +153,7 @@ namespace VmsMap.Db
           .GroupBy(r => r.object_id)
           .ToDictionary(g => g.Key, g => g.ToList());
 
-        foreach (var state in roots.Values)
+        foreach (var state in states.Values)
         {
           var next = new HashSet<Guid>();
 
@@ -129,19 +184,17 @@ namespace VmsMap.Db
         }
       }
 
-      foreach (var (root, state) in roots)
+      var allowed = new HashSet<Guid>();
+      foreach (var (root, state) in states)
       {
         if (!state.Exists)
           continue;
 
-        // In open mode a node with no rights row anywhere above it is open to everyone. A row
-        // anywhere closes it, even when that row names somebody else: the node inherited a
-        // restricted set rather than no set at all.
         if (state.Granted || (!state.HasRows && mode == RightsMode.Open))
-          result.Add(original[root]);
+          allowed.Add(root);
       }
 
-      return result;
+      return allowed;
     }
 
     public async Task<List<NodeRightsDTO>> GetEffectiveAsync(
@@ -176,6 +229,12 @@ namespace VmsMap.Db
         .Where(o => o.owner_id.HasValue)
         .GroupBy(o => o.owner_id!.Value)
         .ToDictionary(g => g.Key, g => g.Select(o => o.id).ToList());
+      // And the other way round: a right that reached a picture reached the camera. That is how a
+      // right granted on a space -- where only a replica stands -- arrives at the canonical node
+      // under the server, and from there at the camera's parts.
+      var owners = objects
+        .Where(o => o.owner_id.HasValue)
+        .ToDictionary(o => o.id, o => o.owner_id!.Value);
 
       var actions = new Dictionary<Guid, HashSet<string>>();
       var queue = new Queue<Guid>();
@@ -193,7 +252,8 @@ namespace VmsMap.Db
       {
         var node = queue.Dequeue();
         var inherited = children.GetValueOrDefault(node, [])
-          .Concat(replicas.GetValueOrDefault(node, []));
+          .Concat(replicas.GetValueOrDefault(node, []))
+          .Concat(owners.TryGetValue(node, out var owner) ? [owner] : []);
 
         var parentActions = actions[node];
         foreach (var child in inherited)

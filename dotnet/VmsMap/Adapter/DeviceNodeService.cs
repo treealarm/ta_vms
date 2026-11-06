@@ -11,15 +11,14 @@ using VmsMap.Domain;
 
 namespace VmsMap.Adapter
 {
-  // Keeps the camera's place in the tree in step with VmsCfg: one canonical node per camera, under
-  // the space of its reference placement when it has one, under its server node otherwise. The
-  // camera id cannot be recovered from the node id (it is an MD5), so device_node remembers the
-  // key for every canonical node, placed or not. The same registry will hold the camera's parts
-  // (`part_kind` other than 'device') when the adapter creates them.
+  // Keeps the camera's place in the tree in step with VmsCfg: one canonical node per camera,
+  // always under its server's node. Where the camera is drawn is a replica's business (SpatialDb),
+  // never the canonical node's: the canonical tree of a device is one place, and a camera placed on
+  // a map, a plan or a diagram does not move its meaning there. The camera id cannot be recovered
+  // from the node id (it is an MD5), so device_node remembers the key for every canonical node.
+  // The same registry will hold the camera's parts when the adapter creates them.
   internal sealed class DeviceNodeService : IDeviceNodeService
   {
-    private const string ServerIdVersion = "server";
-
     private readonly VmsMapDbContext _db;
     private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
@@ -38,8 +37,9 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// Creates or refreshes the camera's node and its parent. A placed camera is left where its
-    /// reference placement put it; an unplaced one hangs under its server's node.
+    /// Creates or refreshes the camera's canonical node, under its server's node. The parent is
+    /// always the server: a placement is a replica's business, so a placed camera and an unplaced
+    /// one stand in the same place of the canonical tree.
     /// </summary>
     public async Task EnsureCameraAsync(CameraInfo camera, CancellationToken ct)
     {
@@ -55,25 +55,9 @@ namespace VmsMap.Adapter
       // device_node row references objects.id, and EF does not know that relationship — it emits
       // the inserts in tracking order, which put device_node first and the foreign key refused a
       // brand-new camera's node.
-      var reference = await _db.CameraPlacements.AsNoTracking()
-        .FirstOrDefaultAsync(p => p.camera_id == camera.CameraId && p.is_reference, ct);
-
-      string? parentId;
-      if (reference is not null)
-      {
-        // SpatialDb owns the parent of a placed camera; the adapter only leaves it alone.
-        var guid = reference.object_id;
-        parentId = (await _db.Markers.AsNoTracking()
-          .Where(m => m.id == guid)
-          .Select(m => m.parent_id)
-          .FirstOrDefaultAsync(ct))?.ToString();
-      }
-      else
-      {
-        parentId = string.IsNullOrWhiteSpace(camera.ServerId)
-          ? null
-          : await EnsureServerAsync(camera.ServerId, ct);
-      }
+      var parentId = string.IsNullOrWhiteSpace(camera.ServerId)
+        ? null
+        : await EnsureServerAsync(camera.ServerId, ct);
 
       // The periodic reconcile runs this for every camera; a write that changes nothing would bump
       // the row's xmin and make the watch stream report a change that did not happen.
@@ -106,8 +90,8 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// Repairs the parent after a placement was removed or a node was moved: a reference
-    /// placement still decides, otherwise the camera returns under its server.
+    /// Puts the canonical node back under its server. The same call as ensuring it: the parent no
+    /// longer depends on where, or whether, the camera is placed.
     /// </summary>
     public Task ReconcileParentAsync(CameraInfo camera, CancellationToken ct) =>
       EnsureCameraAsync(camera, ct);
@@ -200,7 +184,7 @@ namespace VmsMap.Adapter
 
     private async Task<string> EnsureServerAsync(string serverId, CancellationToken ct)
     {
-      var id = ObjectIdGenerator.GenerateObjectId(serverId, ServerIdVersion);
+      var id = ServerNodeId.For(serverId);
       await _mapService.UpdateHierarchyAsync([
         new BaseMarkerDTO { id = id, name = serverId }
       ]);

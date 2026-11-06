@@ -166,9 +166,12 @@ public class SpatialPostgresTests
     Assert.False(await test.Db.Landmarks.AnyAsync());
     Assert.False(await test.Db.PtzGeoObservations.AnyAsync());
 
-    // The camera stops standing there but its node stays, for the picture on the map.
+    // The camera loses its reference with the plan but stays in the tree, under its server, for
+    // the picture on the map.
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
-    Assert.Null((await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id);
+    Assert.Equal(
+      Guid.Parse(ServerNodeId.For("srv")),
+      (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
     Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.is_reference));
     var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
     Assert.Equal(Guid.Parse(map.Id), (await test.Db.Markers.SingleAsync(m => m.id == picture.object_id)).parent_id);
@@ -222,7 +225,10 @@ public class SpatialPostgresTests
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, saved.Id, reference: true), CancellationToken.None);
 
     var planId = Guid.Parse(saved.Id);
-    var cameraId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    // The point belongs to the replica the placement created, not to the canonical node.
+    var replica = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == TestCameras.One);
+    var replicaId = replica.object_id;
 
     var types = await test.Db.Database
       .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {planId}")
@@ -230,15 +236,19 @@ public class SpatialPostgresTests
     Assert.Equal("ST_Polygon", Assert.Single(types));
 
     var point = await test.Db.Database
-      .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {cameraId}")
+      .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {replicaId}")
       .SingleAsync();
     Assert.Equal("ST_Point", point);
 
     var canvases = await (from g in test.Db.GeoObjects
-                          where g.id == planId || g.id == cameraId
+                          where g.id == planId || g.id == replicaId
                           select new { g.id, g.canvas_id }).ToListAsync();
     Assert.Equal(Guid.Parse(map.Id), canvases.Single(c => c.id == planId).canvas_id);
-    Assert.Equal(planId, canvases.Single(c => c.id == cameraId).canvas_id);
+    Assert.Equal(planId, canvases.Single(c => c.id == replicaId).canvas_id);
+
+    // The canonical node has no figure at all.
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    Assert.False(await test.Db.GeoObjects.AnyAsync(g => g.id == canonical));
   }
 
   [Fact]
@@ -277,25 +287,32 @@ public class SpatialPostgresTests
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true, 0.5, 0.5), CancellationToken.None);
 
-    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
-    var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == canonicalId);
-    var parentBefore = (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id;
+    var replica = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.camera_id == TestCameras.One);
+    var replicaId = replica.object_id;
+    var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == replicaId);
+    var parentBefore = (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId)).parent_id;
 
     var moved = await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, CancellationToken.None);
 
     Assert.True(moved);
-    var figure = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == canonicalId);
+    var figure = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == replicaId);
     var point = (NetTopologySuite.Geometries.Point)figure.figure;
     Assert.Equal(0.71, point.X, 6); // longitude
     Assert.Equal(0.61, point.Y, 6); // latitude
 
     // The device says where it is, not how it is mounted: the values an administrator set stay.
-    var after = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == canonicalId);
+    var after = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == replicaId);
     Assert.Equal(before.height_m, after.height_m);
     Assert.Equal(before.heading_deg, after.heading_deg);
     Assert.Equal(before.hfov_deg, after.hfov_deg);
     Assert.Equal(before.range_m, after.range_m);
-    Assert.Equal(parentBefore, (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id);
+    Assert.Equal(parentBefore, (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId)).parent_id);
+
+    // The canonical node keeps its place under the server: the device moved a picture, not the tree.
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    Assert.Equal(
+      Guid.Parse(ServerNodeId.For("srv")),
+      (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonical)).parent_id!.Value);
 
     // The map's watch stream and the tracking models both hear about it.
     Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);

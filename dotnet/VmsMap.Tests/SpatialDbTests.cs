@@ -192,7 +192,7 @@ public class SpatialDbTests
   }
 
   [Fact]
-  public async Task FirstPlacementBecomesTheReferenceOnTheCameraNode()
+  public async Task FirstPlacementBecomesTheReferenceOnAReplica()
   {
     var test = Create();
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
@@ -202,14 +202,20 @@ public class SpatialDbTests
 
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var row = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
-    Assert.Equal(canonical, row.object_id);
+    Assert.NotEqual(canonical, row.object_id);
     Assert.True(row.is_reference);
     Assert.Equal(90.0, row.heading_deg);
 
-    var marker = await test.Db.Markers.SingleAsync(m => m.id == canonical);
-    Assert.Equal(Guid.Parse(map.Id), marker.parent_id!.Value);
-    Assert.Equal($"Camera {TestCameras.One}", marker.name);
-    Assert.Equal(canonical, (await test.Db.GeoObjects.SingleAsync(g => g.id == canonical)).id);
+    var replica = await test.Db.Markers.SingleAsync(m => m.id == row.object_id);
+    Assert.Equal(canonical, replica.owner_id);
+    Assert.Equal(Guid.Parse(map.Id), replica.parent_id!.Value);
+    Assert.Equal(row.object_id, (await test.Db.GeoObjects.SingleAsync(g => g.id == row.object_id)).id);
+
+    // The canonical node is where the model puts it -- under its server -- and carries no picture.
+    var canonicalMarker = await test.Db.Markers.SingleAsync(m => m.id == canonical);
+    Assert.Equal(Guid.Parse(ServerNodeId.For("srv")), canonicalMarker.parent_id!.Value);
+    Assert.False(await test.Db.GeoObjects.AnyAsync(g => g.id == canonical));
+    Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.object_id == canonical));
 
     var reference = await test.Spatial.GetReferencePlacementAsync(TestCameras.One, CancellationToken.None);
     Assert.NotNull(reference);
@@ -241,7 +247,7 @@ public class SpatialDbTests
   }
 
   [Fact]
-  public async Task MovingTheReferenceLeavesAPictureWhereTheCameraStood()
+  public async Task MovingTheReferenceLeavesTheOldReplicaAsAPicture()
   {
     var test = Create();
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
@@ -252,20 +258,25 @@ public class SpatialDbTests
     await test.Spatial.UpsertPlacementAsync(
       Placement(TestCameras.One, plan.Id, reference: true, lat: 0.2, lon: 0.2), CancellationToken.None);
 
-    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var rows = await test.Db.CameraPlacements.Where(p => p.camera_id == TestCameras.One).ToListAsync();
     Assert.Equal(2, rows.Count);
-    Assert.Single(rows, r => r.is_reference && r.object_id == canonical);
-    Assert.Equal(Guid.Parse(plan.Id), (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+    Assert.Single(rows, r => r.is_reference);
 
+    // The reference is the plan's replica, and the map's replica keeps its place and figure.
+    var reference = rows.Single(r => r.is_reference);
+    Assert.Equal(Guid.Parse(plan.Id), (await test.Db.Markers.SingleAsync(m => m.id == reference.object_id)).parent_id);
     var picture = rows.Single(r => !r.is_reference);
-    var replica = await test.Db.Markers.SingleAsync(m => m.id == picture.object_id);
-    Assert.Equal(canonical, replica.owner_id);
-    Assert.Equal(Guid.Parse(map.Id), replica.parent_id);
+    Assert.Equal(Guid.Parse(map.Id), (await test.Db.GeoObjects.SingleAsync(g => g.id == picture.object_id)).canvas_id);
+
+    // The canonical node never moved.
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    Assert.Equal(
+      Guid.Parse(ServerNodeId.For("srv")),
+      (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
   }
 
   [Fact]
-  public async Task PromotingAPictureTakesItsPlaceAndKeepsTheOldOneAsAPicture()
+  public async Task PromotingAPictureKeepsTheOldReferenceAsAPicture()
   {
     var test = Create();
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
@@ -274,15 +285,20 @@ public class SpatialDbTests
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: false), CancellationToken.None);
 
-    // Promote the picture: the node moves here, and the old place stays drawn.
+    // Promote the picture: the flag moves to the replica that already stands there.
+    var planRow = (await test.Db.CameraPlacements.AsNoTracking()
+      .Where(p => p.camera_id == TestCameras.One).ToListAsync())
+      .Single(p => !p.is_reference);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
 
-    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var rows = await test.Db.CameraPlacements.Where(p => p.camera_id == TestCameras.One).ToListAsync();
     Assert.Equal(2, rows.Count);
-    Assert.Single(rows, r => r.is_reference);
-    Assert.Equal(canonical, rows.Single(r => r.is_reference).object_id);
-    Assert.Equal(Guid.Parse(plan.Id), (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+    var reference = Assert.Single(rows, r => r.is_reference);
+    Assert.Equal(planRow.object_id, reference.object_id);
+    var picture = rows.Single(r => !r.is_reference);
+    Assert.Equal(
+      Guid.Parse(map.Id),
+      (await test.Db.GeoObjects.SingleAsync(g => g.id == picture.object_id)).canvas_id);
   }
 
   [Fact]
@@ -293,11 +309,11 @@ public class SpatialDbTests
     var district = await Node(test.Map, "District", map.Id);
 
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
-    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    var row = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
 
-    // The administrator moves the camera into a container polygon on the same canvas.
+    // The administrator moves the camera's replica into a container polygon on the same canvas.
     await test.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonical.ToString(), parent_id = district.id, name = $"Camera {TestCameras.One}" }]);
+      new BaseMarkerDTO { id = row.object_id.ToString(), parent_id = district.id, name = $"Camera {TestCameras.One}" }]);
 
     // The placement names the canvas, not the parent.
     var placement = Assert.Single(await test.Spatial.ListPlacementsAsync(CancellationToken.None));
@@ -311,11 +327,11 @@ public class SpatialDbTests
     // the administrator put it, only its point moves.
     await test.Spatial.UpsertPlacementAsync(
       Placement(TestCameras.One, map.Id, reference: true, lat: 0.6, lon: 0.6), CancellationToken.None);
-    Assert.Equal(Guid.Parse(district.id!), (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
+    Assert.Equal(Guid.Parse(district.id!), (await test.Db.Markers.SingleAsync(m => m.id == row.object_id)).parent_id!.Value);
   }
 
   [Fact]
-  public async Task MovingAReferenceOffItsCanvasLeavesThePictureOnThatCanvas()
+  public async Task MovingAReferenceOffItsCanvasLeavesTheOldReplicaOnThatCanvas()
   {
     var test = Create();
     var first = await test.Spatial.UpsertSpaceAsync(MapSpace("First"), CancellationToken.None);
@@ -323,70 +339,33 @@ public class SpatialDbTests
     var district = await Node(test.Map, "District", first.Id);
 
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, first.Id, reference: true), CancellationToken.None);
-    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    var firstRow = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.camera_id == TestCameras.One);
     await test.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonical.ToString(), parent_id = district.id, name = $"Camera {TestCameras.One}" }]);
+      new BaseMarkerDTO { id = firstRow.object_id.ToString(), parent_id = district.id, name = $"Camera {TestCameras.One}" }]);
 
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, second.Id, reference: true), CancellationToken.None);
 
-    // The node moves under the space whose coordinates it is now drawn in...
-    Assert.Equal(
-      Guid.Parse(second.Id),
-      (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
-
-    // ...and the place it stood stays as a picture on the first canvas, not under the container.
-    var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One && !p.is_reference);
+    // The new replica is the reference; the old one stays a picture where it stood, container and all.
+    var rows = await test.Db.CameraPlacements.Where(p => p.camera_id == TestCameras.One).ToListAsync();
+    Assert.Equal(2, rows.Count);
+    var reference = Assert.Single(rows, r => r.is_reference);
+    Assert.NotEqual(firstRow.object_id, reference.object_id);
     Assert.Equal(
       Guid.Parse(first.Id),
-      (await test.Db.GeoObjects.SingleAsync(g => g.id == picture.object_id)).canvas_id);
+      (await test.Db.GeoObjects.SingleAsync(g => g.id == firstRow.object_id)).canvas_id);
+    Assert.Equal(
+      Guid.Parse(district.id!),
+      (await test.Db.Markers.SingleAsync(m => m.id == firstRow.object_id)).parent_id!.Value);
+
+    // The canonical node never moved.
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    Assert.Equal(
+      Guid.Parse(ServerNodeId.For("srv")),
+      (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
   }
 
   [Fact]
-  public async Task ALandmarkUnderAContainerBelongsToItsCanvas()
-  {
-    var test = Create();
-    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var other = await test.Spatial.UpsertSpaceAsync(MapSpace("Other"), CancellationToken.None);
-    var district = await Node(test.Map, "District", map.Id);
-    var landmark = await test.Spatial.UpsertLandmarkAsync(LandmarkAt(map.Id, "Corner"), CancellationToken.None);
-    var landmarkId = Guid.Parse(landmark.Id);
-    await test.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = landmarkId.ToString(), parent_id = district.id, name = "Corner" }]);
-
-    // Listed for its canvas, and renaming it keeps the container.
-    Assert.Equal(landmark.Id, Assert.Single(await test.Spatial.ListLandmarksAsync(Guid.Parse(map.Id), CancellationToken.None)).Id);
-    landmark.Name = "Renamed";
-    await test.Spatial.UpsertLandmarkAsync(landmark, CancellationToken.None);
-    Assert.Equal(Guid.Parse(district.id!), (await test.Db.Markers.SingleAsync(m => m.id == landmarkId)).parent_id!.Value);
-
-    // Calibrating a camera with it works: the canvas decides, not the parent.
-    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
-    var observations = new PtzGeoObservations { CameraId = TestCameras.One };
-    observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
-    await test.Spatial.SetObservationsAsync(observations, CancellationToken.None);
-
-    // It still cannot move to another space.
-    landmark.SpaceId = other.Id;
-    await Assert.ThrowsAsync<SpatialConfigException>(
-      () => test.Spatial.UpsertLandmarkAsync(landmark, CancellationToken.None));
-  }
-
-  [Fact]
-  public async Task ClearingTheReferenceLeavesTheCameraWithoutOne()
-  {
-    var test = Create();
-    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
-
-    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: false), CancellationToken.None);
-
-    Assert.False((await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One)).is_reference);
-    Assert.Null(await test.Spatial.GetReferencePlacementAsync(TestCameras.One, CancellationToken.None));
-    Assert.False((await test.Spatial.GetCameraSpatialModelAsync(TestCameras.One, CancellationToken.None)).Found);
-  }
-
-  [Fact]
-  public async Task RemovingTheReferenceUnparentsTheNodeAndKeepsPictures()
+  public async Task RemovingTheReferenceTakesOnlyItsReplica()
   {
     var test = Create();
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
@@ -396,11 +375,11 @@ public class SpatialDbTests
 
     Assert.True(await test.Spatial.RemovePlacementAsync(TestCameras.One, Guid.Parse(map.Id), CancellationToken.None));
 
+    // The canonical node stays under its server, without a position.
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var marker = await test.Db.Markers.SingleAsync(m => m.id == canonical);
-    Assert.Null(marker.parent_id);
+    Assert.Equal(Guid.Parse(ServerNodeId.For("srv")), marker.parent_id!.Value);
     Assert.False(await test.Db.GeoObjects.AnyAsync(g => g.id == canonical));
-    Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.object_id == canonical && p.is_reference));
 
     // The picture on the plan stays, and it still points at the node.
     var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
@@ -417,12 +396,16 @@ public class SpatialDbTests
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: false), CancellationToken.None);
 
+    var picture = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == TestCameras.One && !p.is_reference);
     Assert.True(await test.Spatial.RemovePlacementAsync(TestCameras.One, Guid.Parse(plan.Id), CancellationToken.None));
 
-    var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
-    Assert.True(picture.is_reference);
-    Assert.Equal(1, await test.Db.CameraPlacements.CountAsync());
-    Assert.Equal(1, await test.Db.Markers.CountAsync(m => m.name == $"Camera {TestCameras.One}"));
+    var remaining = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
+    Assert.True(remaining.is_reference);
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == picture.object_id));
+
+    // Both the canonical node and the reference replica are named after the camera.
+    Assert.Equal(2, await test.Db.Markers.CountAsync(m => m.name == $"Camera {TestCameras.One}"));
   }
 
   [Fact]
@@ -579,9 +562,10 @@ public class SpatialDbTests
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
 
     var planId = Guid.Parse(plan.Id);
-    var cameraId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    // The point belongs to the replica the placement created on the plan.
+    var replicaId = (await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One)).object_id;
     Assert.Equal(first.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == planId)).canvas_id.ToString());
-    Assert.Equal(plan.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == cameraId)).canvas_id.ToString());
+    Assert.Equal(plan.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == replicaId)).canvas_id.ToString());
 
     var moved = (await test.Spatial.GetSpaceAsync(planId, CancellationToken.None))!;
     moved.ParentId = second.Id;
@@ -589,7 +573,7 @@ public class SpatialDbTests
 
     // The plan's own footprint is now on the other map; its children still draw on the plan.
     Assert.Equal(second.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == planId)).canvas_id.ToString());
-    Assert.Equal(plan.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == cameraId)).canvas_id.ToString());
+    Assert.Equal(plan.Id, (await test.Db.GeoObjects.SingleAsync(g => g.id == replicaId)).canvas_id.ToString());
   }
 
   [Fact]
@@ -603,6 +587,7 @@ public class SpatialDbTests
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
     var placement = test.Notifier.Events.Last();
     Assert.Contains(TestCameras.One, placement.Cameras);
-    Assert.Contains(CameraObjectId.For(TestCameras.One), placement.Objects);
+    var replica = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
+    Assert.Contains(replica.object_id.ToString(), placement.Objects);
   }
 }

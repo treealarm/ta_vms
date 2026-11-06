@@ -87,8 +87,6 @@ service MapService {
   rpc GetByBox(GetByBoxRequest) returns (Figures);
   rpc GetByName(GetByNameRequest) returns (MarkerList);
   rpc GetByParams(GetByParamsRequest) returns (Figures);
-  // The canonical node of a camera, for the rights editor: a camera's id is not its node id.
-  rpc GetCameraNode(CameraRequest) returns (GetCameraNodeResponse);
   // One node with its properties and the zoom range of its layer.
   rpc GetObjProps(GetObjPropsRequest) returns (ObjProps);
   // A node with owner_id set: it shows the owner's states and values but has a place of its own.
@@ -293,11 +291,6 @@ message GetByBoxRequest {
 message GetObjPropsRequest {
   string id = 1;
   Caller caller = 2;
-}
-
-message GetCameraNodeResponse {
-  bool found = 1;
-  Marker marker = 2;
 }
 
 message ObjProps {

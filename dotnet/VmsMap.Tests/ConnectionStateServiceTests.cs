@@ -102,29 +102,22 @@ public class ConnectionStateServiceTests
   }
 
   [Fact]
-  public async Task ReconcileLeavesAPlacedCameraWhereItStands()
+  public async Task ReconcilePutsAPlacedCameraUnderItsServer()
   {
     var s = Create();
     var space = new BaseMarkerDTO { name = "Building" };
     await s.Map.UpdateHierarchyAsync([space]);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    // A stale parent, as a database written under the old model would have it; the reference
+    // placement itself lives on a replica and does not decide where the canonical node stands.
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = "Front door" }
     ]);
-    s.Db.CameraPlacements.Add(new DBCameraPlacement
-    {
-      object_id = canonicalId,
-      camera_id = TestCameras.One,
-      is_reference = true,
-      height_m = 3,
-      hfov_deg = 60,
-      range_m = 30,
-    });
     await s.Db.SaveChangesAsync();
 
     await s.Connections.ReconcileAsync([Camera()], default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
-    Assert.Equal(Guid.Parse(space.id!), marker.parent_id);
+    Assert.Equal(Guid.Parse(ServerNodeId.For("srv1")), marker.parent_id);
   }
 }

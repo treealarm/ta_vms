@@ -44,43 +44,6 @@ namespace VmsMap.Grpc
       };
     }
 
-    public override async Task<MapProto.GetCameraNodeResponse> GetCameraNode(
-      MapProto.CameraRequest request, ServerCallContext context)
-    {
-      var ct = context.CancellationToken;
-      if (string.IsNullOrWhiteSpace(request.CameraId))
-        return new MapProto.GetCameraNodeResponse { Found = false };
-
-      // The device row is the canonical node; a database written before the registry existed may
-      // only have the reference placement, so fall back to it.
-      var id = await _db.DeviceNodes.AsNoTracking()
-        .Where(n => n.source_kind == DeviceObjectId.CameraSource
-                    && n.source_id == request.CameraId
-                    && n.part_kind == DeviceObjectId.DevicePart)
-        .Select(n => (Guid?)n.object_id)
-        .FirstOrDefaultAsync(ct);
-
-      id ??= await _db.CameraPlacements.AsNoTracking()
-        .Where(p => p.camera_id == request.CameraId && p.is_reference)
-        .Select(p => (Guid?)p.object_id)
-        .FirstOrDefaultAsync(ct);
-
-      if (id is null)
-        return new MapProto.GetCameraNodeResponse { Found = false };
-
-      var marker = await _mapService.GetAsync(Utils.ConvertGuidToObjectId(id.Value));
-      if (marker is null)
-        return new MapProto.GetCameraNodeResponse { Found = false };
-
-      var top = await _mapService.GetTopChildren([marker.id!]);
-      return new MapProto.GetCameraNodeResponse
-      {
-        Found = true,
-        Marker = ToMarker(
-          marker, top.ContainsKey(marker.id!), request.CameraId, NodeKind.Camera),
-      };
-    }
-
     public override async Task<MapProto.EffectiveRightsResponse> GetEffectiveRights(
       MapProto.EffectiveRightsRequest request, ServerCallContext context)
     {

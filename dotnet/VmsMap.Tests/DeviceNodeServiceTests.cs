@@ -67,47 +67,41 @@ public class DeviceNodeServiceTests
   }
 
   [Fact]
-  public async Task APlacedCameraStaysUnderItsSpaceAndOnlyItsNameMoves()
+  public async Task APlacedCameraStaysUnderItsServerAndOnlyItsNameMoves()
   {
     var s = Create();
     var space = await Node(s.Map, "Building");
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
-    // The placement row is what makes the camera placed; the node is the canonical id.
+    // A stale parent, as a database written under the old model would have it.
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), name = "Old name", parent_id = space.id }
     ]);
-    s.Db.CameraPlacements.Add(new DBCameraPlacement
-    {
-      object_id = canonicalId,
-      camera_id = TestCameras.One,
-      is_reference = true,
-      height_m = 3,
-      hfov_deg = 60,
-      range_m = 30,
-    });
-    await s.Db.SaveChangesAsync();
 
     await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
     Assert.Equal("Front door", marker.name);
-    Assert.Equal(Guid.Parse(space.id!), marker.parent_id);
+    Assert.Equal(ServerGuid("srv1"), marker.parent_id);
     Assert.Equal(canonicalId, (await s.Db.DeviceNodes.SingleAsync()).object_id);
   }
 
   [Fact]
-  public async Task APlacedCameraUnderAContainerIsLeftInTheContainer()
+  public async Task AReplicaInAContainerKeepsItsParentWhileTheCanonicalNodeStaysUnderTheServer()
   {
     var s = Create();
     var space = await Node(s.Map, "Building");
     var container = await Node(s.Map, "Car park", space.id);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+
+    // The camera is drawn in a container on the building's canvas; that is a replica of it.
+    var replicaId = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonicalId.ToString(), name = "Front door", parent_id = container.id }
+      new BaseMarkerDTO {
+        id = replicaId.ToString(), name = "Front door", parent_id = container.id, owner_id = canonicalId.ToString() }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
-      object_id = canonicalId,
+      object_id = replicaId,
       camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
@@ -116,10 +110,12 @@ public class DeviceNodeServiceTests
     });
     await s.Db.SaveChangesAsync();
 
-    // The periodic reconcile runs for every camera; a placed one keeps the parent it was given.
+    // The periodic reconcile runs for every camera: the canonical node goes under the server, and
+    // the replica keeps the parent the administrator gave it.
     await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
-    Assert.Equal(Guid.Parse(container.id!), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
+    Assert.Equal(ServerGuid("srv1"), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
+    Assert.Equal(Guid.Parse(container.id!), (await s.Db.Markers.SingleAsync(m => m.id == replicaId)).parent_id);
   }
 
   [Fact]

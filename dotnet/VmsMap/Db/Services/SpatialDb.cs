@@ -187,24 +187,16 @@ namespace VmsMap.Db
 
       var cameras = new HashSet<string>(StringComparer.Ordinal);
 
-      // The reference placements in the subtree: the cameras stop standing there, but their nodes
-      // stay alive for their pictures elsewhere.
-      var references = await _db.CameraPlacements
-        .Where(p => p.is_reference && subtreeIds.Contains(p.object_id))
+      // The placement rows in the subtree belong to replicas of cameras, not to the cameras'
+      // canonical nodes -- those stand under their server, outside any space. A camera whose
+      // reference was here loses its position and stays in the tree; the rows go with their nodes.
+      var placements = await _db.CameraPlacements
+        .Where(p => subtreeIds.Contains(p.object_id))
         .ToListAsync(ct);
-      foreach (var placement in references)
-      {
-        cameras.Add(placement.camera_id);
-        _db.CameraPlacements.Remove(placement);
-
-        var marker = await _db.Markers.FirstOrDefaultAsync(m => m.id == placement.object_id, ct);
-        if (marker is not null)
-          marker.parent_id = null;
-
-        var figure = await _db.GeoObjects.FirstOrDefaultAsync(g => g.id == placement.object_id, ct);
-        if (figure is not null)
-          _db.GeoObjects.Remove(figure);
-      }
+      cameras.UnionWith(placements.Select(p => p.camera_id));
+      _db.CameraPlacements.RemoveRange(placements);
+      _db.GeoObjects.RemoveRange(
+        await _db.GeoObjects.Where(g => subtreeIds.Contains(g.id)).ToListAsync(ct));
 
       // Landmarks go with the subtree, and the observations made on them with the landmarks.
       var landmarks = await _db.Landmarks
@@ -369,11 +361,13 @@ namespace VmsMap.Db
         ToProto(space, spaceObject, null, footprints.GetValueOrDefault(space.object_id)));
     }
 
-    /// Stores one placement. A camera's first placement becomes its reference; making a placement
-    /// the reference takes the flag from whichever one had it, and leaves the place the camera
-    /// stood before as a picture. Clearing the flag leaves the camera with no reference at all --
-    /// another placement is never promoted behind the administrator's back, since that would
-    /// quietly change where the camera is aimed from.
+    /// Stores one placement. A placement is always a replica of the camera's canonical node: the
+    /// canonical node stands under its server and never moves, and what is drawn on a map, a plan or
+    /// a diagram is a node of the camera's own there. A camera's first placement becomes its
+    /// reference; making a placement the reference takes the flag from whichever one had it, and
+    /// leaves that one as an ordinary picture, its drawing untouched. Clearing the flag leaves the
+    /// camera with no reference at all -- another placement is never promoted behind the
+    /// administrator's back, since that would quietly change where the camera is aimed from.
     public async Task UpsertPlacementAsync(CameraPlacement placement, CancellationToken ct)
     {
       RequireLatLon(placement.Lat, placement.Lon, "camera");
@@ -398,111 +392,53 @@ namespace VmsMap.Db
         throw new SpatialConfigException($"Space '{placement.SpaceId}' does not exist");
 
       var canonicalId = Utils.ConvertObjectIdToGuid(CameraObjectId.For(placement.CameraId))!.Value;
-      var canonical = await _db.Markers.FirstOrDefaultAsync(m => m.id == canonicalId, ct);
-      // The canvas the camera is drawn on now: where a picture stays if the camera moves away.
-      var canonicalCanvas = await CanvasOfAsync(canonicalId, ct);
-      var oldReference = await _db.CameraPlacements.AsNoTracking()
+      await EnsureCanonicalNodeAsync(canonicalId, camera, ct);
+
+      var oldReference = await _db.CameraPlacements
         .FirstOrDefaultAsync(p => p.camera_id == placement.CameraId && p.is_reference, ct);
       var target = await RowInSpaceAsync(placement.CameraId, spaceId, ct);
 
-      var isReference = placement.IsReference;
-      if (target is null && !await _db.CameraPlacements.AnyAsync(p => p.camera_id == placement.CameraId, ct))
-        isReference = true; // the camera's first placement becomes its reference
+      // A camera's first placement becomes its reference; after that the caller decides.
+      var isReference = placement.IsReference
+        || (!await _db.CameraPlacements.AnyAsync(p => p.camera_id == placement.CameraId, ct));
 
-      var changed = new HashSet<string>(StringComparer.Ordinal) { canonicalId.ToString() };
+      var replicaId = target?.object_id ?? Guid.NewGuid();
+      var changed = new HashSet<string>(StringComparer.Ordinal) { replicaId.ToString() };
 
-      if (isReference)
+      if (target is null)
       {
-        // The place the camera stands in now stays as a picture when the node moves away.
-        if (canonical is not null && canonicalCanvas is Guid oldCanvas && oldCanvas != spaceId)
+        // A picture of its own on this canvas, under whatever container the administrator gave it;
+        // the placement editor creates a node per space, not per camera.
+        await _mapService.UpdateHierarchyAsync([new BaseMarkerDTO
         {
-          var oldRow = await _db.CameraPlacements.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.object_id == canonicalId, ct);
-          var oldPoints = await LoadPointsAsync([canonicalId], ct);
-          if (oldPoints.TryGetValue(canonicalId, out var oldPoint))
-          {
-            changed.Add(await CreatePictureAsync(
-              placement.CameraId, camera.Name, canonicalId, oldCanvas, oldRow, oldPoint.Lat, oldPoint.Lon, ct));
-          }
-        }
+          id = replicaId.ToString(),
+          parent_id = spaceId.ToString(),
+          owner_id = canonicalId.ToString(),
+          name = camera.Name,
+        }]);
 
-        // Whatever picture carried the reference stops carrying it before the node takes it.
-        if (oldReference is not null && oldReference.object_id != canonicalId)
+        target = new DBCameraPlacement
         {
-          var stale = await _db.CameraPlacements.FirstOrDefaultAsync(p => p.object_id == oldReference.object_id, ct);
-          if (stale is not null)
-            stale.is_reference = false;
-        }
+          object_id = replicaId,
+          camera_id = placement.CameraId,
+        };
+        _db.CameraPlacements.Add(target);
+      }
 
-        // A picture already here gives its place to the camera node.
-        if (target is not null && target.object_id != canonicalId)
-        {
-          await DeletePictureAsync(target.object_id, ct);
-          changed.Add(target.object_id.ToString());
-          target = null;
-        }
-
-        // Staying on the same canvas keeps the parent the administrator gave the node -- a
-        // container is as good a place for a camera as the space itself. Moving to another canvas
-        // puts it under that space, whose coordinates it is now drawn in.
-        var parentId = canonicalCanvas == spaceId && canonical?.parent_id is not null
-          ? canonical.parent_id.Value
-          : spaceId;
-        await _mapService.UpdateHierarchyAsync([
-          new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = parentId.ToString(), name = camera.Name }]);
-        await EnsureDeviceNodeAsync(canonicalId, placement.CameraId, ct);
-        await _geoService.CreateGeo([PointFigure(canonicalId, placement.Lat, placement.Lon)]);
-
-        var row = await _db.CameraPlacements.FirstOrDefaultAsync(p => p.object_id == canonicalId, ct);
-        if (row is null)
-        {
-          row = new DBCameraPlacement { object_id = canonicalId, camera_id = placement.CameraId };
-          _db.CameraPlacements.Add(row);
-        }
-        row.is_reference = true;
-        ApplyValues(row, placement);
+      if (isReference && oldReference is not null && oldReference.object_id != replicaId)
+      {
+        // Demoted before the new one takes the flag: the schema allows one reference row per
+        // camera, and a single SaveChanges would order the two updates by key.
+        oldReference.is_reference = false;
         await _db.SaveChangesAsync(ct);
+        changed.Add(oldReference.object_id.ToString());
       }
-      else
-      {
-        if (target is not null)
-        {
-          target.is_reference = false;
-          ApplyValues(target, placement);
-          await _geoService.CreateGeo([PointFigure(target.object_id, placement.Lat, placement.Lon)]);
-          await _db.SaveChangesAsync(ct);
-        }
-        else
-        {
-          // A picture on another plan: a replica of the camera node, with its own point and values.
-          if (canonical is null)
-          {
-            await _mapService.UpdateHierarchyAsync([
-              new BaseMarkerDTO { id = canonicalId.ToString(), name = camera.Name }]);
-            await EnsureDeviceNodeAsync(canonicalId, placement.CameraId, ct);
-            canonical = await _db.Markers.FirstOrDefaultAsync(m => m.id == canonicalId, ct);
-          }
 
-          var replicaId = Guid.NewGuid();
-          await _mapService.UpdateHierarchyAsync([new BaseMarkerDTO {
-            id = replicaId.ToString(),
-            parent_id = spaceId.ToString(),
-            owner_id = canonicalId.ToString(),
-            name = camera.Name }]);
-
-          var row = new DBCameraPlacement
-          {
-            object_id = replicaId,
-            camera_id = placement.CameraId,
-            is_reference = false,
-          };
-          ApplyValues(row, placement);
-          _db.CameraPlacements.Add(row);
-          await _geoService.CreateGeo([PointFigure(replicaId, placement.Lat, placement.Lon)]);
-          await _db.SaveChangesAsync(ct);
-          changed.Add(replicaId.ToString());
-        }
-      }
+      target.is_reference = isReference;
+      ApplyValues(target, placement);
+      // The figure belongs to the replica: the canonical node carries meaning, not a picture.
+      await _geoService.CreateGeo([PointFigure(replicaId, placement.Lat, placement.Lon)]);
+      await _db.SaveChangesAsync(ct);
 
       if (tx is not null)
         await tx.CommitAsync(ct);
@@ -551,26 +487,11 @@ namespace VmsMap.Db
       if (row is null)
         return false;
 
-      var canonicalId = Utils.ConvertObjectIdToGuid(CameraObjectId.For(cameraId))!.Value;
-      if (row.object_id == canonicalId)
-      {
-        // The camera stops standing here; its node becomes unplaced, the pictures elsewhere stay.
-        _db.CameraPlacements.Remove(row);
+      // A placement always belongs to a replica: taking it off the canvas takes the replica with
+      // it. The canonical node stays under its server, without a position until another placement
+      // makes one of its replicas the reference.
+      await DeletePictureAsync(row.object_id, ct);
 
-        var marker = await _db.Markers.FirstOrDefaultAsync(m => m.id == row.object_id, ct);
-        if (marker is not null)
-          marker.parent_id = null;
-
-        var figure = await _db.GeoObjects.FirstOrDefaultAsync(g => g.id == row.object_id, ct);
-        if (figure is not null)
-          _db.GeoObjects.Remove(figure);
-      }
-      else
-      {
-        await DeletePictureAsync(row.object_id, ct);
-      }
-
-      await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
 
@@ -1008,6 +929,29 @@ namespace VmsMap.Db
              where p.camera_id == cameraId && g.canvas_id == spaceId
              select p).FirstOrDefaultAsync(ct);
 
+    /// The camera's canonical node, under its server. A placement write can reach a camera the
+    /// adapter has not seen yet, and the canonical node must exist and stand where the model says
+    /// -- under the server, never under the space it is drawn in -- before a replica can name it.
+    private async Task EnsureCanonicalNodeAsync(Guid canonicalId, CameraInfo camera, CancellationToken ct)
+    {
+      var serverId = string.IsNullOrWhiteSpace(camera.ServerId)
+        ? null
+        : ServerNodeId.For(camera.ServerId);
+
+      var marker = await _db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonicalId, ct);
+      if (marker is null || marker.parent_id != Utils.ConvertObjectIdToGuid(serverId))
+      {
+        await _mapService.UpdateHierarchyAsync([new BaseMarkerDTO
+        {
+          id = canonicalId.ToString(),
+          parent_id = serverId,
+          name = camera.Name,
+        }]);
+      }
+
+      await EnsureDeviceNodeAsync(canonicalId, camera.CameraId, ct);
+    }
+
     // The reverse index the tree needs to name a camera whose node id is an MD5 of its camera id.
     // A placement write is the other path that can reach a camera node the adapter has not seen.
     private async Task EnsureDeviceNodeAsync(Guid canonicalId, string cameraId, CancellationToken ct)
@@ -1035,35 +979,6 @@ namespace VmsMap.Db
 
     /// Leaves a picture where the camera stood before: a replica of the camera node with a copy of
     /// the placement it had.
-    private async Task<string> CreatePictureAsync(
-      string cameraId, string cameraName, Guid canonicalId, Guid spaceId,
-      DBCameraPlacement? values, double lat, double lon, CancellationToken ct)
-    {
-      var replicaId = Guid.NewGuid();
-      await _mapService.UpdateHierarchyAsync([new BaseMarkerDTO
-      {
-        id = replicaId.ToString(),
-        parent_id = spaceId.ToString(),
-        owner_id = canonicalId.ToString(),
-        name = cameraName,
-      }]);
-
-      var row = new DBCameraPlacement
-      {
-        object_id = replicaId,
-        camera_id = cameraId,
-        is_reference = false,
-        height_m = values?.height_m ?? 3,
-        heading_deg = values?.heading_deg ?? 0,
-        hfov_deg = values?.hfov_deg ?? 60,
-        range_m = values?.range_m ?? 30,
-      };
-      _db.CameraPlacements.Add(row);
-      await _geoService.CreateGeo([PointFigure(replicaId, lat, lon)]);
-      await _db.SaveChangesAsync(ct);
-      return replicaId.ToString();
-    }
-
     /// Removes one picture: its row, its point and its node. A picture is a leaf, so nothing else
     /// hangs from it.
     private async Task DeletePictureAsync(Guid objectId, CancellationToken ct)

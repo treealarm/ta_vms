@@ -228,6 +228,115 @@ public class DeviceNodeTests
   }
 
   [Fact]
+  public async Task ADeviceIsAllowedWhatItsReferenceReplicaIsAllowed()
+  {
+    var s = Create();
+    var device = await SeedDeviceAsync(s);
+    var camera = Guid.Parse(device.CameraNode.id!);
+
+    // The server node and the space the camera is drawn in; the reference replica stands there.
+    var server = Guid.Parse(ServerNodeId.For("srv"));
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = server.ToString(), name = "srv" },
+      new BaseMarkerDTO { id = camera.ToString(), parent_id = server.ToString(), name = "Camera" },
+    ]);
+    var space = Guid.NewGuid();
+    var replica = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = space.ToString(), name = "Yard" },
+      new BaseMarkerDTO { id = replica.ToString(), parent_id = space.ToString(),
+        owner_id = camera.ToString(), name = "Camera" },
+    ]);
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = replica, camera_id = device.CameraId, is_reference = true,
+    });
+    await s.Db.Rights.AddRangeAsync(
+      new DBRight { object_id = space, subject = "alice", action = RightActions.View });
+    await s.Db.SaveChangesAsync();
+
+    var rights = new RightsService(s.Db);
+    var alice = new CallerContext("alice", [], false);
+
+    // The canonical node and its part stand under the server, where the space's right cannot
+    // reach them; the reference replica is what carries that right to them.
+    Assert.True(await rights.IsAllowedAsync(camera.ToString(), RightActions.View, alice, CancellationToken.None));
+    Assert.True(await rights.IsAllowedAsync(device.DigitalInput, RightActions.View, alice, CancellationToken.None));
+
+    // Put the right on the server instead: it reaches the camera through the canonical node.
+    var noSpaceRights = Create();
+    var noSpaceDevice = await SeedDeviceAsync(noSpaceRights);
+    var noSpaceCamera = Guid.Parse(noSpaceDevice.CameraNode.id!);
+    await noSpaceRights.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = server.ToString(), name = "srv" },
+      new BaseMarkerDTO { id = noSpaceCamera.ToString(), parent_id = server.ToString(), name = "Camera" },
+    ]);
+    await noSpaceRights.Db.Rights.AddRangeAsync(
+      new DBRight { object_id = server, subject = "alice", action = RightActions.View });
+    await noSpaceRights.Db.SaveChangesAsync();
+    Assert.True(await new RightsService(noSpaceRights.Db).IsAllowedAsync(
+      noSpaceCamera.ToString(), RightActions.View, alice, CancellationToken.None));
+
+    // Without a reference replica the space's right reaches nothing, and admin bypasses it all.
+    await s.Db.CameraPlacements.ForEachAsync(p => p.is_reference = false);
+    await s.Db.SaveChangesAsync();
+    Assert.False(await rights.IsAllowedAsync(camera.ToString(), RightActions.View, alice, CancellationToken.None));
+    Assert.True(await rights.IsAllowedAsync(
+      camera.ToString(), RightActions.View, new CallerContext(null, ["admin"], false), CancellationToken.None));
+  }
+
+  [Fact]
+  public async Task TheViewBelongsToTheReplicaAndTheMeaningDoesNot()
+  {
+    var s = Create();
+    var device = await SeedDeviceAsync(s);
+    var canonical = Guid.Parse(device.CameraNode.id!);
+
+    var mapReplica = Guid.NewGuid();
+    var diagramReplica = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = mapReplica.ToString(), parent_id = canonical.ToString(),
+        owner_id = canonical.ToString(), name = "Camera on the map" },
+      new BaseMarkerDTO { id = diagramReplica.ToString(), parent_id = canonical.ToString(),
+        owner_id = canonical.ToString(), name = "Camera on the diagram" },
+    ]);
+    // Two drawings of one camera: different on each canvas.
+    s.Db.Visuals.AddRange(
+      new DBVisual { object_id = mapReplica, color = "#ff0000" },
+      new DBVisual { object_id = diagramReplica, color = "#0000ff" });
+    await s.States.UpdateStates([
+      new ObjectStateDTO { id = canonical.ToString(), states = ["ALARM"] }
+    ]);
+    await new EventsService(s.Db, s.Map).InsertManyAsync([
+      new EventDTO { object_id = canonical.ToString(), event_name = "alarm", timestamp = DateTime.UtcNow },
+    ]);
+
+    // The canonical node carries meaning only, never a drawing.
+    Assert.False(await s.Db.Visuals.AnyAsync(v => v.object_id == canonical));
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == canonical));
+
+    var looks = await s.Db.Visuals.Where(v => v.object_id == mapReplica || v.object_id == diagramReplica)
+      .ToDictionaryAsync(v => v.object_id, v => v.color);
+    Assert.NotEqual(looks[mapReplica], looks[diagramReplica]);
+
+    // The states and events are the camera's, and every replica answers with them.
+    var states = await s.Grpc.GetVisualStates(new MapProto.GetStatesRequest
+    {
+      Ids = { mapReplica.ToString(), diagramReplica.ToString() },
+      Caller = Admin(),
+    }, new TestContext());
+    Assert.Equal(2, states.States.Count);
+    Assert.All(states.States, state => Assert.Contains("ALARM", state.States));
+
+    var events = await s.Grpc.GetEventsByFilter(new MapProto.GetEventsByFilterRequest
+    {
+      Objects = { canonical.ToString() },
+      Caller = Admin(),
+    }, new TestContext());
+    Assert.Single(events.Events);
+  }
+
+  [Fact]
   public async Task DeletingACameraRemovesItsParts()
   {
     var s = Create();
