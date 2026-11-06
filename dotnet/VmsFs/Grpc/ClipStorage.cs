@@ -111,7 +111,7 @@ public sealed class ClipStorage(
   // event_uuid plus the alarm-override-until timestamp (alarm_end + post_record_seconds). While the
   // latest episode for this (event_id, camera_id) is still open it is extended (same event_uuid);
   // once it has expired, a fresh episode (new event_uuid) is opened under the same event_id group.
-  public async Task<(Guid EventUuid, DateTime OverrideUntil)> RetainEventAsync(RetainEventRequest req, CancellationToken ct)
+  public async Task<(Guid EventUuid, DateTime OverrideUntil, bool RaiseAlarm)> RetainEventAsync(RetainEventRequest req, CancellationToken ct)
   {
     var eventId = string.IsNullOrWhiteSpace(req.EventId)
       ? $"{req.CameraId}-{req.AlarmStartTs.ToDateTime().ToUniversalTime().Ticks}"
@@ -129,6 +129,8 @@ public sealed class ClipStorage(
       : null;
     var objectId = req.HasObjectId && !string.IsNullOrWhiteSpace(req.ObjectId)
       ? req.ObjectId : null;
+    // A caller that never heard of the field keeps today's behaviour: every episode is an alarm.
+    var raiseAlarm = !req.HasRaiseAlarm || req.RaiseAlarm;
 
     var config = await configCache.GetAsync(req.CameraId, ct);
     var preSeconds  = config?.PreRecordSeconds  ?? 30;
@@ -149,9 +151,12 @@ public sealed class ClipStorage(
 
     // Find the latest episode for this (event_id, camera_id). If it is still open, extend it;
     // otherwise open a new one.
+    // The raise_alarm of the episode a renewal extends is whatever opened it, not what the
+    // renewal says: a caller may not turn an addressed alarm into footage mid-episode.
     Guid? openUuid = null;
+    var openRaiseAlarm = true;
     await using (var findCmd = new NpgsqlCommand("""
-      SELECT event_uuid, alarm_end_ts, alarm_start_ts
+      SELECT event_uuid, alarm_end_ts, alarm_start_ts, raise_alarm
       FROM retention_events
       WHERE event_id = $1 AND camera_id = $2::uuid
       ORDER BY alarm_start_ts DESC
@@ -168,7 +173,10 @@ public sealed class ClipStorage(
         // Extend only while the episode is still open AND under the duration cap; past the cap, fall
         // through to open a fresh episode (same event_id group) so no single episode grows unbounded.
         if (openEnd > DateTime.UtcNow && DateTime.UtcNow - openStart < MaxEpisodeDuration)
+        {
           openUuid = reader.GetGuid(0);
+          openRaiseAlarm = reader.GetBoolean(3);
+        }
       }
     }
 
@@ -176,6 +184,7 @@ public sealed class ClipStorage(
     if (openUuid is Guid existing)
     {
       eventUuid = existing;
+      raiseAlarm = openRaiseAlarm;
       await using var ext = new NpgsqlCommand("""
         UPDATE retention_events
         SET alarm_end_ts = GREATEST(alarm_end_ts, $2),
@@ -195,8 +204,8 @@ public sealed class ClipStorage(
     {
       eventUuid = Guid.NewGuid();
       await using var ins = new NpgsqlCommand("""
-        INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id, trigger)
-        VALUES($1, $2, $3::uuid, $4, $5, $6, $7, $8);
+        INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id, trigger, raise_alarm)
+        VALUES($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9);
         """, conn, tx);
       ins.Parameters.AddWithValue(eventUuid);
       ins.Parameters.AddWithValue(eventId);
@@ -206,6 +215,7 @@ public sealed class ClipStorage(
       ins.Parameters.AddWithValue(alarmEnd);
       ins.Parameters.AddWithValue((object?)objectId ?? DBNull.Value);
       ins.Parameters.AddWithValue((object?)trigger ?? DBNull.Value);
+      ins.Parameters.AddWithValue(raiseAlarm);
       await ins.ExecuteNonQueryAsync(ct);
     }
 
@@ -231,7 +241,7 @@ public sealed class ClipStorage(
     }
 
     await tx.CommitAsync(ct);
-    return (eventUuid, alarmEnd.AddSeconds(postSeconds));
+    return (eventUuid, alarmEnd.AddSeconds(postSeconds), raiseAlarm);
   }
 
   public async Task<List<Recording>> GetRecordingsFromToAsync(GetRecordingsFromToRequest request, CancellationToken ct)
@@ -904,7 +914,7 @@ public sealed class ClipStorage(
     // camera-scoped caller must be able to say so here as well.
     var byCamera = !string.IsNullOrWhiteSpace(cameraId);
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
+      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger, raise_alarm
       FROM retention_events
       WHERE event_id = ANY($1){(byCamera ? " AND camera_id = $2::uuid" : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC;
@@ -927,6 +937,7 @@ public sealed class ClipStorage(
       if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
       if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
       if (!reader.IsDBNull(7)) row.Trigger = reader.GetString(7);
+      row.RaiseAlarm = reader.GetBoolean(8);
       events.Add(row);
     }
     return events;
@@ -970,7 +981,7 @@ public sealed class ClipStorage(
 
     values.Add(lim);
     var sql = $"""
-      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
+      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger, raise_alarm
       FROM retention_events
       {(where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC
@@ -995,6 +1006,7 @@ public sealed class ClipStorage(
       if (!reader.IsDBNull(4)) row.AlarmEndTs = Timestamp.FromDateTime(reader.GetDateTime(4).ToUniversalTime());
       if (!reader.IsDBNull(6)) row.ObjectId = reader.GetString(6);
       if (!reader.IsDBNull(7)) row.Trigger = reader.GetString(7);
+      row.RaiseAlarm = reader.GetBoolean(8);
       events.Add(row);
     }
 

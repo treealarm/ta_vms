@@ -112,6 +112,11 @@ namespace web_srv.Types.Dto
     public DateTime AlarmStartTs { get; set; }
     public DateTime? AlarmEndTs { get; set; }
     public uint TimeoutSeconds { get; set; }
+    /// <summary>
+    /// Whether this episode is an alarm to the map's operator. Defaults to true: a caller that does
+    /// not say otherwise is recording something somebody must acknowledge, as before.
+    /// </summary>
+    public bool RaiseAlarm { get; set; } = true;
   }
 
   public class RetentionEventRowDto

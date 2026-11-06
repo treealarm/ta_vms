@@ -85,7 +85,12 @@ CREATE TABLE retention_events (
   -- ("tns1:RuleEngine/CellMotionDetector/Motion"), NULL for anything that does not name a
   -- cause. Without it an episode records only that something happened on a camera, which
   -- cannot distinguish motion from tamper when several alarm filters are armed at once.
-  trigger        text        NULL
+  trigger        text        NULL,
+  -- Whether this episode is an alarm to the map's operator. False keeps the recording and the
+  -- retention journal entry but raises no alarm and sets no ALARM state: analytics motion that
+  -- was retained for another reason is footage, not something anybody has to acknowledge. A
+  -- renewal never changes it.
+  raise_alarm    boolean     NOT NULL DEFAULT true
 );
 
 CREATE INDEX idx_retention_events_camera_time

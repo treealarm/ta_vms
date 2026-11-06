@@ -32,14 +32,16 @@ public sealed partial class FsServiceImpl(
   // the episode back through ListRetentionEvents. The wire names are snake_case because every
   // subscriber matches them literally — a camelCase payload deserializes into an all-null record
   // and is dropped in silence, which is exactly what happened on the first live run.
-  private void NotifyRetentionEventCreated(string cameraId, string? streamName, DateTime alarmStartTs)
+  private void NotifyRetentionEventCreated(
+    string cameraId, string? streamName, DateTime alarmStartTs, bool raiseAlarm)
   {
     _ = Task.Run(async () =>
     {
       try
       {
         await daprClient.PublishEventAsync(PubSubName, RetentionEventCreatedTopic,
-          new { camera_id = cameraId, stream_name = streamName, alarm_start_ts = alarmStartTs });
+          new { camera_id = cameraId, stream_name = streamName, alarm_start_ts = alarmStartTs,
+                raise_alarm = raiseAlarm });
       }
       catch (Exception ex)
       {
@@ -92,10 +94,12 @@ public sealed partial class FsServiceImpl(
   {
     try
     {
-      var (eventUuid, until) = await _storage.RetainEventAsync(request, context.CancellationToken);
+      var (eventUuid, until, raiseAlarm) =
+        await _storage.RetainEventAsync(request, context.CancellationToken);
       var streamName = request.HasStreamName && !string.IsNullOrWhiteSpace(request.StreamName) ? request.StreamName : null;
       _ = alarmRecording.TryActivateAsync(request.CameraId, streamName, until, CancellationToken.None);
-      NotifyRetentionEventCreated(request.CameraId, streamName, request.AlarmStartTs.ToDateTime());
+      NotifyRetentionEventCreated(
+        request.CameraId, streamName, request.AlarmStartTs.ToDateTime(), raiseAlarm);
       return new OperationStatus { Status = OperationStatus.Types.Status.Success, Message = "ok", EventUuid = eventUuid.ToString() };
     }
     catch (Exception ex)
