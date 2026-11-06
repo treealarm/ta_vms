@@ -87,7 +87,8 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
-  /// A state row on a node: `DISCONNECTED` on a switch port is the demo's alarm.
+  /// A state row on a node. The demo writes no alarm: its one row is `CONNECTED` on a switch
+  /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
 
   /// A right on a node. The world grants `view` to the deployment's `user` role at its root.

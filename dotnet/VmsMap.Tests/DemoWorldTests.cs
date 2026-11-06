@@ -147,10 +147,12 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void ThePortAlarmAndTheLevelsArePartOfTheWorld()
+  public void ThePortIsCalmAndTheLevelsArePartOfTheWorld()
   {
-    Assert.Contains(_world.States, state =>
-      state.NodeKey == "object/port-rack-a-01-03" && state.States.Contains("DISCONNECTED"));
+    // The demo owns no device, so it writes no alarm. The port's row is CONNECTED, which also
+    // replaces the DISCONNECTED an earlier world left behind.
+    var port = Assert.Single(_world.States, state => state.NodeKey == "object/port-rack-a-01-03");
+    Assert.Equal(["CONNECTED"], port.States);
 
     Assert.Equal(
       ["Campus", "Building", "Room", "Rack"],

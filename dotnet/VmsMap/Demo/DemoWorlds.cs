@@ -19,7 +19,8 @@ namespace VmsMap.Demo
     // 4: the racks' points are the centres of their rectangles in the plan picture.
     // 5: a camera's own readings — position, speed, relay, sensor — on a Device telemetry diagram,
     //    replacing the racks' synthetic temperature and humidity.
-    public const int UmdDataCenterVersion = 5;
+    // 6: the port no longer alarms — the demo has no synthetic state, so its map starts calm.
+    public const int UmdDataCenterVersion = 6;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -143,9 +144,10 @@ namespace VmsMap.Demo
         }
       }
 
-      // The plot: the third port of the first rack's switch has lost its link. The alarm climbs
-      // from the port through the switch, the rack, the room, the building and the map.
-      states.Add(new DemoState("object/port-rack-a-01-03", "DISCONNECTED"));
+      // The ports are calm: a state is what an owner reports, and the demo owns no device. The
+      // row is still written so the seeder replaces the older world's DISCONNECTED instead of
+      // leaving it behind — CONNECTED carries no alarm.
+      states.Add(new DemoState("object/port-rack-a-01-03", "CONNECTED"));
 
       var placements = new List<DemoPlacement>
       {

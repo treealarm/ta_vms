@@ -4,7 +4,7 @@
 The world is installed through the same API the administrator's button uses, then walked the way
 an operator walks it: map -> building -> room -> rack -> switch -> port, with the types and their
 regions, the camera placements, the video wall, the readings the cameras report about themselves
-(position, speed, relay, sensor) and the alarm climbing back up. It then proves what the registry
+(position, speed, relay, sensor) and the port that no longer alarms. It then proves what the registry
 is for — a second install changes no id, the administrator's own node survives both an install and
 a removal, and a removal takes only the demo.
 
@@ -87,6 +87,11 @@ def diagram_types(vms):
 
 def alarmed(vms):
     return (vms.call("POST", "/api/map/states/alarmed", []) or {}).get("states") or []
+
+
+def states_of(vms, ids):
+    rows = (vms.call("POST", "/api/map/states", ids) or {}).get("states") or []
+    return {row.get("id"): row.get("states") or [] for row in rows}
 
 
 def values_of(vms, owner_id):
@@ -405,17 +410,20 @@ def check_levels(vms):
           "the Campus, Building, Room and Rack layers are in the dictionary")
 
 
-def check_alarm(vms, world):
-    """The port is DISCONNECTED and the alarm walks up every parent to the map."""
-    rows = {row.get("id"): row for row in alarmed(vms)}
+def check_port_not_alarmed(vms, world):
+    """The demo owns no device, so no node it writes is in alarm — the port least of all.
 
-    port = rows.get(world["port"]["id"], {})
-    check(port.get("alarm") is True, "Port 3 is alarmed")
+    Cameras may legitimately be DISCONNECTED (a stack without OnvifSim), which is why the check
+    is about the port and not about the world being alarm-free.
+    """
+    port_id = world["port"]["id"]
+    states = states_of(vms, [port_id]).get(port_id) or []
+    check("CONNECTED" in states, f"Port 3 is CONNECTED (has {states})")
+    check(not {"DISCONNECTED", "ALARM"} & set(states),
+          f"Port 3 carries no alarm state (has {states})")
 
-    for name in ("switch", "rack", "room", "building", "map"):
-        row = rows.get(world[name]["id"], {})
-        check(row.get("alarm") is True or (row.get("childrenAlarms") or 0) > 0,
-              f"the alarm reaches the {name}")
+    alarmed_ids = {row.get("id") for row in alarmed(vms)}
+    check(port_id not in alarmed_ids, "Port 3 is not among the alarmed nodes")
 
 
 def check_feeder(vms, world):
@@ -586,10 +594,10 @@ def main():
     check_events(vms)
     check_marker_follows_the_camera(vms)
 
-    print("Layers, readings and the alarm")
+    print("Layers, readings and the calm port")
     check_levels(vms)
     telemetry = check_feeder(vms, world)
-    check_alarm(vms, world)
+    check_port_not_alarmed(vms, world)
 
     sim_up = sim.ready()
     if not sim_up:
