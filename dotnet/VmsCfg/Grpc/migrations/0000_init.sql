@@ -286,6 +286,25 @@ CREATE TABLE device_settings (
   CHECK (NOT alarm_enabled OR trigger_on IS NOT NULL)
 );
 
+-- The definitions an alarm is raised under. A definition names its severity and what its
+-- acknowledgement policy is; the alarm rows themselves live in VmsMap's database, which keeps this
+-- id as a plain column (no foreign key across the two databases). There is no CRUD in M2.4: the
+-- three seeds below are the whole set, and a raise names one of them.
+CREATE TABLE alarm_definitions (
+  id         uuid NOT NULL PRIMARY KEY,
+  name       text NOT NULL UNIQUE,
+  severity   text NOT NULL DEFAULT 'warning' CHECK (severity IN ('warning', 'critical')),
+  ack_policy text NOT NULL DEFAULT 'required'  CHECK (ack_policy IN ('required', 'auto_on_normal'))
+);
+
+-- Fixed ids: a raise travels the bus as a UUID and the alarm row keeps it forever, so it must not
+-- depend on what the migration happened to generate. A retention episode closes itself when it
+-- ends; a sensor's contact and a subscription are the operator's to acknowledge.
+INSERT INTO alarm_definitions (id, name, severity, ack_policy) VALUES
+  ('00000000-0000-0000-0000-00000000a101', 'sensor',       'warning', 'required'),
+  ('00000000-0000-0000-0000-00000000a102', 'retention',    'warning', 'auto_on_normal'),
+  ('00000000-0000-0000-0000-00000000a103', 'subscription', 'warning', 'required');
+
 -- How this camera's pan and tilt move the picture, measured rather than assumed: one step of pan
 -- shifts the frame by (pan_dx, pan_dy), one of tilt by (tilt_dx, tilt_dy). Sign and magnitude
 -- differ per mount, so tracking cannot guess them.

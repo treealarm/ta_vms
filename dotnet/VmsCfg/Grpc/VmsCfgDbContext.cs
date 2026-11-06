@@ -21,6 +21,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
   public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
   public DbSet<DbCameraState> CameraStates { get; set; }
   public DbSet<DbDeviceSettings> DeviceSettings { get; set; }
+  public DbSet<DbAlarmDefinition> AlarmDefinitions { get; set; }
   public DbSet<DbStorage> Storages { get; set; }
   public DbSet<DbAnalyticsWatch> AnalyticsWatches { get; set; }
   public DbSet<DbPtzCalibration> PtzCalibrations { get; set; }
@@ -90,6 +91,16 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.Property(x => x.ArmMode).HasColumnName("arm_mode");
       e.Property(x => x.TriggerOn).HasColumnName("trigger_on");
       e.Property(x => x.AlarmEnabled).HasColumnName("alarm_enabled");
+    });
+
+    modelBuilder.Entity<DbAlarmDefinition>(e =>
+    {
+      e.ToTable("alarm_definitions");
+      e.HasKey(x => x.Id);
+      e.Property(x => x.Id).HasColumnName("id");
+      e.Property(x => x.Name).HasColumnName("name");
+      e.Property(x => x.Severity).HasColumnName("severity");
+      e.Property(x => x.AckPolicy).HasColumnName("ack_policy");
     });
 
     modelBuilder.Entity<DbStorage>(e =>
@@ -289,6 +300,14 @@ public sealed class DbDeviceSettings
   public string ArmMode { get; set; } = DeviceSettingsRules.Inherit;
   public string? TriggerOn { get; set; }
   public bool AlarmEnabled { get; set; }
+}
+
+public sealed class DbAlarmDefinition
+{
+  public Guid Id { get; set; }
+  public string Name { get; set; } = string.Empty;
+  public string Severity { get; set; } = "warning";
+  public string AckPolicy { get; set; } = "required";
 }
 
 public sealed class DbStorage

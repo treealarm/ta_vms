@@ -12,6 +12,7 @@ namespace VmsCfg
     NodeRegistry nodes,
     StorageDb storageDb,
     DeviceStorage deviceStorage,
+    AlarmDefinitionStorage alarmDefinitions,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
@@ -1229,6 +1230,14 @@ namespace VmsCfg
           "device-settings-changed publish failed for '{CameraId}' — replicas will pick it up by TTL",
           cameraId);
       }
+    }
+
+    public override async Task<ListAlarmDefinitionsResponse> ListAlarmDefinitions(
+      ListAlarmDefinitionsRequest request, ServerCallContext context)
+    {
+      var response = new ListAlarmDefinitionsResponse();
+      response.Definitions.AddRange(await alarmDefinitions.ListAsync(context.CancellationToken));
+      return response;
     }
 
     public override async Task<ListAnalyticsWatchesResponse> ListAnalyticsWatches(

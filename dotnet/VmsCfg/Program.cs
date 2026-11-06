@@ -24,6 +24,7 @@ builder.Services.AddSingleton<CameraStorage>();
 builder.Services.AddSingleton<NodeRegistry>();
 builder.Services.AddSingleton<StorageDb>();
 builder.Services.AddSingleton<DeviceStorage>();
+builder.Services.AddSingleton<AlarmDefinitionStorage>();
 builder.Services.AddSingleton<VmsCfg.Demo.DemoMonitor>();
 // `DEMO_CONFIG` names a world whose video wall this service installs at startup; empty is none.
 builder.Services.AddHostedService<VmsCfg.Demo.DemoInstallService>();
