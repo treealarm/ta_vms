@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "onvifsim"))
 
+import world as W  # noqa: E402
 from labhttp import HttpError, request  # noqa: E402
 from simapi import Sim  # noqa: E402
 from vmsapi import Vms  # noqa: E402
@@ -488,11 +489,12 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # The master and its PTZ slave work as one pair, so both stand in Room 101.
+    # Each pair works as one: the hall pair in Room 101, the road pair out on the map where the
+    # road and the car the master watches are.
     expected = {
         camera_id("sim-master"): world["room"]["id"],
         camera_id("sim-ptz"): world["room"]["id"],
-        camera_id("sim-master2"): world["building"]["id"],
+        camera_id("sim-master2"): world["map"]["id"],
         camera_id("sim-ptz2"): world["map"]["id"],
         # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
         # position from then on, so only the space it belongs to is fixed here.
@@ -503,6 +505,31 @@ def check_cameras(vms, world, allow_missing):
         placement = placed.get(cam_id)
         check(placement is not None and placement.get("spaceId") == space_id,
               f"{cam_id} stands in its space")
+
+
+def check_camera_poses(vms, allow_missing):
+    """The four placed cameras stand exactly where the demo world puts them.
+
+    The world file and DemoWorlds.cs carry the same constants, so a drift here means one of the
+    three (this script, the map, the simulator) was changed without the others."""
+    placed = {p.get("cameraId"): p for p in placements(vms)}
+    for placement in W.DEMO_PLACEMENTS:
+        cam_id = camera_id(f"sim-{placement.id}")
+        if cam_id not in placed and allow_missing:
+            warn(f"{cam_id} is not placed: its pose is not checked")
+            continue
+        spot = placed.get(cam_id)
+        if not check(spot is not None, f"{cam_id} is placed on the map"):
+            continue
+        gap = W.ground_gap(spot.get("lat", 0.0), spot.get("lon", 0.0), placement.lat, placement.lon)
+        check(gap <= W.MARYLAND_POSITION_TOLERANCE_M,
+              f"{cam_id} stands where the world puts it ({gap:.2f} m off)")
+        check(abs((spot.get("heightM") or 0.0) - placement.height) <= W.MARYLAND_POSITION_TOLERANCE_M,
+              f"{cam_id} is {placement.height} m up")
+        check(W.angle_gap(spot.get("headingDeg") or 0.0, placement.heading) <= W.MARYLAND_ANGLE_TOLERANCE_DEG,
+              f"{cam_id} faces {placement.heading}°")
+        check(abs((spot.get("hfovDeg") or 0.0) - placement.hfov) <= W.MARYLAND_ANGLE_TOLERANCE_DEG,
+              f"{cam_id} is {placement.hfov}° wide")
 
 
 def check_geo_flag(vms):
@@ -551,12 +578,19 @@ def check_monitor(vms, allow_missing):
     if not check(wall is not None, "the 'UMD DC' video wall is in VmsCfg"):
         return
 
-    check(wall.get("layout") == "2x2", "the wall is a 2x2 grid")
+    check(wall.get("layout") == "1+5", "the wall is a 1+5 grid: one feature cell and five small ones")
     cameras = wall.get("cameraIds") or []
+    expected = [camera_id(name) for name in DEMO_CAMERAS]
     if allow_missing:
+        # A world installed before the simulator's cameras are provisioned: what exists is shown,
+        # in the wall's own order.
+        present = [cam_id for cam_id in expected if cam_id in cameras]
+        check(cameras == present, f"the wall shows the provisioned cameras in its order (got {cameras})")
         warn(f"the wall shows {len(cameras)} camera(s)")
     else:
-        check(len(cameras) == 4, f"the wall shows the four cameras (got {len(cameras)})")
+        missing = [name for name in DEMO_CAMERAS if camera_id(name) not in cameras]
+        check(not missing, f"the wall shows all five demo cameras (missing {', '.join(missing)})")
+        check(cameras == expected, f"the wall shows the five cameras in its order (got {cameras})")
 
 
 def check_levels(vms):
@@ -1031,6 +1065,7 @@ def main():
 
     print("Cameras and the video wall")
     check_cameras(vms, world, args.allow_missing_cameras)
+    check_camera_poses(vms, args.allow_missing_cameras)
     check_monitor(vms, args.allow_missing_cameras)
 
     print("ONVIF position, events and the marker")

@@ -20,7 +20,9 @@ namespace VmsMap.Demo
     // 5: a camera's own readings — position, speed, relay, sensor — on a Device telemetry diagram,
     //    replacing the racks' synthetic temperature and humidity.
     // 6: the port no longer alarms — the demo has no synthetic state, so its map starts calm.
-    public const int UmdDataCenterVersion = 6;
+    // 7: the second master/slave pair moved out to the road: master2 watches the ring road from the
+    //    building's north wall, ptz2 turns after the car.
+    public const int UmdDataCenterVersion = 7;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -155,8 +157,10 @@ namespace VmsMap.Demo
         // facing each other across it, with a person walking between them in the simulator's world.
         new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
-        new("sim-master2", "space/building", 38.99276, -76.93895, HeightM: 3, HeadingDeg: 135, HfovDeg: 80, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.99250, -76.93950, HeightM: 6, HeadingDeg: 90, HfovDeg: 60, RangeM: 150),
+        // The second pair works as one on the road north of the building: master2 watches the ring
+        // road, its vehicle boxes drive ptz2, which looks south-east along the same stretch.
+        new("sim-master2", "space/umd", 38.992884, -76.937858, HeightM: 6, HeadingDeg: 0, HfovDeg: 60, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.993333, -76.938320, HeightM: 6, HeadingDeg: 113, HfovDeg: 60, RangeM: 150),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
         new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),

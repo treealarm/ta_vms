@@ -298,6 +298,11 @@ namespace VmsMap.Demo
           continue;
         }
 
+        // The world moved this camera to another space since the last install: the picture it left
+        // there is the world's too, and keeping it would draw the camera twice.
+        if (registered.TryGetValue(key, out var earlierSpace) && earlierSpace != spaceId)
+          await _spatial.RemovePlacementAsync(cameraId, earlierSpace, ct);
+
         await _spatial.UpsertPlacementAsync(new CameraPlacement
         {
           CameraId = cameraId,

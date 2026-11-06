@@ -217,6 +217,28 @@ public class DemoSeederTests
     Assert.Single(await s.Db.CameraPlacements.ToListAsync());
   }
 
+  [Fact]
+  public async Task ACameraTheWorldMovedToAnotherSpaceKeepsOnePlacement()
+  {
+    // The second pair moved out of the building onto the map: the camera is one picture in one
+    // space, not one in each, and the old one must not survive the reinstall unreachable from the
+    // registry.
+    var s = Create("sim-master2");
+    var inTheRoom = World(placements: [new DemoPlacement("sim-master2", "space/room", 39.015, -76.985)]);
+    await s.Seeder.InstallAsync(inTheRoom, CancellationToken.None);
+    Assert.Single(await s.Db.CameraPlacements.ToListAsync());
+
+    var onTheMap = World(placements: [new DemoPlacement("sim-master2", "space/map", 39.05, -76.95)]);
+    var report = await s.Seeder.InstallAsync(onTheMap, CancellationToken.None);
+
+    var placement = Assert.Single(await s.Db.CameraPlacements.ToListAsync());
+    var node = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == placement.object_id);
+    // A space's id is the server's, so the map is found by the name the world gives it.
+    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
+    Assert.Equal(mapSpace.id, node.parent_id);
+    Assert.Empty(report.SkippedCameras);
+  }
+
   private static DemoNode TelemetryReplica() =>
     new("object/telemetry", "Camera sim-vehicle", "space/room", "type/rack",
       Canvas: new DemoRect(0, 0, 300, 200), OwnerCameraId: "sim-vehicle");

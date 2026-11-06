@@ -23,6 +23,8 @@ type Props = {
   skipIds?: Set<string>
   /** The administrator's canvas: the selected shape grows handles and can be reshaped. */
   editable?: boolean
+  /** Whether a click on a shape selects it; a tool that draws or places takes the click instead. */
+  interactive?: boolean
   /** commit is false while a shape is being dragged and true when it is let go. */
   onGeometryChange?: (figure: MapFigure, geometry: MapGeometry, commit: boolean) => void
 }
@@ -68,7 +70,7 @@ function escapeHtml(text: string): string {
  */
 export default function FiguresLayer({
   figures, states, alarms, descriptions, levels, selectedId, onSelect, skipIds,
-  editable, onGeometryChange,
+  editable, interactive = true, onGeometryChange,
 }: Props) {
   const zoom = useMapZoom()
 
@@ -83,7 +85,7 @@ export default function FiguresLayer({
     <>
       {shown.map((figure) => renderFigure(
         figure, states[figure.id], alarms[figure.id], descriptions, selectedId, onSelect,
-        editable && figure.id === selectedId ? onGeometryChange : undefined,
+        interactive, editable && figure.id === selectedId ? onGeometryChange : undefined,
       ))}
     </>
   )
@@ -96,6 +98,8 @@ function renderFigure(
   descriptions: Record<string, MapStateDescription>,
   selectedId: string | null,
   onSelect: (id: string) => void,
+  /** False while a tool is taking the click: a shape under the cursor must not select itself. */
+  interactive: boolean,
   /** Set only for the selected shape on the administrator's canvas. */
   reshape?: (figure: MapFigure, geometry: MapGeometry, commit: boolean) => void,
 ) {
@@ -106,7 +110,7 @@ function renderFigure(
 
   const style = nodeStyle(figure, state, alarm, descriptions)
   const selected = figure.id === selectedId
-  const handlers = { click: () => onSelect(figure.id) }
+  const handlers = interactive ? { click: () => onSelect(figure.id) } : undefined
   const pathOptions = {
     color: style.color,
     weight: selected ? 4 : 2,
@@ -117,8 +121,10 @@ function renderFigure(
     // does: at an overview scale the children that raised the alarm are out of the layer.
     className: style.alarming ? 'vms-alarm-pulse' : undefined,
     // Picking a shape must not also count as clicking the empty canvas, which clears the
-    // selection: the click stops here, as a footprint's does.
+    // selection: the click stops here, as a footprint's does. A tool that is drawing or placing
+    // works through the shape instead.
     bubblingMouseEvents: false,
+    interactive,
   }
 
   // A polygon arrives closed (the first point repeated at the end); its handles are the corners
@@ -166,7 +172,7 @@ function renderFigure(
   switch (figure.geometry?.type) {
     case 'LineString':
       return (
-        <Fragment key={`${figure.id}:${style.alarming}`}>
+        <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
           <Polyline positions={coords} pathOptions={{ ...pathOptions, fillOpacity: 0 }}
             eventHandlers={handlers}>
             <Tooltip>{figure.name}</Tooltip>
@@ -176,7 +182,7 @@ function renderFigure(
       )
     case 'Polygon':
       return (
-        <Fragment key={`${figure.id}:${style.alarming}`}>
+        <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
           <Polygon positions={coords} pathOptions={pathOptions} eventHandlers={handlers}>
             <Tooltip>{figure.name}</Tooltip>
           </Polygon>
@@ -189,7 +195,7 @@ function renderFigure(
 
       if (figure.visual?.image) {
         return (
-          <Fragment key={`${figure.id}:${style.alarming}`}>
+          <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
             <Marker position={[lat, lon]} icon={figureIcon(figure, style.alarming)} eventHandlers={handlers}>
               <Tooltip>{figure.name}</Tooltip>
             </Marker>
@@ -200,7 +206,7 @@ function renderFigure(
 
       if ((figure.radius ?? 0) > 0) {
         return (
-          <Fragment key={`${figure.id}:${style.alarming}`}>
+          <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
             <Circle center={[lat, lon]} radius={figure.radius as number}
               pathOptions={pathOptions} eventHandlers={handlers}>
               <Tooltip permanent={!!style.text} direction="top">{caption}</Tooltip>
@@ -211,7 +217,7 @@ function renderFigure(
       }
 
       return (
-        <Fragment key={`${figure.id}:${style.alarming}`}>
+        <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
           <CircleMarker center={[lat, lon]} radius={selected ? 9 : 7}
             pathOptions={pathOptions} eventHandlers={handlers}>
             <Tooltip permanent={!!style.text} direction="top">{caption}</Tooltip>
