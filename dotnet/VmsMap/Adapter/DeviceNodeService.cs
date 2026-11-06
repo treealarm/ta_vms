@@ -22,17 +22,23 @@ namespace VmsMap.Adapter
     private readonly VmsMapDbContext _db;
     private readonly IMapService _mapService;
     private readonly IMapUpdateService _mapUpdateService;
+    private readonly ICameraCatalog _catalog;
+    private readonly IDeviceSettingsSource _settings;
     private readonly ILogger<DeviceNodeService> _logger;
 
     public DeviceNodeService(
       VmsMapDbContext db,
       IMapService mapService,
       IMapUpdateService mapUpdateService,
+      ICameraCatalog catalog,
+      IDeviceSettingsSource settings,
       ILogger<DeviceNodeService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _mapService = mapService ?? throw new ArgumentNullException(nameof(mapService));
       _mapUpdateService = mapUpdateService ?? throw new ArgumentNullException(nameof(mapUpdateService));
+      _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+      _settings = settings ?? throw new ArgumentNullException(nameof(settings));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -169,6 +175,110 @@ namespace VmsMap.Adapter
 
       foreach (var cameraId in stored.Where(id => !known.Contains(id)))
         await RemoveCameraAsync(cameraId, ct);
+    }
+
+    /// <summary>
+    /// Creates or refreshes a part's canonical node under the camera's node, and answers its id.
+    /// Idempotent: a snapshot or an event that names a part already in the tree changes nothing.
+    /// No geometry is created — a part is placed on a map by its own replica, which does not exist
+    /// in M2.4.
+    /// </summary>
+    public async Task<string?> EnsureAsync(
+      string sourceKind, string sourceId, string partKind, string partToken, CancellationToken ct)
+    {
+      if (!string.Equals(sourceKind, DeviceObjectId.CameraSource, StringComparison.Ordinal))
+        return null;
+      if (string.IsNullOrWhiteSpace(sourceId)
+          || string.IsNullOrWhiteSpace(partKind)
+          || string.IsNullOrWhiteSpace(partToken))
+      {
+        return null;
+      }
+
+      var camera = await _catalog.GetAsync(sourceId, ct);
+      if (camera is null)
+        return null;
+
+      await EnsureCameraAsync(camera, ct);
+
+      var configured = await _settings.FindAsync(sourceId, partKind, partToken, ct);
+      var name = !string.IsNullOrWhiteSpace(configured?.Name)
+        ? configured!.Name
+        : $"{camera.Name} / {partToken}";
+
+      var partId = DeviceObjectId.For(sourceKind, sourceId, partKind, partToken);
+      var partGuid = Utils.ConvertObjectIdToGuid(partId);
+      var parentGuid = Utils.ConvertObjectIdToGuid(CameraObjectId.For(sourceId));
+      if (partGuid is null)
+        return null;
+
+      var marker = await _db.Markers.AsNoTracking()
+        .FirstOrDefaultAsync(m => m.id == partGuid.Value, ct);
+
+      if (marker is null || marker.name != name || marker.parent_id != parentGuid)
+      {
+        await _mapService.UpdateHierarchyAsync([
+          new BaseMarkerDTO
+          {
+            id = partId,
+            parent_id = CameraObjectId.For(sourceId),
+            name = name,
+          }
+        ]);
+      }
+
+      await EnsurePartRowAsync(sourceKind, sourceId, partKind, partToken, partGuid.Value, ct);
+      return partId;
+    }
+
+    /// <summary>
+    /// Re-reads the names of a camera's parts after device settings changed. The set is small (the
+    /// parts of one camera), and the camera id is the leftmost part of the registry's unique key.
+    /// </summary>
+    public async Task RefreshPartNamesAsync(string cameraId, CancellationToken ct)
+    {
+      if (string.IsNullOrWhiteSpace(cameraId))
+        return;
+
+      var parts = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => n.source_kind == DeviceObjectId.CameraSource && n.source_id == cameraId
+                    && n.part_kind != DeviceObjectId.DevicePart)
+        .Select(n => new { n.part_kind, n.part_token })
+        .ToListAsync(ct);
+
+      foreach (var part in parts)
+        await EnsureAsync(DeviceObjectId.CameraSource, cameraId, part.part_kind, part.part_token, ct);
+    }
+
+    private async Task EnsurePartRowAsync(
+      string sourceKind, string sourceId, string partKind, string partToken, Guid objectId,
+      CancellationToken ct)
+    {
+      if (_db.Database.IsRelational())
+      {
+        await _db.Database.ExecuteSqlInterpolatedAsync($"""
+          INSERT INTO device_node (object_id, source_kind, source_id, part_kind, part_token)
+          VALUES ({objectId}, {sourceKind}, {sourceId}::uuid, {partKind}, {partToken})
+          ON CONFLICT (source_kind, source_id, part_kind, part_token) DO NOTHING;
+          """, ct);
+        return;
+      }
+
+      var exists = await _db.DeviceNodes.AnyAsync(n =>
+        n.source_kind == sourceKind && n.source_id == sourceId
+        && n.part_kind == partKind && n.part_token == partToken, ct);
+      if (!exists)
+      {
+        _db.DeviceNodes.Add(new DBDeviceNode
+        {
+          object_id = objectId,
+          source_kind = sourceKind,
+          source_id = sourceId,
+          part_kind = partKind,
+          part_token = partToken,
+        });
+        await _db.SaveChangesAsync(ct);
+      }
     }
 
     /// <summary>Merges one property into the camera's node without dropping the others.</summary>

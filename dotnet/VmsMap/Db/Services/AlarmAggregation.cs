@@ -23,9 +23,15 @@ namespace VmsMap.Db
   // the aggregate flag changing, or when an actor was deactivated. A recomputation cannot drift.
   internal static class AlarmAggregation
   {
+    /// <param name="externalAlarmedChildren">
+    /// How many direct children of each node are alarmed but lie outside the closure. The database
+    /// counts them; loading the rows to count them here is what made a server with 100 000 cameras
+    /// pay for all of them on every update.
+    /// </param>
     public static Dictionary<Guid, (bool Alarm, int Children)> Compute(
       IReadOnlyCollection<AlarmNode> nodes,
-      IReadOnlySet<Guid> closure)
+      IReadOnlySet<Guid> closure,
+      IReadOnlyDictionary<Guid, int>? externalAlarmedChildren = null)
     {
       var byId = nodes.ToDictionary(n => n.Id);
 
@@ -47,7 +53,7 @@ namespace VmsMap.Db
           continue;
         }
 
-        var alarmedChildren = 0;
+        var alarmedChildren = externalAlarmedChildren?.GetValueOrDefault(node.Id) ?? 0;
         if (children.TryGetValue(node.Id, out var kids))
         {
           foreach (var kid in kids)

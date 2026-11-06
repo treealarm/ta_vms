@@ -12,6 +12,7 @@ using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
 using VmsMap.Grpc;
+using VmsMap.Outbox;
 using VmsMap.PubSub;
 using VmsMap.Watch;
 
@@ -122,6 +123,21 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 // events into ALARM and the journal, and the sweep that takes a finished alarm away.
 builder.Services.AddScoped<DeviceNodeService>();
 builder.Services.AddScoped<IDeviceNodeService>(sp => sp.GetRequiredService<DeviceNodeService>());
+// Device settings are cached per camera, and the pub/sub signal reaches one replica only: the
+// shared version key is the truth, the event only makes the cache notice sooner.
+builder.Services.AddSingleton(sp => new DeviceSettingsCache(
+  sp.GetRequiredService<CfgService.CfgServiceClient>(),
+  sp.GetRequiredService<DaprClient>(),
+  stateStoreName,
+  sp.GetRequiredService<ILogger<DeviceSettingsCache>>()));
+builder.Services.AddSingleton<IDeviceSettingsSource>(sp => sp.GetRequiredService<DeviceSettingsCache>());
+
+builder.Services.AddScoped<ObjectStateWriter>();
+builder.Services.AddScoped<EventsWriter>();
+builder.Services.AddScoped<DeviceEventTranslator>();
+builder.Services.AddScoped<DeviceEventWriter>();
+builder.Services.AddScoped<DeviceEventReconciler>();
+builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 builder.Services.AddScoped<CameraStateWriter>();
 builder.Services.AddScoped<AlarmService>();
 builder.Services.AddScoped<ConnectionStateService>();
@@ -131,6 +147,15 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MapWatchPoller>())
 builder.Services.AddHostedService<CameraChangeSubscriber>();
 builder.Services.AddHostedService<StartupResyncService>();
 builder.Services.AddHostedService<RetentionEventSubscriber>();
+// Device events, snapshots and the settings that name the parts.
+builder.Services.AddHostedService<DeviceEventSubscriber>();
+// Event notification goes through a transactional outbox: the row is written with the event, so a
+// crash before the publish cannot lose the reaction.
+builder.Services.AddHostedService(sp => new OutboxPublisher(
+  sp.GetRequiredService<IServiceScopeFactory>(),
+  sp.GetRequiredService<DaprClient>(),
+  pubSubName,
+  sp.GetRequiredService<ILogger<OutboxPublisher>>()));
 builder.Services.AddHostedService<AlarmSweepService>();
 builder.Services.AddHostedService<ConnectionStatePoller>();
 // Cameras flagged geo_from_device follow their own ONVIF position; the rest are never asked.

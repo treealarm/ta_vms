@@ -70,7 +70,7 @@ public class DemoSeederTests
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
       new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
-      new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance));
+      TestWiring.DeviceNodes(db, map, updates));
 
     return new Services(db, map, seeder, catalog);
   }

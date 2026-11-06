@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using Npgsql;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -106,37 +108,129 @@ namespace VmsMap.Db
       return ep_db;
     }
 
-    public async Task<long> InsertManyAsync(List<EventDTO> events)
+    // An event enters the journal at most once. The id is the caller's (a deterministic one for
+    // anything replayable), and an unrecognised id is an error rather than a silent random
+    // replacement: a NewGuid() here would quietly make every redelivery a new event.
+    public async Task<IReadOnlyList<string>> InsertManyAsync(List<EventDTO> events)
     {
-      var list = new List<DBEvent>();
+      if (events.Count == 0)
+        return [];
+
+      return _dbContext.Database.IsRelational()
+        ? await InsertRelationalAsync(events)
+        : await InsertInMemoryAsync(events);
+    }
+
+    private async Task<IReadOnlyList<string>> InsertRelationalAsync(List<EventDTO> events)
+    {
+      var connection = (NpgsqlConnection)_dbContext.Database.GetDbConnection();
+      var transaction = (NpgsqlTransaction?)_dbContext.Database.CurrentTransaction?.GetDbTransaction();
+
+      var openedHere = connection.State != System.Data.ConnectionState.Open;
+      if (openedHere)
+        await _dbContext.Database.OpenConnectionAsync();
+
+      try
+      {
+        var inserted = new List<string>(events.Count);
+
+        foreach (var ev in events)
+        {
+          var id = Utils.ConvertObjectIdToGuid(ev.id)
+            ?? throw new ArgumentException(
+                $"Event '{ev.id}' has no valid UUID id — an event must be identifiable to be deduplicated",
+                nameof(events));
+
+          var objectId = Utils.ConvertObjectIdToGuid(ev.object_id)
+            ?? throw new ArgumentException("An event needs an object_id", nameof(events));
+
+          await using (var command = new NpgsqlCommand("""
+              INSERT INTO events (id, object_id, event_name, event_priority, "timestamp", param0, param1)
+              VALUES ($1, $2, $3, $4, $5, $6, $7)
+              ON CONFLICT (id) DO NOTHING
+              RETURNING id;
+              """, connection, transaction))
+          {
+            command.Parameters.AddWithValue(id);
+            command.Parameters.AddWithValue(objectId);
+            command.Parameters.AddWithValue(ev.event_name ?? string.Empty);
+            command.Parameters.AddWithValue(ev.event_priority);
+            command.Parameters.AddWithValue(ev.timestamp == default ? DateTime.UtcNow : ev.timestamp);
+            command.Parameters.AddWithValue((object?)ev.param0 ?? DBNull.Value);
+            command.Parameters.AddWithValue((object?)ev.param1 ?? DBNull.Value);
+
+            var returned = await command.ExecuteScalarAsync();
+            if (returned is null)
+              continue; // already in the journal: a redelivery, not a second event
+
+            inserted.Add(id.ToString());
+          }
+
+          foreach (var prop in ConvertExtraPropsToDB(ev.extra_props, id))
+          {
+            await using var command = new NpgsqlCommand("""
+              INSERT INTO event_props (id, prop_name, str_val, visual_type, owner_id)
+              VALUES ($1, $2, $3, $4, $5);
+              """, connection, transaction);
+            command.Parameters.AddWithValue(prop.id);
+            command.Parameters.AddWithValue((object?)prop.prop_name ?? DBNull.Value);
+            command.Parameters.AddWithValue((object?)prop.str_val ?? DBNull.Value);
+            command.Parameters.AddWithValue((object?)prop.visual_type ?? DBNull.Value);
+            command.Parameters.AddWithValue(prop.owner_id);
+            await command.ExecuteNonQueryAsync();
+          }
+        }
+
+        return inserted;
+      }
+      finally
+      {
+        if (openedHere)
+          await _dbContext.Database.CloseConnectionAsync();
+      }
+    }
+
+    private async Task<IReadOnlyList<string>> InsertInMemoryAsync(List<EventDTO> events)
+    {
+      var parsed = new List<(DBEvent Event, string Id)>();
 
       foreach (var ev in events)
       {
+        var id = Utils.ConvertObjectIdToGuid(ev.id)
+          ?? throw new ArgumentException(
+              $"Event '{ev.id}' has no valid UUID id — an event must be identifiable to be deduplicated",
+              nameof(events));
+
         var objectId = Utils.ConvertObjectIdToGuid(ev.object_id)
           ?? throw new ArgumentException("An event needs an object_id", nameof(events));
 
-        var dbEvent = new DBEvent
+        parsed.Add((new DBEvent
         {
-          id = Utils.ConvertObjectIdToGuid(ev.id) ?? Utils.NewGuid(),
+          id = id,
           timestamp = ev.timestamp == default ? DateTime.UtcNow : ev.timestamp,
           object_id = objectId,
           event_name = ev.event_name ?? string.Empty,
           event_priority = ev.event_priority,
           param0 = ev.param0,
-          param1 = ev.param1
-        };
-
-        dbEvent.extra_props = ConvertExtraPropsToDB(ev.extra_props, dbEvent.id);
-        list.Add(dbEvent);
+          param1 = ev.param1,
+          extra_props = ConvertExtraPropsToDB(ev.extra_props, id),
+        }, id.ToString()));
       }
 
-      if (list.Count > 0)
+      var ids = parsed.Select(p => p.Event.id).ToList();
+      var existing = await _dbContext.Events
+        .Where(e => ids.Contains(e.id))
+        .Select(e => e.id)
+        .ToListAsync();
+
+      var fresh = parsed.Where(p => !existing.Contains(p.Event.id)).ToList();
+      if (fresh.Count > 0)
       {
-        await _dbContext.Events.AddRangeAsync(list);
+        await _dbContext.Events.AddRangeAsync(fresh.Select(p => p.Event));
         await _dbContext.SaveChangesAsync();
       }
 
-      return list.Count;
+      return fresh.Select(p => p.Id).ToList();
     }
 
     public async Task<List<EventDTO>> GetEventsByFilter(SearchEventFilterDTO filter)

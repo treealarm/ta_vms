@@ -83,18 +83,20 @@ public class DeviceNodeTests
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
-    var nodes = new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance);
+    var nodes = TestWiring.DeviceNodes(db, map, updates);
 
+    var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
-      new EventsService(db, map), new ValuesService(db), tracks,
+      events, new EventsWriter(db, events), new ValuesService(db), tracks,
       new DiagramService(db), new DiagramTypeService(db), new RightService(db), rights,
       new TestRightsNotifier(), new VisualService(db), new FileService(db), spatial,
       null!,
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
-        new TestCatalog(), nodes));
+        new TestCatalog(), nodes),
+      TestWiring.Arming(db));
 
     return new Services(db, map, states, nodes, grpc);
   }
@@ -200,6 +202,7 @@ public class DeviceNodeTests
     await new EventsService(s.Db, s.Map).InsertManyAsync([
       new EventDTO
       {
+        id = Guid.NewGuid().ToString(),
         object_id = device.DigitalInput,
         event_name = "sensor",
         timestamp = DateTime.UtcNow,
@@ -308,7 +311,13 @@ public class DeviceNodeTests
       new ObjectStateDTO { id = canonical.ToString(), states = ["ALARM"] }
     ]);
     await new EventsService(s.Db, s.Map).InsertManyAsync([
-      new EventDTO { object_id = canonical.ToString(), event_name = "alarm", timestamp = DateTime.UtcNow },
+      new EventDTO
+      {
+        id = Guid.NewGuid().ToString(),
+        object_id = canonical.ToString(),
+        event_name = "alarm",
+        timestamp = DateTime.UtcNow,
+      },
     ]);
 
     // The canonical node carries meaning only, never a drawing.

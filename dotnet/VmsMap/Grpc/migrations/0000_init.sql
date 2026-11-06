@@ -155,6 +155,21 @@ CREATE INDEX idx_events_param0_param1 ON events (param0, param1);
 CREATE INDEX idx_events_ts_id ON events ("timestamp" DESC, id DESC);
 CREATE INDEX idx_events_object_ts_id ON events (object_id, "timestamp" DESC, id DESC);
 
+-- Transactional outbox for the map's own notifications. The event row and the notification that
+-- says it exists are written in one transaction, so a crash between them cannot lose the reaction;
+-- the publisher is at-least-once and the receiver is idempotent. Published rows are removed.
+CREATE TABLE map_outbox (
+  id           bigserial PRIMARY KEY,
+  topic        text NOT NULL,
+  payload      jsonb NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  published_at timestamptz,
+  attempts     integer NOT NULL DEFAULT 0,
+  last_error   text
+);
+
+CREATE INDEX ix_map_outbox_pending ON map_outbox (id) WHERE published_at IS NULL;
+
 CREATE INDEX idx_event_props_owner_id ON event_props (owner_id);
 CREATE INDEX idx_event_props_prop_name_val ON event_props (owner_id, prop_name, str_val);
 
@@ -342,6 +357,16 @@ CREATE TABLE device_node (
   source_id   uuid    NOT NULL,
   part_kind   varchar NOT NULL,
   part_token  varchar NOT NULL,
+  -- Whether the device still declares the part, and whether the device answered the last sweep at
+  -- all. They are different facts: a network timeout is not a part disappearing, and only a
+  -- successful answer that no longer lists a part may set present=false.
+  present     boolean NOT NULL DEFAULT true,
+  reachable   boolean NOT NULL DEFAULT true,
+  -- The monotonicity guard for device-event: epoch is the publishing process, seq grows per part
+  -- within it. Comparing timestamps would compare this machine's clock with another's.
+  last_epoch       uuid,
+  last_seq         bigint NOT NULL DEFAULT 0,
+  last_observed_at timestamptz,
   -- The index the unique key builds also serves every lookup by device: its leftmost columns are
   -- the key, and parts are only ever read for one device at a time.
   UNIQUE (source_kind, source_id, part_kind, part_token)
@@ -388,7 +413,14 @@ INSERT INTO object_state_descriptions (state, state_descr, state_color, alarm) V
   ('DISCONNECTED', 'Disconnected', '#FF0000', true),
   ('ALARM',        'Alarm',        '#FF0000', true),
   ('INFO',         'Info',         '#00FF00', false),
-  ('NORM',         'Normal',       '#0000FF', false);
+  ('NORM',         'Normal',       '#0000FF', false),
+  -- Device parts. Without a row here the map has neither a colour nor the alarm flag, and an
+  -- unknown state is not shown at all. None of them is an alarm by itself: whether an open contact
+  -- alarms is the operator's setting, and the alarm entity is M2.4c.
+  ('SENSOR_OPEN',  'Open',         '#FF9900', false),
+  ('SENSOR_CLOSED','Closed',       '#00AA00', false),
+  ('RELAY_ACTIVE', 'Active',       '#3399FF', false),
+  ('RELAY_INACTIVE','Inactive',    '#808080', false);
 
 -- The scale layers: every pair (j, i) with j <= i, named "j" when j = i and "j-i" otherwise.
 INSERT INTO levels (zoom_level, zoom_min, zoom_max)

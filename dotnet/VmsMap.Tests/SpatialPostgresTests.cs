@@ -370,8 +370,7 @@ public class SpatialPostgresTests
     if (test is null)
       return;
 
-    var nodes = new DeviceNodeService(
-      test.Db, test.Map, test.Updates, NullLogger<DeviceNodeService>.Instance);
+    var nodes = TestWiring.DeviceNodes(test.Db, test.Map, test.Updates);
     await nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "New camera", "srv-new"), CancellationToken.None);
 
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.Two));
@@ -435,8 +434,7 @@ public class SpatialPostgresTests
     }
     await test.Db.SaveChangesAsync();
 
-    var cameraNodes = new DeviceNodeService(
-      test.Db, test.Map, test.Updates, NullLogger<DeviceNodeService>.Instance);
+    var cameraNodes = TestWiring.DeviceNodes(test.Db, test.Map, test.Updates);
     await cameraNodes.RemoveCameraAsync(cameraId, CancellationToken.None);
 
     Assert.Empty(await test.Db.Markers.Where(m => nodes.Contains(m.id)).ToListAsync());

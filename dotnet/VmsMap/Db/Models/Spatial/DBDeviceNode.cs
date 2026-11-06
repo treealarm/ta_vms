@@ -15,5 +15,17 @@ namespace VmsMap.Db
     public string source_id { get; set; } = null!;
     public string part_kind { get; set; } = null!;
     public string part_token { get; set; } = "";
+
+    // Whether the device still declares the part, and whether the device answered the last sweep.
+    // A network timeout is not a part disappearing, and only a successful answer may set present
+    // false.
+    public bool present { get; set; } = true;
+    public bool reachable { get; set; } = true;
+
+    // The (epoch, seq) cursor that makes device events monotonic. Times are not comparable across
+    // machines; the publishing process's identity and its own counter are.
+    public Guid? last_epoch { get; set; }
+    public long last_seq { get; set; }
+    public DateTime? last_observed_at { get; set; }
   }
 }

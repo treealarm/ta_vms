@@ -129,12 +129,16 @@ namespace VmsMap.Db
       if (!_db.Database.IsRelational())
         return;
 
-      await _db.Database.ExecuteSqlRawAsync(
-        "SELECT pg_advisory_xact_lock(hashtext('ta_map_alarm'));");
+      await MapLocks.AcquireAlarmAsync(_db);
     }
 
     // Recomputes the alarm rows of `changed` and every ancestor: the path to the root is small,
     // and a full recomputation of it cannot drift the way an incrementing counter can.
+    //
+    // The cost is O(depth), not O(children). A parent's counter needs the number of its direct
+    // children that are alarmed, but not the child rows themselves: the count is aggregated by
+    // objects.parent_id inside the database, and only the closure's own rows are materialised. At
+    // a server with 100 000 cameras the old version loaded all 100 000 on every alarm update.
     private async Task RecomputeAsync(IReadOnlyCollection<Guid> changed)
     {
       if (changed.Count == 0 || !_db.Database.IsRelational())
@@ -149,47 +153,38 @@ namespace VmsMap.Db
       }
 
       var closureIds = closure.Select(c => c.Id).ToHashSet();
-
-      // Children of the closure, so a parent can count them; they are not recomputed themselves.
-      var children = await QueryLinksAsync(
-        "SELECT id, parent_id FROM objects WHERE parent_id = ANY(@ids);", closureIds.ToList());
-
-      var involved = closure
-        .Concat(children)
-        .GroupBy(n => n.Id)
-        .Select(g => g.First())
-        .ToList();
-
-      var involvedIds = involved.Select(n => n.Id).ToList();
+      var closureList = closureIds.ToList();
 
       var alarmNames = await QueryStringsAsync(
         "SELECT state FROM object_state_descriptions WHERE alarm;");
-
-      var byId = involved.ToDictionary(n => n.Id);
 
       var ownAlarm = alarmNames.Count == 0
         ? new HashSet<Guid>()
         : await QueryIdsAsync(
             "SELECT DISTINCT object_id FROM object_state_values WHERE object_id = ANY(@ids) AND state = ANY(@states);",
-            involvedIds,
+            closureList,
             alarmNames);
 
-      var stored = await QueryAlarmRowsAsync(involvedIds);
+      var stored = await QueryAlarmRowsAsync(closureList);
 
-      var nodes = involved.Select(n =>
+      // Children outside the closure: their stored rows already say whether they are alarmed, and
+      // the aggregate answers with a number per closure node instead of one row per child.
+      var outsideAlarmed = await QueryChildAlarmCountsAsync(closureList);
+
+      var nodes = closure.Select(n =>
       {
         stored.TryGetValue(n.Id, out var row);
         return new AlarmNode(n.Id, n.ParentId, ownAlarm.Contains(n.Id), row.Alarm, row.Children);
       }).ToList();
 
-      var updates = AlarmAggregation.Compute(nodes, closureIds);
+      var updates = AlarmAggregation.Compute(nodes, closureIds, outsideAlarmed);
       if (updates.Count == 0)
       {
         return;
       }
 
       var existing = await _db.AlarmStates
-        .Where(a => involvedIds.Contains(a.id))
+        .Where(a => closureList.Contains(a.id))
         .ToDictionaryAsync(a => a.id);
 
       foreach (var (id, value) in updates)
@@ -211,6 +206,32 @@ namespace VmsMap.Db
       }
 
       await _db.SaveChangesAsync();
+    }
+
+    // One row per closure node, not one per child: the aggregate runs over idx_objects_parent_id
+    // and the children of the closure never leave the database.
+    private async Task<Dictionary<Guid, int>> QueryChildAlarmCountsAsync(List<Guid> closure)
+    {
+      var result = new Dictionary<Guid, int>();
+
+      await using var cmd = CreateCommand("""
+        SELECT o.parent_id, count(*) FILTER (WHERE a.alarm OR a.children_alarms > 0)
+        FROM objects o
+        LEFT JOIN alarm_states a ON a.id = o.id
+        WHERE o.parent_id = ANY(@ids)
+          AND NOT (o.id = ANY(@closure))
+        GROUP BY o.parent_id;
+        """);
+      cmd.Parameters.Add(new NpgsqlParameter("ids", closure.ToArray()));
+      cmd.Parameters.Add(new NpgsqlParameter("closure", closure.ToArray()));
+
+      await using var reader = await cmd.ExecuteReaderAsync();
+      while (await reader.ReadAsync())
+      {
+        result[reader.GetGuid(0)] = (int)reader.GetInt64(1);
+      }
+
+      return result;
     }
 
     private async Task<List<(Guid Id, Guid? ParentId)>> LoadAncestorsAsync(

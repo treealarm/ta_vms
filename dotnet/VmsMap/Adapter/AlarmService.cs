@@ -21,20 +21,20 @@ namespace VmsMap.Adapter
 
     private readonly VmsMapDbContext _db;
     private readonly CameraStateWriter _stateWriter;
-    private readonly IEventsService _eventsService;
+    private readonly EventsWriter _eventsWriter;
     private readonly IRetentionEventSource _retention;
     private readonly ILogger<AlarmService> _logger;
 
     public AlarmService(
       VmsMapDbContext db,
       CameraStateWriter stateWriter,
-      IEventsService eventsService,
+      EventsWriter eventsWriter,
       IRetentionEventSource retention,
       ILogger<AlarmService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _stateWriter = stateWriter ?? throw new ArgumentNullException(nameof(stateWriter));
-      _eventsService = eventsService ?? throw new ArgumentNullException(nameof(eventsService));
+      _eventsWriter = eventsWriter ?? throw new ArgumentNullException(nameof(eventsWriter));
       _retention = retention ?? throw new ArgumentNullException(nameof(retention));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -151,7 +151,7 @@ namespace VmsMap.Adapter
 
       if (existing is null)
       {
-        await _eventsService.InsertManyAsync([
+        await _eventsWriter.WriteAsync([
           new EventDTO
           {
             id = eventId.ToString(),

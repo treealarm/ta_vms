@@ -75,9 +75,10 @@ public class MapServiceReadsTests
     var notifier = new TestRightsNotifier();
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
 
+    var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
-      new EventsService(db, map), new ValuesService(db), tracks,
+      events, new EventsWriter(db, events), new ValuesService(db), tracks,
       new DiagramService(db), new DiagramTypeService(db), new RightService(db), rights, notifier,
       new VisualService(db), new FileService(db), spatial,
       // The read tests never open a watch stream; the poller needs a scope factory only when it
@@ -86,7 +87,8 @@ public class MapServiceReadsTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
-        new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance)));
+        TestWiring.DeviceNodes(db, map, updates)),
+      TestWiring.Arming(db));
 
     return new Services(db, map, states, grpc, notifier);
   }
@@ -373,6 +375,7 @@ public class MapServiceReadsTests
     await new EventsService(s.Db, s.Map).InsertManyAsync([
       new EventDTO
       {
+        id = Guid.NewGuid().ToString(),
         object_id = camera.id,
         event_name = "alarm",
         timestamp = DateTime.UtcNow,

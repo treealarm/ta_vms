@@ -17,6 +17,15 @@ public class DeviceNodeServiceTests
 {
   private sealed record Services(VmsMapDbContext Db, MapDb Map, DeviceNodeService Nodes);
 
+  private sealed class FrontDoorCatalog : ICameraCatalog
+  {
+    public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Front door", "srv1"));
+
+    public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
+      Task.FromResult(new List<CameraInfo>());
+  }
+
   private static Services Create()
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
@@ -31,7 +40,7 @@ public class DeviceNodeServiceTests
     var updates = new MapUpdateService(map, tracks, states);
 
     return new Services(db, map,
-      new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance));
+      TestWiring.DeviceNodes(db, map, updates, new FrontDoorCatalog()));
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -200,6 +209,48 @@ public class DeviceNodeServiceTests
     Assert.True(await s.Db.Markers.AnyAsync(
       m => m.id == Guid.Parse(CameraObjectId.For(TestCameras.Two))));
     Assert.Equal(TestCameras.Two, (await s.Db.DeviceNodes.SingleAsync()).source_id);
+  }
+
+  [Fact]
+  public async Task APartGetsItsOwnNodeUnderTheCameraAndKeepsItOnASecondEnsure()
+  {
+    var s = Create();
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+
+    var first = await s.Nodes.EnsureAsync(
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1", default);
+    var second = await s.Nodes.EnsureAsync(
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1", default);
+
+    Assert.NotNull(first);
+    Assert.Equal(first, second);
+    Assert.Equal(
+      DeviceObjectId.For(DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1"),
+      first);
+
+    var node = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(first!));
+    Assert.Equal("Front door / input1", node.name);
+    Assert.Equal(Guid.Parse(CameraObjectId.For(TestCameras.One)), node.parent_id);
+
+    // Idempotent: the second ensure did not add a second registry row.
+    Assert.Equal(2, await s.Db.DeviceNodes.CountAsync());
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == Guid.Parse(first!)));
+  }
+
+  [Fact]
+  public async Task APartThatArrivesBeforeItsCameraCreatesTheCameraNodeToo()
+  {
+    var s = Create();
+
+    var id = await s.Nodes.EnsureAsync(
+      DeviceObjectId.CameraSource, TestCameras.Two, DeviceObjectId.RelayPart, "relay1", default);
+
+    Assert.NotNull(id);
+    Assert.Equal(
+      Guid.Parse(CameraObjectId.For(TestCameras.Two)),
+      (await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(id!))).parent_id);
+    Assert.Equal(DeviceObjectId.RelayPart,
+      (await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(id!))).part_kind);
   }
 
   [Fact]

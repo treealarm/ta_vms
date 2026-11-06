@@ -42,10 +42,10 @@ public class AlarmServiceTests
     var map = new MapDb(db);
     var stateService = new StateService(db);
     var statesUpdate = new StatesUpdateService(stateService, map, db);
-    var writer = new CameraStateWriter(db, stateService, statesUpdate);
+    var writer = new CameraStateWriter(new ObjectStateWriter(db, stateService, statesUpdate));
     var retention = new FakeRetention();
     var alarms = new AlarmService(
-      db, writer, new EventsService(db, map), retention,
+      db, writer, new EventsWriter(db, new EventsService(db, map)), retention,
       NullLogger<AlarmService>.Instance);
 
     return new Services(db, map, writer, alarms, retention);

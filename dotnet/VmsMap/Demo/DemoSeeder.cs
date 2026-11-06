@@ -22,7 +22,6 @@ namespace VmsMap.Demo
   public sealed class DemoSeeder
   {
     // hashed into the lock by PostgreSQL; any stable number does, as long as it is ours alone.
-    private const long LockKey = 0x74615f64656d6f31; // "ta_demo1"
 
     private static readonly string[] DeleteOrder = ["object", "camera", "space", "type", "level", "file"];
 
@@ -529,12 +528,8 @@ namespace VmsMap.Demo
 
     /// Two replicas starting with the demo enabled wait for each other here; the lock is released
     /// with the transaction.
-    private async Task LockAsync(CancellationToken ct)
-    {
-      if (!_db.Database.IsRelational()) return;
-      await _db.Database.ExecuteSqlRawAsync(
-        "SELECT pg_advisory_xact_lock({0})", [LockKey], ct);
-    }
+    private Task LockAsync(CancellationToken ct) =>
+      MapLocks.AcquireDemoInstallAsync(_db, ct);
 
     /// Parents before their children, so a child always finds its parent written. A parent outside
     /// the set (a node's parent can be a space) counts as written already.

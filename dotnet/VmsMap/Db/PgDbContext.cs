@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Collections.Generic;
 using System.Text.Json;
+using VmsMap.Outbox;
 
 namespace VmsMap.Db
 {
@@ -40,6 +41,7 @@ namespace VmsMap.Db
     public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
 
     public DbSet<DBEvent> Events { get; set; } = null!;
+    public DbSet<DBMapOutbox> MapOutbox { get; set; } = null!;
 
     public DbSet<DBValue> Values { get; set; } = null!;
 
@@ -61,6 +63,7 @@ namespace VmsMap.Db
 
       ConfigureValues(modelBuilder);
       ConfigureEvents(modelBuilder);
+      ConfigureOutbox(modelBuilder);
       ConfigureStates(modelBuilder);
       ConfigureRights(modelBuilder);
       ConfigureLevels(modelBuilder);
@@ -192,6 +195,11 @@ namespace VmsMap.Db
         entity.Property(e => e.source_id).HasColumnName("source_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.part_kind).HasColumnName("part_kind").IsRequired();
         entity.Property(e => e.part_token).HasColumnName("part_token").IsRequired();
+        entity.Property(e => e.present).HasColumnName("present");
+        entity.Property(e => e.reachable).HasColumnName("reachable");
+        entity.Property(e => e.last_epoch).HasColumnName("last_epoch");
+        entity.Property(e => e.last_seq).HasColumnName("last_seq");
+        entity.Property(e => e.last_observed_at).HasColumnName("last_observed_at");
         entity.HasIndex(e => new { e.source_kind, e.source_id, e.part_kind, e.part_token }).IsUnique();
       });
     }
@@ -443,6 +451,22 @@ namespace VmsMap.Db
       modelBuilder.Entity<EventProp>(entity =>
       {
         entity.ToTable("event_props");
+      });
+    }
+
+    private void ConfigureOutbox(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBMapOutbox>(entity =>
+      {
+        entity.ToTable("map_outbox");
+        entity.HasKey(e => e.id);
+        entity.Property(e => e.id).HasColumnName("id").ValueGeneratedOnAdd();
+        entity.Property(e => e.topic).HasColumnName("topic").IsRequired();
+        entity.Property(e => e.payload).HasColumnName("payload").HasColumnType("jsonb").IsRequired();
+        entity.Property(e => e.created_at).HasColumnName("created_at");
+        entity.Property(e => e.published_at).HasColumnName("published_at");
+        entity.Property(e => e.attempts).HasColumnName("attempts");
+        entity.Property(e => e.last_error).HasColumnName("last_error");
       });
     }
 

@@ -34,6 +34,7 @@ namespace VmsMap.Grpc
     private readonly IStatesUpdateService _statesUpdateService;
     private readonly IStateService _stateService;
     private readonly IEventsService _eventsService;
+    private readonly EventsWriter _eventsWriter;
     private readonly IValuesServiceInternal _valuesService;
     private readonly ITracksUpdateService _tracksUpdateService;
     private readonly IDiagramServiceInternal _diagramService;
@@ -46,6 +47,7 @@ namespace VmsMap.Grpc
     private readonly SpatialDb _spatialDb;
     private readonly MapWatchPoller _watchPoller;
     private readonly DemoSeeder _demoSeeder;
+    private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -57,6 +59,7 @@ namespace VmsMap.Grpc
       IStatesUpdateService statesUpdateService,
       IStateService stateService,
       IEventsService eventsService,
+      EventsWriter eventsWriter,
       IValuesServiceInternal valuesService,
       ITracksUpdateService tracksUpdateService,
       IDiagramServiceInternal diagramService,
@@ -68,7 +71,8 @@ namespace VmsMap.Grpc
       FileService fileService,
       SpatialDb spatialDb,
       MapWatchPoller watchPoller,
-      DemoSeeder demoSeeder)
+      DemoSeeder demoSeeder,
+      VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver)
     {
       _db = db;
       _mapService = mapService;
@@ -79,6 +83,7 @@ namespace VmsMap.Grpc
       _statesUpdateService = statesUpdateService;
       _stateService = stateService;
       _eventsService = eventsService;
+      _eventsWriter = eventsWriter;
       _valuesService = valuesService;
       _tracksUpdateService = tracksUpdateService;
       _diagramService = diagramService;
@@ -91,6 +96,7 @@ namespace VmsMap.Grpc
       _spatialDb = spatialDb;
       _watchPoller = watchPoller;
       _demoSeeder = demoSeeder;
+      _armingResolver = armingResolver;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────
@@ -243,7 +249,7 @@ namespace VmsMap.Grpc
         extra_props = e.ExtraProps.Select(ToDto).ToList()
       }).ToList();
 
-      await _eventsService.InsertManyAsync(dtos);
+      await _eventsWriter.WriteAsync(dtos, context.CancellationToken);
       return Ok();
     }
 

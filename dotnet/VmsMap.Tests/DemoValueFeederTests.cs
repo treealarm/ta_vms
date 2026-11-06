@@ -101,7 +101,7 @@ public class DemoValueFeederTests
     var values = new ValuesService(db);
     var catalog = new TestCatalog(cameras.Length > 0 ? cameras : DemoCameras);
     var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier());
-    var cameraNodes = new DeviceNodeService(db, map, updates, NullLogger<DeviceNodeService>.Instance);
+    var cameraNodes = TestWiring.DeviceNodes(db, map, updates);
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
