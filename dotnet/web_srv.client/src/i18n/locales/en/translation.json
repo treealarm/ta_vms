@@ -29,6 +29,7 @@
     "empty": "No devices yet",
     "pick": "Pick a node to see what can be done with it.",
     "openInTree": "Open in tree",
+    "openDiagram": "Open diagram",
     "replica": "picture of another node",
     "part": "Part of a device",
     "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
@@ -1201,7 +1202,9 @@
     "attachDeviceDiagram": "Add device diagram",
     "attachDeviceDiagramHint": "Draw {{name}} from a template for its model. Only parts configured for the device get a replica.",
     "noTemplates": "No device templates yet: make a type a template in Types.",
-    "attach": "Attach"
+    "attach": "Attach",
+    "openDeviceDiagram": "Open device diagram",
+    "noDeviceDiagram": "This device has no diagram yet. Add one from a template, or open it from Admin → Maps."
   },
   "rights": {
     "tab": "Rights",

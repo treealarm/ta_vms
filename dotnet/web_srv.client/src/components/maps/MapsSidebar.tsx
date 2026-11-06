@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
-  Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
+  Alert, Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
 import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../../api/apiFetch'
 import { enc } from '../../api/requestJson'
@@ -349,6 +350,7 @@ function NodesTree({ markers, space, onOpenSpace }: {
   const [busy, setBusy] = useState(false)
   // The device whose diagram the administrator is about to attach a template to.
   const [attachDevice, setAttachDevice] = useState<MapMarker | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
   useEffect(() => {
@@ -402,6 +404,29 @@ function NodesTree({ markers, space, onOpenSpace }: {
     }
   }
 
+  /**
+   * Opens the device diagram drawn under the camera. The diagram hangs off the camera's canonical
+   * node, not off this picture of it, so the lookup starts at the replica's owner when there is one.
+   */
+  const openDeviceDiagram = async (marker: MapMarker) => {
+    const parentId = marker.ownerId ?? marker.id
+    setBusy(true)
+    setNotice(null)
+    try {
+      const page = childrenByParent[parentId]?.loaded
+        ? null
+        : await dispatch(loadChildren({ parentId })).unwrap()
+      const children = page?.children ?? childrenOf(known, childrenByParent, parentId)
+      const diagram = children.find((child) => child.nodeKind === 'diagram')
+      if (diagram) openDiagram(diagram.id)
+      else setNotice(t('diagramEditor.noDeviceDiagram'))
+    } catch {
+      // The store carries the message.
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <>
       <Stack direction="row" alignItems="center" sx={{ px: 1.5, pt: 1 }}>
@@ -422,6 +447,11 @@ function NodesTree({ markers, space, onOpenSpace }: {
           </span>
         </Tooltip>
       </Stack>
+      {notice && (
+        <Alert severity="info" onClose={() => setNotice(null)} sx={{ mx: 1, mb: 1, py: 0 }}>
+          {notice}
+        </Alert>
+      )}
       <List dense disablePadding>
         {rows.map(({ marker, depth }) => {
           const open = expanded.has(marker.id)
@@ -470,16 +500,30 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
-              {/* A device may be drawn from a template by hand: its own action, on its own row. */}
+              {/* A device's own actions on its own row: draw it from a template, or open the
+                  diagram it already has. */}
               {marker.nodeKind === 'camera' && marker.cameraId ? (
-                <Tooltip title={t('diagramEditor.attachDeviceDiagram')}>
-                  <IconButton
-                    size="small"
-                    onClick={(event) => { event.stopPropagation(); setAttachDevice(marker) }}
-                  >
-                    <DashboardCustomizeIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
+                <>
+                  <Tooltip title={t('diagramEditor.attachDeviceDiagram')}>
+                    <IconButton
+                      size="small"
+                      aria-label={t('diagramEditor.attachDeviceDiagram')}
+                      onClick={(event) => { event.stopPropagation(); setAttachDevice(marker) }}
+                    >
+                      <DashboardCustomizeIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
+                    <IconButton
+                      size="small"
+                      aria-label={t('diagramEditor.openDeviceDiagram')}
+                      disabled={busy}
+                      onClick={(event) => { event.stopPropagation(); void openDeviceDiagram(marker) }}
+                    >
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </>
               ) : null}
             </ListItemButton>
           )
