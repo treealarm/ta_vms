@@ -98,6 +98,8 @@ namespace VmsMap.Grpc
         throw new RpcException(new Status(StatusCode.InvalidArgument, "dedup_key must not be empty"));
       if (Utils.ConvertObjectIdToGuid(request.ObjectId) is not { } objectId)
         throw new RpcException(new Status(StatusCode.InvalidArgument, "object_id must be a UUID"));
+      if (!await _db.Markers.AsNoTracking().AnyAsync(m => m.id == objectId, ct))
+        throw new RpcException(new Status(StatusCode.NotFound, "no such node"));
 
       var outcome = await _alarmStore.RaiseAsync(new RaiseAlarmSpec(
         ObjectId: objectId,

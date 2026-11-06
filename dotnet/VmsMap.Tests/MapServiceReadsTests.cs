@@ -54,7 +54,9 @@ public class MapServiceReadsTests
     MapDb Map,
     StatesUpdateService States,
     MapServiceImpl Grpc,
-    TestRightsNotifier Notifier);
+    TestRightsNotifier Notifier,
+    AlarmStore Alarms,
+    TestCameraState Arming);
 
   private static Services Create()
   {
@@ -74,6 +76,8 @@ public class MapServiceReadsTests
     var rights = new RightsService(db);
     var notifier = new TestRightsNotifier();
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var arming = new TestCameraState();
+    var alarms = TestWiring.Alarms(db, map, states, arming);
 
     var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(
@@ -88,9 +92,9 @@ public class MapServiceReadsTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceNodes(db, map, updates)),
-      TestWiring.Arming(db), TestWiring.Alarms(db, map, states));
+      TestWiring.Arming(db, arming), alarms);
 
-    return new Services(db, map, states, grpc, notifier);
+    return new Services(db, map, states, grpc, notifier, alarms, arming);
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -521,5 +525,134 @@ public class MapServiceReadsTests
     Assert.Equal("Door", fig.Visual.Text);
     Assert.True(fig.Visual.HasRotationDeg);
     Assert.Equal(45, fig.Visual.RotationDeg);
+  }
+
+  // ── Alarms ──────────────────────────────────────────────────────────────────────────────────
+
+  private static async Task<string> AlarmCameraAsync(Services s, params string[] actions)
+  {
+    var node = await Node(s.Map, "Camera " + Guid.NewGuid().ToString("N")[..6]);
+    var id = Guid.Parse(node.id!);
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = id,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = Guid.NewGuid().ToString(),
+      part_kind = DeviceObjectId.DevicePart,
+      part_token = string.Empty,
+    });
+    foreach (var action in actions)
+    {
+      s.Db.Rights.Add(new DBRight
+      {
+        object_id = id,
+        subject = "alice",
+        action = action,
+      });
+    }
+
+    await s.Db.SaveChangesAsync();
+    return node.id!;
+  }
+
+  [Fact]
+  public async Task GetAlarmsFiltersByViewAndSaysWhoMayAcknowledge()
+  {
+    var s = Create();
+    var node = await AlarmCameraAsync(s, RightActions.View, RightActions.Acknowledge);
+    var objectId = Guid.Parse(node);
+
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      objectId, AlarmSource.Sensor, "sensor:1"), default);
+
+    var pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext());
+
+    var alarm = Assert.Single(pages.Open.Alarms);
+    Assert.Equal(node, alarm.ObjectId);
+    Assert.True(alarm.CanAck);
+    Assert.Equal("Camera ", alarm.ObjectName[..7]);
+
+    // Armed: the condition is live, so the acknowledgement is the store's to refuse.
+    s.Arming.Armed = true;
+    pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext());
+    Assert.False(Assert.Single(pages.Open.Alarms).CanAck);
+
+    // No view right at all: the row never leaves the service.
+    var other = await AlarmCameraAsync(s, RightActions.View);
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      Guid.Parse(other), AlarmSource.Sensor, "sensor:2"), default);
+
+    var anonymous = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("bob"),
+    }, new TestContext());
+    Assert.Empty(anonymous.Open.Alarms);
+
+    var admin = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("bob", "admin"),
+    }, new TestContext());
+    Assert.Equal(2, admin.Open.Alarms.Count);
+  }
+
+  [Fact]
+  public async Task AcknowledgeAndCloseTravelThroughTheTransitions()
+  {
+    var s = Create();
+    var node = await AlarmCameraAsync(s, RightActions.View, RightActions.Acknowledge);
+    var objectId = Guid.Parse(node);
+
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      objectId, AlarmSource.Sensor, "sensor:1"), default);
+    var raised = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext())).Open.Alarms.Single();
+
+    // Disarmed, so the live condition may be acknowledged.
+    var acknowledged = await s.Grpc.AcknowledgeAlarm(new MapProto.AcknowledgeAlarmRequest
+    {
+      Id = raised.Id,
+      Comment = "seen",
+      Caller = Caller("alice"),
+    }, new TestContext());
+    Assert.Equal("acknowledged", acknowledged.Status);
+    Assert.True(acknowledged.ConditionActive);
+
+    // The condition goes away; the acknowledged alarm closes as returned_to_normal.
+    await s.Alarms.NormalAsync(objectId, "sensor:1", default);
+
+    var closed = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext())).Closed.Alarms.Single();
+    Assert.Equal(AlarmCloseReason.ReturnedToNormal, closed.CloseReason);
+    Assert.Equal("alice", closed.ClosedBy);
+  }
+
+  [Fact]
+  public async Task AcknowledgingWithoutTheRightIsRefused()
+  {
+    var s = Create();
+    var node = await AlarmCameraAsync(s, RightActions.View);
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      Guid.Parse(node), AlarmSource.Sensor, "sensor:1"), default);
+
+    var raised = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller("alice"),
+    }, new TestContext())).Open.Alarms.Single();
+    Assert.False(raised.CanAck);
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.AcknowledgeAlarm(
+      new MapProto.AcknowledgeAlarmRequest { Id = raised.Id, Caller = Caller("alice") },
+      new TestContext()));
+    Assert.Equal(StatusCode.PermissionDenied, error.StatusCode);
   }
 }

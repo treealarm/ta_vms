@@ -17,8 +17,6 @@ namespace VmsMap.Adapter
     Guid ObjectId,
     string Source,
     string DedupKey,
-    Guid? DefinitionId = null,
-    Guid? SubscriptionId = null,
     string? Severity = null,
     DateTime? ExpectedEndTs = null,
     Guid? SourceEventId = null,
@@ -206,8 +204,9 @@ namespace VmsMap.Adapter
       {
         id = Guid.NewGuid(),
         object_id = spec.ObjectId,
-        definition_id = definition is null ? spec.DefinitionId : Guid.Parse(definition.Id),
-        subscription_id = spec.SubscriptionId,
+        // The definition is the source's own: a raise cannot name another, and a subscription's
+        // id is filled in by M2.4d, which knows which subscription fired.
+        definition_id = definition is null ? null : Guid.Parse(definition.Id),
         source = spec.Source,
         dedup_key = spec.DedupKey,
         condition_active = true,

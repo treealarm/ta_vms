@@ -78,23 +78,35 @@ namespace VmsMap.Adapter
       var settings = await _settings.FindAsync(cameraId, partKind, token, ct);
 
       var alarmEnabled = settings is { AlarmEnabled: true } && settings.TriggerOn is not null;
+      var triggers = alarmEnabled
+        && contact is not null
+        && string.Equals(contact, settings!.TriggerOn, StringComparison.Ordinal);
 
-      if (!alarmEnabled)
+      if (!triggers)
       {
-        // Turning the alarm off leaves the condition in normal: the operator said this input does
-        // not raise one, and the row must not stay open as if it did.
+        // The condition is not live — either the contact is at rest, the input's alarm is off, or
+        // its polarity is unknown. Nothing to do unless an alarm is open, which the next snapshot
+        // or event would otherwise keep alive. The check comes first so a snapshot that changes
+        // nothing does not take the map's global locks: at a hundred thousand cameras, a sweep
+        // that did would serialise the whole deployment against itself.
+        var open = await OpenAlarmAsync(objectId, dedupKey, ct);
+        if (open is null)
+          return;
+
+        // A condition whose polarity is unknown must not clear an alarm either: the device has not
+        // said which contact means "touched", so the last known truth stands.
+        if (contact is null && alarmEnabled)
+          return;
+
         await _alarms.NormalAsync(objectId, dedupKey, ct);
         return;
       }
 
-      if (contact is null)
-        return; // unknown polarity: the state is shown, nothing is raised
-
-      if (!string.Equals(contact, settings!.TriggerOn, StringComparison.Ordinal))
-      {
-        await _alarms.NormalAsync(objectId, dedupKey, ct);
+      // The condition is live. An alarm that is already live needs nothing; a returned one has to
+      // come back, and a missing one has to be raised if the input is on guard.
+      var current = await OpenAlarmAsync(objectId, dedupKey, ct);
+      if (current is { condition_active: true, status: not AlarmStatus.Returned })
         return;
-      }
 
       var armed = (await _arming.ResolveAsync(Utils.ConvertGuidToObjectId(objectId), ct))?.Armed
         ?? false;
@@ -107,6 +119,15 @@ namespace VmsMap.Adapter
         DedupKey: dedupKey,
         Trigger: trigger ?? contact), ct);
     }
+
+    /// <summary>The open alarm for one part's condition, if there is one.</summary>
+    private Task<DBAlarm?> OpenAlarmAsync(
+      Guid objectId, string dedupKey, CancellationToken ct) =>
+      _db.Alarms.AsNoTracking()
+        .Where(a => a.object_id == objectId
+                    && a.dedup_key == dedupKey
+                    && a.status != AlarmStatus.Closed)
+        .FirstOrDefaultAsync(ct);
 
     /// <summary>
     /// Re-applies the rule to every input of a camera from the state already stored. Called after
