@@ -12,6 +12,11 @@ namespace VmsDb;
 // transaction and recorded by filename.
 public sealed class VmsDbMigrator
 {
+  // The one file that creates every table of a service from nothing. A database carrying an older,
+  // longer migration history cannot be upgraded to it: the baseline's CREATE TABLE statements meet
+  // tables that already exist.
+  private const string BaselineMigration = "0000_init.sql";
+
   private readonly NpgsqlDataSource _dataSource;
   private readonly string _serviceName;
   private readonly string _contentRootPath;
@@ -79,6 +84,8 @@ public sealed class VmsDbMigrator
       await EnsureMigrationsTableAsync(connection, ct);
 
       var applied = await LoadAppliedMigrationsAsync(connection, ct);
+      await RejectPreBaselineSchemaAsync(connection, applied, ct);
+
       foreach (var migrationPath in Directory.EnumerateFiles(GetMigrationsPath(), "*.sql").Order())
       {
         var migrationName = Path.GetFileName(migrationPath);
@@ -120,6 +127,46 @@ public sealed class VmsDbMigrator
       await using var unlockCmd = new NpgsqlCommand(
         $"SELECT pg_advisory_unlock({_advisoryLockExpression});", connection);
       await unlockCmd.ExecuteNonQueryAsync(CancellationToken.None);
+    }
+  }
+
+  // A database whose schema predates the baseline holds tables the baseline would recreate. Left
+  // alone, the first CREATE TABLE fails with "already exists" and every service dies on startup
+  // with a message that says nothing about what to do; instead the reason and the remedy are named
+  // here, before anything is applied. `schema_migrations` is the migrator's own table and is the
+  // only one that is expected on a database with nothing applied.
+  private async Task RejectPreBaselineSchemaAsync(
+    NpgsqlConnection connection,
+    HashSet<string> applied,
+    CancellationToken ct)
+  {
+    if (!Directory.EnumerateFiles(GetMigrationsPath(), "*.sql")
+      .Any(path => Path.GetFileName(path) == BaselineMigration))
+    {
+      return;
+    }
+
+    if (applied.Contains(BaselineMigration))
+    {
+      return;
+    }
+
+    await using var command = new NpgsqlCommand("""
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name <> 'schema_migrations'
+      );
+      """, connection);
+
+    if ((bool)(await command.ExecuteScalarAsync(ct))!)
+    {
+      var database = new NpgsqlConnectionStringBuilder(_dataSource.ConnectionString).Database;
+      throw new InvalidOperationException(
+        $"{_serviceName}: database '{database}' has tables but no '{BaselineMigration}' baseline — " +
+        "its schema predates the baseline, and the baseline cannot be applied over it. " +
+        "Recreate the database (drop it and run the preparation step again); no data is carried " +
+        "over from a pre-baseline schema.");
     }
   }
 
