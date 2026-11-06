@@ -43,6 +43,16 @@ Conventions that hold everywhere:
   editor, the same drag — and drawn under the typed children (lines and zones) or over them
   (points, captions, icons). A diagram is therefore an inventory of a place, not only a picture of
   typed slots.
+- **A type can be the template of a real device.** Besides the picture and the regions, a type may
+  name a device type (`source_kind`, `camera` today), the manufacturer and model it describes
+  (empty is any) and whether it attaches itself. Each of its regions may then stand for one part of
+  that device — a digital input or a relay, found by its token, the name the operator gave it, or
+  its position among parts of its kind. A device's diagram is an ordinary node hung under the
+  device, its children ordinary replicas: the region shows the owner's state, and clicking it picks
+  the part. Only parts the device actually declares *and* the operator configured get a replica; a
+  region with no such part stays as the template drew it. The service keeps the replicas it made in
+  `device_diagram_parts`, so one an administrator drew by hand is never moved or removed, and a
+  diagram created by hand from a template is maintained exactly like an automatic one.
 - **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
   child unless the tree says so, and a child need not lie inside anything. The administrator sets
   the parent: a new object is created under the selected node, or under the space when nothing is
