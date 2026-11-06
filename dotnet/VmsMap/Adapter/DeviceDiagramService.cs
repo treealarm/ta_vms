@@ -61,7 +61,20 @@ namespace VmsMap.Adapter
       if (!IsSupported(sourceKind, sourceId))
         return;
 
+      // The sweep runs this for every camera on every snapshot, and almost always finds nothing to
+      // do. The map's locks are transitive and global: taking them for a read that changes nothing
+      // would serialise the whole deployment against itself. So the settled case is decided
+      // without a transaction, and only a real change pays for the locks.
+      if (await IsSettledAsync(sourceKind, sourceId, slot, ct))
+        return;
+
       await using var tx = await OwnTransactionAsync(ct);
+
+      // The same order every writer of the map's rows takes: the camera-state and alarm locks
+      // first, then this device's own. Taking the device lock first and reaching camera-state
+      // inside a write is the other half of a deadlock against a camera removal, which holds
+      // camera-state while it deletes the very rows this would write.
+      await MapLocks.AcquireAllAsync(_db, ct);
       await MapLocks.AcquireDeviceDiagramAsync(_db, sourceKind, sourceId, slot, ct);
 
       await EnsureCoreAsync(sourceKind, sourceId, slot, ct);
@@ -81,6 +94,7 @@ namespace VmsMap.Adapter
         return;
 
       await using var tx = await OwnTransactionAsync(ct);
+      await MapLocks.AcquireAllAsync(_db, ct);
       await MapLocks.AcquireDeviceDiagramAsync(_db, sourceKind, sourceId, slot, ct);
 
       var row = await _db.DeviceDiagrams.FirstOrDefaultAsync(
@@ -104,6 +118,55 @@ namespace VmsMap.Adapter
 
       if (tx is not null)
         await tx.CommitAsync(ct);
+    }
+
+    /// <summary>
+    /// Whether the diagram already says what it should — asked without a transaction, so the
+    /// sweep over every camera costs reads and nothing else. A diagram that is not there yet is
+    /// never settled: creating it is the one case that is rare enough to pay for the locks.
+    /// </summary>
+    private async Task<bool> IsSettledAsync(
+      string sourceKind, string sourceId, string slot, CancellationToken ct)
+    {
+      var row = await _db.DeviceDiagrams.AsNoTracking().FirstOrDefaultAsync(
+        d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot, ct);
+
+      if (row is null || row.diagram_type_id is null)
+        return row is not null; // a diagram nobody maintains is settled; a missing one is not
+
+      var resolved = await ResolveTypeAsync(row, sourceId, ct);
+      if (resolved != row.diagram_type_id)
+        return false;
+
+      var parts = await ConfiguredPartsAsync(sourceId, ct);
+
+      var rules = await _db.DiagramTypeParts.AsNoTracking()
+        .Where(p => p.diagram_type_id == row.diagram_type_id)
+        .Select(p => new RegionPartRule(p.region_key, p.part_kind, p.match_by, p.match_value))
+        .ToListAsync(ct);
+
+      var binding = DiagramTemplateBinding.Bind(rules, parts.Select(p => p.Ref).ToList());
+      var nodesByKey = parts.ToDictionary(p => PartKey(p.Ref), p => p, StringComparer.Ordinal);
+      var desired = binding.Bound
+        .Where(b => nodesByKey.ContainsKey(PartKey(b.Part)))
+        .Select(b => (Part: nodesByKey[PartKey(b.Part)].ObjectId, b.RegionKey))
+        .ToHashSet();
+
+      var managed = await _db.DeviceDiagramParts.AsNoTracking()
+        .Where(p => p.diagram_object_id == row.object_id)
+        .Select(p => new { p.region_key, p.part_object_id, p.replica_object_id })
+        .ToListAsync(ct);
+
+      if (managed.Count != desired.Count)
+        return false;
+
+      if (!managed.All(m =>
+            desired.Contains((Utils.ConvertGuidToObjectId(m.part_object_id), m.region_key))))
+        return false;
+
+      // A replica deleted behind the service's back leaves its row claiming a node that is gone.
+      var replicas = managed.Select(m => m.replica_object_id).ToList();
+      return await _db.Markers.CountAsync(m => replicas.Contains(m.id), ct) == replicas.Count;
     }
 
     private async Task EnsureCoreAsync(
