@@ -265,10 +265,20 @@ export type MapDiagram = {
 
 export type MapDiagramList = { diagrams?: MapDiagram[] }
 
+/** The device part a region of a device template stands for; absent on a plain drawing. */
+export type MapDiagramTypeRegionPart = {
+  /** 'digital_input' or 'relay' today. */
+  partKind?: string
+  /** How the region finds the part: 'token', 'name' or 'index'. */
+  matchBy?: string
+  matchValue?: string
+}
+
 export type MapDiagramTypeRegion = {
   regionKey?: string
   geometry?: MapDiagramCoordinate
   styles?: Record<string, string>
+  part?: MapDiagramTypeRegionPart
 }
 
 export type MapDiagramType = {
@@ -276,6 +286,12 @@ export type MapDiagramType = {
   name?: string
   fileId?: string
   regions?: MapDiagramTypeRegion[]
+  /** Non-empty when the type is a template for one model of a real device. */
+  sourceKind?: string
+  deviceManufacturer?: string
+  deviceModel?: string
+  /** Whether a matching device gets the diagram without an administrator attaching it. */
+  autoAttach?: boolean
 }
 
 export type MapDiagramTypeList = { diagramTypes?: MapDiagramType[] }

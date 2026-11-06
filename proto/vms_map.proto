@@ -995,11 +995,24 @@ message DiagramList {
   repeated Diagram diagrams = 1;
 }
 
+// The part of a real device a region of a device template stands for. Absent on a region that is
+// just a drawing or a caption.
+message DiagramTypeRegionPart {
+  // 'digital_input' or 'relay' today.
+  string part_kind = 1;
+  // How the region finds the part: 'token', 'name' or 'index'. One way, chosen by the
+  // administrator; the three are not fallbacks of one another.
+  string match_by = 2;
+  // The token, the configured name, or the 1-based position among parts of its kind.
+  string match_value = 3;
+}
+
 message DiagramTypeRegion {
   string region_key = 1;
   DiagramCoordinate geometry = 2;
   // Free-form styling of the region, as the editor left it.
   map<string, string> styles = 3;
+  DiagramTypeRegionPart part = 4;
 }
 
 message DiagramType {
@@ -1008,6 +1021,14 @@ message DiagramType {
   // Background image: a row of `files`.
   string file_id = 3;
   repeated DiagramTypeRegion regions = 4;
+
+  // A template for one model of a real device. Empty source_kind is an ordinary mnemoscheme; empty
+  // manufacturer or model is "any". Matching is exact and case-insensitive.
+  string source_kind = 5;
+  string device_manufacturer = 6;
+  string device_model = 7;
+  // Whether a matching device gets this diagram by itself, without an administrator attaching it.
+  bool auto_attach = 8;
 }
 
 message DiagramTypeList {

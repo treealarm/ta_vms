@@ -97,10 +97,18 @@ CREATE INDEX idx_geo_objects_figure_gist ON geo_objects USING gist (figure);
 CREATE INDEX idx_geo_objects_canvas_id ON geo_objects (canvas_id);
 
 -- ── Mnemoschemes ─────────────────────────────────────────────────────────────────────────────
+-- A type is usually just a picture with named regions. The four columns below make it a template
+-- for one kind of real device as well: `source_kind` non-null means the type describes a device
+-- ('camera' today), `device_manufacturer`/`device_model` say which one ('' is any), and
+-- `auto_attach` lets it be created for a device that appears without an administrator asking.
 CREATE TABLE diagram_types (
   id      uuid PRIMARY KEY,
   name    text NOT NULL UNIQUE,
-  file_id uuid REFERENCES files (id)
+  file_id uuid REFERENCES files (id),
+  source_kind         varchar,
+  device_manufacturer text NOT NULL DEFAULT '',
+  device_model        text NOT NULL DEFAULT '',
+  auto_attach         boolean NOT NULL DEFAULT false
 );
 
 CREATE TABLE diagram_type_regions (
@@ -109,6 +117,21 @@ CREATE TABLE diagram_type_regions (
   geometry        jsonb NOT NULL,
   styles          jsonb,
   PRIMARY KEY (diagram_type_id, region_key)
+);
+
+-- Which device part a region of a device template stands for. The region's way of finding the
+-- part is explicit — one `match_by` per region, no cascade: a token, a configured name, or the
+-- part's 1-based position among its kind once sorted by token. `match_value` holds whichever of
+-- the three, as text.
+CREATE TABLE diagram_type_parts (
+  diagram_type_id uuid NOT NULL REFERENCES diagram_types (id) ON DELETE CASCADE,
+  region_key      text NOT NULL,
+  part_kind       text NOT NULL,
+  match_by        text NOT NULL CHECK (match_by IN ('token', 'name', 'index')),
+  match_value     text NOT NULL,
+  PRIMARY KEY (diagram_type_id, region_key),
+  FOREIGN KEY (diagram_type_id, region_key)
+    REFERENCES diagram_type_regions (diagram_type_id, region_key) ON DELETE CASCADE
 );
 
 -- The id is the node's; dgr_type is the type's id, not its name, so a rename cannot orphan the
@@ -121,6 +144,36 @@ CREATE TABLE diagrams (
   geometry  jsonb,
   region_id text,
   file_id   uuid REFERENCES files (id)
+);
+
+-- A diagram drawn for one real device from a template: the reverse of `device_node`. A row here
+-- means the service owns the diagram's contents — its replicas follow the template — and
+-- `auto_created` says only who asked for it. `slot` separates the views of one device (a rear
+-- panel today, a front one later); the node id is derived from the key, so it must carry the slot
+-- and must not carry the type: a device that starts reporting another model keeps its node.
+--
+-- SET NULL on the type, not CASCADE: deleting a type leaves the canvas and its replicas where they
+-- are, drawn by nothing, and stops the service from maintaining them.
+CREATE TABLE device_diagram (
+  object_id       uuid PRIMARY KEY REFERENCES objects (id) ON DELETE CASCADE,
+  source_kind     varchar NOT NULL,
+  source_id       uuid    NOT NULL,
+  slot            text    NOT NULL DEFAULT 'default',
+  diagram_type_id uuid REFERENCES diagram_types (id) ON DELETE SET NULL,
+  auto_created    boolean NOT NULL DEFAULT false,
+  UNIQUE (source_kind, source_id, slot)
+);
+
+-- The replicas the service made, so it can tell them from the ones an administrator drew by hand
+-- in the same diagram: only these are moved, renamed or removed by reconciliation.
+CREATE TABLE device_diagram_parts (
+  diagram_object_id uuid NOT NULL REFERENCES device_diagram (object_id) ON DELETE CASCADE,
+  region_key        text NOT NULL,
+  part_object_id    uuid NOT NULL REFERENCES objects (id) ON DELETE CASCADE,
+  replica_object_id uuid NOT NULL REFERENCES objects (id) ON DELETE CASCADE,
+  PRIMARY KEY (diagram_object_id, region_key),
+  UNIQUE (diagram_object_id, part_object_id),
+  UNIQUE (replica_object_id)
 );
 
 -- ── Events ───────────────────────────────────────────────────────────────────────────────────
