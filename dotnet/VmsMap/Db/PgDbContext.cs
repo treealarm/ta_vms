@@ -355,6 +355,14 @@ namespace VmsMap.Db
         entity.Property(e => e.part_kind).HasColumnName("part_kind").IsRequired();
         entity.Property(e => e.match_by).HasColumnName("match_by").IsRequired();
         entity.Property(e => e.match_value).HasColumnName("match_value").IsRequired();
+
+        // The binding names its region by key, and the foreign key says so in the schema. Without
+        // the relationship here EF does not know the order: a new type's bindings would be
+        // inserted before the regions they point at.
+        entity.HasOne<DBDiagramTypeRegion>()
+              .WithMany()
+              .HasForeignKey(e => new { e.diagram_type_id, e.region_key })
+              .OnDelete(DeleteBehavior.Cascade);
       });
 
       modelBuilder.Entity<DBDiagramTypeRegion>(entity =>

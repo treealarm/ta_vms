@@ -463,8 +463,10 @@ def check_device_diagram(vms):
         return
 
     # Drawn when the parts are configured — a settings change, not the next sweep minutes away.
+    # `nodeKind` is what the node list carries; the diagram's own row is only in its content.
     diagram = wait_until(
-        lambda: next((kid for kid in children(vms, camera_node["id"]) if kid.get("dgrType")), None),
+        lambda: next((kid for kid in children(vms, camera_node["id"])
+                      if kid.get("nodeKind") == "diagram"), None),
         60)
     if not check(diagram is not None, "the camera's rear panel is drawn under it"):
         return
