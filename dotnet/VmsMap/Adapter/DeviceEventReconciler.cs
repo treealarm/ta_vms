@@ -68,6 +68,21 @@ namespace VmsMap.Adapter
         return;
       }
 
+      var partRefs = message.Parts
+        .Where(p => !string.IsNullOrWhiteSpace(p.Kind) && !string.IsNullOrWhiteSpace(p.Token))
+        .Where(p => DevicePayload.IsDigitalInput(p.Kind) || DevicePayload.IsRelay(p.Kind))
+        .Select(p => (Kind: p.Kind!, Token: p.Token!))
+        .Distinct()
+        .ToList();
+
+      var listed = partRefs.ToHashSet();
+
+      // The manifest is brought in line before the state transaction opens: one pass for the whole
+      // camera (two calls to VmsCfg, not per part), and no database lock is held across the network.
+      // It is idempotent, so a sweep that dies here is completed by the next one.
+      if (message.Reachable)
+        await _nodes.EnsurePartsAsync(cameraId, partRefs, ct);
+
       var ownsTransaction = _db.Database.IsRelational()
         && _db.Database.CurrentTransaction is null;
       await using var tx = ownsTransaction
@@ -89,23 +104,6 @@ namespace VmsMap.Adapter
           await tx.CommitAsync(ct);
         return;
       }
-
-      var partRefs = message.Parts
-        .Where(p => !string.IsNullOrWhiteSpace(p.Kind) && !string.IsNullOrWhiteSpace(p.Token))
-        .Where(p => DevicePayload.IsDigitalInput(p.Kind) || DevicePayload.IsRelay(p.Kind))
-        .Select(p => (Kind: p.Kind!, Token: p.Token!))
-        .Distinct()
-        .ToList();
-
-      var listed = partRefs.ToHashSet();
-
-      // One pass for the whole manifest: two calls to VmsCfg per camera, not per part.
-      await _nodes.EnsurePartsAsync(cameraId, partRefs, ct);
-
-      // EnsureAsync may have inserted rows, so the registry is read again rather than reused.
-      rows = await _db.DeviceNodes
-        .Where(n => n.source_kind == DeviceObjectId.CameraSource && n.source_id == cameraId)
-        .ToListAsync(ct);
 
       foreach (var part in message.Parts)
       {
