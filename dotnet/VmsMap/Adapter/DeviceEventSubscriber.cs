@@ -140,6 +140,11 @@ namespace VmsMap.Adapter
         using var scope = _scopes.CreateScope();
         var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
         await nodes.RefreshPartNamesAsync(evt.CameraId!, ct);
+
+        // Arming an input whose contact is already in its trigger position must raise the alarm
+        // now, not at the next heartbeat: the operator just put this input on guard.
+        var sensorAlarms = scope.ServiceProvider.GetRequiredService<SensorAlarmService>();
+        await sensorAlarms.ReconcileCameraAsync(evt.CameraId!, ct);
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)

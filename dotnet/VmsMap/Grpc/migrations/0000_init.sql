@@ -230,6 +230,56 @@ CREATE TABLE alarm_states (
 
 CREATE INDEX idx_alarm_states_alarm_true ON alarm_states (id) WHERE alarm;
 
+-- The operator's alarm entity, on top of the ALARM state rather than instead of it: the state says
+-- "something is wrong here now" and colours the map, this row says "somebody has to deal with it"
+-- and carries the status, the acknowledgement and the close reason. Acknowledgement does not clear
+-- ALARM: the physical condition is still there.
+--
+-- cleared_at is when the condition went away, closed_at when the alarm was dealt with; a 'returned'
+-- alarm has the first and not the second. Deleting a node cascades its alarms into history, exactly
+-- as it does its events: a camera recreated with a new id must not inherit anything.
+CREATE TABLE alarms (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  object_id        uuid NOT NULL REFERENCES objects (id) ON DELETE CASCADE,
+  -- The definition in VmsCfg's alarm_definitions, and the subscription a subscription-sourced
+  -- alarm belongs to (VmsCfg's event_subscriptions). Cross-database, so no foreign key: the raise
+  -- checks them against the caches and carries on with a warning when it does not know them.
+  definition_id    uuid,
+  subscription_id  uuid,
+  source           text NOT NULL CHECK (source IN ('sensor', 'retention', 'subscription')),
+  -- What makes a second raise of the same condition the same alarm: the part, the retention
+  -- episode, the subscription and its subject.
+  dedup_key        text NOT NULL,
+  condition_active boolean NOT NULL,
+  status           varchar NOT NULL CHECK (status IN ('active', 'acknowledged', 'returned', 'closed')),
+  severity         text NOT NULL CHECK (severity IN ('warning', 'critical')),
+  raised_at        timestamptz NOT NULL DEFAULT now(),
+  cleared_at       timestamptz,
+  -- Retention: when the episode is projected to end. A renewal moves it.
+  expected_end_ts  timestamptz,
+  acknowledged_at  timestamptz,
+  acknowledged_by  text,
+  ack_comment      text,
+  closed_at        timestamptz,
+  close_reason     text CHECK (close_reason IN
+    ('returned_to_normal', 'acknowledged_after_normal', 'auto_returned_to_normal',
+     'device_gone', 'false_alarm', 'other')),
+  close_comment    text,
+  closed_by        text,  -- the operator's name, or 'system'
+  source_event_id  uuid
+);
+
+-- One open alarm per condition. A partial unique index, not a lookup in code: two deliveries of the
+-- same sensor transition race, and only the database can decide which raise created the row.
+CREATE UNIQUE INDEX ux_alarms_open_dedup
+  ON alarms (object_id, dedup_key) WHERE status <> 'closed';
+
+-- The two pages GetAlarms reads. Open and closed are separate queries with separate cursors, and
+-- one index cannot serve both: the open one orders by raised_at, the closed one by closed_at.
+CREATE INDEX ix_alarms_open ON alarms (raised_at DESC, id DESC) WHERE status <> 'closed';
+CREATE INDEX ix_alarms_closed_at ON alarms (closed_at DESC, id DESC) WHERE status = 'closed';
+CREATE INDEX ix_alarms_object ON alarms (object_id, raised_at DESC);
+
 -- ── Spaces, placements and calibrations ──────────────────────────────────────────────────────
 -- A space is a node of `objects` with a row here: its name and parent are the object's, its row
 -- says what kind of world it is. A nested plan's footprint is its figure in `geo_objects`, drawn

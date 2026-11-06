@@ -20,7 +20,8 @@ namespace VmsMap.Domain
 
   // The open action set, one table for the whole system. `view` is what puts a node on the map and
   // in the tree at all; `edit` is what changes it. A camera adds the five flags the old camera ACL
-  // had, so moving an installation onto the tree keeps every permission it had.
+  // had, so moving an installation onto the tree keeps every permission it had. `acknowledge` is
+  // the operator's handling of an alarm: seeing that one exists is `view`, dealing with it is this.
   public static class RightActions
   {
     public const string View = "view";
@@ -30,20 +31,23 @@ namespace VmsMap.Domain
     public const string Ptz = "ptz";
     public const string Control = "control";
     public const string Export = "export";
+    // Taking responsibility for an alarm — acknowledging it and closing it afterwards. Closing is
+    // the continuation of the same handling, so it carries the same right rather than a second one.
+    public const string Acknowledge = "acknowledge";
 
     // The admin role has every action without a row; this is the set it is granted.
     public static readonly IReadOnlyList<string> All =
-      [View, Edit, ViewLive, ViewArchive, Ptz, Control, Export];
+      [View, Edit, ViewLive, ViewArchive, Ptz, Control, Export, Acknowledge];
 
     private static readonly IReadOnlyList<string> Common = [View, Edit];
 
     private static readonly IReadOnlyList<string> CameraActions =
-      [View, Edit, ViewLive, ViewArchive, Ptz, Control, Export];
+      [View, Edit, ViewLive, ViewArchive, Ptz, Control, Export, Acknowledge];
 
-    // A part is watched and operated -- a relay switched, a sensor's alarm read -- but it is not a
-    // camera: no archive, no PTZ. Acknowledgement joins this set with the alarm entity (M2.4c).
+    // A part is watched and operated -- a relay switched, a sensor's alarm acknowledged -- but it
+    // is not a camera: no archive, no PTZ.
     private static readonly IReadOnlyList<string> PartActions =
-      [View, Edit, ViewLive, Control];
+      [View, Edit, ViewLive, Control, Acknowledge];
 
     public static IReadOnlyList<string> For(NodeKind kind) => kind switch
     {

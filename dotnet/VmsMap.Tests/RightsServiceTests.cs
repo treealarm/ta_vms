@@ -51,6 +51,10 @@ public class RightsServiceTests
   private static CallerContext Caller(string? user = null, params string[] roles) =>
     new(user, roles, Unrestricted: false);
 
+  private static Task<HashSet<string>> rightsAllowed(
+    Services s, IReadOnlyCollection<string> ids, string action, CallerContext caller) =>
+    s.Rights.AllowedAsync(ids, action, caller, default);
+
   [Fact]
   public async Task AViewGrantOnAnAncestorCoversTheWholeSubtree()
   {
@@ -122,6 +126,49 @@ public class RightsServiceTests
       camera.id!, RightActions.ViewLive, Caller("alice"), default));
     Assert.False(await s.Rights.IsAllowedAsync(
       camera.id!, RightActions.Ptz, Caller("alice"), default));
+  }
+
+  [Fact]
+  public async Task AcknowledgeIsInheritedLikeAnyOtherAction()
+  {
+    var s = Create();
+    var building = await Node(s.Map, "Building");
+    var floor = await Node(s.Map, "Floor", building.id);
+    await Grant(s.Db, building, "guards", RightActions.Acknowledge);
+
+    // The batch form is the one a list uses; it must agree with the single check.
+    var allowed = await rightsAllowed(s, [floor.id!], RightActions.Acknowledge, Caller(null, "guards"));
+    Assert.Contains(floor.id!, allowed);
+
+    Assert.True(await s.Rights.IsAllowedAsync(
+      floor.id!, RightActions.Acknowledge, Caller(null, "guards"), default));
+    Assert.False(await s.Rights.IsAllowedAsync(
+      floor.id!, RightActions.Acknowledge, Caller("alice"), default));
+  }
+
+  [Fact]
+  public async Task AdminBypassesTheAcknowledgeRowsToo()
+  {
+    var s = Create();
+    var node = await Node(s.Map, "Building");
+
+    var allowed = await rightsAllowed(
+      s, [node.id!], RightActions.Acknowledge, Caller("anyone", "admin"));
+    Assert.Contains(node.id!, allowed);
+  }
+
+  [Fact]
+  public async Task InOpenModeAcknowledgeFollowsTheSameSwitchAsView()
+  {
+    var s = Create();
+    var node = await Node(s.Map, "Building");
+
+    await s.Rights.SetModeAsync(RightsMode.Open, default);
+    Assert.Contains(node.id!, await rightsAllowed(
+      s, [node.id!], RightActions.Acknowledge, Caller("alice")));
+
+    await s.Rights.SetModeAsync(RightsMode.Enforced, default);
+    Assert.Empty(await rightsAllowed(s, [node.id!], RightActions.Acknowledge, Caller("alice")));
   }
 
   [Fact]

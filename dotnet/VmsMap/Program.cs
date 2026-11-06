@@ -131,14 +131,26 @@ builder.Services.AddSingleton(sp => new DeviceSettingsCache(
   stateStoreName,
   sp.GetRequiredService<ILogger<DeviceSettingsCache>>()));
 builder.Services.AddSingleton<IDeviceSettingsSource>(sp => sp.GetRequiredService<DeviceSettingsCache>());
+// The definitions an alarm is raised under, cached by the same version key the subscriptions will
+// use: event-subscriptions-changed reaches one replica, the shared key reaches them all.
+builder.Services.AddSingleton(sp => new AlarmDefinitionsCache(
+  sp.GetRequiredService<CfgService.CfgServiceClient>(),
+  sp.GetRequiredService<DaprClient>(),
+  stateStoreName,
+  sp.GetRequiredService<ILogger<AlarmDefinitionsCache>>()));
+builder.Services.AddSingleton<IAlarmDefinitionsSource>(sp => sp.GetRequiredService<AlarmDefinitionsCache>());
 
 builder.Services.AddScoped<ObjectStateWriter>();
 builder.Services.AddScoped<EventsWriter>();
 builder.Services.AddScoped<DeviceEventTranslator>();
+// The contact-to-alarm rule, shared by the event, the snapshot and a settings change.
+builder.Services.AddScoped<SensorAlarmService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
 builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 builder.Services.AddScoped<CameraStateWriter>();
+// The alarm entity: transitions, the ALARM state and the lifecycle events in one transaction.
+builder.Services.AddScoped<AlarmStore>();
 builder.Services.AddScoped<AlarmService>();
 builder.Services.AddScoped<ConnectionStateService>();
 builder.Services.AddScoped<WatchSnapshotService>();
@@ -147,6 +159,8 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<MapWatchPoller>())
 builder.Services.AddHostedService<CameraChangeSubscriber>();
 builder.Services.AddHostedService<StartupResyncService>();
 builder.Services.AddHostedService<RetentionEventSubscriber>();
+// The definitions the alarm store raises under; the subscription only shortens the cache's clock.
+builder.Services.AddHostedService<EventSubscriptionsSubscriber>();
 // Device events, snapshots and the settings that name the parts.
 builder.Services.AddHostedService<DeviceEventSubscriber>();
 // Event notification goes through a transactional outbox: the row is written with the event, so a

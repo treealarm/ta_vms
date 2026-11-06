@@ -38,7 +38,7 @@ namespace VmsMap.Db
       return allowed.Contains(objectId);
     }
 
-    private async Task<HashSet<string>> AllowedAsync(
+    public async Task<HashSet<string>> AllowedAsync(
       IReadOnlyCollection<string> objectIds,
       string action,
       CallerContext caller,

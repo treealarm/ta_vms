@@ -102,11 +102,13 @@ public class DeviceEventWriterTests
     var updates = new MapUpdateService(map, tracks, statesUpdate);
     var nodes = TestWiring.DeviceNodes(db, map, updates);
 
+    var sensorAlarms = TestWiring.SensorAlarms(db, statesUpdate, map);
     var writer = new DeviceEventWriter(
       db,
       new ObjectStateWriter(db, stateService, statesUpdate),
       new EventsWriter(db, new EventsService(db, map)),
       new DeviceEventTranslator(),
+      sensorAlarms,
       NullLogger<DeviceEventWriter>.Instance);
 
     var objectId = await nodes.EnsureAsync(

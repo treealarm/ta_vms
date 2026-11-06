@@ -32,6 +32,8 @@ namespace VmsMap.Adapter
     private readonly ObjectStateWriter _stateWriter;
     private readonly EventsWriter _eventsWriter;
     private readonly DeviceEventTranslator _translator;
+    private readonly SensorAlarmService _sensorAlarms;
+    private readonly AlarmStore _alarms;
     private readonly ILogger<DeviceEventReconciler> _logger;
 
     public DeviceEventReconciler(
@@ -40,6 +42,8 @@ namespace VmsMap.Adapter
       ObjectStateWriter stateWriter,
       EventsWriter eventsWriter,
       DeviceEventTranslator translator,
+      SensorAlarmService sensorAlarms,
+      AlarmStore alarms,
       ILogger<DeviceEventReconciler> logger)
     {
       _db = db;
@@ -47,6 +51,8 @@ namespace VmsMap.Adapter
       _stateWriter = stateWriter;
       _eventsWriter = eventsWriter;
       _translator = translator;
+      _sensorAlarms = sensorAlarms;
+      _alarms = alarms;
       _logger = logger;
     }
 
@@ -76,6 +82,12 @@ namespace VmsMap.Adapter
         .ToList();
 
       var listed = partRefs.ToHashSet();
+
+      // The alarm work is collected here and done after the transaction commits: the rule needs
+      // the effective arming, which is a call to two other services, and a network call must not
+      // happen with the camera's rows locked.
+      var gone = new List<Guid>();
+      var toReconcile = new List<(Guid ObjectId, string Kind, string Token, string? Contact)>();
 
       // The manifest is brought in line before the state transaction opens: one pass for the whole
       // camera (two calls to VmsCfg, not per part), and no database lock is held across the network.
@@ -120,7 +132,12 @@ namespace VmsMap.Adapter
         row.present = part.Present;
 
         if (!part.Present)
-          continue; // absent parts keep their last known state and history
+        {
+          // A successful answer that no longer lists the part. Its node, state and history stay;
+          // its alarms are dealt with as the device being gone.
+          gone.Add(row.object_id);
+          continue;
+        }
 
         if (!DeviceCursor.Accept(
               row.last_epoch, row.last_seq, row.last_observed_at,
@@ -147,32 +164,33 @@ namespace VmsMap.Adapter
                          || DevicePayload.Text(part.Contact) is not null);
 
         var change = _translator.Translate(synthetic);
-        if (change is not null && await _stateWriter.SetStatesAsync(objectId, [change.State], ct))
+        if (change is not null)
         {
-          await _eventsWriter.WriteAsync([
-            new EventDTO
-            {
-              id = EventIds.ForSnapshot(
-                DeviceObjectId.CameraSource,
-                cameraId,
-                part.Kind,
-                part.Token,
-                message.Epoch!,
-                message.ObservedAt),
-              object_id = objectId,
-              event_name = change.EventName,
-              event_priority = 0,
-              timestamp = DateTime.UtcNow,
-              param0 = change.Param0,
-              extra_props = [.. change.ExtraProps],
-            }
-          ], ct);
-        }
-        else if (change is not null)
-        {
-          // The condition may still be live while the state is not the one on record. Raising the
-          // alarm entity is M2.4c; this is the hook it will use.
-          await ReconcileAlarmAsync(objectId, change.State, ct);
+          // Every listed part is reconciled, changed or not: the state on record may already be
+          // this one while the alarm is missing (or stale), and the rule is idempotent.
+          toReconcile.Add((row.object_id, part.Kind!, part.Token!, DevicePayload.Text(part.Contact)));
+
+          if (await _stateWriter.SetStatesAsync(objectId, [change.State], ct))
+          {
+            await _eventsWriter.WriteAsync([
+              new EventDTO
+              {
+                id = EventIds.ForSnapshot(
+                  DeviceObjectId.CameraSource,
+                  cameraId,
+                  part.Kind,
+                  part.Token,
+                  message.Epoch!,
+                  message.ObservedAt),
+                object_id = objectId,
+                event_name = change.EventName,
+                event_priority = 0,
+                timestamp = DateTime.UtcNow,
+                param0 = change.Param0,
+                extra_props = [.. change.ExtraProps],
+              }
+            ], ct);
+          }
         }
 
         DeviceCursor.Advance(
@@ -188,18 +206,23 @@ namespace VmsMap.Adapter
       foreach (var row in rows)
       {
         row.reachable = true;
-        if (!listed.Contains((row.part_kind, row.part_token)))
+        if (!listed.Contains((row.part_kind, row.part_token)) && row.present)
+        {
           row.present = false;
+          gone.Add(row.object_id);
+        }
       }
 
       await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
-    }
 
-    // M2.4c owns the alarm entity. Until it exists nothing is raised or closed here; the snapshot
-    // still keeps the state and the journal honest.
-    private Task ReconcileAlarmAsync(string objectId, string state, CancellationToken ct) =>
-      Task.CompletedTask;
+      foreach (var objectId in gone)
+        await _alarms.CloseForDeviceGoneAsync(objectId, ct);
+
+      foreach (var part in toReconcile)
+        await _sensorAlarms.ReconcileAsync(
+          part.ObjectId, cameraId, part.Kind, part.Token, part.Contact, part.Contact, ct);
+    }
   }
 }

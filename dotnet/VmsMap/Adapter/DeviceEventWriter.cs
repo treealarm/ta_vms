@@ -25,6 +25,7 @@ namespace VmsMap.Adapter
     private readonly ObjectStateWriter _stateWriter;
     private readonly EventsWriter _eventsWriter;
     private readonly DeviceEventTranslator _translator;
+    private readonly SensorAlarmService _sensorAlarms;
     private readonly ILogger<DeviceEventWriter> _logger;
 
     public DeviceEventWriter(
@@ -32,12 +33,14 @@ namespace VmsMap.Adapter
       ObjectStateWriter stateWriter,
       EventsWriter eventsWriter,
       DeviceEventTranslator translator,
+      SensorAlarmService sensorAlarms,
       ILogger<DeviceEventWriter> logger)
     {
       _db = db;
       _stateWriter = stateWriter;
       _eventsWriter = eventsWriter;
       _translator = translator;
+      _sensorAlarms = sensorAlarms;
       _logger = logger;
     }
 
@@ -118,6 +121,17 @@ namespace VmsMap.Adapter
 
       if (tx is not null)
         await tx.CommitAsync(ct);
+
+      // After the commit, not inside it: the arming comes from two other services, and a network
+      // call must not happen with the part's row locked. The rule is idempotent, so applying it on
+      // a repeat of the same value is how a lost message or a restart is repaired.
+      if (change is not null)
+      {
+        var contact = DevicePayload.Text(message.Contact);
+        await _sensorAlarms.ReconcileAsync(
+          objectGuid.Value, message.SourceId!, message.PartKind!, message.Token!,
+          contact, contact, ct);
+      }
 
       if (change is null)
       {

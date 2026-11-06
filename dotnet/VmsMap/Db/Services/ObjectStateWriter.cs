@@ -16,7 +16,7 @@ namespace VmsMap.Db
   //
   // CameraStateWriter's helpers are thin wrappers over this; AlarmStore (M2.4c) writes through it
   // too, which is why the lock order lives in MapLocks and not here.
-  internal sealed class ObjectStateWriter
+  public sealed class ObjectStateWriter
   {
     private readonly VmsMapDbContext _db;
     private readonly IStateService _stateService;

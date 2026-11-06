@@ -27,6 +27,17 @@ namespace VmsMap.Db
     public static Task AcquireAlarmAsync(VmsMapDbContext db, CancellationToken ct = default) =>
       AcquireAsync(db, Alarm, ct);
 
+    /// <summary>
+    /// Both of the map's transitive locks, in the one order they may be taken. An alarm transition
+    /// changes a row, the object's state set and the aggregation above it, so it holds both; taking
+    /// them through this method is what keeps every path on the same prefix.
+    /// </summary>
+    public static async Task AcquireAllAsync(VmsMapDbContext db, CancellationToken ct = default)
+    {
+      await AcquireCameraStateAsync(db, ct);
+      await AcquireAlarmAsync(db, ct);
+    }
+
     public static async Task AcquireDemoInstallAsync(VmsMapDbContext db, CancellationToken ct = default)
     {
       if (!db.Database.IsRelational())

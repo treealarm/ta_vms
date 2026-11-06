@@ -9,6 +9,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using VmsMap.Adapter;
 using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
@@ -48,6 +49,7 @@ namespace VmsMap.Grpc
     private readonly MapWatchPoller _watchPoller;
     private readonly DemoSeeder _demoSeeder;
     private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
+    private readonly AlarmStore _alarmStore;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -72,7 +74,8 @@ namespace VmsMap.Grpc
       SpatialDb spatialDb,
       MapWatchPoller watchPoller,
       DemoSeeder demoSeeder,
-      VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver)
+      VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver,
+      AlarmStore alarmStore)
     {
       _db = db;
       _mapService = mapService;
@@ -97,6 +100,7 @@ namespace VmsMap.Grpc
       _watchPoller = watchPoller;
       _demoSeeder = demoSeeder;
       _armingResolver = armingResolver;
+      _alarmStore = alarmStore;
     }
 
     // ── Objects ───────────────────────────────────────────────────────────────────────────────
