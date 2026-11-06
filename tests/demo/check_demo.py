@@ -714,7 +714,8 @@ def check_wired_devices(vms, sim, world, telemetry):
         # tick. Polling for the reading rather than sleeping a fixed time keeps a slower source
         # from turning into a false failure.
         want_relay = "on" if active else "off"
-        want_sensor = "off" if active else "on"
+        # The input's idle state is open, so the closed circuit the relay makes is its active state.
+        want_sensor = "on" if active else "off"
         wait_until(lambda: values_by_name(vms, telemetry["id"]).get("relay") == want_relay, 40)
         wait_until(lambda: values_by_name(vms, telemetry["id"]).get("sensor") == want_sensor, 20)
 
@@ -722,16 +723,16 @@ def check_wired_devices(vms, sim, world, telemetry):
     values = values_by_name(vms, telemetry["id"])
     check(values.get("relay") == "on",
           f"the diagram reports the relay on (has {values.get('relay')!r})")
-    check(values.get("sensor") == "off",
-          f"the wired sensor reads 0 while the relay is closed (has {values.get('sensor')!r})")
+    check(values.get("sensor") == "on",
+          f"the wired sensor reads 1 (active) while the relay is closed (has {values.get('sensor')!r})")
     check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
 
     switch(False)
     values = values_by_name(vms, telemetry["id"])
     check(values.get("relay") == "off",
           f"the diagram reports the relay off again (has {values.get('relay')!r})")
-    check(values.get("sensor") == "on",
-          f"the sensor returns to 1 (has {values.get('sensor')!r})")
+    check(values.get("sensor") == "off",
+          f"the sensor returns to 0 (idle) (has {values.get('sensor')!r})")
     check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
 
 
@@ -771,7 +772,7 @@ def check_provisioning(vms):
     sensor = wait_until(lambda: sensor_settings(vms), 20)
     if check(sensor is not None, "the demo configured sim-ptz/input"):
         check(sensor.get("armMode") == "armed", f"the input is armed (has {sensor.get('armMode')!r})")
-        check(sensor.get("alarmEnabled") is True and sensor.get("triggerOn") == "open",
+        check(sensor.get("alarmEnabled") is True and sensor.get("triggerOn") == "closed",
               f"the input alarms on the contact the wire produces (has {sensor.get('triggerOn')!r})")
 
     rule = next((row for row in subscriptions(vms) if row.get("id") == DEMO_SUBSCRIPTION), None)
@@ -807,8 +808,8 @@ def check_sensor_alarm(vms, sensor):
     part = sensor["part"]
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
-    check(event is not None, "the peer relay closing writes one `sensor` event with contact=open")
+    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    check(event is not None, "the peer relay closing writes one `sensor` event with contact=closed")
 
     # An earlier front (the wired-relay check above) may have left the same alarm open and
     # returned; the rule reactivates that row, and ALARM follows it in its own transaction.
@@ -864,8 +865,8 @@ def check_return_to_normal(vms, sensor, alarm):
     part = sensor["part"]
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
-    check(event is not None, "the contact returning writes a `sensor` event with contact=closed")
+    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+    check(event is not None, "the contact returning writes a `sensor` event with contact=open")
 
     row = wait_until(
         lambda: next((r for r in (alarms(vms).get("closed") or {}).get("alarms") or []
@@ -927,7 +928,7 @@ def check_repeat_front(vms, sensor, group, since):
               for episode in (group or {}).get("episodes") or []}
 
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "open")) >= 2, 45)),
+    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "closed")) >= 2, 45)),
           "a second front writes a second `sensor` event")
 
     extended = wait_until(lambda: demo_group(vms, since), 30)
@@ -953,7 +954,7 @@ def check_emit_loop(vms, sensor):
     # Back to normal first: the emitted event must be a real transition. The rule is created only
     # now, so the window in which it can fire does not have to cover two device round trips.
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
-    wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
 
     vms.call("PUT", "/api/map/admin/event-subscriptions", {"subscription": {
         "id": loop_id,
@@ -961,7 +962,7 @@ def check_emit_loop(vms, sensor):
         "enabled": True,
         "eventName": "sensor",
         "sourceFilter": json.dumps({"object_ids": [part["id"]],
-                                    "props": {"contact": "open"}}),
+                                    "props": {"contact": "closed"}}),
         "armedCondition": "any",
         "cooldownMs": 0,
         "actions": [{
@@ -970,16 +971,16 @@ def check_emit_loop(vms, sensor):
             "params": json.dumps({
                 "object_id": "source",
                 "event_name": "sensor",
-                "param0": "open",
+                "param0": "closed",
                 "param1": "",
-                "props": {"contact": "open"},
+                "props": {"contact": "closed"},
             }),
         }],
     }})
 
     try:
         set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-        wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+        wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
 
         # 75 s: the router's own cache is good for a minute if the change signal is lost.
         suppressed = wait_until(

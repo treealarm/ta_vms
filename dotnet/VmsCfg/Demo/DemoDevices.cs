@@ -11,9 +11,15 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
   /// not because the deployment does not have them yet.
   public sealed record Plan(IReadOnlyList<string> Configured, IReadOnlyList<string> Skipped);
 
-  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay. The input's idle contact is open,
-  /// and a closed relay contact shunts it, so the contact that means "the relay fired" is open:
-  /// that is the polarity the trigger is set to, not a guess from the picture.
+  /// The contact that means "the relay fired", shared with the demo's routing rule so the arming and
+  /// the rule cannot drift apart.
+  /// <para>
+  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay. The input's idle state is open, so
+  /// an open circuit is idle and a closed one is active: that contact is closed. It is the polarity
+  /// the trigger is set to, not a guess from the picture.
+  /// </para>
+  public const string SensorTrigger = DeviceSettingsRules.TriggerClosed;
+
   public static DeviceSettings SensorSettings() => new()
   {
     CameraId = DemoCameraIds.For("sim-ptz"),
@@ -21,7 +27,7 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     Token = "input",
     Name = "Sensor",
     ArmMode = DeviceSettingsRules.Armed,
-    TriggerOn = DeviceSettingsRules.TriggerOpen,
+    TriggerOn = SensorTrigger,
     AlarmEnabled = true,
   };
 

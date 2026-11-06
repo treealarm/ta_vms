@@ -27,7 +27,7 @@ public class DemoInstallerTests
     Assert.Equal("sensor", subscription.EventName);
     Assert.Contains(DemoCameraIds.For("sim-ptz"), subscription.SourceFilter);
     // The contact the wire produces when the peer relay closes.
-    Assert.Contains("\"contact\":\"open\"", subscription.SourceFilter);
+    Assert.Contains("\"contact\":\"closed\"", subscription.SourceFilter);
     Assert.Equal(2, subscription.Actions.Count);
     Assert.Equal("retain_recording", subscription.Actions[0].Kind);
     Assert.Equal("set_relay", subscription.Actions[1].Kind);
@@ -42,7 +42,7 @@ public class DemoInstallerTests
 
     Assert.Null(DeviceSettingsRules.Validate(settings));
     Assert.Equal(DeviceSettingsRules.Armed, settings.ArmMode);
-    Assert.Equal(DeviceSettingsRules.TriggerOpen, settings.TriggerOn);
+    Assert.Equal(DemoDevices.SensorTrigger, settings.TriggerOn);
     Assert.True(settings.AlarmEnabled);
   }
 

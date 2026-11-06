@@ -36,7 +36,7 @@ public sealed class DemoRouting(EventSubscriptionStorage subscriptions)
       {
         camera_ids = new[] { ptz },
         tokens = new[] { "input" },
-        props = new Dictionary<string, string> { ["contact"] = DeviceSettingsRules.TriggerOpen },
+        props = new Dictionary<string, string> { ["contact"] = DemoDevices.SensorTrigger },
       }),
       ArmedCondition = EventSubscriptionRules.Any,
       CooldownMs = 0,
