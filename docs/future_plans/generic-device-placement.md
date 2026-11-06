@@ -28,7 +28,7 @@
    CREATE TABLE device_placement (
      object_id    uuid PRIMARY KEY REFERENCES objects(id) ON DELETE CASCADE,
      source_kind  varchar NOT NULL,   -- 'camera' | 'fire_panel' | ...
-     source_id    uuid NOT NULL,      -- id объекта — GUID (см. ta-cfg-guid-ids.md)
+     source_id    uuid NOT NULL,      -- id объекта — GUID
      is_reference boolean NOT NULL DEFAULT true,
      height_m     double precision NOT NULL DEFAULT 0,
      heading_deg  double precision,   -- общий для наведения
