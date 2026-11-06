@@ -39,7 +39,7 @@ import ObjectSearch from '../objects/ObjectSearch'
 import DiagramViewer from '../diagrams/DiagramViewer'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
-import MapObjectList from './MapObjectList'
+import MapObjectList, { type MapObjectItem } from './MapObjectList'
 import { rootsOf, sharesGeometry } from './spatialUtils'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
@@ -85,6 +85,7 @@ export default function MapsOperatorPanel() {
   const descriptions = useAppSelector((s) => s.states.descriptions)
   const openAlarms = useAppSelector((s) => s.alarms.open)
   const closedAlarms = useAppSelector((s) => s.alarms.closed)
+  const alarmsMore = useAppSelector((s) => s.alarms.openHasMore || s.alarms.closedHasMore)
   const levels = useAppSelector((s) => s.levels.levels)
   const tracks = useAppSelector((s) => s.tracks.tracks)
   const tracksSpaceId = useAppSelector((s) => s.tracks.spaceId)
@@ -439,11 +440,7 @@ export default function MapsOperatorPanel() {
     alarm.raisedAt ? clock(alarm.raisedAt) : '',
   ].filter(Boolean).join(' · ')
 
-  const alarmSection = {
-    title: t('maps.alarms'),
-    hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
-    empty: t('maps.noAlarms'),
-    items: alarmRows.map((alarm) => {
+  const alarmItems: MapObjectItem[] = alarmRows.map((alarm) => {
       const nodeId = alarm.objectId ?? ''
       const marker = markers[nodeId]
       const cameraId = alarm.cameraId || marker?.cameraId
@@ -467,7 +464,22 @@ export default function MapsOperatorPanel() {
           onClick: () => openAlarmDialog(alarm, 'acknowledge'),
         },
       }
-    }),
+    })
+
+  if (alarmsMore) {
+    // The list is a keyset page, not the whole history; older rows arrive on request.
+    alarmItems.push({
+      key: 'alarms:more',
+      primary: t('maps.tree.more'),
+      onClick: () => void dispatch(loadAlarms({ more: true })),
+    })
+  }
+
+  const alarmSection = {
+    title: t('maps.alarms'),
+    hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
+    empty: t('maps.noAlarms'),
+    items: alarmItems,
   }
 
   return (
