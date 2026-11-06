@@ -52,7 +52,7 @@ public class AlarmServiceTests
   }
 
   private static async Task<BaseMarkerDTO> Camera(
-    VmsMapDbContext db, MapDb map, string cameraId = "cam1")
+    VmsMapDbContext db, MapDb map, string cameraId = TestCameras.One)
   {
     var node = new BaseMarkerDTO
     {
@@ -92,9 +92,9 @@ public class AlarmServiceTests
     var camera = await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
 
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Alarms.RecordAsync(TestCameras.One, episode, default);
 
-    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, TestCameras.One));
 
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
     Assert.Equal(Guid.Parse(episode.EventUuid), evt.id);
@@ -111,9 +111,9 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
 
-    await s.Alarms.RecordAsync("cam1", Episode(end: DateTime.UtcNow.AddMinutes(-1)), default);
+    await s.Alarms.RecordAsync(TestCameras.One, Episode(end: DateTime.UtcNow.AddMinutes(-1)), default);
 
-    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, TestCameras.One));
     Assert.Equal(1, await s.Db.Events.CountAsync());
   }
 
@@ -124,8 +124,8 @@ public class AlarmServiceTests
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
 
-    await s.Alarms.RecordAsync("cam1", episode, default);
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Alarms.RecordAsync(TestCameras.One, episode, default);
+    await s.Alarms.RecordAsync(TestCameras.One, episode, default);
 
     Assert.Equal(1, await s.Db.Events.CountAsync());
   }
@@ -139,8 +139,8 @@ public class AlarmServiceTests
     var first = Episode(id, DateTime.UtcNow.AddMinutes(1));
     var second = Episode(id, DateTime.UtcNow.AddMinutes(10));
 
-    await s.Alarms.RecordAsync("cam1", first, default);
-    await s.Alarms.RecordAsync("cam1", second, default);
+    await s.Alarms.RecordAsync(TestCameras.One, first, default);
+    await s.Alarms.RecordAsync(TestCameras.One, second, default);
 
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
     var end = evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val;
@@ -153,7 +153,7 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Alarms.RecordAsync(TestCameras.One, episode, default);
 
     // Move the recorded end into the past without touching the state, as a stale projection would.
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
@@ -164,7 +164,7 @@ public class AlarmServiceTests
     s.Retention.Next = Episode(episode.EventUuid, DateTime.UtcNow.AddMinutes(-1));
     await s.Alarms.SweepAsync(default);
 
-    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Norm, await State(s.Db, TestCameras.One));
   }
 
   [Fact]
@@ -173,7 +173,7 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
     var episode = Episode(end: DateTime.UtcNow.AddMinutes(5));
-    await s.Alarms.RecordAsync("cam1", episode, default);
+    await s.Alarms.RecordAsync(TestCameras.One, episode, default);
 
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
     evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val =
@@ -183,7 +183,7 @@ public class AlarmServiceTests
     s.Retention.Next = Episode(episode.EventUuid, DateTime.UtcNow.AddMinutes(10));
     await s.Alarms.SweepAsync(default);
 
-    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, TestCameras.One));
   }
 
   [Fact]
@@ -192,16 +192,16 @@ public class AlarmServiceTests
     var s = Create();
     await Camera(s.Db, s.Map);
 
-    await s.States.SetAlarmAsync("cam1", default);
-    await s.States.SetConnectedAsync("cam1", true, default);
+    await s.States.SetAlarmAsync(TestCameras.One, default);
+    await s.States.SetConnectedAsync(TestCameras.One, true, default);
 
-    var states = await State(s.Db, "cam1");
+    var states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);
     Assert.Contains(CameraStateWriter.Connected, states);
 
-    await s.States.SetConnectedAsync("cam1", false, default);
+    await s.States.SetConnectedAsync(TestCameras.One, false, default);
 
-    states = await State(s.Db, "cam1");
+    states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);
     Assert.Contains(CameraStateWriter.Disconnected, states);
     Assert.DoesNotContain(

@@ -257,3 +257,14 @@ public class DemoWorldTests
     }
   }
 }
+
+// The id derivation is a contract with VmsCfg's DemoCameraIds, which builds the video wall from the
+// very same cameras; the two services have no shared project, so the value is pinned on both sides.
+public class DemoIdsTests
+{
+  [Fact]
+  public void ACameraIdIsTheOneVmsCfgDerives()
+  {
+    Assert.Equal("94681efe-57da-5093-b420-1bed3b28dae8", DemoIds.Camera("sim-master"));
+  }
+}

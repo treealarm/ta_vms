@@ -19,8 +19,9 @@ public sealed class DbClip
   [Column("stream_name")]
   public string StreamName { get; set; } = "";
 
+  // NULL means the clip was not given a storage; the wire keeps "" for that.
   [Column("storage_id")]
-  public string StorageId { get; set; } = "";
+  public string? StorageId { get; set; }
 
   /// <summary>"live" or "edge" — see the 0004 migration.</summary>
   [Column("origin")]

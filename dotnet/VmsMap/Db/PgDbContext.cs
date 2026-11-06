@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using System.Collections.Generic;
 using System.Text.Json;
 
@@ -10,6 +11,13 @@ namespace VmsMap.Db
   // follow them, not the other way round.
   public class VmsMapDbContext : DbContext
   {
+    // Camera ids are UUID columns; the gRPC contract and this service's own code carry them as
+    // strings (a UUID formatted as text). The conversion lives here, at the one boundary where the
+    // database type matters, so a malformed id fails on the way in rather than being compared as
+    // text against a uuid column.
+    private static readonly ValueConverter<string, Guid> UuidText =
+      new(id => Guid.Parse(id), id => id.ToString());
+
     public DbSet<DBGeoObject> GeoObjects { get; set; } = null!;
     public DbSet<DBDiagram> Diagrams { get; set; } = null!;
     public DbSet<DBDiagramTypeRegion> DiagramTypeRegions { get; set; } = null!;
@@ -163,7 +171,7 @@ namespace VmsMap.Db
         entity.HasKey(e => e.object_id);
 
         entity.Property(e => e.object_id).HasColumnName("object_id");
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.is_reference).HasColumnName("is_reference");
         entity.Property(e => e.height_m).HasColumnName("height_m");
         entity.Property(e => e.heading_deg).HasColumnName("heading_deg");
@@ -180,7 +188,7 @@ namespace VmsMap.Db
 
         entity.HasKey(e => e.object_id);
         entity.Property(e => e.object_id).HasColumnName("object_id").ValueGeneratedNever();
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.HasIndex(e => e.camera_id).IsUnique();
       });
     }
@@ -204,7 +212,7 @@ namespace VmsMap.Db
         entity.ToTable("ptz_geo_observation");
         entity.HasKey(e => new { e.camera_id, e.landmark_id });
 
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
         entity.Property(e => e.pan).HasColumnName("pan");
         entity.Property(e => e.tilt).HasColumnName("tilt");
@@ -216,7 +224,7 @@ namespace VmsMap.Db
         entity.ToTable("ground_observation");
         entity.HasKey(e => new { e.camera_id, e.landmark_id });
 
-        entity.Property(e => e.camera_id).HasColumnName("camera_id").IsRequired();
+        entity.Property(e => e.camera_id).HasColumnName("camera_id").HasConversion(UuidText).IsRequired();
         entity.Property(e => e.landmark_id).HasColumnName("landmark_id");
         entity.Property(e => e.x).HasColumnName("x");
         entity.Property(e => e.y).HasColumnName("y");

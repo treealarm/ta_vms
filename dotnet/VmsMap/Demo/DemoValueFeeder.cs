@@ -100,8 +100,8 @@ namespace VmsMap.Demo
 
       // The demo's two devices live on different cameras — that is the point of the wiring — so the
       // world names them rather than taking the first device found.
-      var relayCamera = await _catalog.GetAsync(DemoTelemetry.RelayCameraId, ct);
-      var sensorCamera = await _catalog.GetAsync(DemoTelemetry.SensorCameraId, ct);
+      var relayCamera = await _catalog.GetAsync(DemoIds.Camera(DemoTelemetry.RelayCameraId), ct);
+      var sensorCamera = await _catalog.GetAsync(DemoIds.Camera(DemoTelemetry.SensorCameraId), ct);
       var relay = relayCamera is null
         ? new CameraDeviceState(false, null)
         : await _io.GetRelayAsync(relayCamera, ct);

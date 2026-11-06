@@ -100,7 +100,8 @@ namespace VmsMap.Demo
       var owners = new Dictionary<string, Guid>(StringComparer.Ordinal);
       foreach (var node in world.Nodes.Where(node => node.OwnerCameraId is not null))
       {
-        var camera = await _cameras.GetAsync(node.OwnerCameraId!, ct);
+        var cameraId = DemoIds.Camera(node.OwnerCameraId!);
+        var camera = await _cameras.GetAsync(cameraId, ct);
         if (camera is null)
         {
           report.SkippedCameras.Add(node.OwnerCameraId!);
@@ -109,7 +110,7 @@ namespace VmsMap.Demo
 
         await _cameraNodes.EnsureCameraAsync(camera, ct);
         var owner = await _db.CameraNodes.AsNoTracking()
-          .Where(row => row.camera_id == node.OwnerCameraId)
+          .Where(row => row.camera_id == cameraId)
           .Select(row => (Guid?)row.object_id)
           .FirstOrDefaultAsync(ct);
         if (owner is not null)
@@ -283,8 +284,9 @@ namespace VmsMap.Demo
       foreach (var placement in world.Placements)
       {
         var key = $"camera/{placement.CameraId}";
+        var cameraId = DemoIds.Camera(placement.CameraId);
         var spaceId = Required(placement.SpaceKey);
-        var camera = await _cameras.GetAsync(placement.CameraId, ct);
+        var camera = await _cameras.GetAsync(cameraId, ct);
 
         if (camera is null)
         {
@@ -297,7 +299,7 @@ namespace VmsMap.Demo
 
         await _spatial.UpsertPlacementAsync(new CameraPlacement
         {
-          CameraId = placement.CameraId,
+          CameraId = cameraId,
           SpaceId = spaceId.ToString(),
           IsReference = placement.IsReference,
           Lat = placement.Lat,
@@ -436,8 +438,9 @@ namespace VmsMap.Demo
           case "camera":
             foreach (var pair in ofKind)
             {
-              var cameraId = pair.Key["camera/".Length..];
-              await _spatial.RemovePlacementAsync(cameraId, pair.Value, ct);
+              // The registry key holds the world's name for the camera; the map speaks ids.
+              var cameraName = pair.Key["camera/".Length..];
+              await _spatial.RemovePlacementAsync(DemoIds.Camera(cameraName), pair.Value, ct);
             }
             break;
 

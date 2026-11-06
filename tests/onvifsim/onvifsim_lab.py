@@ -50,6 +50,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -160,8 +161,13 @@ class Lab:
         self.metrics.setdefault("notes", []).append(message)
         log(f"  note ({self.mount.name}): {message}")
 
+    # Camera ids are UUIDs now. Deriving them the same way the demo does (a UUIDv5 of the demo
+    # namespace and "camera/<name>") keeps --world maryland on the ids the demo world installed,
+    # and gives a bench camera a stable id across runs.
+    CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
+
     def cam_id(self, camera):
-        return f"{self.args.prefix}{camera.id}"
+        return str(uuid.uuid5(self.CAMERA_NAMESPACE, f"camera/{self.args.prefix}{camera.id}"))
 
     @property
     def onvif_base(self):

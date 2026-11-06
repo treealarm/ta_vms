@@ -34,8 +34,13 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient, ILogger<Sto
     });
   public override async Task<OperationStatus> AddStorage(Storage request, ServerCallContext context)
   {
+    // The id is the row's key and nothing a person reads — root_path is the storage's name. A
+    // caller that does not name one gets a fresh UUID; one that names a non-UUID is refused here
+    // rather than by a uuid column deep in the insert.
     if (string.IsNullOrWhiteSpace(request.StorageId))
-      return new OperationStatus { Success = false, Message = "storage_id must not be empty" };
+      request.StorageId = Guid.NewGuid().ToString();
+    if (!Guid.TryParse(request.StorageId, out _))
+      return new OperationStatus { Success = false, Message = "storage_id must be a UUID" };
     if (string.IsNullOrWhiteSpace(request.RootPath))
       return new OperationStatus { Success = false, Message = "root_path must not be empty" };
 
@@ -69,8 +74,8 @@ public class StorageServiceImpl(StorageDb db, DaprClient daprClient, ILogger<Sto
   public override async Task<OperationStatus> SetCameraStorages(
     SetCameraStoragesRequest request, ServerCallContext context)
   {
-    if (string.IsNullOrWhiteSpace(request.CameraId))
-      return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+    if (!Guid.TryParse(request.CameraId, out _))
+      return new OperationStatus { Success = false, Message = "camera_id must be a UUID" };
 
     await db.SetCameraStoragesAsync(request.CameraId, request.Assignments, context.CancellationToken);
     logger.LogInformation("Camera '{CameraId}' storage assignments updated ({Count} entries)", request.CameraId, request.Assignments.Count);

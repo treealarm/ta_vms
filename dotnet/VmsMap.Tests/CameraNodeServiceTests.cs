@@ -50,9 +50,9 @@ public class CameraNodeServiceTests
   {
     var s = Create();
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
-    var canonical = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonical);
     Assert.Equal("Front door", marker.name);
     Assert.Equal(ServerGuid("srv1"), marker.parent_id);
@@ -63,7 +63,7 @@ public class CameraNodeServiceTests
 
     var index = await s.Db.CameraNodes.SingleAsync();
     Assert.Equal(canonical, index.object_id);
-    Assert.Equal("cam1", index.camera_id);
+    Assert.Equal(TestCameras.One, index.camera_id);
   }
 
   [Fact]
@@ -71,7 +71,7 @@ public class CameraNodeServiceTests
   {
     var s = Create();
     var space = await Node(s.Map, "Building");
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     // The placement row is what makes the camera placed; the node is the canonical id.
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), name = "Old name", parent_id = space.id }
@@ -79,7 +79,7 @@ public class CameraNodeServiceTests
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = canonicalId,
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
       hfov_deg = 60,
@@ -87,7 +87,7 @@ public class CameraNodeServiceTests
     });
     await s.Db.SaveChangesAsync();
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
     Assert.Equal("Front door", marker.name);
@@ -101,14 +101,14 @@ public class CameraNodeServiceTests
     var s = Create();
     var space = await Node(s.Map, "Building");
     var container = await Node(s.Map, "Car park", space.id);
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), name = "Front door", parent_id = container.id }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = canonicalId,
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
       hfov_deg = 60,
@@ -117,7 +117,7 @@ public class CameraNodeServiceTests
     await s.Db.SaveChangesAsync();
 
     // The periodic reconcile runs for every camera; a placed one keeps the parent it was given.
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
     Assert.Equal(Guid.Parse(container.id!), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
   }
@@ -126,10 +126,10 @@ public class CameraNodeServiceTests
   public async Task AReferencePlacementRemovedElsewhereReturnsTheCameraToItsServer()
   {
     var s = Create();
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     await Node(s.Map, "Front door");
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
     Assert.Equal(ServerGuid("srv1"), marker.parent_id);
@@ -139,17 +139,17 @@ public class CameraNodeServiceTests
   public async Task RemovingACameraDeletesItsPicturesPlacementsAndObservations()
   {
     var s = Create();
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
 
-    await Node(s.Map, "Front door", ownerId: CameraObjectId.For("cam1"));
+    await Node(s.Map, "Front door", ownerId: CameraObjectId.For(TestCameras.One));
     var replicaMarker = await s.Db.Markers.SingleAsync(m => m.owner_id == canonicalId);
     var replica = replicaMarker.id;
 
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = canonicalId,
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
       hfov_deg = 60,
@@ -158,7 +158,7 @@ public class CameraNodeServiceTests
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = replica,
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = false,
       height_m = 3,
       hfov_deg = 60,
@@ -166,21 +166,21 @@ public class CameraNodeServiceTests
     });
     s.Db.PtzGeoObservations.Add(new DBPtzGeoObservation
     {
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       landmark_id = Guid.NewGuid(),
       pan = 1,
       tilt = 2,
     });
     s.Db.GroundObservations.Add(new DBGroundObservation
     {
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       landmark_id = Guid.NewGuid(),
       x = 0.5f,
       y = 0.5f,
     });
     await s.Db.SaveChangesAsync();
 
-    await s.Nodes.RemoveCameraAsync("cam1", default);
+    await s.Nodes.RemoveCameraAsync(TestCameras.One, default);
 
     Assert.False(await s.Db.Markers.AnyAsync(m => m.id == canonicalId || m.id == replica));
     Assert.Empty(await s.Db.CameraPlacements.ToListAsync());
@@ -193,25 +193,25 @@ public class CameraNodeServiceTests
   public async Task AResyncRemovesCamerasVmsCfgNoLongerLists()
   {
     var s = Create();
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "One", "srv1"), default);
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam2", "Two", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "One", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "Two", "srv1"), default);
 
     await s.Nodes.RemoveUnknownAsync(
-      new HashSet<string>(StringComparer.Ordinal) { "cam2" }, default);
+      new HashSet<string>(StringComparer.Ordinal) { TestCameras.Two }, default);
 
     Assert.False(await s.Db.Markers.AnyAsync(
-      m => m.id == Guid.Parse(CameraObjectId.For("cam1"))));
+      m => m.id == Guid.Parse(CameraObjectId.For(TestCameras.One))));
     Assert.True(await s.Db.Markers.AnyAsync(
-      m => m.id == Guid.Parse(CameraObjectId.For("cam2"))));
-    Assert.Equal("cam2", (await s.Db.CameraNodes.SingleAsync()).camera_id);
+      m => m.id == Guid.Parse(CameraObjectId.For(TestCameras.Two))));
+    Assert.Equal(TestCameras.Two, (await s.Db.CameraNodes.SingleAsync()).camera_id);
   }
 
   [Fact]
   public async Task TheArmedPropertyMergesWithTheOthers()
   {
     var s = Create();
-    await s.Nodes.EnsureCameraAsync(new CameraInfo("cam1", "Front door", "srv1"), default);
-    var canonicalId = CameraObjectId.For("cam1");
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    var canonicalId = CameraObjectId.For(TestCameras.One);
 
     await ((IMapService)s.Map).UpdatePropNotDeleteAsync([
       new ObjPropsDTO
@@ -221,7 +221,7 @@ public class CameraNodeServiceTests
       }
     ]);
 
-    await s.Nodes.SetPropertyAsync("cam1", "armed", "True", default);
+    await s.Nodes.SetPropertyAsync(TestCameras.One, "armed", "True", default);
 
     var props = await ((IMapService)s.Map).GetPropAsync(canonicalId);
     Assert.Equal(2, props.extra_props!.Count);

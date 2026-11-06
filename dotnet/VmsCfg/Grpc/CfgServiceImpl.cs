@@ -249,8 +249,8 @@ namespace VmsCfg
 
     public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
     {
-      if (string.IsNullOrWhiteSpace(request.CameraId))
-        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
+      if (!Guid.TryParse(request.CameraId, out _))
+        return new OperationStatus { Success = false, Message = "camera_id must be a UUID" };
 
       if (string.IsNullOrWhiteSpace(request.ServerId))
         return new OperationStatus { Success = false, Message = "server_id must not be empty" };

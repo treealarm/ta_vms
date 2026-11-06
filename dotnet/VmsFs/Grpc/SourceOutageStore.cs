@@ -46,7 +46,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
       WITH recent AS (
         SELECT outage_uid, started_ts
         FROM source_outages
-        WHERE camera_id = $1 AND stream_name = $2
+        WHERE camera_id = $1::uuid AND stream_name = $2
           AND ended_ts IS NOT NULL
           AND ended_ts >= $3 - $5::interval
         ORDER BY started_ts DESC
@@ -57,7 +57,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
         RETURNING started_ts
       ), inserted AS (
         INSERT INTO source_outages (camera_id, stream_name, started_ts, cause)
-        SELECT $1, $2, $3, $4
+        SELECT $1::uuid, $2, $3, $4
         WHERE NOT EXISTS (SELECT 1 FROM recent)
         ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING
         RETURNING started_ts
@@ -87,7 +87,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
       -- An interval can never end before it began. The two boundaries come from different reports,
       -- and one of them being stale must not produce a row that reads backwards.
       UPDATE source_outages SET ended_ts = GREATEST($3, started_ts)
-      WHERE camera_id = $1 AND stream_name = $2 AND ended_ts IS NULL;
+      WHERE camera_id = $1::uuid AND stream_name = $2 AND ended_ts IS NULL;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
@@ -110,7 +110,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     await using var cmd = dataSource.CreateCommand("""
       UPDATE source_outages
       SET state = 'open', next_retry_ts = NULL, message = ''
-      WHERE camera_id = $1 AND stream_name = $2
+      WHERE camera_id = $1::uuid AND stream_name = $2
         AND state = 'filled'
         AND started_ts < $4
         AND COALESCE(ended_ts, now()) > $3;
@@ -138,13 +138,13 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   {
     await using var cmd = dataSource.CreateCommand("""
       UPDATE source_outages o SET started_ts = $3
-      WHERE o.camera_id = $1 AND o.stream_name = $2
+      WHERE o.camera_id = $1::uuid AND o.stream_name = $2
         AND o.ended_ts IS NULL
         AND o.started_ts < $3
         -- (camera, stream, start) is unique, and a closed row may already sit on that instant.
         AND NOT EXISTS (
           SELECT 1 FROM source_outages c
-          WHERE c.camera_id = $1 AND c.stream_name = $2 AND c.started_ts = $3);
+          WHERE c.camera_id = $1::uuid AND c.stream_name = $2 AND c.started_ts = $3);
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
@@ -173,12 +173,12 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     await using var cmd = dataSource.CreateCommand("""
       WITH dropped AS (
         DELETE FROM source_outages
-        WHERE camera_id = $1 AND stream_name = $2
+        WHERE camera_id = $1::uuid AND stream_name = $2
           AND ended_ts - started_ts < interval '1 second'
           AND started_ts BETWEEN $3 AND $4
       )
       INSERT INTO source_outages (camera_id, stream_name, started_ts, ended_ts, cause)
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1::uuid, $2, $3, $4, $5)
       ON CONFLICT (camera_id, stream_name, started_ts) DO NOTHING;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
@@ -193,7 +193,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   public async Task<List<(string CameraId, string StreamName)>> ListOpenAsync(CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand(
-      "SELECT camera_id, stream_name FROM source_outages WHERE ended_ts IS NULL;");
+      "SELECT camera_id::text, stream_name FROM source_outages WHERE ended_ts IS NULL;");
     var result = new List<(string, string)>();
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
@@ -218,7 +218,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT MAX(COALESCE(end_ts, start_ts)) FROM clips
-      WHERE camera_id = $1 AND stream_name = $2 AND start_ts < $3;
+      WHERE camera_id = $1::uuid AND stream_name = $2 AND start_ts < $3;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
@@ -241,7 +241,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
   {
     await using var cmd = dataSource.CreateCommand("""
       SELECT MIN(start_ts) FROM clips
-      WHERE camera_id = $1 AND stream_name = $2 AND start_ts > $3;
+      WHERE camera_id = $1::uuid AND stream_name = $2 AND start_ts > $3;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, cameraId);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Text, streamName);
@@ -255,10 +255,10 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     Guid? outageUid = null)
   {
     await using var cmd = dataSource.CreateCommand("""
-      SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
+      SELECT outage_uid, camera_id::text, stream_name, started_ts, ended_ts, cause,
              state, filled_ms, attempts, message
       FROM source_outages
-      WHERE ($1::text IS NULL OR camera_id = $1)
+      WHERE ($1::text IS NULL OR camera_id = $1::uuid)
         AND ($2::timestamptz IS NULL OR COALESCE(ended_ts, now()) >= $2)
         AND ($3::timestamptz IS NULL OR started_ts <= $3)
         AND ($5::uuid IS NULL OR outage_uid = $5)
@@ -308,7 +308,7 @@ public sealed class SourceOutageStore(NpgsqlDataSource dataSource)
     CancellationToken ct)
   {
     await using var cmd = dataSource.CreateCommand("""
-      SELECT outage_uid, camera_id, stream_name, started_ts, ended_ts, cause,
+      SELECT outage_uid, camera_id::text, stream_name, started_ts, ended_ts, cause,
              state, filled_ms, attempts, message
       FROM source_outages
       WHERE ended_ts IS NOT NULL

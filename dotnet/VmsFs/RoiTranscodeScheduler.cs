@@ -584,7 +584,7 @@ public sealed class RoiTranscodeScheduler(
       CancellationToken.None);
   }
 
-  private async Task<string?> RootPathAsync(string storageId, CancellationToken ct)
+  private async Task<string?> RootPathAsync(string? storageId, CancellationToken ct)
   {
     var list = await storages.GetAsync(ct);
     return storages.Find(list, storageId)?.RootPath;

@@ -30,8 +30,15 @@ MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "A.V. Williams Building"
 ROOM_PLAN_NAME = "Room 101"
 ROOM_DIAGRAM_NAME = "Room 102"
+# The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
+# derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
+DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
 DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"]
 TELEMETRY_NAME = "Camera sim-vehicle"
+
+
+def camera_id(name):
+    return str(uuid.uuid5(DEMO_CAMERA_NAMESPACE, f"camera/{name}"))
 
 failures = []
 
@@ -175,14 +182,15 @@ def provision_cameras(vms, sim_host, server_id):
               ("sim-master2", 8103, False, False), ("sim-ptz2", 8104, True, False),
               ("sim-vehicle", 8105, False, True)]
 
-    for camera_id, port, telemetry, geo_from_device in wanted:
-        if camera_id in existing:
-            warn(f"camera {camera_id} is already configured")
+    for name, port, telemetry, geo_from_device in wanted:
+        cam_id = camera_id(name)
+        if cam_id in existing:
+            warn(f"camera {name} is already configured")
             continue
 
         vms.add_camera({
-            "cameraId": camera_id,
-            "name": f"OnvifSim {camera_id}",
+            "cameraId": cam_id,
+            "name": f"OnvifSim {name}",
             "serverId": server_id,
             "onvifConn": {"ip": sim_host, "port": port,
                           "xaddr": f"http://{sim_host}:{port}/onvif/device_service"},
@@ -192,7 +200,7 @@ def provision_cameras(vms, sim_host, server_id):
             "streams": [{"streamName": "main", "profileToken": "Profile_2",
                          "path": "", "webRtc": True}],
         })
-        print(f"  ..    added camera {camera_id} (ONVIF {sim_host}:{port})")
+        print(f"  ..    added camera {name} (ONVIF {sim_host}:{port})")
 
 
 def subscribe_events(vms):
@@ -202,11 +210,11 @@ def subscribe_events(vms):
     automatically when a camera has devices — but the demo's alarm filters and the ONVIF settings
     page do, and a demo installed with events off makes that look broken.
     """
-    for camera_id in DEMO_CAMERAS:
+    for name in DEMO_CAMERAS:
         try:
-            vms.call("POST", f"/api/onvif/cameras/{camera_id}/subscription")
+            vms.call("POST", f"/api/onvif/cameras/{camera_id(name)}/subscription")
         except HttpError as e:
-            warn(f"could not subscribe {camera_id} to ONVIF events: {e}")
+            warn(f"could not subscribe {name} to ONVIF events: {e}")
 
 
 # ── Checks ────────────────────────────────────────────────────────────────────────
@@ -324,7 +332,7 @@ def check_types(vms):
 
 def check_cameras(vms, world, allow_missing):
     configured = {camera.get("cameraId") for camera in vms.cameras()}
-    missing = [camera for camera in DEMO_CAMERAS if camera not in configured]
+    missing = [name for name in DEMO_CAMERAS if camera_id(name) not in configured]
 
     if missing and not allow_missing:
         check(False, f"the four demo cameras are configured (missing {', '.join(missing)})")
@@ -337,28 +345,28 @@ def check_cameras(vms, world, allow_missing):
     placed = {p.get("cameraId"): p for p in placements(vms)}
     # The master and its PTZ slave work as one pair, so both stand in Room 101.
     expected = {
-        "sim-master": world["room"]["id"],
-        "sim-ptz": world["room"]["id"],
-        "sim-master2": world["building"]["id"],
-        "sim-ptz2": world["map"]["id"],
+        camera_id("sim-master"): world["room"]["id"],
+        camera_id("sim-ptz"): world["room"]["id"],
+        camera_id("sim-master2"): world["building"]["id"],
+        camera_id("sim-ptz2"): world["map"]["id"],
         # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
         # position from then on, so only the space it belongs to is fixed here.
-        "sim-vehicle": world["map"]["id"],
+        camera_id("sim-vehicle"): world["map"]["id"],
     }
 
-    for camera_id, space_id in expected.items():
-        placement = placed.get(camera_id)
+    for cam_id, space_id in expected.items():
+        placement = placed.get(cam_id)
         check(placement is not None and placement.get("spaceId") == space_id,
-              f"{camera_id} stands in its space")
+              f"{cam_id} stands in its space")
 
 
 def check_geo_flag(vms):
     cameras = {camera.get("cameraId"): camera for camera in vms.cameras()}
-    check(cameras.get("sim-vehicle", {}).get("geoFromDevice") is True,
+    check(cameras.get(camera_id("sim-vehicle"), {}).get("geoFromDevice") is True,
           "sim-vehicle takes its position from the device")
-    for camera_id in ("sim-master", "sim-master2", "sim-ptz", "sim-ptz2"):
-        check(cameras.get(camera_id, {}).get("geoFromDevice") is not True,
-              f"{camera_id} is placed by hand")
+    for name in ("sim-master", "sim-master2", "sim-ptz", "sim-ptz2"):
+        check(cameras.get(camera_id(name), {}).get("geoFromDevice") is not True,
+              f"{name} is placed by hand")
 
 
 def check_marker_follows_the_camera(vms):
@@ -367,14 +375,16 @@ def check_marker_follows_the_camera(vms):
     time.sleep(7)  # the follower ticks every 5 s, so at least one move must have been written
     after = {placement.get("cameraId"): placement for placement in placements(vms)}
 
-    vehicle_before, vehicle_after = before.get("sim-vehicle"), after.get("sim-vehicle")
+    vehicle = camera_id("sim-vehicle")
+    vehicle_before, vehicle_after = before.get(vehicle), after.get(vehicle)
     if check(vehicle_before is not None and vehicle_after is not None,
              "sim-vehicle is placed on the map"):
         moved = ((vehicle_before.get("lat"), vehicle_before.get("lon"))
                  != (vehicle_after.get("lat"), vehicle_after.get("lon")))
         check(moved, "the vehicle camera's marker moves with the device")
 
-    master_before, master_after = before.get("sim-master"), after.get("sim-master")
+    master = camera_id("sim-master")
+    master_before, master_after = before.get(master), after.get(master)
     if master_before and master_after:
         check((master_before.get("lat"), master_before.get("lon"))
               == (master_after.get("lat"), master_after.get("lon")),
@@ -387,7 +397,7 @@ def check_events(vms):
         for camera in vms.call("GET", "/api/onvif/subscriptions") or []
         if camera.get("subscribed")
     }
-    missing = [camera_id for camera_id in DEMO_CAMERAS if camera_id not in subscribed]
+    missing = [name for name in DEMO_CAMERAS if camera_id(name) not in subscribed]
     check(not missing, f"the demo cameras are subscribed to ONVIF events (missing {missing})")
 
 
@@ -462,8 +472,8 @@ def check_wired_devices(vms, sim, world, telemetry):
         return
 
     def switch(active):
-        set_relay(vms, "sim-master", "peer", active)
-        set_relay(vms, "sim-master", "lamp", active)
+        set_relay(vms, camera_id("sim-master"), "peer", active)
+        set_relay(vms, camera_id("sim-master"), "lamp", active)
         # The camera's event (its pull point is polled), VmsOnvif's cache, then the feeder's next
         # tick: worst case one poll plus one tick, so wait for two of each.
         time.sleep(12)

@@ -145,8 +145,8 @@ public class SpatialPostgresTests
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
     var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", plan.Id, reference: true), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: false), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: false), CancellationToken.None);
 
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
@@ -156,7 +156,7 @@ public class SpatialPostgresTests
       Lon = 0.4,
       HeightM = 2,
     }, CancellationToken.None);
-    var observations = new PtzGeoObservations { CameraId = "cam1" };
+    var observations = new PtzGeoObservations { CameraId = TestCameras.One };
     observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
     await test.Spatial.SetObservationsAsync(observations, CancellationToken.None);
 
@@ -167,12 +167,12 @@ public class SpatialPostgresTests
     Assert.False(await test.Db.PtzGeoObservations.AnyAsync());
 
     // The camera stops standing there but its node stays, for the picture on the map.
-    var canonical = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     Assert.Null((await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id);
     Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.is_reference));
-    var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == "cam1");
+    var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
     Assert.Equal(Guid.Parse(map.Id), (await test.Db.Markers.SingleAsync(m => m.id == picture.object_id)).parent_id);
-    Assert.Contains("cam1", test.Notifier.Events[^1].Cameras);
+    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
   }
 
   [Fact]
@@ -190,7 +190,7 @@ public class SpatialPostgresTests
     await test.Db.SaveChangesAsync();
     test.Db.CameraPlacements.Add(new DBCameraPlacement
     {
-      object_id = first, camera_id = "cam1", is_reference = true,
+      object_id = first, camera_id = TestCameras.One, is_reference = true,
     });
     await test.Db.SaveChangesAsync();
 
@@ -199,7 +199,7 @@ public class SpatialPostgresTests
     await test.Db.SaveChangesAsync();
     test.Db.CameraPlacements.Add(new DBCameraPlacement
     {
-      object_id = second, camera_id = "cam1", is_reference = true,
+      object_id = second, camera_id = TestCameras.One, is_reference = true,
     });
     await Assert.ThrowsAsync<DbUpdateException>(() => test.Db.SaveChangesAsync());
   }
@@ -219,10 +219,10 @@ public class SpatialPostgresTests
       new Coordinate { Lat = 0.1, Lon = 0.2 },
     ]);
     var saved = await test.Spatial.UpsertSpaceAsync(plan, CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", saved.Id, reference: true), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, saved.Id, reference: true), CancellationToken.None);
 
     var planId = Guid.Parse(saved.Id);
-    var cameraId = Guid.Parse(CameraObjectId.For("cam1"));
+    var cameraId = Guid.Parse(CameraObjectId.For(TestCameras.One));
 
     var types = await test.Db.Database
       .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {planId}")
@@ -250,13 +250,13 @@ public class SpatialPostgresTests
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
     var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", plan.Id, reference: false), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: false), CancellationToken.None);
 
     // The unique index admits one reference at a time; the write must demote the old one first.
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", plan.Id, reference: true), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
 
-    var rows = await test.Db.CameraPlacements.Where(p => p.camera_id == "cam1").ToListAsync();
+    var rows = await test.Db.CameraPlacements.Where(p => p.camera_id == TestCameras.One).ToListAsync();
     Assert.Equal(2, rows.Count);
     var reference = rows.Single(r => r.is_reference);
     Assert.Equal(Guid.Parse(plan.Id),
@@ -275,13 +275,13 @@ public class SpatialPostgresTests
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true, 0.5, 0.5), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true, 0.5, 0.5), CancellationToken.None);
 
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == canonicalId);
     var parentBefore = (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id;
 
-    var moved = await test.Spatial.MoveReferencePointAsync("cam1", 0.61, 0.71, CancellationToken.None);
+    var moved = await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, CancellationToken.None);
 
     Assert.True(moved);
     var figure = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == canonicalId);
@@ -298,7 +298,7 @@ public class SpatialPostgresTests
     Assert.Equal(parentBefore, (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonicalId)).parent_id);
 
     // The map's watch stream and the tracking models both hear about it.
-    Assert.Contains("cam1", test.Notifier.Events[^1].Cameras);
+    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
   }
 
   [Fact]
@@ -308,18 +308,18 @@ public class SpatialPostgresTests
     if (test is null)
       return;
 
-    Assert.False(await test.Spatial.MoveReferencePointAsync("cam1", 0.61, 0.71, CancellationToken.None));
+    Assert.False(await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, CancellationToken.None));
   }
 
   [Fact]
   public async Task ADeviceFollowingCameraRefusesACalibration()
   {
-    await using var test = await OpenAsync(new HashSet<string>(StringComparer.Ordinal) { "cam1" });
+    await using var test = await OpenAsync(new HashSet<string>(StringComparer.Ordinal) { TestCameras.One });
     if (test is null)
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    await test.Spatial.UpsertPlacementAsync(Placement("cam1", map.Id, reference: true), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
       SpaceId = map.Id,
@@ -329,14 +329,14 @@ public class SpatialPostgresTests
       HeightM = 2,
     }, CancellationToken.None);
 
-    var marks = new GroundObservations { CameraId = "cam1" };
+    var marks = new GroundObservations { CameraId = TestCameras.One };
     marks.Observations.Add(new GroundObservation { LandmarkId = landmark.Id, X = 0.5f, Y = 0.5f });
     var ground = await Assert.ThrowsAsync<SpatialConfigException>(
       () => test.Spatial.SetGroundObservationsAsync(marks, CancellationToken.None));
     Assert.Contains("position from the device", ground.Message);
 
     // The same rule for the PTZ landmark observations: both describe a fixed standpoint.
-    var observations = new PtzGeoObservations { CameraId = "cam1" };
+    var observations = new PtzGeoObservations { CameraId = TestCameras.One };
     observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
     await Assert.ThrowsAsync<SpatialConfigException>(
       () => test.Spatial.SetObservationsAsync(observations, CancellationToken.None));
@@ -355,11 +355,11 @@ public class SpatialPostgresTests
 
     var nodes = new CameraNodeService(
       test.Db, test.Map, test.Updates, NullLogger<CameraNodeService>.Instance);
-    await nodes.EnsureCameraAsync(new CameraInfo("cam-new", "New camera", "srv-new"), CancellationToken.None);
+    await nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "New camera", "srv-new"), CancellationToken.None);
 
-    var canonical = Guid.Parse(CameraObjectId.For("cam-new"));
+    var canonical = Guid.Parse(CameraObjectId.For(TestCameras.Two));
     Assert.NotNull(await test.Db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonical));
-    Assert.Equal("cam-new", (await test.Db.CameraNodes.AsNoTracking()
+    Assert.Equal(TestCameras.Two, (await test.Db.CameraNodes.AsNoTracking()
       .SingleAsync(n => n.object_id == canonical)).camera_id);
   }
 }

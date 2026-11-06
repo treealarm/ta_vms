@@ -50,7 +50,7 @@ public class ConnectionStateServiceTests
   }
 
   private static CameraInfo Camera() =>
-    new("cam1", "Front door", "srv1");
+    new(TestCameras.One, "Front door", "srv1");
 
   [Fact]
   public async Task APathWithoutASourceMakesTheCameraDisconnectedAndBack()
@@ -59,12 +59,12 @@ public class ConnectionStateServiceTests
     await s.Nodes.EnsureCameraAsync(Camera(), default);
 
     await s.Connections.ApplyAsync(
-      new Dictionary<string, bool> { ["cam1"] = false }, default);
-    Assert.Equal(CameraStateWriter.Disconnected, await State(s.Db, "cam1"));
+      new Dictionary<string, bool> { [TestCameras.One] = false }, default);
+    Assert.Equal(CameraStateWriter.Disconnected, await State(s.Db, TestCameras.One));
 
     await s.Connections.ApplyAsync(
-      new Dictionary<string, bool> { ["cam1"] = true }, default);
-    Assert.Equal(CameraStateWriter.Connected, await State(s.Db, "cam1"));
+      new Dictionary<string, bool> { [TestCameras.One] = true }, default);
+    Assert.Equal(CameraStateWriter.Connected, await State(s.Db, TestCameras.One));
   }
 
   [Fact]
@@ -73,12 +73,12 @@ public class ConnectionStateServiceTests
     var s = Create();
     await s.Nodes.EnsureCameraAsync(Camera(), default);
     await s.Connections.ApplyAsync(
-      new Dictionary<string, bool> { ["cam1"] = true }, default);
+      new Dictionary<string, bool> { [TestCameras.One] = true }, default);
 
     // The source could not be asked: the camera is absent from the answer.
     await s.Connections.ApplyAsync(new Dictionary<string, bool>(), default);
 
-    Assert.Equal(CameraStateWriter.Connected, await State(s.Db, "cam1"));
+    Assert.Equal(CameraStateWriter.Connected, await State(s.Db, TestCameras.One));
   }
 
   [Fact]
@@ -89,7 +89,7 @@ public class ConnectionStateServiceTests
     await s.Map.UpdateHierarchyAsync([space]);
 
     // The canonical node was left somewhere by an older placement that no longer exists.
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = "Front door" }
     ]);
@@ -107,14 +107,14 @@ public class ConnectionStateServiceTests
     var s = Create();
     var space = new BaseMarkerDTO { name = "Building" };
     await s.Map.UpdateHierarchyAsync([space]);
-    var canonicalId = Guid.Parse(CameraObjectId.For("cam1"));
+    var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = "Front door" }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = canonicalId,
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
       hfov_deg = 60,

@@ -9,6 +9,14 @@ namespace VmsAnalyticsSingleton.Tests;
 
 public class SearchSimilarDetectionsTests
 {
+  // Camera ids are UUID columns now; the tests name them for readability.
+  private const string CameraA = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  private const string CameraB = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  private const string CameraC = "cccccccc-cccc-cccc-cccc-cccccccccccc";
+  private const string CameraD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
+  private const string CameraZ = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+  private const string CameraLive = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+
   [Fact]
   public async Task EmptyProbe_ReturnsInvalidArgument()
   {
@@ -35,9 +43,9 @@ public class SearchSimilarDetectionsTests
     await using var db = await factory.CreateDbContextAsync();
     await db.Database.EnsureCreatedAsync();
 
-    var probeId = await InsertDetectionAsync(db, "cam-a", 10, "person", DateTime.UtcNow.AddMinutes(-5), [1f, 0f]);
-    var hitId = await InsertDetectionAsync(db, "cam-b", 20, "person", DateTime.UtcNow.AddMinutes(-4), [0.95f, 0.05f]);
-    _ = await InsertDetectionAsync(db, "cam-c", 30, "person", DateTime.UtcNow.AddMinutes(-3), [-1f, 0f]);
+    var probeId = await InsertDetectionAsync(db, CameraA, 10, "person", DateTime.UtcNow.AddMinutes(-5), [1f, 0f]);
+    var hitId = await InsertDetectionAsync(db, CameraB, 20, "person", DateTime.UtcNow.AddMinutes(-4), [0.95f, 0.05f]);
+    _ = await InsertDetectionAsync(db, CameraC, 30, "person", DateTime.UtcNow.AddMinutes(-3), [-1f, 0f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -53,7 +61,7 @@ public class SearchSimilarDetectionsTests
     Assert.Equal(2, response.Hits.Count);
     Assert.Contains(response.Hits, h => h.Detection.Id == probeId);
     Assert.Contains(response.Hits, h => h.Detection.Id == hitId);
-    Assert.DoesNotContain(response.Hits, h => h.Detection.CameraId == "cam-c");
+    Assert.DoesNotContain(response.Hits, h => h.Detection.CameraId == CameraC);
   }
 
   [Fact]
@@ -64,9 +72,9 @@ public class SearchSimilarDetectionsTests
     await db.Database.EnsureCreatedAsync();
 
     var anchorTs = DateTime.UtcNow.AddMinutes(-10);
-    var probeId = await InsertDetectionAsync(db, "cam-a", 111, "person", anchorTs, null);
-    _ = await InsertDetectionAsync(db, "cam-a", 111, "person", anchorTs.AddSeconds(2), [1f, 0f]);
-    var hitId = await InsertDetectionAsync(db, "cam-z", 999, "person", anchorTs.AddMinutes(1), [0.9f, 0.1f]);
+    var probeId = await InsertDetectionAsync(db, CameraA, 111, "person", anchorTs, null);
+    _ = await InsertDetectionAsync(db, CameraA, 111, "person", anchorTs.AddSeconds(2), [1f, 0f]);
+    var hitId = await InsertDetectionAsync(db, CameraZ, 999, "person", anchorTs.AddMinutes(1), [0.9f, 0.1f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -90,9 +98,9 @@ public class SearchSimilarDetectionsTests
     await db.Database.EnsureCreatedAsync();
 
     var baseTs = DateTime.UtcNow.AddMinutes(-20);
-    _ = await InsertDetectionAsync(db, "cam-a", 42, "person", baseTs.AddSeconds(-3), [1f, 0f]);
-    _ = await InsertDetectionAsync(db, "cam-a", 42, "person", baseTs.AddSeconds(8), [0.98f, 0.02f]);
-    var hitId = await InsertDetectionAsync(db, "cam-b", 43, "person", baseTs.AddMinutes(1), [0.9f, 0.1f]);
+    _ = await InsertDetectionAsync(db, CameraA, 42, "person", baseTs.AddSeconds(-3), [1f, 0f]);
+    _ = await InsertDetectionAsync(db, CameraA, 42, "person", baseTs.AddSeconds(8), [0.98f, 0.02f]);
+    var hitId = await InsertDetectionAsync(db, CameraB, 43, "person", baseTs.AddMinutes(1), [0.9f, 0.1f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -100,7 +108,7 @@ public class SearchSimilarDetectionsTests
     {
       ArchiveProbe = new ArchiveTrackProbe
       {
-        CameraId = "cam-a",
+        CameraId = CameraA,
         TrackId = 42,
         Ts = Timestamp.FromDateTime(baseTs),
         Kind = DetectionKind.Person,
@@ -122,11 +130,11 @@ public class SearchSimilarDetectionsTests
     await db.Database.EnsureCreatedAsync();
 
     var now = DateTime.UtcNow;
-    var hitId = await InsertDetectionAsync(db, "cam-b", 43, "person", now.AddMinutes(-1), [0.9f, 0.1f]);
+    var hitId = await InsertDetectionAsync(db, CameraB, 43, "person", now.AddMinutes(-1), [0.9f, 0.1f]);
     await db.SaveChangesAsync();
 
     var recent = new RecentLiveEmbeddingCache();
-    recent.Offer("cam-live", 7, "person", now, [1f, 0f], model: null);
+    recent.Offer(CameraLive, 7, "person", now, [1f, 0f], model: null);
     var service = new AnalyticsServiceImpl(
       factory,
       new AnalyticsActivityLog(),
@@ -141,7 +149,7 @@ public class SearchSimilarDetectionsTests
     {
       ArchiveProbe = new ArchiveTrackProbe
       {
-        CameraId = "cam-live",
+        CameraId = CameraLive,
         TrackId = 7,
         Ts = Timestamp.FromDateTime(now),
         Kind = DetectionKind.Person,
@@ -163,12 +171,12 @@ public class SearchSimilarDetectionsTests
     await db.Database.EnsureCreatedAsync();
 
     var now = DateTime.UtcNow;
-    var probeId = await InsertDetectionAsync(db, "cam-a", 10, "person", now.AddMinutes(-5), [1f, 0f], "reid-new");
-    var hitId = await InsertDetectionAsync(db, "cam-b", 20, "person", now.AddMinutes(-4), [0.95f, 0.05f], "reid-new");
+    var probeId = await InsertDetectionAsync(db, CameraA, 10, "person", now.AddMinutes(-5), [1f, 0f], "reid-new");
+    var hitId = await InsertDetectionAsync(db, CameraB, 20, "person", now.AddMinutes(-4), [0.95f, 0.05f], "reid-new");
     // The same vector from another model, and from a row written before models were recorded: as
     // close as it gets numerically, and still not comparable.
-    var otherId = await InsertDetectionAsync(db, "cam-c", 30, "person", now.AddMinutes(-3), [1f, 0f], "reid-old");
-    var legacyId = await InsertDetectionAsync(db, "cam-d", 40, "person", now.AddMinutes(-2), [1f, 0f], model: null);
+    var otherId = await InsertDetectionAsync(db, CameraC, 30, "person", now.AddMinutes(-3), [1f, 0f], "reid-old");
+    var legacyId = await InsertDetectionAsync(db, CameraD, 40, "person", now.AddMinutes(-2), [1f, 0f], model: null);
     await db.SaveChangesAsync();
 
     var response = await CreateService(factory).SearchSimilarDetections(new SearchSimilarDetectionsRequest
@@ -194,9 +202,9 @@ public class SearchSimilarDetectionsTests
       Microsoft.Extensions.Logging.Abstractions.NullLogger<EphemeralReidGallery>.Instance);
 
     float[] look = [1f, 0f];
-    var first = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, "cam-a", 1, null);
-    var otherModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-b", true, "cam-b", 2, null);
-    var sameModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, "cam-c", 3, null);
+    var first = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, CameraA, 1, null);
+    var otherModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-b", true, CameraB, 2, null);
+    var sameModel = gallery.Resolve(Analytics.DetectionKind.Person, look, "reid-a", true, CameraC, 3, null);
 
     Assert.NotEqual(first, otherModel);
     Assert.Equal(first, sameModel);
@@ -209,7 +217,7 @@ public class SearchSimilarDetectionsTests
     await using var db = await factory.CreateDbContextAsync();
     await db.Database.EnsureCreatedAsync();
 
-    var probeId = await InsertDetectionAsync(db, "cam-a", 10, "person", DateTime.UtcNow.AddMinutes(-5), null);
+    var probeId = await InsertDetectionAsync(db, CameraA, 10, "person", DateTime.UtcNow.AddMinutes(-5), null);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -251,18 +259,18 @@ public class SearchSimilarDetectionsTests
     var hits = new List<(DbDetection Row, float Score)>();
     for (var i = 0; i < 50; i++)
     {
-      hits.Add((new DbDetection { Id = i, CameraId = "cam-a", DetectedAt = DateTime.UtcNow }, 0.99f - i * 0.001f));
+      hits.Add((new DbDetection { Id = i, CameraId = CameraA, DetectedAt = DateTime.UtcNow }, 0.99f - i * 0.001f));
     }
-    hits.Add((new DbDetection { Id = 100, CameraId = "cam-b", DetectedAt = DateTime.UtcNow }, 0.75f));
-    hits.Add((new DbDetection { Id = 101, CameraId = "cam-b", DetectedAt = DateTime.UtcNow }, 0.74f));
+    hits.Add((new DbDetection { Id = 100, CameraId = CameraB, DetectedAt = DateTime.UtcNow }, 0.75f));
+    hits.Add((new DbDetection { Id = 101, CameraId = CameraB, DetectedAt = DateTime.UtcNow }, 0.74f));
 
     // Global top-10 by score would be all cam-a (0.99..); diversification must surface cam-b.
     var selected = AnalyticsServiceImpl.DiversifyHitsByCamera(hits, limit: 10);
 
     Assert.Equal(10, selected.Count);
-    Assert.Contains(selected, h => h.Row.CameraId == "cam-b");
-    Assert.Equal(8, selected.Count(h => h.Row.CameraId == "cam-a"));
-    Assert.Equal(2, selected.Count(h => h.Row.CameraId == "cam-b"));
+    Assert.Contains(selected, h => h.Row.CameraId == CameraB);
+    Assert.Equal(8, selected.Count(h => h.Row.CameraId == CameraA));
+    Assert.Equal(2, selected.Count(h => h.Row.CameraId == CameraB));
   }
 
   [Fact]
@@ -273,15 +281,15 @@ public class SearchSimilarDetectionsTests
     await db.Database.EnsureCreatedAsync();
 
     var now = DateTime.UtcNow;
-    var probeId = await InsertDetectionAsync(db, "cam-a", 1, "person", now.AddMinutes(-5), [1f, 0f]);
+    var probeId = await InsertDetectionAsync(db, CameraA, 1, "person", now.AddMinutes(-5), [1f, 0f]);
     // Dense near-duplicates on the probe camera — without diversification these fill Limit alone.
     for (var i = 0; i < 30; i++)
     {
       var angle = i * 0.002f;
-      _ = await InsertDetectionAsync(db, "cam-a", 1, "person", now.AddMinutes(-4).AddSeconds(i),
+      _ = await InsertDetectionAsync(db, CameraA, 1, "person", now.AddMinutes(-4).AddSeconds(i),
         [MathF.Sqrt(1f - angle * angle), angle]);
     }
-    var otherId = await InsertDetectionAsync(db, "cam-b", 9, "person", now.AddMinutes(-3), [0.8f, 0.6f]);
+    var otherId = await InsertDetectionAsync(db, CameraB, 9, "person", now.AddMinutes(-3), [0.8f, 0.6f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -295,7 +303,7 @@ public class SearchSimilarDetectionsTests
     }, CreateContext());
 
     Assert.Contains(response.Hits, h => h.Detection.Id == otherId);
-    Assert.Contains(response.Hits, h => h.Detection.CameraId == "cam-b");
+    Assert.Contains(response.Hits, h => h.Detection.CameraId == CameraB);
   }
 
   [Fact]
@@ -308,9 +316,9 @@ public class SearchSimilarDetectionsTests
     var click = DateTime.UtcNow.AddMinutes(-10);
     // Nearest-in-time sample is orthogonal to the true match; a body 8 s later on the same
     // track is the one that actually looks like the other camera.
-    _ = await InsertDetectionAsync(db, "cam-a", 12, "person", click.AddSeconds(-1), [1f, 0f]);
-    _ = await InsertDetectionAsync(db, "cam-a", 12, "person", click.AddSeconds(8), [0f, 1f]);
-    var hitId = await InsertDetectionAsync(db, "cam-b", 29, "person", click.AddSeconds(7), [0f, 1f]);
+    _ = await InsertDetectionAsync(db, CameraA, 12, "person", click.AddSeconds(-1), [1f, 0f]);
+    _ = await InsertDetectionAsync(db, CameraA, 12, "person", click.AddSeconds(8), [0f, 1f]);
+    var hitId = await InsertDetectionAsync(db, CameraB, 29, "person", click.AddSeconds(7), [0f, 1f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -318,7 +326,7 @@ public class SearchSimilarDetectionsTests
     {
       ArchiveProbe = new ArchiveTrackProbe
       {
-        CameraId = "cam-a",
+        CameraId = CameraA,
         TrackId = 12,
         Ts = Timestamp.FromDateTime(click),
         Kind = DetectionKind.Person,
@@ -341,9 +349,9 @@ public class SearchSimilarDetectionsTests
 
     var click = DateTime.UtcNow.AddMinutes(-10);
     // Clicked crop [1,0]; 15 s later the person-track picked up a different face [0,1].
-    _ = await InsertDetectionAsync(db, "cam-a", 6, "face", click.AddSeconds(-6), [1f, 0f]);
-    _ = await InsertDetectionAsync(db, "cam-a", 6, "face", click.AddSeconds(15), [0f, 1f]);
-    var otherId = await InsertDetectionAsync(db, "cam-b", 1, "face", click.AddSeconds(7), [0f, 1f]);
+    _ = await InsertDetectionAsync(db, CameraA, 6, "face", click.AddSeconds(-6), [1f, 0f]);
+    _ = await InsertDetectionAsync(db, CameraA, 6, "face", click.AddSeconds(15), [0f, 1f]);
+    var otherId = await InsertDetectionAsync(db, CameraB, 1, "face", click.AddSeconds(7), [0f, 1f]);
     await db.SaveChangesAsync();
 
     var service = CreateService(factory);
@@ -351,7 +359,7 @@ public class SearchSimilarDetectionsTests
     {
       ArchiveProbe = new ArchiveTrackProbe
       {
-        CameraId = "cam-a",
+        CameraId = CameraA,
         TrackId = 6,
         Ts = Timestamp.FromDateTime(click),
         Kind = DetectionKind.Face,

@@ -1,9 +1,21 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace VmsCfg;
 
 public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) : DbContext(options)
 {
+  // Camera and storage ids are UUID columns; the gRPC contract and this service's own code carry
+  // them as strings (a UUID formatted as text). The conversion lives here, at the one boundary
+  // where the database type matters, so a malformed id fails on the way in rather than being
+  // compared as text against a uuid column.
+  private static readonly ValueConverter<string, Guid> UuidText =
+    new(id => Guid.Parse(id), id => id.ToString());
+
+  private static readonly ValueConverter<string?, Guid?> NullableUuidText =
+    new(id => string.IsNullOrEmpty(id) ? null : Guid.Parse(id),
+        id => id == null ? null : id.Value.ToString());
+
   public DbSet<DbCameraStream> CameraStreams { get; set; }
   public DbSet<DbRecordingProfile> RecordingProfiles { get; set; }
   public DbSet<DbOnvifAlarmFilter> OnvifAlarmFilters { get; set; }
@@ -28,7 +40,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("camera_stream");
       e.HasKey(x => new { x.CameraId, x.StreamName });
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.StreamName).HasColumnName("stream_name");
       e.Property(x => x.RecordingProfileId).HasColumnName("recording_profile_id");
       e.Property(x => x.OverrideProfileId).HasColumnName("override_profile_id");
@@ -52,7 +64,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.ToTable("onvif_alarm_filter");
       e.HasKey(x => x.Id);
       e.Property(x => x.Id).HasColumnName("id");
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.FilterText).HasColumnName("filter_text");
       e.Property(x => x.TimeoutSeconds).HasColumnName("timeout_seconds");
       e.Property(x => x.TextFilter).HasColumnName("text_filter");
@@ -62,7 +74,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("camera_states");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.Armed).HasColumnName("armed");
     });
 
@@ -70,7 +82,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("storage");
       e.HasKey(x => x.StorageId);
-      e.Property(x => x.StorageId).HasColumnName("storage_id");
+      e.Property(x => x.StorageId).HasColumnName("storage_id").HasConversion(UuidText);
       e.Property(x => x.RootPath).HasColumnName("root_path");
       e.Property(x => x.ReservedBytes).HasColumnName("reserved_bytes");
     });
@@ -79,7 +91,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("analytics_watch");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.StreamName).HasColumnName("stream_name");
       e.Property(x => x.Enabled).HasColumnName("enabled");
       e.Property(x => x.Classes).HasColumnName("classes");
@@ -94,7 +106,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("ptz_calibration");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.PanDx).HasColumnName("pan_dx");
       e.Property(x => x.PanDy).HasColumnName("pan_dy");
       e.Property(x => x.TiltDx).HasColumnName("tilt_dx");
@@ -108,19 +120,19 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("ptz_tracking_policy");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.Enabled).HasColumnName("enabled");
       e.Property(x => x.Kinds).HasColumnName("kinds");
       e.Property(x => x.Sources).HasColumnName("sources");
-      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id");
+      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id").HasConversion(NullableUuidText);
     });
 
     modelBuilder.Entity<DbPtzSlaveBinding>(e =>
     {
       e.ToTable("ptz_slave_binding");
       e.HasKey(x => x.SlaveCameraId);
-      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id");
-      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id");
+      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id").HasConversion(UuidText);
+      e.Property(x => x.MasterCameraId).HasColumnName("master_camera_id").HasConversion(UuidText);
       e.Property(x => x.Method).HasColumnName("method");
       e.Property(x => x.CalibratedAt).HasColumnName("calibrated_at");
       e.HasMany(x => x.Points)
@@ -132,7 +144,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("ptz_slave_binding_point");
       e.HasKey(x => new { x.SlaveCameraId, x.Ordinal });
-      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id");
+      e.Property(x => x.SlaveCameraId).HasColumnName("slave_camera_id").HasConversion(UuidText);
       e.Property(x => x.Ordinal).HasColumnName("ordinal");
       e.Property(x => x.MasterX).HasColumnName("master_x");
       e.Property(x => x.MasterY).HasColumnName("master_y");
@@ -172,7 +184,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("camera_schedule");
       e.HasKey(x => new { x.CameraId, x.ScheduleId });
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.ScheduleId).HasColumnName("schedule_id");
     });
 
@@ -182,7 +194,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("camera_setup");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.ServerId).HasColumnName("server_id");
       e.Property(x => x.OnvifMetadataDisabled).HasColumnName("onvif_metadata_disabled");
     });
@@ -191,7 +203,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
     {
       e.ToTable("onvif_event_subscription");
       e.HasKey(x => x.CameraId);
-      e.Property(x => x.CameraId).HasColumnName("camera_id");
+      e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.Subscribed).HasColumnName("subscribed");
       e.Property(x => x.PollTimeoutSeconds).HasColumnName("poll_timeout_seconds");
       e.Property(x => x.MessageLimit).HasColumnName("message_limit");

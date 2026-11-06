@@ -18,15 +18,20 @@ namespace VmsMap.Tests;
 // answers a replica with its owner's values — and taken away with the world.
 public class DemoValueFeederTests
 {
+  // What the world calls its cameras, and the ids VmsCfg keys them by.
   private static readonly string[] DemoCameras =
     ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"];
+
+  private static readonly string Vehicle = DemoIds.Camera("sim-vehicle");
+  private static readonly string Master = DemoIds.Camera("sim-master");
+  private static readonly string Ptz = DemoIds.Camera("sim-ptz");
 
   // About 1 m of latitude; a degree is 2πR/360.
   private const double OneMetreInLatitude = 1.0 / 111_319.5;
 
   private sealed class TestCatalog(params string[] cameras) : ICameraCatalog
   {
-    private readonly List<string> _known = [.. cameras];
+    private readonly List<string> _known = [.. cameras.Select(DemoIds.Camera)];
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult(_known.Contains(cameraId)
@@ -130,12 +135,12 @@ public class DemoValueFeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
 
     var written = await s.Feeder.RunOnceAsync(CancellationToken.None);
 
     var owner = await OwnerOfReplicaAsync(s.Db);
-    Assert.Equal(Guid.Parse(CameraObjectId.For("sim-vehicle")), owner);
+    Assert.Equal(Guid.Parse(CameraObjectId.For(Vehicle)), owner);
 
     var values = await ValuesOf(s.Db, owner);
     Assert.Equal(2, written);
@@ -153,12 +158,12 @@ public class DemoValueFeederTests
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
 
     s.Time.Now = DateTimeOffset.UnixEpoch;
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     await s.Feeder.RunOnceAsync(CancellationToken.None);
 
     // Five metres north over five seconds: one metre per second, 3.6 km/h.
     s.Time.Now = DateTimeOffset.UnixEpoch.AddSeconds(5);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923 + 5 * OneMetreInLatitude, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923 + 5 * OneMetreInLatitude, -76.9378);
     await s.Feeder.RunOnceAsync(CancellationToken.None);
 
     var values = await ValuesOf(s.Db, await OwnerOfReplicaAsync(s.Db));
@@ -170,10 +175,10 @@ public class DemoValueFeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     // The wires of the demo: sim-master's relay closes sim-ptz's input, so it reads 0.
-    s.Io.Relays["sim-master"] = true;
-    s.Io.Inputs["sim-ptz"] = false;
+    s.Io.Relays[Master] = true;
+    s.Io.Inputs[Ptz] = false;
 
     await s.Feeder.RunOnceAsync(CancellationToken.None);
 
@@ -187,8 +192,8 @@ public class DemoValueFeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
-    s.Io.Relays["sim-master"] = null; // subscribed, nothing announced yet
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Io.Relays[Master] = null; // subscribed, nothing announced yet
 
     await s.Feeder.RunOnceAsync(CancellationToken.None);
 
@@ -211,7 +216,7 @@ public class DemoValueFeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
 
     var user = new BaseMarkerDTO { id = Guid.NewGuid().ToString(), name = "The administrator's panel" };
     await s.Map.UpdateHierarchyAsync([user]);
@@ -241,7 +246,7 @@ public class DemoValueFeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
-    s.Geo.Points["sim-vehicle"] = new CameraGeoPoint(38.9923, -76.9378);
+    s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     await s.Feeder.RunOnceAsync(CancellationToken.None);
     Assert.NotEmpty(await s.Db.Values.ToListAsync());
 

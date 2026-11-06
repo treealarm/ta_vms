@@ -133,7 +133,7 @@ public class RightsServiceTests
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = Guid.Parse(camera.id!),
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
       is_reference = true,
       height_m = 3,
       hfov_deg = 60,
@@ -145,7 +145,7 @@ public class RightsServiceTests
     var effective = await s.Rights.GetEffectiveAsync(Caller(null, "operators"), default);
 
     Assert.Equal(2, effective.Count);
-    Assert.Contains(effective, n => n.object_id == camera.id && n.camera_id == "cam1"
+    Assert.Contains(effective, n => n.object_id == camera.id && n.camera_id == TestCameras.One
       && n.actions.Contains(RightActions.ViewLive));
     Assert.Contains(effective, n => n.object_id == building.id && n.camera_id is null);
     Assert.Empty(await s.Rights.GetEffectiveAsync(Caller("bob"), default));

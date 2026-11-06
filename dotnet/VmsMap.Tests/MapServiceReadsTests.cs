@@ -458,7 +458,7 @@ public class MapServiceReadsTests
     s.Db.CameraNodes.Add(new DBCameraNode
     {
       object_id = Guid.Parse(camera.id!),
-      camera_id = "cam1",
+      camera_id = TestCameras.One,
     });
     s.Db.GeoObjects.Add(new DBGeoObject
     {

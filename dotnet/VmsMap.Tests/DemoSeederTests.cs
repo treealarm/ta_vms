@@ -23,12 +23,15 @@ public class DemoSeederTests
 {
   private sealed class TestCatalog : ICameraCatalog
   {
+    // The demo world names its cameras; VmsCfg keys them by id. The fake catalogue holds ids, the
+    // way the real one does.
     private readonly HashSet<string> _known;
 
-    public TestCatalog(params string[] known) => _known = new HashSet<string>(known, StringComparer.Ordinal);
+    public TestCatalog(params string[] known) =>
+      _known = new HashSet<string>(known.Select(DemoIds.Camera), StringComparer.Ordinal);
 
     /// A camera the installation provisions after the demo was installed once.
-    public void Add(string cameraId) => _known.Add(cameraId);
+    public void Add(string cameraName) => _known.Add(DemoIds.Camera(cameraName));
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult(_known.Contains(cameraId)
@@ -193,7 +196,7 @@ public class DemoSeederTests
 
     Assert.Equal(["sim-missing"], report.SkippedCameras);
     Assert.True((await s.Seeder.GetStatusAsync(Key, CancellationToken.None)).Installed);
-    Assert.Equal("sim-master", (await s.Db.CameraPlacements.SingleAsync()).camera_id);
+    Assert.Equal(DemoIds.Camera("sim-master"), (await s.Db.CameraPlacements.SingleAsync()).camera_id);
   }
 
   [Fact]
@@ -227,7 +230,7 @@ public class DemoSeederTests
 
     var replicaId = Guid.Parse(DemoIds.Id("object/telemetry"));
     var replica = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId);
-    Assert.Equal(Guid.Parse(CameraObjectId.For("sim-vehicle")), replica.owner_id);
+    Assert.Equal(Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-vehicle"))), replica.owner_id);
 
     // The camera stands where its placement put it; the replica shows it from a diagram, which is
     // not a space, so there is nothing to place.

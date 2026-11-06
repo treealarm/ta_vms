@@ -64,7 +64,7 @@ public sealed class ClipStorage(
 
     await using var cmd = dataSource.CreateCommand("""
       INSERT INTO clips (clip_uid, file_path, camera_id, stream_name, storage_id, start_ts, end_ts, size_bytes, retained, origin)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3::uuid, $4, NULLIF($5, '')::uuid, $6, $7, $8, $9, $10)
       ON CONFLICT (file_path) DO UPDATE SET
         camera_id   = EXCLUDED.camera_id,
         stream_name = EXCLUDED.stream_name,
@@ -153,7 +153,7 @@ public sealed class ClipStorage(
     await using (var findCmd = new NpgsqlCommand("""
       SELECT event_uuid, alarm_end_ts, alarm_start_ts
       FROM retention_events
-      WHERE event_id = $1 AND camera_id = $2
+      WHERE event_id = $1 AND camera_id = $2::uuid
       ORDER BY alarm_start_ts DESC
       LIMIT 1
       """, conn, tx))
@@ -196,7 +196,7 @@ public sealed class ClipStorage(
       eventUuid = Guid.NewGuid();
       await using var ins = new NpgsqlCommand("""
         INSERT INTO retention_events(event_uuid, event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, object_id, trigger)
-        VALUES($1, $2, $3, $4, $5, $6, $7, $8);
+        VALUES($1, $2, $3::uuid, $4, $5, $6, $7, $8);
         """, conn, tx);
       ins.Parameters.AddWithValue(eventUuid);
       ins.Parameters.AddWithValue(eventId);
@@ -214,7 +214,7 @@ public sealed class ClipStorage(
     await using (var retainClips = new NpgsqlCommand($"""
       UPDATE clips
       SET retained = TRUE
-      WHERE camera_id = $1
+      WHERE camera_id = $1::uuid
         AND start_ts <= $2 + ($5 * interval '1 second')
         AND COALESCE(end_ts, start_ts) >= $3 - ($4 * interval '1 second')
         {streamFilter};
@@ -510,7 +510,7 @@ public sealed class ClipStorage(
     return rows.Select(ToRecording).ToList();
   }
 
-  public async Task<List<(Guid ClipUid, string FilePath, string CameraId, string StorageId, DateTime EndTs)>> GetUnretainedCandidatesAsync(
+  public async Task<List<(Guid ClipUid, string FilePath, string CameraId, string? StorageId, DateTime EndTs)>> GetUnretainedCandidatesAsync(
     int minOlderThanSeconds,
     int batchSize,
     CancellationToken ct)
@@ -556,7 +556,7 @@ public sealed class ClipStorage(
     string FilePath,
     string CameraId,
     string StreamName,
-    string StorageId,
+    string? StorageId,
     DateTime StartTs,
     DateTime EndTs,
     int Attempts);
@@ -668,7 +668,7 @@ public sealed class ClipStorage(
   public async Task<List<Recording>?> GetClipsForEventAsync(Guid eventUuid, CancellationToken ct)
   {
     await using var evtCmd = dataSource.CreateCommand("""
-      SELECT camera_id FROM retention_events WHERE event_uuid = $1;
+      SELECT camera_id::text FROM retention_events WHERE event_uuid = $1;
       """);
     evtCmd.Parameters.AddWithValue(eventUuid);
     var cameraId = (string?)await evtCmd.ExecuteScalarAsync(ct);
@@ -680,7 +680,7 @@ public sealed class ClipStorage(
     var post = config?.PostRecordSeconds ?? 30;
 
     await using var cmd = dataSource.CreateCommand("""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
+      SELECT c.camera_id::text, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id::text, c.origin,
              '',
              c.roi_state
       FROM clips c
@@ -699,7 +699,7 @@ public sealed class ClipStorage(
     return rows.Select(r => r.Recording).ToList();
   }
 
-  public async Task<Dictionary<Guid, (string StorageId, string FilePath, string? FragIndex)>> GetClipsForIndexAsync(
+  public async Task<Dictionary<Guid, (string? StorageId, string FilePath, string? FragIndex)>> GetClipsForIndexAsync(
     IReadOnlyList<Guid> uids, CancellationToken ct)
   {
     await using var db = await dbFactory.CreateDbContextAsync(ct);
@@ -813,13 +813,13 @@ public sealed class ClipStorage(
       return [];
 
     await using var cmd = dataSource.CreateCommand("""
-      SELECT c.camera_id, c.stream_name, c.start_ts,
+      SELECT c.camera_id::text, c.stream_name, c.start_ts,
              (SELECT MIN(n.start_ts) FROM clips n
                WHERE n.camera_id = c.camera_id
                  AND n.stream_name = c.stream_name
                  AND n.start_ts > c.start_ts) AS resumed_at
       FROM clips c
-      WHERE c.end_ts IS NULL AND c.camera_id = ANY($1)
+      WHERE c.end_ts IS NULL AND c.camera_id = ANY($1::uuid[])
       ORDER BY c.start_ts;
       """);
     cmd.Parameters.AddWithValue(NpgsqlDbType.Array | NpgsqlDbType.Text, cameraIds.ToArray());
@@ -855,7 +855,7 @@ public sealed class ClipStorage(
 
     await using var cmd = dataSource.CreateCommand("""
       SELECT stream_name FROM retention_events
-      WHERE camera_id = $1
+      WHERE camera_id = $1::uuid
         AND alarm_start_ts <= now()
         AND alarm_end_ts + ($2 * interval '1 second') >= now()
       GROUP BY stream_name;
@@ -882,7 +882,7 @@ public sealed class ClipStorage(
     await using var cmd = dataSource.CreateCommand("""
       SELECT EXISTS (
         SELECT 1 FROM retention_events
-        WHERE camera_id = $1
+        WHERE camera_id = $1::uuid
           AND alarm_start_ts <= now()
           AND alarm_end_ts + ($2 * interval '1 second') >= now()
       );
@@ -904,9 +904,9 @@ public sealed class ClipStorage(
     // camera-scoped caller must be able to say so here as well.
     var byCamera = !string.IsNullOrWhiteSpace(cameraId);
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
+      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
       FROM retention_events
-      WHERE event_id = ANY($1){(byCamera ? " AND camera_id = $2" : "")}
+      WHERE event_id = ANY($1){(byCamera ? " AND camera_id = $2::uuid" : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC;
       """);
     cmd.Parameters.AddWithValue(eventIds.ToArray());
@@ -955,7 +955,7 @@ public sealed class ClipStorage(
     if (!string.IsNullOrWhiteSpace(cameraId))
     {
       values.Add(cameraId);
-      where.Add($"camera_id = ${values.Count}");
+      where.Add($"camera_id = ${values.Count}::uuid");
     }
     if (fromAlarmStart is not null)
     {
@@ -970,7 +970,7 @@ public sealed class ClipStorage(
 
     values.Add(lim);
     var sql = $"""
-      SELECT event_id, camera_id, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
+      SELECT event_id, camera_id::text, stream_name, alarm_start_ts, alarm_end_ts, event_uuid::text, object_id, trigger
       FROM retention_events
       {(where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "")}
       ORDER BY alarm_start_ts DESC, event_uuid DESC
@@ -1026,14 +1026,14 @@ public sealed class ClipStorage(
     // in ascending order, which is what the range grouping expects.
     await using var cmd = dataSource.CreateCommand($"""
       SELECT * FROM (
-        SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
+        SELECT c.camera_id::text, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id::text, c.origin,
                COALESCE(string_agg(DISTINCT re.event_id, ','), '') AS event_ids,
                c.roi_state
         FROM clips c
         LEFT JOIN retention_events re ON re.camera_id = c.camera_id
           AND c.start_ts <= re.alarm_end_ts + ($5 * interval '1 second')
           AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($6 * interval '1 second')
-        WHERE c.camera_id = $1 AND c.retained = TRUE {streamFilter}
+        WHERE c.camera_id = $1::uuid AND c.retained = TRUE {streamFilter}
           AND ($2::timestamptz IS NULL OR COALESCE(c.end_ts, c.start_ts + interval '1 minute') >= $2)
           AND ($3::timestamptz IS NULL OR c.start_ts <= $3)
         GROUP BY c.clip_uid
@@ -1094,14 +1094,14 @@ public sealed class ClipStorage(
     var streamFilter = string.IsNullOrEmpty(streamName) ? "" : "AND c.stream_name = $6";
 
     await using var cmd = dataSource.CreateCommand($"""
-      SELECT c.camera_id, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id, c.origin,
+      SELECT c.camera_id::text, c.stream_name, c.file_path, c.start_ts, c.end_ts, c.size_bytes, c.clip_uid::text, c.storage_id::text, c.origin,
              COALESCE(string_agg(DISTINCT re.event_id, ','), ''),
              c.roi_state
       FROM clips c
       LEFT JOIN retention_events re ON re.camera_id = c.camera_id
         AND c.start_ts <= re.alarm_end_ts + ($4 * interval '1 second')
         AND COALESCE(c.end_ts, c.start_ts) >= re.alarm_start_ts - ($5 * interval '1 second')
-      WHERE c.camera_id = $1 AND c.retained = TRUE AND c.start_ts {timeOp} $2 {streamFilter}
+      WHERE c.camera_id = $1::uuid AND c.retained = TRUE AND c.start_ts {timeOp} $2 {streamFilter}
       GROUP BY c.clip_uid
       ORDER BY c.start_ts {order}
       LIMIT $3;
@@ -1246,7 +1246,7 @@ public sealed class ClipStorage(
     await using var cmd = dataSource.CreateCommand("""
       SELECT EXISTS (
         SELECT 1 FROM retention_events
-        WHERE camera_id = $1
+        WHERE camera_id = $1::uuid
           AND $2::timestamptz <= alarm_end_ts + ($4 * interval '1 second')
           AND COALESCE($3::timestamptz, $2::timestamptz) >= alarm_start_ts - ($5 * interval '1 second')
       );
@@ -1268,7 +1268,7 @@ public sealed class ClipStorage(
     EndTs      = c.EndTs.HasValue ? Timestamp.FromDateTime(c.EndTs.Value.ToUniversalTime()) : null,
     SizeBytes  = (ulong)c.SizeBytes,
     ClipUid    = c.ClipUid.ToString(),
-    StorageId  = c.StorageId,
+    StorageId  = c.StorageId ?? string.Empty,
     Origin     = c.Origin,
     RoiState = ToRoiState(c.RoiState)
   };

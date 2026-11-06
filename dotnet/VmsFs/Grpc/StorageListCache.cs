@@ -30,10 +30,10 @@ public sealed class StorageListCache(
     return await FetchAndStoreAsync(ct);
   }
 
-  public Storage? Find(IReadOnlyList<Storage> storages, string storageId) =>
+  public Storage? Find(IReadOnlyList<Storage> storages, string? storageId) =>
     storages.FirstOrDefault(s => s.StorageId == storageId);
 
-  public string? TryGetRootPath(string storageId) =>
+  public string? TryGetRootPath(string? storageId) =>
     _cached?.FirstOrDefault(s => s.StorageId == storageId)?.RootPath;
 
   public void Invalidate()
