@@ -160,9 +160,10 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     if (s.id) spaceZoomLevels[s.id] = figuresById[s.id]?.zoomLevel
   }
   const placementHere = (cameraId: string) => here.find((p) => p.cameraId === cameraId)
-  // The node that carries a placement: the canonical one for the reference, the picture otherwise.
+  // The node that carries a placement is a replica of the camera -- always, reference or picture:
+  // the canonical node stands under its server and is never drawn on a canvas.
   const nodeForPlacement = (p: CameraPlacementDto) =>
-    mapData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+    mapData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
       ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
@@ -212,7 +213,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       if (isNew && containerId) {
         await dispatch(movePlacedCamera({
           cameraId: p.cameraId,
-          isReference: p.isReference,
           canvasId: spaceId,
           containerId,
         })).unwrap()

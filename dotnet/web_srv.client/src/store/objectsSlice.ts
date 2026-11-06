@@ -96,7 +96,8 @@ export const resolveCameraNode = createAsyncThunk(
   async ({ cameraId, spaceId }: { cameraId: string; spaceId?: string }, api) => {
     const find = () => {
       const known = Object.values((api.getState() as { objects: ObjectsState }).objects.markers)
-      return known.find((marker) => marker.cameraId === cameraId && !marker.ownerId)
+      // A camera on a canvas is a replica of its canonical node; prefer the one drawn here.
+      return known.find((marker) => marker.cameraId === cameraId && !!marker.ownerId)
         ?? known.find((marker) => marker.cameraId === cameraId)
         ?? null
     }

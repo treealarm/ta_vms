@@ -140,10 +140,11 @@ export default function MapsOperatorPanel() {
     }
   }, [dispatch])
 
-  // The camera node behind the placement: the canonical node for the reference, its picture for
-  // the other placements. Its state, not the camera's recording status, paints the marker.
-  const nodeForPlacement = (p: { cameraId: string; isReference: boolean }) =>
-    spaceData.markers.find((m) => m.cameraId === p.cameraId && (p.isReference ? !m.ownerId : !!m.ownerId))
+  // The node behind a placement is always a replica of the camera: the canonical node stands under
+  // its server and is never drawn on a canvas. A reference and a picture differ by the flag, not by
+  // the node, so the matching marker is the one with an owner.
+  const nodeForPlacement = (p: { cameraId: string }) =>
+    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
       ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
@@ -289,7 +290,7 @@ export default function MapsOperatorPanel() {
    * resolve it.
    */
   const selectCamera = async (cameraId: string) => {
-    const known = Object.values(markers).find((m) => m.cameraId === cameraId && !m.ownerId)
+    const known = Object.values(markers).find((m) => m.cameraId === cameraId && !!m.ownerId)
       ?? Object.values(markers).find((m) => m.cameraId === cameraId)
     if (known) {
       selectNode(known)
