@@ -32,11 +32,13 @@ import { useDeviceIoLive } from '../hooks/useDeviceIoLive'
 
 // ── Digital inputs ──────────────────────────────────────────────────────────
 
-function DigitalInputRow({ cameraId, input, options, settings: saved }: {
+function DigitalInputRow({ cameraId, input, options, settings: saved, onSaved }: {
   cameraId: string
   input: DigitalInputDto
   options: DigitalInputOptionsDto | undefined
   settings: DeviceSettingsDto | undefined
+  /** The idle state is part of the list itself; the read has to happen again after a write. */
+  onSaved?: () => void
 }) {
   const { t } = useTranslation()
   const [idleState, setIdleState] = useState<IdleState>(input.idleState ?? 'closed')
@@ -73,6 +75,7 @@ function DigitalInputRow({ cameraId, input, options, settings: saved }: {
         body: JSON.stringify({ idleState }),
       })
       setSaveOk(true)
+      onSaved?.()
       setTimeout(() => setSaveOk(false), 3000)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e))
@@ -187,10 +190,11 @@ function DigitalInputRow({ cameraId, input, options, settings: saved }: {
   )
 }
 
-function DigitalInputsGroup({ cameraId, inputs, loaded }: {
+function DigitalInputsGroup({ cameraId, inputs, loaded, onSaved }: {
   cameraId: string
   inputs: DigitalInputDto[]
   loaded: boolean
+  onSaved?: () => void
 }) {
   const { t } = useTranslation()
   const [options, setOptions] = useState<DigitalInputOptionsDto[]>([])
@@ -231,6 +235,7 @@ function DigitalInputsGroup({ cameraId, inputs, loaded }: {
               input={i}
               options={options.find((o) => o.token === i.token)}
               settings={settings.find((s) => s.kind === 'digital_input' && s.token === i.token)}
+              onSaved={onSaved}
             />
           ))}
         </Stack>
@@ -241,10 +246,12 @@ function DigitalInputsGroup({ cameraId, inputs, loaded }: {
 
 // ── Relay outputs ────────────────────────────────────────────────────────────
 
-function RelayOutputRow({ cameraId, relay, options }: {
+function RelayOutputRow({ cameraId, relay, options, onSaved }: {
   cameraId: string
   relay: RelayOutputDto
   options: RelayOutputOptionsDto | undefined
+  /** Mode, delay and idle state are part of the list itself; the read has to happen again. */
+  onSaved?: () => void
 }) {
   const { t } = useTranslation()
   const [mode, setMode] = useState<RelayMode>(relay.mode)
@@ -281,6 +288,7 @@ function RelayOutputRow({ cameraId, relay, options }: {
         body: JSON.stringify({ mode, idleState, delayMs }),
       })
       setSaveOk(true)
+      onSaved?.()
       setTimeout(() => setSaveOk(false), 3000)
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e))
@@ -363,10 +371,11 @@ function RelayOutputRow({ cameraId, relay, options }: {
   )
 }
 
-function RelayOutputsGroup({ cameraId, relays, loaded }: {
+function RelayOutputsGroup({ cameraId, relays, loaded, onSaved }: {
   cameraId: string
   relays: RelayOutputDto[]
   loaded: boolean
+  onSaved?: () => void
 }) {
   const { t } = useTranslation()
   const [options, setOptions] = useState<RelayOutputOptionsDto[]>([])
@@ -396,6 +405,7 @@ function RelayOutputsGroup({ cameraId, relays, loaded }: {
               cameraId={cameraId}
               relay={r}
               options={options.find((o) => o.token === r.token)}
+              onSaved={onSaved}
             />
           ))}
         </Stack>
@@ -407,16 +417,16 @@ function RelayOutputsGroup({ cameraId, relays, loaded }: {
 // ── Section ───────────────────────────────────────────────────────────────
 
 export default function DeviceIoSection({ cameraId }: { cameraId: string }) {
-  // One poll for both lists, alive only while this tab is on screen. The lists come from the cache
-  // VmsOnvif fills from the camera's own Device/Trigger events.
-  const { relays, inputs, loaded, error } = useDeviceIoLive(cameraId)
+  // The lists are read once and their live states are pushed from the camera's Device/Trigger
+  // events; only a settings write asks for the list again.
+  const { relays, inputs, loaded, error, reload } = useDeviceIoLive(cameraId)
 
   return (
     <Stack spacing={3}>
       {error && <Alert severity="error">{error}</Alert>}
-      <DigitalInputsGroup cameraId={cameraId} inputs={inputs} loaded={loaded} />
+      <DigitalInputsGroup cameraId={cameraId} inputs={inputs} loaded={loaded} onSaved={reload} />
       <Divider />
-      <RelayOutputsGroup cameraId={cameraId} relays={relays} loaded={loaded} />
+      <RelayOutputsGroup cameraId={cameraId} relays={relays} loaded={loaded} onSaved={reload} />
     </Stack>
   )
 }

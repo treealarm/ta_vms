@@ -19,31 +19,26 @@ inversion of its pull-up — is OnvifSim's model and is not carried into ta_vms.
 camera ever needs that, it would have to become camera configuration here (a sink is a device of
 another camera, and there is no cross-camera relation today).
 
-## The UI poll interval, and the camera read behind it
+## The list read behind the device I/O overlay
 
-`useDeviceIoLive` polls VmsOnvif's cache every five seconds (`DEVICE_IO_POLL_INTERVAL_MS`), and the
-demo feeder uses the same tick. That is a constant in both places, not a setting: a large wall with
-many cameras that have devices makes one request pair per camera per five seconds, and an operator
-watching a single relay may want a slower or a faster refresh. Making it a deployment setting needs
-a decision about where it lives (VmsCfg's camera setup or its own configuration row) — the interval
-is a property of the viewer, not of the camera.
+`useDeviceIoLive` used to poll VmsOnvif's cache every five seconds (`DEVICE_IO_POLL_INTERVAL_MS`),
+and each round went web_srv → VmsOnvif → the camera's `GetRelayOutputs`/`GetDigitalInputs` for the
+*configuration* before enriching `liveActive` from the event cache. A wall of N tiles made 2N ONVIF
+requests per five seconds, and the value on screen was still up to five seconds old.
 
-The poll is not free, and it is not a state poll either. Each call goes web_srv → VmsOnvif → the
-camera's `GetRelayOutputs` / `GetDigitalInputs` for the *configuration*, and only then enriches
-`liveActive` from the event cache. So a wall of N tiles with devices makes 2N ONVIF requests per
-five seconds, and the value on screen is still up to five seconds old. The state itself is already
-event-sourced (`DeviceIoStateWatcher`); it is the transport that is a poll.
+Since 2026-11-06 the states are pushed: `DeviceIoService.StreamDeviceIoStates` (VmsOnvif) sends the
+current state of every part and every transition, web_srv merges one stream per node into
+`/api/DeviceIo/live` (SSE), and the browser keeps one connection for the whole monitor
+(`deviceIoLiveClient`). web_srv does not subscribe to `device-event` itself: replicas of one app id
+share a consumer group, so each event reaches one replica and the browsers on the others would
+never see it. A server stream from every node, by contrast, is delivered to every web_srv replica in
+full.
 
-Two directions, in order:
-
-1. **Serve the lists from VmsOnvif's cached presence.** It already keeps `DevicePresence` from the
-   discovery sweep, and the parts do not change between sweeps. The live read could return that
-   list plus the event cache; only the settings panel should force a camera read.
-2. **Push the states instead of polling them.** web_srv cannot subscribe to `device-event` itself:
-   replicas of one app id share a consumer group, so each event reaches one replica and the
-   browsers on the others never see it. The fan-out point already exists — VmsMap writes the
-   states and serves `api/map/live` as a per-client stream. The monitor overlay can watch the
-   camera's device nodes there, which also makes the monitor and the map agree by construction.
+What is left is the **list** read: `useDeviceIoLive` still asks for relays and inputs (mode, delay,
+idle state) when a tile mounts, and each call reads the camera. That is once per tile, not per five
+seconds, and it also opens the camera's watcher. Serving it from VmsOnvif's cached presence —
+`DevicePresence` from the discovery sweep — would remove the camera round trip from mounting a
+monitor wall; that is the remaining part of this topic.
 
 ## The demo world and `Maryland` match only in camera poses
 

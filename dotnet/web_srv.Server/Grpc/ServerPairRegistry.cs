@@ -105,6 +105,9 @@ public class ServerPairRegistry(CfgService.CfgServiceClient cfg, ILogger<ServerP
   /// For fan-out over AllOnvifIds, where the app id is already known.
   public OnvifService.OnvifServiceClient OnvifClientFor(string onvifId) => new(Invoker(onvifId));
 
+  /// The same, for the live device-state stream the monitor holds one connection for.
+  public DeviceIoService.DeviceIoServiceClient DeviceIoClientFor(string onvifId) => new(Invoker(onvifId));
+
   /// Every VmsLogger in the deployment: the one next to this gateway plus one per node. Logs are
   /// written to local disk, so an instance only ever sees the machine it runs on and a complete
   /// answer means asking all of them. Deduplicated, since a single-host install names the same

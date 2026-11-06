@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Threading.Channels;
 using Grpc.Core;
 using OnvifLib;
 using Vms.Onvif;
@@ -183,6 +185,72 @@ public class DeviceIoServiceImpl(
       response.Error = ex.Message;
     }
     return response;
+  }
+
+  // Every camera of this process, pushed as the camera reports it. The caller (web_srv) merges one
+  // of these per node into a single SSE stream, so a monitor wall holds one browser connection
+  // rather than one per tile. An empty source_id means the whole node.
+  public override async Task StreamDeviceIoStates(
+    StreamDeviceIoStatesRequest request,
+    IServerStreamWriter<DeviceIoStateUpdate> responseStream,
+    ServerCallContext context)
+  {
+    var ct = context.CancellationToken;
+    var filter = string.IsNullOrWhiteSpace(request.SourceId) ? null : request.SourceId;
+
+    // Subscribed before the snapshot is written: a change that lands in between is queued rather
+    // than lost, and follows the snapshot it supersedes.
+    var queue = Channel.CreateUnbounded<DeviceEvent>(new UnboundedChannelOptions
+    {
+      SingleReader = true,
+      SingleWriter = false,
+    });
+    void OnEvent(DeviceEvent e) => queue.Writer.TryWrite(e);
+    stateService.DeviceEventRaised += OnEvent;
+
+    try
+    {
+      foreach (var (cameraId, snapshot) in stateService.Snapshots())
+      {
+        if (filter is not null && !string.Equals(cameraId, filter, StringComparison.Ordinal))
+          continue;
+        await responseStream.WriteAsync(UpdateOf(cameraId, snapshot, initialized: true, observedAt: ""), ct);
+      }
+
+      await foreach (var e in queue.Reader.ReadAllAsync(ct))
+      {
+        if (filter is not null && !string.Equals(e.CameraId, filter, StringComparison.Ordinal))
+          continue;
+        // The event says what changed; the cache says what the part is now, including the contact
+        // the idle state makes of it.
+        if (stateService.TryGetSnapshot(e.CameraId, e.Kind, e.Token) is not { } snapshot)
+          continue;
+        await responseStream.WriteAsync(
+          UpdateOf(e.CameraId, snapshot, e.Initialized, e.ObservedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)),
+          ct);
+      }
+    }
+    finally
+    {
+      stateService.DeviceEventRaised -= OnEvent;
+    }
+  }
+
+  private static DeviceIoStateUpdate UpdateOf(
+    string cameraId, DeviceIoSnapshot snapshot, bool initialized, string observedAt)
+  {
+    var update = new DeviceIoStateUpdate
+    {
+      SourceId = cameraId,
+      PartKind = snapshot.Kind == DeviceIoKind.Relay ? "relay" : "digital_input",
+      Token = snapshot.Token,
+      LogicalState = snapshot.LogicalState,
+      Initialized = initialized,
+      ObservedAt = observedAt,
+    };
+    if (snapshot.Contact is { } contact)
+      update.Contact = contact;
+    return update;
   }
 
   private static RelayMode ParseMode(string mode) =>
