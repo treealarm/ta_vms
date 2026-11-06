@@ -92,6 +92,13 @@ service CfgService {
   // Read-only in M2.4 — an alarm must not be able to point at a definition nobody can enumerate.
   rpc ListAlarmDefinitions(ListAlarmDefinitionsRequest) returns (ListAlarmDefinitionsResponse);
 
+  // What reacts to a journal event: a selector over the event and the actions to run. The router
+  // in VmsSingleton reads them from here and nowhere else; `version` grows on every save so a run
+  // can name the snapshot it started from.
+  rpc ListEventSubscriptions(ListEventSubscriptionsRequest) returns (ListEventSubscriptionsResponse);
+  rpc UpsertEventSubscription(UpsertEventSubscriptionRequest) returns (OperationStatus);
+  rpc RemoveEventSubscription(RemoveEventSubscriptionRequest) returns (OperationStatus);
+
   rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
   rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
@@ -1038,5 +1045,55 @@ message ListAlarmDefinitionsRequest {
 
 message ListAlarmDefinitionsResponse {
   repeated AlarmDefinition definitions = 1;
+}
+
+// ── Event subscriptions ─────────────────────────────────────────────────────
+
+// One configured reaction to the journal: an event, a selector narrowing which occurrences of it
+// count, and the actions to run in order. The router in VmsSingleton owns the execution; this row
+// only says what the operator wants. Validation happens here, at save time — an unknown selector
+// key or action parameter is a 400, never a rule silently ignored at run time.
+message EventSubscription {
+  // Assigned on create when empty; a deterministic id is how a demo install stays idempotent.
+  string id = 1;
+  string name = 2;
+  bool enabled = 3;
+  // A name from the map's journal dictionary: sensor, relay, analytics, alarm_raised,
+  // alarm_acknowledged, alarm_returned, alarm_closed, or the legacy alarm.
+  string event_name = 4;
+  // JSON selector: { "object_ids": [], "camera_ids": [], "kinds": [], "tokens": [], "props": {} }.
+  // The fields come from the event's extra props — the router has no device_node.
+  string source_filter = 5;
+  // "any" | "armed" | "disarmed". Arming is resolved from VmsMap when the event fires.
+  string armed_condition = 6;
+  int32 cooldown_ms = 7;
+  // Grows on every save; a run keeps the snapshot it started from.
+  int32 version = 8;
+  repeated SubscriptionAction actions = 9;
+}
+
+message SubscriptionAction {
+  int32 position = 1;
+  // "retain_recording" | "set_relay" | "emit_event" | "raise_alarm".
+  string kind = 2;
+  // JSON parameters, validated against the kind at save time.
+  string params = 3;
+}
+
+message ListEventSubscriptionsRequest {
+}
+
+message ListEventSubscriptionsResponse {
+  repeated EventSubscription subscriptions = 1;
+}
+
+// Idempotent by id; an empty id on create assigns one. The stored version is the service's, not
+// the caller's.
+message UpsertEventSubscriptionRequest {
+  EventSubscription subscription = 1;
+}
+
+message RemoveEventSubscriptionRequest {
+  string id = 1;
 }
 

@@ -115,6 +115,9 @@ service MapService {
   rpc RaiseAlarm(RaiseAlarmRequest) returns (Alarm);
 
   rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
+  // One event by id. The event router trusts the journal, not the bus: map-event-created carries
+  // an id and nothing else, and GetEventsByFilter has no "by id" filter — start_id is a cursor.
+  rpc GetEvent(GetEventRequest) returns (Event);
 
   rpc GetTracksByFilter(GetTracksByFilterRequest) returns (TrackPointList);
   rpc GetTracksByBox(GetTracksByBoxRequest) returns (TrackPointList);
@@ -829,6 +832,9 @@ message RaiseAlarmRequest {
   optional google.protobuf.Timestamp expected_end_ts = 5;
   string source_event_id = 6;
   Caller caller = 7;
+  // The VmsCfg event_subscriptions row a subscription-sourced alarm belongs to. Empty for the
+  // sensor and retention sources.
+  string subscription_id = 8;
 }
 
 // What the map paints a set of nodes from: their states, their alarm counters and the dictionary
@@ -879,6 +885,12 @@ message GetEventsByFilterRequest {
   string sort_key = 9;
   string sort_order = 10;
   Caller caller = 11;
+}
+
+// The id of one journal row. NotFound means the event is gone — a camera deleted with its history
+// takes its events with it — and the router drops the notification.
+message GetEventRequest {
+  string id = 1;
 }
 
 // ── Values and tracks ─────────────────────────────────────────────────────────
