@@ -49,6 +49,8 @@ type CameraProps = {
   selected?: boolean
   /** Lets the marker be dragged, and, when selected, its cone be turned and stretched. */
   editable?: boolean
+  /** Whether the marker takes clicks at all; a tool that draws or places works through it. */
+  interactive?: boolean
   dimmed?: boolean
   alarm?: CameraAlarm
   /** The scale layers; with `zoomLevel`, the marker and its cone are hidden outside the range. */
@@ -61,7 +63,8 @@ type CameraProps = {
 
 /** A camera and its view cone. heading 0 points the cone north, clockwise from there. */
 export function CameraMarker({
-  placement, label, color, selected, editable, dimmed, alarm = null, levels, zoomLevel, onSelect, onChange,
+  placement, label, color, selected, editable, interactive = true, dimmed, alarm = null, levels,
+  zoomLevel, onSelect, onChange,
 }: CameraProps) {
   const zoom = useMapZoom()
   const ranges = useMemo(() => levelRanges(levels ?? []), [levels])
@@ -102,20 +105,24 @@ export function CameraMarker({
         pathOptions={{ color, weight: 1, fillColor: color, fillOpacity: dimmed ? 0.05 : selected ? 0.25 : 0.12, opacity: dimmed ? 0.3 : 0.8 }}
       />
       <Marker
+        // A new key remounts the marker when a tool starts taking the click: Leaflet makes an
+        // element a mouse target once, when it is created, and a later option change does not.
+        key={interactive ? 'interactive' : 'passive'}
         position={[p.lat, p.lon]}
         icon={icon}
         opacity={dimmed ? 0.45 : 1}
-        draggable={!!editable}
-        eventHandlers={{
+        interactive={interactive}
+        draggable={!!editable && interactive}
+        eventHandlers={interactive ? {
           click: () => onSelect?.(),
           dragstart: () => { startRef.current = p },
           drag: (e) => moveCamera(e, false),
           dragend: (e) => moveCamera(e, true),
-        }}
+        } : undefined}
       >
         <Tooltip direction="top" offset={[0, -12]}>{label}</Tooltip>
       </Marker>
-      {editable && selected && (
+      {interactive && editable && selected && (
         <>
           <Polyline positions={[[p.lat, p.lon], [tip.lat, tip.lon]]} pathOptions={{ color: '#fff', weight: 1, dashArray: '4 4' }} interactive={false} />
           <Marker
@@ -134,6 +141,8 @@ type LandmarkProps = {
   landmark: LandmarkDto
   selected?: boolean
   editable?: boolean
+  /** Whether the marker takes clicks at all; the drawing tools work through it. */
+  interactive?: boolean
   /** The scale layers; with `zoomLevel`, the marker is hidden outside the range. */
   levels?: MapLevel[]
   zoomLevel?: string
@@ -142,7 +151,7 @@ type LandmarkProps = {
 }
 
 export function LandmarkMarker({
-  landmark, selected, editable, levels, zoomLevel, onSelect, onMove,
+  landmark, selected, editable, interactive = true, levels, zoomLevel, onSelect, onMove,
 }: LandmarkProps) {
   const icon = useMemo(() => landmarkIcon(!!selected), [selected])
   const zoom = useMapZoom()
@@ -152,16 +161,26 @@ export function LandmarkMarker({
 
   return (
     <Marker
+      // Remounted when it stops taking clicks, for the same reason as the camera's marker.
+      key={interactive ? 'interactive' : 'passive'}
       position={[landmark.lat, landmark.lon]}
       icon={icon}
-      draggable={!!editable}
-      eventHandlers={{
-        click: () => onSelect?.(),
+      // Above a camera or a shape it may stand on, so that clicking it picks the landmark rather
+      // than what lies beneath.
+      zIndexOffset={1000}
+      interactive={interactive}
+      draggable={!!editable && interactive}
+      eventHandlers={interactive ? {
+        click: (e) => {
+          // Selecting an existing landmark never places a second one on top of it.
+          L.DomEvent.stopPropagation(e)
+          onSelect?.()
+        },
         dragend: (e) => {
           const at = (e.target as L.Marker).getLatLng()
           onMove?.(at.lat, at.lng)
         },
-      }}
+      } : undefined}
     >
       <Tooltip direction="top" offset={[0, -8]}>
         {landmark.name}{landmark.heightM ? ` · ${landmark.heightM} m` : ''}

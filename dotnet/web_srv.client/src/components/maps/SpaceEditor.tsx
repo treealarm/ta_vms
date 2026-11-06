@@ -102,6 +102,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
+  // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
+  // shape being drawn. What the click is for always wins over what it lands on.
+  const picking = !!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)
   const mapData = useMapChildren(spaceId || null)
   const levels = useAppSelector((s) => s.levels.levels)
   const markersById = useAppSelector((s) => s.objects.markers)
@@ -620,7 +623,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             space={space}
             alignOnMap={alignOnMap}
             onMapClick={handleMapClick}
-            picking={!!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)}
+            picking={picking}
             focus={focus}
             overlay={<SpaceNav spaces={spaces} space={space} />}
             onNodeDrop={(at, nodeId) => void run(async () => {
@@ -652,6 +655,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                 .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
                 .map((marker) => marker.id))}
               editable={mode === 'select'}
+              interactive={!picking}
               onGeometryChange={handleGeometryChange}
             />
             {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
@@ -661,6 +665,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               selectedId={selectedNested?.id}
               levels={levels}
               zoomLevels={spaceZoomLevels}
+              interactive={!picking}
               onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
             />
             {selectedNested && mode === 'select' && (
@@ -682,6 +687,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
                   selected={selection?.kind === 'camera' && selection.id === p.cameraId}
                   editable={mode === 'select'}
+                  interactive={!picking}
                   levels={levels}
                   zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
                   onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
@@ -694,7 +700,10 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                 key={m.id}
                 landmark={m}
                 selected={selection?.kind === 'landmark' && selection.id === m.id}
-                editable={mode !== 'plan'}
+                // A landmark is picked while selecting and while placing one; the drawing tools
+                // and a camera waiting for its spot take the click instead.
+                interactive={!pendingCameraId && (mode === 'select' || mode === 'landmark')}
+                editable={mode === 'select'}
                 levels={levels}
                 zoomLevel={m.id ? figuresById[m.id]?.zoomLevel : undefined}
                 onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}

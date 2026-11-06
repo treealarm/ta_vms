@@ -31,13 +31,15 @@ type Props = {
   zoomLevels?: Record<string, string | undefined>
   /** Clicked a footprint with nothing else under it, or picked one from the list of overlapping ones. */
   onPick: (space: SpaceDto) => void
+  /** Whether a click on a footprint picks it; a tool that draws or places takes the click instead. */
+  interactive?: boolean
 }
 
 /**
  * Where nested spaces lie, as outlines with their names. Floors of one building usually share an
  * outline, so a click that lands in several asks which one is meant instead of guessing.
  */
-export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, onPick }: Props) {
+export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, onPick, interactive = true }: Props) {
   const [choice, setChoice] = useState<{ at: L.LatLng; spaces: SpaceDto[] } | null>(null)
   const zoom = useMapZoom()
   const ranges = levelRanges(levels ?? [])
@@ -60,8 +62,9 @@ export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, on
         const alarm = group.some((s) => !!s.id && !!alarmed?.has(s.id))
         return (
           <Polygon
-            // Keyed by alarm too: Leaflet sets a path's class once, when it is created.
-            key={`${first.id}:${alarm}`}
+            // Keyed by alarm and by interactivity too: Leaflet sets a path's class and its mouse
+            // targets once, when it is created, and a later option change never reaches them.
+            key={`${first.id}:${alarm}:${interactive}`}
             positions={first.footprint.map((p) => [p.lat, p.lon] as [number, number])}
             pathOptions={{
               color: alarm ? ALARM_COLOR : selected ? '#ffca28' : '#90caf9',
@@ -70,8 +73,10 @@ export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, on
               fillColor: alarm ? ALARM_COLOR : '#90caf9',
               fillOpacity: alarm ? 0.18 : 0.08,
               className: alarm ? 'vms-alarm-pulse' : undefined,
+              // A footprint drawn over the map must not swallow a click a tool is waiting for.
+              interactive,
             }}
-            eventHandlers={{
+            eventHandlers={interactive ? {
               click: (e) => {
                 L.DomEvent.stopPropagation(e)
                 const at = { lat: e.latlng.lat, lon: e.latlng.lng }
@@ -79,7 +84,7 @@ export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, on
                 if (hits.length > 1) setChoice({ at: e.latlng, spaces: hits })
                 else onPick(hits[0] ?? first)
               },
-            }}
+            } : undefined}
           >
             <Tooltip direction="center" permanent>{group.map((s) => s.name).join(' · ')}</Tooltip>
           </Polygon>
