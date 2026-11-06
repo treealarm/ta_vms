@@ -6,6 +6,7 @@ import AddIcon from '@mui/icons-material/Add'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
+import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../../api/apiFetch'
 import { enc } from '../../api/requestJson'
@@ -20,6 +21,7 @@ import KindIcon from '../../map/KindIcon'
 import { treeRows } from '../../map/nodeTree'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
+import AttachDeviceDiagramDialog from '../diagrams/AttachDeviceDiagramDialog'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
@@ -345,6 +347,8 @@ function NodesTree({ markers, space, onOpenSpace }: {
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  // The device whose diagram the administrator is about to attach a template to.
+  const [attachDevice, setAttachDevice] = useState<MapMarker | null>(null)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
   useEffect(() => {
@@ -466,6 +470,17 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
+              {/* A device may be drawn from a template by hand: its own action, on its own row. */}
+              {marker.nodeKind === 'camera' && marker.cameraId ? (
+                <Tooltip title={t('diagramEditor.attachDeviceDiagram')}>
+                  <IconButton
+                    size="small"
+                    onClick={(event) => { event.stopPropagation(); setAttachDevice(marker) }}
+                  >
+                    <DashboardCustomizeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
             </ListItemButton>
           )
         })}
@@ -473,6 +488,13 @@ function NodesTree({ markers, space, onOpenSpace }: {
           <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>{t('maps.editor.noNodes')}</Typography>
         )}
       </List>
+      <AttachDeviceDiagramDialog
+        device={attachDevice}
+        onClose={() => setAttachDevice(null)}
+        onAttached={() => {
+          if (attachDevice) void dispatch(loadChildren({ parentId: attachDevice.id }))
+        }}
+      />
     </>
   )
 }

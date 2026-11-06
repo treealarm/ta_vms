@@ -50,6 +50,7 @@ namespace VmsMap.Grpc
     private readonly DemoSeeder _demoSeeder;
     private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
     private readonly AlarmStore _alarmStore;
+    private readonly IDeviceDiagramService _deviceDiagrams;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -75,7 +76,8 @@ namespace VmsMap.Grpc
       MapWatchPoller watchPoller,
       DemoSeeder demoSeeder,
       VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver,
-      AlarmStore alarmStore)
+      AlarmStore alarmStore,
+      IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
       _mapService = mapService;
@@ -100,6 +102,7 @@ namespace VmsMap.Grpc
       _watchPoller = watchPoller;
       _demoSeeder = demoSeeder;
       _armingResolver = armingResolver;
+      _deviceDiagrams = deviceDiagrams;
       _alarmStore = alarmStore;
     }
 

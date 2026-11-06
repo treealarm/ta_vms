@@ -96,7 +96,9 @@ public class DeviceNodeTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
         new TestCatalog(), nodes),
-      TestWiring.Arming(db), TestWiring.Alarms(db, map, states));
+      TestWiring.Arming(db), TestWiring.Alarms(db, map, states),
+      // The attach RPC is not exercised here; the diagram service has its own tests.
+      null!);
 
     return new Services(db, map, states, nodes, grpc);
   }

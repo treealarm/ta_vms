@@ -1197,7 +1197,11 @@
     "clearBinding": "Solo un dibujo",
     "problemBindingNoValue": "La región \"{{key}}\" de \"{{name}}\" representa una parte pero no dice cómo encontrarla.",
     "problemBindingIndex": "La región \"{{key}}\" de \"{{name}}\" encuentra su parte por posición, que empieza en 1.",
-    "problemBindingDuplicate": "Dos regiones de \"{{name}}\" reclaman la misma parte."
+    "problemBindingDuplicate": "Dos regiones de \"{{name}}\" reclaman la misma parte.",
+    "attachDeviceDiagram": "Añadir diagrama del dispositivo",
+    "attachDeviceDiagramHint": "Dibujar {{name}} a partir de una plantilla de su modelo. Solo las partes configuradas del dispositivo reciben una réplica.",
+    "noTemplates": "Todavía no hay plantillas: convierta un tipo en plantilla en Tipos.",
+    "attach": "Adjuntar"
   },
   "rights": {
     "tab": "Derechos",

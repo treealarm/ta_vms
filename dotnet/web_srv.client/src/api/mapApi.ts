@@ -150,6 +150,13 @@ export const mapApi = {
   getDiagramTypes: (request: MapGetDiagramTypesRequest = {}) =>
     post<MapDiagramTypeList>(`${BASE}/diagrams/types`, request),
 
+  /** Draws a device from a template an administrator picked. */
+  attachDeviceDiagram: (body: {
+    sourceKind: string
+    sourceId: string
+    diagramTypeId: string
+  }) => post<MapMarker>(`${ADMIN}/device-diagram`, body),
+
   // ── Levels ─────────────────────────────────────────────────────────────────────────────────
   getLevels: () => requestJson<MapLevelList>(`${BASE}/levels`),
 

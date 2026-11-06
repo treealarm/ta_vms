@@ -96,6 +96,11 @@ service MapService {
   // A node with owner_id set: it shows the owner's states and values but has a place of its own.
   rpc CreateReplica(CreateReplicaRequest) returns (Marker);
 
+  // Attaches a device template to a device that has no diagram yet: the administrator's path for
+  // a model no template attaches itself to. The diagram it creates is maintained exactly like an
+  // automatic one.
+  rpc AttachDeviceDiagram(AttachDeviceDiagramRequest) returns (Marker);
+
   rpc GetStates(GetStatesRequest) returns (ObjectStateList);
   // States, alarm counters and descriptions in one answer, the way the map paints a set of nodes.
   rpc GetVisualStates(GetStatesRequest) returns (VisualStates);
@@ -989,6 +994,18 @@ message Diagram {
   string dgr_type = 4;
   // A row of `files`, not a path on a volume (see PutFile).
   string file_id = 5;
+}
+
+message AttachDeviceDiagramRequest {
+  // 'camera' today.
+  string source_kind = 1;
+  // The device's id in the owning service.
+  string source_id = 2;
+  // The template to draw it from.
+  string diagram_type_id = 3;
+  // Which view of the device: empty means the one every device has for now.
+  string slot = 4;
+  Caller caller = 5;
 }
 
 message DiagramList {

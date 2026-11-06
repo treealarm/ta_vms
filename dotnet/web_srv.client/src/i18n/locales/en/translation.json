@@ -1197,7 +1197,11 @@
     "clearBinding": "Just a drawing",
     "problemBindingNoValue": "The region \"{{key}}\" of \"{{name}}\" stands for a part but says nothing to find it by.",
     "problemBindingIndex": "The region \"{{key}}\" of \"{{name}}\" finds its part by position, which counts from 1.",
-    "problemBindingDuplicate": "Two regions of \"{{name}}\" claim the same part."
+    "problemBindingDuplicate": "Two regions of \"{{name}}\" claim the same part.",
+    "attachDeviceDiagram": "Add device diagram",
+    "attachDeviceDiagramHint": "Draw {{name}} from a template for its model. Only parts configured for the device get a replica.",
+    "noTemplates": "No device templates yet: make a type a template in Types.",
+    "attach": "Attach"
   },
   "rights": {
     "tab": "Rights",
