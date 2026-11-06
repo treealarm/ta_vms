@@ -85,6 +85,22 @@ public class MapObjectsController(MapProto.MapService.MapServiceClient map) : Co
     return MapApi.Json(response);
   }
 
+  /// The logical tree, searched without descending it: a node's name, a part's token or a camera
+  /// id. Admin → Nodes is lazy, so a token in an unopened server is otherwise unfindable.
+  [HttpGet("search")]
+  public async Task<IActionResult> SearchDeviceNodes(
+    [FromQuery] string query, [FromQuery] int limit, CancellationToken ct)
+  {
+    var response = await map.SearchDeviceNodesAsync(new MapProto.SearchDeviceNodesRequest
+    {
+      Query = query ?? string.Empty,
+      Limit = limit,
+      Caller = User.ToMapCaller(),
+    }, MapApi.Options(ct));
+
+    return MapApi.Json(response);
+  }
+
   [HttpPost("by-params")]
   public async Task<IActionResult> GetByParams(
     [FromBody] JsonElement body, CancellationToken ct)

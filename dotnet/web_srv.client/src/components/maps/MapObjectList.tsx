@@ -10,6 +10,10 @@ export type MapObjectItem = {
   dot?: string
   selected?: boolean
   onClick: () => void
+  /** Shown but not actionable: a part the reader can see and not place yet. */
+  disabled?: boolean
+  /** Indents the row under the device it belongs to. */
+  indent?: boolean
   /** A second action at the end of the row -- entering a container, say -- without selecting it. */
   action?: { title: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean }
 }
@@ -59,7 +63,13 @@ export default function MapObjectList({ sections }: { sections: MapObjectSection
             ) : (
               <List dense>
                 {shown.map((item) => (
-                  <ListItemButton key={item.key} selected={item.selected} onClick={item.onClick}>
+                  <ListItemButton
+                    key={item.key}
+                    selected={item.selected}
+                    disabled={item.disabled}
+                    onClick={item.onClick}
+                    sx={item.indent ? { pl: 4 } : undefined}
+                  >
                     {item.dot && (
                       <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: item.dot, mr: 1, flexShrink: 0 }} />
                     )}

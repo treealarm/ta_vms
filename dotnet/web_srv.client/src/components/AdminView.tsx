@@ -19,9 +19,11 @@ import OnvifCameraSettingsPanel from './OnvifCameraSettingsPanel'
 import EdgeArchivePanel from './EdgeArchivePanel'
 import AnalyticsWatchesPanel from './AnalyticsWatchesPanel'
 import MapsAdminPanel from './maps/MapsAdminPanel'
+import NodesAdminPanel from './nodes/NodesAdminPanel'
+import EventSubscriptionsPanel from './EventSubscriptionsPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'maps', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'analytics', 'edge-archive', 'deployment'] as const
+const TABS = ['cameras', 'maps', 'nodes', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'event-routing', 'analytics', 'edge-archive', 'deployment'] as const
 
 export default function AdminView() {
   const { t } = useTranslation()
@@ -60,6 +62,7 @@ export default function AdminView() {
           <Routes>
             <Route path="cameras" element={<CameraControlPanel ref={panelRef} />} />
             <Route path="maps" element={<MapsAdminPanel ref={panelRef} />} />
+            <Route path="nodes" element={<NodesAdminPanel />} />
             <Route path="mediamtx" element={<MediaMtxServersPanel ref={panelRef} />} />
             <Route path="monitors" element={<MonitorListPanel ref={panelRef} />} />
             <Route path="storages" element={<StorageSetupPanel ref={panelRef} />} />
@@ -67,6 +70,7 @@ export default function AdminView() {
             <Route path="schedules" element={<RecordingSchedulesPanel ref={panelRef} />} />
             <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
             <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
+            <Route path="event-routing" element={<EventSubscriptionsPanel />} />
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
             <Route path="edge-archive" element={<EdgeArchivePanel />} />
             <Route path="deployment" element={<DeploymentPanel ref={panelRef} />} />
@@ -93,6 +97,7 @@ export default function AdminView() {
           >
             <Tab label={t('nav.camSetup')} />
             <Tab label={t('nav.maps')} />
+            <Tab label={t('nav.nodes')} />
             <Tab label={t('nav.mediaMtx')} />
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.storages')} />
@@ -100,6 +105,7 @@ export default function AdminView() {
             <Tab label={t('nav.schedules')} />
             <Tab label={t('nav.onvif')} />
             <Tab label={t('nav.onvifSettings')} />
+            <Tab label={t('nav.eventRouting')} />
             <Tab label={t('nav.analytics')} />
             <Tab label={t('nav.edgeArchive')} />
             <Tab label={t('nav.deployment')} />

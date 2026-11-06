@@ -173,6 +173,34 @@ namespace VmsMap.Db
             return dto;
           });
     }
+    public async Task<Dictionary<string, BaseMarkerDTO>> SearchDeviceNodesAsync(string query, int limit)
+    {
+      var pattern = $"%{query}%";
+      // A camera id is a UUID column in device_node; matching it as text would defeat the column's
+      // own comparison. Everything else is a name or a token fragment.
+      var cameraId = Guid.TryParse(query, out _) ? query : null;
+
+      var list = await (
+          from m in _db.Markers
+          join n in _db.DeviceNodes on m.id equals n.object_id
+          where EF.Functions.ILike(m.name, pattern)
+                || EF.Functions.ILike(n.part_token, pattern)
+                || (cameraId != null && n.source_id == cameraId)
+          orderby m.name
+          select m)
+        .Take(limit)
+        .ToListAsync();
+
+      return list.ToDictionary(
+          m => Utils.ConvertGuidToObjectId(m.id),
+          m =>
+          {
+            var dto = new BaseMarkerDTO();
+            m.CopyAllTo(dto);
+            return dto;
+          });
+    }
+
     public async Task<List<BaseMarkerDTO>> GetByChildIdAsync(string object_id)
     {
       var rootGuid = Utils.ConvertObjectIdToGuid(object_id);

@@ -160,10 +160,28 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.MarkerList> GetByName(
       MapProto.GetByNameRequest request, ServerCallContext context)
     {
-      var ct = context.CancellationToken;
-      var caller = ToCaller(request.Caller);
-
       var markers = await _mapService.GetByNameAsync(request.Name ?? string.Empty);
+      return await MarkersAsync(markers, request.Caller, context.CancellationToken);
+    }
+
+    public override async Task<MapProto.MarkerList> SearchDeviceNodes(
+      MapProto.SearchDeviceNodesRequest request, ServerCallContext context)
+    {
+      var query = request.Query?.Trim() ?? string.Empty;
+      // One character is not a search: it would return the cap's worth of the first alphabet.
+      if (query.Length < 2)
+        return new MapProto.MarkerList();
+
+      var limit = Math.Clamp(request.Limit > 0 ? request.Limit : 50, 1, 50);
+      var markers = await _mapService.SearchDeviceNodesAsync(query, limit);
+      return await MarkersAsync(markers, request.Caller, context.CancellationToken);
+    }
+
+    /// <summary>The one rendering of a set of nodes: rights first, then children, camera and kind.</summary>
+    private async Task<MapProto.MarkerList> MarkersAsync(
+      Dictionary<string, BaseMarkerDTO> markers, MapProto.Caller callerDto, CancellationToken ct)
+    {
+      var caller = ToCaller(callerDto);
       var visible = await _rightsService.VisibleAsync(markers.Keys, caller, ct);
       markers = markers
         .Where(kv => visible.Contains(kv.Key))

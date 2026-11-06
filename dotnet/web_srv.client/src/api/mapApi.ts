@@ -87,6 +87,10 @@ export const mapApi = {
   getByName: (name: string) =>
     requestJson<MapMarkerList>(`${BASE}/objects/by-name?${query({ name })}`),
 
+  /** The logical tree searched without descending it: a node name, a part token or a camera id. */
+  searchDeviceNodes: (search: string, limit = 50) =>
+    requestJson<MapMarkerList>(`${BASE}/objects/search?${query({ query: search, limit })}`),
+
   getByParams: (
     props: MapPropertyFilter[], startId?: string, forward = 0, count = 100,
   ) => post<MapFigures>(`${BASE}/objects/by-params`, { props, startId, forward, count }),

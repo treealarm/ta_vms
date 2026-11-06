@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
@@ -7,7 +7,9 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
 import { useTranslation } from 'react-i18next'
-import type { SpaceDto } from '../../dto/dtos'
+import { apiFetch } from '../../api/apiFetch'
+import { enc } from '../../api/requestJson'
+import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren } from '../../store/objectsSlice'
@@ -21,7 +23,7 @@ import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
-type SpaceTab = 'cameras' | 'nodes' | 'landmarks'
+type SpaceTab = 'devices' | 'nodes' | 'landmarks'
 
 type Props = {
   tree: { space: SpaceDto; depth: number }[]
@@ -43,7 +45,7 @@ type Props = {
  */
 export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Props) {
   const { t } = useTranslation()
-  const [tab, setTab] = useState<SpaceTab>('cameras')
+  const [tab, setTab] = useState<SpaceTab>('devices')
   const cameraCount = useAppSelector((s) => Object.keys(s.live.cameraStatesById).length)
   const placedHere = useAppSelector((s) => new Set(
     s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
@@ -66,15 +68,15 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
               variant="fullWidth"
               sx={{ flex: 1, minHeight: 36, '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1, textTransform: 'none' } }}
             >
-              <Tab value="cameras" label={<TabLabel label={t('maps.tabCameras')} count={`${placedHere}/${cameraCount}`} />} />
+              <Tab value="devices" label={<TabLabel label={t('maps.tabDevices')} count={`${placedHere}/${cameraCount}`} />} />
               <Tab value="nodes" label={<TabLabel label={t('maps.editor.tabNodes')} count={String(markers.length)} />} />
               <Tab value="landmarks" label={<TabLabel label={t('maps.tabLandmarks')} count={String(landmarkCount)} />} />
             </Tabs>
             {tab === 'landmarks' && <AddLandmarkButton />}
           </Stack>
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            {tab === 'cameras' ? (
-              <CamerasList space={space} />
+            {tab === 'devices' ? (
+              <DevicesList space={space} />
             ) : tab === 'nodes' ? (
               <NodesTree markers={markers} space={space} onOpenSpace={onSelectSpace} />
             ) : (
@@ -156,18 +158,63 @@ function SpacesTree({ tree, loaded, selectedId, onSelect }: {
   )
 }
 
+type DeviceParts = {
+  loading: boolean
+  loaded: boolean
+  error?: string
+  inputs: DigitalInputDto[]
+  relays: RelayOutputDto[]
+}
+
 /**
- * Every camera, by server, each saying where it is with respect to this space. One placed here is
- * selected; one placed elsewhere, or nowhere, is armed for the next click on the map -- a picture
- * of it here, or its real position if it has none yet.
+ * The placement palette: every physical device, by server, each saying where it is with respect to
+ * this space, and — once opened — the parts it declares. One placed here is selected; one placed
+ * elsewhere, or nowhere, is armed for the next click on the map, which makes another picture (the
+ * service makes the first one the camera's reference). Parts are shown to be found and are not
+ * placed in M2.4; their replicas are M2.6.
  */
-function CamerasList({ space }: { space: SpaceDto }) {
+function DevicesList({ space }: { space: SpaceDto }) {
   const { t } = useTranslation()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
   const servers = useAppSelector((s) => s.live.servers)
   const placements = useAppSelector((s) => s.spatial.placements)
   const spaces = useAppSelector((s) => s.spatial.spaces)
   const { selection, pendingCameraId, setPendingCameraId, setMode, select } = useEditorState()
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [parts, setParts] = useState<Record<string, DeviceParts>>({})
+
+  // One request per device, and only when the reader opens it: at a hundred thousand cameras a
+  // part list fetched for the whole palette would be a hundred thousand requests.
+  const loadParts = useCallback(async (cameraId: string) => {
+    if (parts[cameraId]?.loading || parts[cameraId]?.loaded) return
+    setParts((prev) => ({ ...prev, [cameraId]: { loading: true, loaded: false, inputs: [], relays: [] } }))
+    try {
+      const [inputs, relays] = await Promise.all([
+        apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${enc(cameraId)}/digital-inputs`),
+        apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${enc(cameraId)}/relay-outputs`),
+      ])
+      setParts((prev) => ({ ...prev, [cameraId]: { loading: false, loaded: true, inputs, relays } }))
+    } catch (e) {
+      setParts((prev) => ({
+        ...prev,
+        [cameraId]: {
+          loading: false, loaded: true, inputs: [], relays: [],
+          error: e instanceof Error ? e.message : String(e),
+        },
+      }))
+    }
+  }, [parts])
+
+  const toggle = useCallback((cameraId: string) => {
+    const next = new Set(expanded)
+    if (next.has(cameraId)) {
+      next.delete(cameraId)
+    } else {
+      next.add(cameraId)
+      void loadParts(cameraId)
+    }
+    setExpanded(next)
+  }, [expanded, loadParts])
 
   const sections = useMemo<MapObjectSection[]>(() => {
     const cameras = Object.values(camerasById).sort((a, b) => (a.name || a.cameraId).localeCompare(b.name || b.cameraId))
@@ -187,11 +234,15 @@ function CamerasList({ space }: { space: SpaceDto }) {
       const { here, elsewhere } = where(cameraId)
       return here ? 0 : elsewhere ? 2 : 1
     }
-    return groups.filter((g) => g.cameras.length > 0).map((g) => ({
-      title: g.title,
-      items: [...g.cameras].sort((a, b) => rank(a.cameraId) - rank(b.cameraId)).map((c) => {
+
+    const inactive = { disabled: true, onClick: () => undefined }
+
+    return groups.filter((g) => g.cameras.length > 0).map((g) => {
+      const items: MapObjectSection['items'] = []
+      for (const c of [...g.cameras].sort((a, b) => rank(a.cameraId) - rank(b.cameraId))) {
         const { here, elsewhere } = where(c.cameraId)
-        return {
+        const open = expanded.has(c.cameraId)
+        items.push({
           key: c.cameraId,
           primary: c.name || c.cameraId,
           dot: STATUS_COLOR[cameraMapStatus(c)],
@@ -214,15 +265,64 @@ function CamerasList({ space }: { space: SpaceDto }) {
               setPendingCameraId(c.cameraId)
             }
           },
+          action: {
+            title: open ? t('maps.devices.collapse') : t('maps.devices.expand'),
+            icon: open ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />,
+            onClick: () => toggle(c.cameraId),
+          },
+        })
+
+        if (!open) continue
+
+        // Streams come with the camera's own configuration; the I/O parts come from the camera
+        // through VmsOnvif, because the browser does not subscribe to the device topic.
+        for (const stream of c.streams ?? []) {
+          items.push({
+            key: `stream:${c.cameraId}:${stream.streamName}`,
+            primary: stream.streamName,
+            secondary: t('maps.devices.stream'),
+            indent: true,
+            ...inactive,
+          })
         }
-      }),
-    }))
-  }, [camerasById, servers, placements, spaces, space.id, selection, pendingCameraId, select, setMode, setPendingCameraId, t])
+
+        const own = parts[c.cameraId]
+        if (!own || own.loading) {
+          items.push({ key: `parts:${c.cameraId}`, primary: t('maps.devices.loading'), indent: true, ...inactive })
+        } else if (own.error) {
+          items.push({ key: `parts:${c.cameraId}`, primary: own.error, indent: true, ...inactive })
+        } else {
+          for (const input of own.inputs) {
+            items.push({
+              key: `input:${c.cameraId}:${input.token}`,
+              primary: input.token,
+              secondary: t('maps.devices.input'),
+              indent: true,
+              ...inactive,
+            })
+          }
+          for (const relay of own.relays) {
+            items.push({
+              key: `relay:${c.cameraId}:${relay.token}`,
+              primary: relay.token,
+              secondary: t('maps.devices.relay'),
+              indent: true,
+              ...inactive,
+            })
+          }
+          if (own.inputs.length === 0 && own.relays.length === 0 && (c.streams ?? []).length === 0)
+            items.push({ key: `parts:${c.cameraId}`, primary: t('maps.devices.noParts'), indent: true, ...inactive })
+        }
+      }
+
+      return { title: g.title, items }
+    })
+  }, [camerasById, servers, placements, spaces, space.id, selection, pendingCameraId, select, setMode, setPendingCameraId, t, expanded, parts, toggle])
 
   return (
     <>
       <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, pt: 1, display: 'block' }}>
-        {t('maps.camerasHint')}
+        {t('maps.devicesHint')}
       </Typography>
       <MapObjectList sections={sections} />
     </>

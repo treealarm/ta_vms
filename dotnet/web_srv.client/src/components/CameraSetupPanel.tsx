@@ -12,6 +12,7 @@ import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
 import CameraSlaveBindingSection from './CameraSlaveBindingSection'
+import DeviceIoSection from './DeviceIoSection'
 import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
@@ -58,7 +59,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const [roiDelayHours, setRoiDelayHours] = useState(String(existing?.roiDelayHours ?? 0))
   const [roiMinCoverage, setRoiMinCoverage] = useState(pctOf(existing?.roiMinCoverage, 0))
   const [roiMaxCoverage, setRoiMaxCoverage] = useState(pctOf(existing?.roiMaxCoverage, 1))
-  type Tab = 'main' | 'advanced' | 'detections' | 'tracking' | 'calibration' | 'binding'
+  type Tab = 'main' | 'advanced' | 'devices' | 'detections' | 'tracking' | 'calibration' | 'binding'
   const [tab, setTab] = useState<Tab>('main')
   // The settings column always fills whatever the camera list and the preview leave; what varies
   // is how each tab uses that space. The survey takes all of it — it lays two live pictures side
@@ -250,6 +251,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               sx={{ borderBottom: 1, borderColor: 'divider' }}
             >
               <Tab value="main" label={t('cameras.tabMain')} />
+              {/* The hardware: the parts this device declares and how each is armed. ONVIF
+                  settings keeps the camera's own device configuration (idle state, relay mode);
+                  this tab is where the deployment decides what an input means. */}
+              {!isNew && <Tab value="devices" label={t('cameras.tabDevices')} />}
               {!isNew && <Tab value="detections" label={t('cameras.tabDetections')} />}
               {/* Three tabs rather than three folds. They were accordions stacked in one tab, which
                   made a single sheet taller than the panel: opening the survey pushed it off the
@@ -354,6 +359,10 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               : <CameraSchedulesControl cameraId={initialCameraId} />
             }
             </Box>
+            )}
+
+            {shownTab === 'devices' && !isNew && (
+              <DeviceIoSection cameraId={initialCameraId} />
             )}
 
             {shownTab === 'detections' && !isNew && (

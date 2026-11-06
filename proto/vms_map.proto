@@ -86,6 +86,10 @@ service MapService {
   // clustered by zoom layer, exactly as Square's map did.
   rpc GetByBox(GetByBoxRequest) returns (Figures);
   rpc GetByName(GetByNameRequest) returns (MarkerList);
+  // Admin → Nodes searches the logical tree without descending it: a node's name, a part's token,
+  // or a camera id. The tree is loaded a level at a time, so a token in an unopened server would
+  // otherwise be unfindable. Capped, and filtered by the caller's rights like every multi-node read.
+  rpc SearchDeviceNodes(SearchDeviceNodesRequest) returns (MarkerList);
   rpc GetByParams(GetByParamsRequest) returns (Figures);
   // One node with its properties and the zoom range of its layer.
   rpc GetObjProps(GetObjPropsRequest) returns (ObjProps);
@@ -268,6 +272,15 @@ message GetByIdsRequest {
 message GetByNameRequest {
   string name = 1;
   Caller caller = 2;
+}
+
+message SearchDeviceNodesRequest {
+  // A name fragment, a part token, or a camera id. Two characters at least: one letter would
+  // return the whole tree's worth of matches up to the cap.
+  string query = 1;
+  // Capped at 50 by the service; 0 means the default (50).
+  int32 limit = 2;
+  Caller caller = 3;
 }
 
 message PropertyFilter {

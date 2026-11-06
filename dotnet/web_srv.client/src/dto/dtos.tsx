@@ -1161,6 +1161,33 @@ export type DeviceSettingsDto = {
   alarmEnabled: boolean
 }
 
+// ── Event routing ─────────────────────────────────────────────────────────
+// A reaction configured in Admin → Event routing. The selector and each action's parameters are
+// JSON strings: VmsCfg validates them on save, so an unknown key is refused there instead of being
+// silently ignored by the router at run time.
+
+export type SubscriptionActionDto = {
+  position?: number
+  /** "retain_recording" | "set_relay" | "emit_event" | "raise_alarm". */
+  kind?: string
+  params?: string
+}
+
+export type EventSubscriptionDto = {
+  id?: string
+  name?: string
+  enabled?: boolean
+  /** A name from the map's journal dictionary: sensor, relay, analytics, alarm_* or alarm. */
+  eventName?: string
+  /** JSON selector: {"object_ids":[],"camera_ids":[],"kinds":[],"tokens":[],"props":{}}. */
+  sourceFilter?: string
+  /** "any" | "armed" | "disarmed". */
+  armedCondition?: string
+  cooldownMs?: number
+  version?: number
+  actions?: SubscriptionActionDto[]
+}
+
 export type FloatRangeDto = { min: number; max: number }
 
 export type ImagingSettingsDto = {
