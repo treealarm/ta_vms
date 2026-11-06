@@ -30,9 +30,11 @@ public class DeviceIoServiceImpl(
 
       // Opening the subscription is a network round trip of its own; the live values reach the
       // caller's next poll. Its first report also starts or stops the watcher as I/O appears or
-      // goes away.
-      _ = stateService.ReportDevicePresenceAsync(
-        request.SourceId, DeviceIoKind.Relay, relays.Count);
+      // goes away, and a changed idle state recomputes the contact without waiting for a heartbeat.
+      _ = stateService.ReportDevicesAsync(
+        request.SourceId,
+        DeviceIoKind.Relay,
+        relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList());
     }
     catch (Exception ex)
     {
@@ -115,8 +117,10 @@ public class DeviceIoServiceImpl(
         return input;
       }));
 
-      _ = stateService.ReportDevicePresenceAsync(
-        request.SourceId, DeviceIoKind.DigitalInput, inputs.Count);
+      _ = stateService.ReportDevicesAsync(
+        request.SourceId,
+        DeviceIoKind.DigitalInput,
+        inputs.Select(i => new DeviceDescriptor(i.Token, i.IdleState)).ToList());
     }
     catch (Exception ex)
     {

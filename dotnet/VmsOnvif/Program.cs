@@ -21,6 +21,8 @@ var ownServerId = Require("OWN_SERVER_ID");
 // actor type name, and validating it lazily would let the service come up looking healthy and then
 // fail every camera call.
 var cameraActorType = CameraActorType.For(ownServerId);
+// The device I/O topics travel on the same bus the ordinary config events do.
+var pubSubName = Require("PUBSUB_NAME");
 
 builder.Services.AddSingleton<CameraConnCache>();
 builder.Services.AddSingleton<ICameraConnectionSource>(sp => sp.GetRequiredService<CameraConnCache>());
@@ -75,8 +77,30 @@ builder.Services.AddSingleton(sp => new VmsOnvif.Onvif.OnvifLiveEventForwarder(
 builder.Services.AddHostedService(sp =>
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>());
 builder.Services.AddSingleton<OnvifSettingsService>();
+builder.Services.AddSingleton<IDeviceIoReader>(sp => sp.GetRequiredService<OnvifSettingsService>());
 builder.Services.AddSingleton<IDeviceIoWatcherFactory, OnvifDeviceIoWatcherFactory>();
 builder.Services.AddSingleton<DeviceIoStateService>();
+builder.Services.AddSingleton<IDeviceIoStateSink>(sp => sp.GetRequiredService<DeviceIoStateService>());
+// The publisher owns the epoch and the per-part sequence; discovery only builds the content of a
+// snapshot, so the process that produced every message is one and the same.
+builder.Services.AddSingleton(sp => new DeviceEventPublisher(
+  sp.GetRequiredService<DeviceIoStateService>(),
+  sp.GetRequiredService<DaprClient>(),
+  pubSubName,
+  sp.GetRequiredService<ILogger<DeviceEventPublisher>>()));
+builder.Services.AddSingleton<IDeviceSnapshotPublisher>(sp => sp.GetRequiredService<DeviceEventPublisher>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DeviceEventPublisher>());
+// Opens the pull point for a camera without an operator watching: a sensor alarm must work while
+// the tab is closed. The interval is a setting because a minute-long sweep over a large node is
+// thousands of requests a second.
+builder.Services.AddHostedService(sp => new DeviceIoDiscoveryService(
+  sp.GetRequiredService<CfgService.CfgServiceClient>(),
+  sp.GetRequiredService<IDeviceIoReader>(),
+  sp.GetRequiredService<IDeviceIoStateSink>(),
+  sp.GetRequiredService<IDeviceSnapshotPublisher>(),
+  ownServerId,
+  DeviceIoDiscoveryService.ConfiguredInterval(),
+  sp.GetRequiredService<ILogger<DeviceIoDiscoveryService>>()));
 builder.Services.AddSingleton<AlarmEpisodeTracker>();
 builder.Services.AddSingleton<OnvifFilterCache>();
 builder.Services.AddSingleton<CameraArmedCache>();
