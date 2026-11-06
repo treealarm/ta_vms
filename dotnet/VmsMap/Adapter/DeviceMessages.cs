@@ -88,13 +88,24 @@ namespace VmsMap.Adapter
       return lastObservedAt is null || observedAt.UtcDateTime >= lastObservedAt.Value;
     }
 
+    /// <param name="lastEpoch">The cursor's epoch before this message — a sequence number means
+    /// nothing outside the process that produced it.</param>
     public static void Advance(
+      Guid? lastEpoch,
       Action<Guid?> setEpoch, Action<long> setSeq, Action<DateTime?> setObservedAt,
       string epoch, long? seq, DateTimeOffset observedAt)
     {
-      setEpoch(Guid.Parse(epoch));
+      var incoming = Guid.Parse(epoch);
+      setEpoch(incoming);
+
       if (seq is not null)
         setSeq(seq.Value);
+      else if (lastEpoch != incoming)
+        // A snapshot is the first thing a restarted publisher says, and it carries no sequence
+        // number: the dead process's counter must not be kept, or every transition the new one
+        // sends — starting again at 1 — looks like a redelivery until it catches up.
+        setSeq(0);
+
       setObservedAt(observedAt.UtcDateTime);
     }
   }

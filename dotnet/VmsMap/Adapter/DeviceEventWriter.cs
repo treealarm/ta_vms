@@ -110,6 +110,7 @@ namespace VmsMap.Adapter
       }
 
       DeviceCursor.Advance(
+        lastEpoch: node.last_epoch,
         setEpoch: value => node.last_epoch = value,
         setSeq: value => node.last_seq = value,
         setObservedAt: value => node.last_observed_at = value,

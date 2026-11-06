@@ -85,7 +85,8 @@ public class DeviceEventWriterTests
   private const string Token = "input1";
 
   private sealed record Services(
-    VmsMapDbContext Db, DeviceNodeService Nodes, DeviceEventWriter Writer, string ObjectId);
+    VmsMapDbContext Db, DeviceNodeService Nodes, DeviceEventWriter Writer,
+    DeviceEventReconciler Reconciler, string ObjectId);
 
   private static async Task<Services> CreateAsync()
   {
@@ -103,18 +104,25 @@ public class DeviceEventWriterTests
     var nodes = TestWiring.DeviceNodes(db, map, updates);
 
     var sensorAlarms = TestWiring.SensorAlarms(db, statesUpdate, map);
+    var stateWriter = new ObjectStateWriter(db, stateService, statesUpdate);
+    var eventsWriter = new EventsWriter(db, new EventsService(db, map));
     var writer = new DeviceEventWriter(
       db,
-      new ObjectStateWriter(db, stateService, statesUpdate),
-      new EventsWriter(db, new EventsService(db, map)),
+      stateWriter,
+      eventsWriter,
       new DeviceEventTranslator(),
       sensorAlarms,
       NullLogger<DeviceEventWriter>.Instance);
 
+    var reconciler = new DeviceEventReconciler(
+      db, nodes, stateWriter, eventsWriter, new DeviceEventTranslator(), sensorAlarms,
+      TestWiring.Alarms(db, map, statesUpdate),
+      NullLogger<DeviceEventReconciler>.Instance);
+
     var objectId = await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token, default);
 
-    return new Services(db, nodes, writer, objectId!);
+    return new Services(db, nodes, writer, reconciler, objectId!);
   }
 
   private static DeviceEventMessage Input(
@@ -166,6 +174,37 @@ public class DeviceEventWriterTests
     var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(s.ObjectId));
     Assert.Equal(Guid.Parse(second), node.last_epoch);
     Assert.Equal(1, node.last_seq);
+  }
+
+  /// The first thing a restarted publisher says is a snapshot, and it carries no sequence number.
+  /// Keeping the dead process's counter would reject every transition the new one sends — it starts
+  /// again at 1 — until the counter caught up. That is not a redelivery: it is the new process.
+  [Fact]
+  public async Task ASnapshotFromANewEpochLetsTheNewProcessStartItsSequenceOver()
+  {
+    var s = await CreateAsync();
+    var first = Guid.NewGuid().ToString();
+    var second = Guid.NewGuid().ToString();
+    var now = DateTimeOffset.UtcNow;
+
+    await s.Writer.ApplyAsync(s.ObjectId, Input("open", first, 42, now), default);
+
+    await s.Reconciler.ApplyAsync(
+      new DeviceSnapshotMessage(
+        "camera", CameraId, Reachable: true, now.AddSeconds(1), second,
+        [new DeviceSnapshotPartMessage(
+          DeviceObjectId.DigitalInputPart, Token, IdleState: null,
+          System.Text.Json.JsonSerializer.SerializeToElement("closed"), Active: null,
+          Present: true)]),
+      default);
+
+    var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(s.ObjectId));
+    Assert.Equal(Guid.Parse(second), node.last_epoch);
+    Assert.Equal(0, node.last_seq);
+
+    await s.Writer.ApplyAsync(s.ObjectId, Input("open", second, 1, now.AddSeconds(2)), default);
+
+    Assert.Contains(DeviceEventTranslator.SensorOpen, await States(s.Db, s.ObjectId));
   }
 
   [Fact]
