@@ -88,6 +88,10 @@ service CfgService {
   rpc ListDeviceSettings(ListDeviceSettingsRequest) returns (ListDeviceSettingsResponse);
   rpc SetDeviceSettings(SetDeviceSettingsRequest) returns (OperationStatus);
 
+  // The definitions an alarm is raised under: its severity and what its acknowledgement policy is.
+  // Read-only in M2.4 — an alarm must not be able to point at a definition nobody can enumerate.
+  rpc ListAlarmDefinitions(ListAlarmDefinitionsRequest) returns (ListAlarmDefinitionsResponse);
+
   rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
   rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
@@ -1013,5 +1017,26 @@ message ListDeviceSettingsResponse {
 
 message SetDeviceSettingsRequest {
   DeviceSettings settings = 1;
+}
+
+// ── Alarm definitions ────────────────────────────────────────────────────────
+
+// One kind of alarm the system can raise. VmsCfg is the source of truth; VmsMap caches the list
+// and refuses nothing when a definition is missing — a raise without one is a warning in the log
+// and severity 'warning', never a lost alarm.
+message AlarmDefinition {
+  string id           = 1;
+  string name         = 2;  // "sensor" | "retention" | "subscription"
+  string severity     = 3;  // "warning" | "critical"
+  // "required": an alarm that returns to normal waits for an operator's acknowledgement.
+  // "auto_on_normal": returning to normal closes it as "auto_returned_to_normal".
+  string ack_policy   = 4;
+}
+
+message ListAlarmDefinitionsRequest {
+}
+
+message ListAlarmDefinitionsResponse {
+  repeated AlarmDefinition definitions = 1;
 }
 

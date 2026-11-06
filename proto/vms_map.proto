@@ -103,6 +103,17 @@ service MapService {
   rpc GetNodeArming(GetNodeArmingRequest) returns (GetNodeArmingResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
+  // The operator's alarm entity, independent of the ALARM state: a row with a status, an
+  // acknowledgement and a close reason. GetAlarms answers two keyset pages, open and recently
+  // closed, each with its own cursor; the state stays the way the map paints it.
+  rpc GetAlarms(GetAlarmsRequest) returns (AlarmList);
+  // The acknowledgement, close and raise transitions. Their refusals are gRPC statuses:
+  // PERMISSION_DENIED without the right, FAILED_PRECONDITION for a transition the table forbids,
+  // NOT_FOUND for an unknown alarm.
+  rpc AcknowledgeAlarm(AcknowledgeAlarmRequest) returns (Alarm);
+  rpc CloseAlarm(CloseAlarmRequest) returns (Alarm);
+  rpc RaiseAlarm(RaiseAlarmRequest) returns (Alarm);
+
   rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
 
   rpc GetTracksByFilter(GetTracksByFilterRequest) returns (TrackPointList);
@@ -717,6 +728,107 @@ message GetNodeArmingResponse {
 
 message AlarmStateList {
   repeated AlarmState states = 1;
+}
+
+// ── The alarm entity ─────────────────────────────────────────────────────────────────────────
+
+// One operator-facing alarm. It sits on top of the ALARM state rather than replacing it: the state
+// says "there is something wrong here now", this row says "somebody has to deal with it".
+// `cleared_at` is when the condition went away, `closed_at` when the alarm was dealt with; a
+// `returned` alarm has the first and not the second.
+message Alarm {
+  string id = 1;
+  string object_id = 2;
+  // The definition the alarm was raised under, from VmsCfg. Empty when the cache did not know it:
+  // the raise still happens, with severity 'warning'.
+  string definition_id = 3;
+  // The VmsCfg event_subscriptions row a subscription-sourced alarm belongs to; empty for the
+  // sensor and retention sources.
+  string subscription_id = 4;
+  string source = 5;       // "sensor" | "retention" | "subscription"
+  string dedup_key = 6;
+  // Whether the physical condition still holds. Acknowledgement does not change it.
+  bool condition_active = 7;
+  string status = 8;       // "active" | "acknowledged" | "returned" | "closed"
+  string severity = 9;     // "warning" | "critical"
+  google.protobuf.Timestamp raised_at = 10;
+  optional google.protobuf.Timestamp cleared_at = 11;
+  // Retention only: when the episode is projected to end.
+  optional google.protobuf.Timestamp expected_end_ts = 12;
+  optional google.protobuf.Timestamp acknowledged_at = 13;
+  string acknowledged_by = 14;
+  string ack_comment = 15;
+  optional google.protobuf.Timestamp closed_at = 16;
+  // "returned_to_normal", "acknowledged_after_normal", "auto_returned_to_normal", "device_gone",
+  // "false_alarm" or "other".
+  string close_reason = 17;
+  string close_comment = 18;
+  string closed_by = 19;   // the operator's name, or "system"
+  string source_event_id = 20;
+
+  // Whether this caller may acknowledge the row now: the `acknowledge` right, not closed, and
+  // either the condition is gone or the node is disarmed. The browser never guesses this.
+  bool can_ack = 21;
+  // The node's name and its camera id, so a list row needs no second read.
+  string object_name = 22;
+  string camera_id = 23;
+}
+
+// A keyset position: the last row of the previous page. Open pages order by (raised_at, id), the
+// closed ones by (closed_at, id); the service fills the pair from the branch it is paging.
+message AlarmCursor {
+  google.protobuf.Timestamp after = 1;
+  string after_id = 2;
+}
+
+message GetAlarmsRequest {
+  Caller caller = 1;
+  // Rows per page per branch; 0 means 100.
+  int32 page_size = 2;
+  // Empty starts at the newest.
+  AlarmCursor open_after = 3;
+  AlarmCursor closed_after = 4;
+  // How far back the closed branch reads; 0 means 15 minutes.
+  int32 closed_window_minutes = 5;
+}
+
+message AlarmPage {
+  repeated Alarm alarms = 1;
+  bool has_more = 2;
+  AlarmCursor next = 3;
+}
+
+message AlarmList {
+  AlarmPage open = 1;
+  AlarmPage closed = 2;
+}
+
+message AcknowledgeAlarmRequest {
+  string id = 1;
+  Caller caller = 2;
+  string comment = 3;
+}
+
+// `reason` is "false_alarm" or "other": a manual close is only ever of an alarm whose condition is
+// already gone, and it says whether the alarm was real.
+message CloseAlarmRequest {
+  string id = 1;
+  Caller caller = 2;
+  string reason = 3;
+  string comment = 4;
+}
+
+// The system's own raise, and the way a transition can be replayed. The adapters inside VmsMap call
+// the store directly; this exists for the alarm entity to be testable from outside.
+message RaiseAlarmRequest {
+  string object_id = 1;
+  string source = 2;        // "sensor" | "retention" | "subscription"
+  string dedup_key = 3;
+  // Empty takes the severity of the definition, or "warning" when the definition is unknown.
+  string severity = 4;
+  optional google.protobuf.Timestamp expected_end_ts = 5;
+  string source_event_id = 6;
+  Caller caller = 7;
 }
 
 // What the map paints a set of nodes from: their states, their alarm counters and the dictionary
