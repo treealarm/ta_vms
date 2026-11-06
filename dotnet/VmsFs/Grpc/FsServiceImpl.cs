@@ -436,7 +436,7 @@ public sealed partial class FsServiceImpl(
         await gate.WaitAsync(ct);
         try
         {
-          var abs = await ResolveAbsolutePathAsync(info.StorageId, info.FilePath, ct);
+          var abs = await ResolveAbsolutePathAsync(info.StorageId ?? string.Empty, info.FilePath, ct);
           if (abs is not null)
           {
             idx = await ClipIndexParser.ReadAsync(abs, ct);

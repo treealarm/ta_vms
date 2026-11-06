@@ -98,6 +98,9 @@ service MapService {
   // The alarm counters of the named nodes. An empty list asks for every alarmed node the caller
   // may see: the operator's alarm list is not a set of ids the browser already knows.
   rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
+  // The effective arming of one device node: an input's own setting when it has one, otherwise the
+  // nearest armed property of the space the camera stands in, otherwise the camera's own arming.
+  rpc GetNodeArming(GetNodeArmingRequest) returns (GetNodeArmingResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
   rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
@@ -691,6 +694,25 @@ message AlarmState {
   bool alarm = 2;
   int32 children_alarms = 3;
   uint32 version = 4;
+}
+
+// What a device node's arming currently resolves to, and where the answer came from. `source` is
+// "explicit" for the part's own arm_mode, "space" for an armed property inherited from the space
+// of the camera's reference replica, and "camera" for the camera's own armed flag.
+message NodeArming {
+  string object_id = 1;
+  bool   armed     = 2;
+  string source    = 3;
+}
+
+message GetNodeArmingRequest {
+  string object_id = 1;
+}
+
+message GetNodeArmingResponse {
+  // False when the id is not a device node; arming has no meaning for a space or a server.
+  bool found        = 1;
+  NodeArming arming = 2;
 }
 
 message AlarmStateList {

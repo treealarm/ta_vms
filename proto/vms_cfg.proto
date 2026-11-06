@@ -83,6 +83,11 @@ service CfgService {
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
 
+  // What the operator says about a camera's digital inputs and relays. A part with no row keeps
+  // the defaults: inherit the camera's arming, no alarm. These are configuration, not live state.
+  rpc ListDeviceSettings(ListDeviceSettingsRequest) returns (ListDeviceSettingsResponse);
+  rpc SetDeviceSettings(SetDeviceSettingsRequest) returns (OperationStatus);
+
   rpc ListAnalyticsWatches(ListAnalyticsWatchesRequest) returns (ListAnalyticsWatchesResponse);
   rpc UpsertAnalyticsWatch(UpsertAnalyticsWatchRequest) returns (OperationStatus);
   rpc RemoveAnalyticsWatch(RemoveAnalyticsWatchRequest) returns (OperationStatus);
@@ -979,5 +984,34 @@ message CameraAnalyticsSourcesRequest {
 
 message CameraAnalyticsSourcesResponse {
   repeated CameraAnalyticsSources cameras = 1;
+}
+
+// ── Device I/O settings ──────────────────────────────────────────────────────
+
+// One configured part of a camera. `kind` is `digital_input` or `relay`; `token` is the part's
+// ONVIF token. Arming fields are meaningful for an input only: a relay is driven by a command, not
+// watched for a contact, and the database refuses to store them for one.
+message DeviceSettings {
+  string camera_id     = 1;
+  string kind          = 2;  // "digital_input" | "relay"
+  string token         = 3;
+  // Empty means "use the token as the display name".
+  string name          = 4;
+  string arm_mode      = 5;  // "inherit" | "armed" | "disarmed"
+  string trigger_on    = 6;  // "open" | "closed"; empty when no alarm follows the contact
+  bool   alarm_enabled = 7;
+}
+
+message ListDeviceSettingsRequest {
+  string camera_id = 1;
+}
+
+message ListDeviceSettingsResponse {
+  // Only the parts an administrator configured. A part with no row is not an error: it inherits.
+  repeated DeviceSettings settings = 1;
+}
+
+message SetDeviceSettingsRequest {
+  DeviceSettings settings = 1;
 }
 

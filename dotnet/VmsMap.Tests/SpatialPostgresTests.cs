@@ -443,6 +443,6 @@ public class SpatialPostgresTests
     Assert.Empty(await test.Db.DeviceNodes.Where(n => n.source_id == cameraId).ToListAsync());
     Assert.Empty(await test.Db.ObjectStates.Where(s => nodes.Contains(s.id)).ToListAsync());
     Assert.Empty(await test.Db.AlarmStates.Where(s => nodes.Contains(s.id)).ToListAsync());
-    Assert.Empty(await test.Db.Events.Where(e => e.object_id != null && nodes.Contains(e.object_id)).ToListAsync());
+    Assert.Empty(await test.Db.Events.Where(e => nodes.Contains(e.object_id)).ToListAsync());
   }
 }
