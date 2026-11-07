@@ -63,7 +63,9 @@ hand-made: the ring road the car drives, the car camera and the scenery.
 
 Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements — the
 hall pair in Room 101, the road pair out on the map by the ring road — and the fifth, `vehicle`,
-rides the car. ta_vms knows them as
+rides the car. The building's north wall has a doorway on the walker's way out: the person circles
+Room 101, walks through the hall and out of the doorway to the ground before the ring road, then
+comes back the same way. ta_vms knows them as
 `sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
 car carries no device — a wire to it would move with it. `master` has three relays showing every
 kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
@@ -86,13 +88,16 @@ bench are kept from drifting apart.
 ### Aiming in the demo world
 
 The demo world has two pairs, and both are calibrated here. The **hall pair** is `sim-master` and
-`sim-ptz`, in Room 101: the master's person boxes drive the slave's aim. The **road pair** is
-`sim-master2` and `sim-ptz2`, on the map: the master stands on a pole outside the building's north
-wall and watches the ring road, and the slave, north of the road, turns after the car its boxes
-report. Each pair has its own five landmarks — `world.py`'s `MARYLAND_HALL_LANDMARKS` and
-`MARYLAND_ROAD_LANDMARKS` — both visible from both cameras of the pair. The road's marks are on
-the shoulder south of the lane, spread over a couple of metres in depth as well as across: five
-marks on one line would not fit a ground homography.
+`sim-ptz`, in Room 101: the master's person boxes drive the slave's aim, and it follows the person
+until they leave its picture on the way out. The **road pair** is `sim-master2` and `sim-ptz2`, on
+the map: the master stands on a pole outside the building's north wall, an overview of the ring
+road and the doorway, and the slave, north of the road, looks south over both the lane and the
+ground by the door. Its master reports the car and the person; the slave follows whichever it
+already has and keeps it while the master reports it. Each pair has its own five landmarks —
+`world.py`'s `MARYLAND_HALL_LANDMARKS` and `MARYLAND_ROAD_LANDMARKS` — both visible from both
+cameras of the pair. The road's marks are on the ground between the wall and the lane, where the
+person walks out, and are spread over depth as well as across: five marks on one line would not fit
+a ground homography.
 
 The demo world must be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench
 adds no placements there and refuses to invent a space. It takes the cameras' true poses from the
@@ -107,14 +112,18 @@ tests/onvifsim/onvifsim_lab.py calibrate --world maryland
 tests/onvifsim/onvifsim_lab.py bind --world maryland
 tests/onvifsim/onvifsim_lab.py aim-check --world maryland --seconds 30
 tests/onvifsim/onvifsim_lab.py run --world maryland --pair road --seconds 30
+tests/onvifsim/onvifsim_lab.py run --world maryland --pair road --target person --seconds 30
 ```
 
-The person walking the hall's route is what the hall master detects; for the road pair the bench
-puts a person on one of its landmarks while it waits for the first boxes, then takes them away.
+The person walking the hall's route is what the hall master detects; for either pair the bench puts
+a person on one of its landmarks while it waits for the first boxes, then takes them away — the
+walking person's route passes in and out of both masters' pictures.
 `calibrate` stops the car (`PUT /api/vehicles/v1`, speed 0) for the calibration and puts it back
 exactly as the world file has it afterwards, in a `finally` — a failed calibration does not leave
-the demo world changed. `aim-check` works on people, so it skips the road pair; `run --pair road`
-is its check.
+the demo world changed. `aim-check` and the hall `run` measure the person indoors, so for their
+duration the bench cuts the walker's route to the part inside Room 101 and puts the world's one
+back afterwards. `aim-check` skips the road pair: `run --pair road` follows the car there, and
+`run --pair road --target person` the person who walks out of the building.
 
 The road slave records no framing zoom: the car crosses 16 m between two commands (8 m/s and a
 command at most every two seconds), and a frame cut for a person 30 m away is about 15° wide, so
@@ -124,7 +133,16 @@ its picture.
 `run --pair road` waits for the car to drive into the master's picture (the ring road lap is about
 two minutes, and the car is in view for under five seconds of it), then measures while it crosses.
 The live error against the car includes the command lag; the threshold is on the arrival figure —
-the head at rest against where the car was when the head set off.
+the head at rest against where the car was when the head set off. The person is taken out of the
+world for that measurement: the slave keeps the target it already has, so a person walking by would
+be followed instead of the car.
+
+`run --pair road --target person` waits instead for the person to walk out of the doorway and into
+the same master's picture (they are in it for about half a minute of the three-minute lap), waits
+for the slave to take them — it may still be following the car, which it keeps while the master
+reports it — and then measures the follow until they leave the picture again. The person is 40–55 m
+from the slave there, and the ground by the door is what its calibration is marked on; the
+thresholds are looser than the hall pair's for that reason.
 
 The matrix and edge-import steps are the yard's: they rehang cameras and cut one off the network,
 which the demo world has no place for.
@@ -148,6 +166,7 @@ tests/onvifsim/onvifsim_lab.py calibrate [--no-zoom]  # --no-zoom: no zoom sampl
 tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
 tests/onvifsim/onvifsim_lab.py run [--seconds 60]   # --pair road: follows the car, waits for its pass
+                                                    #   --target person: the person outside the building
 tests/onvifsim/onvifsim_lab.py edge --pair map [--outage 60]   # edge import, see below; not part of all
 tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras (and the yard's spaces)
 tests/onvifsim/onvifsim_lab.py matrix [--mounts a,b] [--seconds 30]   # the map pair hung every way, see Mounts

@@ -7,11 +7,12 @@ default every step does both, one after the other.
 
 With --world maryland the bench works in the demo world instead, which has two pairs: the hall
 pair in Room 101 (the master's person boxes drive the slave) and the road pair on the map, where
-the master watches the ring road and drives the slave after the car. Their landmarks are
-world.py's MARYLAND_HALL_LANDMARKS and MARYLAND_ROAD_LANDMARKS, and the cameras are placed exactly
-where tests/demo's world puts them. The demo world must be installed first; the bench adds no
-placements there. Only the aiming steps run in it — the matrix and edge import are the yard's.
-aim-check works on people, so it skips the road pair; `run --pair road` is its check.
+the master watches the ring road and the doorway the person walks out of, and drives the slave
+after the car and after the person. Their landmarks are world.py's MARYLAND_HALL_LANDMARKS and
+MARYLAND_ROAD_LANDMARKS, and the cameras are placed exactly where tests/demo's world puts them.
+The demo world must be installed first; the bench adds no placements there. Only the aiming steps
+run in it — the matrix and edge import are the yard's. aim-check works on people, so it skips the
+road pair: `run --pair road` follows the car, `run --pair road --target person` the person outside.
 
 Steps, each one checking what it did and exiting 1 with the reason when something is off:
 
@@ -27,7 +28,8 @@ Steps, each one checking what it did and exiting 1 with the reason when somethin
     bind        bind the PTZ to its master through the map (method "geo") and switch tracking on;
                 for the plan's pair, first check that a master on the map is refused
     run         let ta_vms follow the target on its own, from the master's detections, and measure;
-                --pair road follows the car of the demo world instead of a person
+                --pair road follows the car of the demo world (--target person: the person who
+                walks out of the building) instead of a person
     edge        edge import, end to end: the map pair's master drops off the network for --outage
                 seconds and goes on recording on its own card; ta_vms has to find the hole in its
                 archive, find the footage on the camera over Profile G, replay it and file it
@@ -45,6 +47,7 @@ The ta_vms dev stack must already be running (scripts/dev-up.sh or F5). See READ
 """
 
 import argparse
+import contextlib
 import datetime
 import json
 import math
@@ -197,6 +200,39 @@ class Lab:
             return next(w for w in self.demo_world["walkers"] if w["id"] == W.WALKER_ID)
         return W.walker_json(W.WALKER_ROUTE)
 
+    def hall_walker(self):
+        """The demo walker with the route cut to the part inside Room 101.
+
+        The world's person also walks out of the building, where the road pair works; the hall
+        pair's checks measure the person indoors, so they put this walker in the sim for their
+        duration and the shipped one back afterwards."""
+        walker = dict(self.walker())
+        route = [point for point in walker.get("route", []) if self._in_room101(point)]
+        walker["route"] = [
+            point for i, point in enumerate(route)
+            if i == 0 or (point["x"], point["z"]) != (route[i - 1]["x"], route[i - 1]["z"])
+        ]
+        require(len(walker["route"]) >= 2, "the demo walker does not walk inside Room 101")
+        return walker
+
+    def _in_room101(self, point):
+        lat, lon, _ = W.world_to_wgs84(self.demo_world, {"x": point["x"], "y": 0.0, "z": point["z"]})
+        return (W.ROOM101_SOUTH <= lat <= W.ROOM101_NORTH
+                and W.ROOM101_WEST <= lon <= W.ROOM101_EAST)
+
+    @contextlib.contextmanager
+    def walker_for(self, pair):
+        """The walker a step measures on, with the world's own put back afterwards.
+
+        The road pair's checks take the person away themselves; the hall pair gets the indoor part
+        of the route, so the person it works on stays in its picture for the whole measurement."""
+        self.sim.put_walker(W.WALKER_ID, self.hall_walker() if self.demo and pair.space != "road"
+                            else self.walker())
+        try:
+            yield
+        finally:
+            self.sim.put_walker(W.WALKER_ID, self.walker())
+
     def wgs84(self, pair, x, z):
         return W.to_wgs84(x, z, *self.anchor(pair))
 
@@ -326,7 +362,7 @@ class Lab:
             master = self.cam_id(pair.master)
             log(f"waiting for {master}'s person boxes to reach ta_vms (RTSP metadata -> VmsOnvif -> analytics)")
             boxes = (self._with_mark_walker(pair, lambda: self._master_boxes(pair, seconds=60, wanted=1))
-                     if self.demo and pair.space == "road"
+                     if self.demo
                      else self._master_boxes(pair, seconds=60, wanted=1))
             require(boxes, f"no ONVIF person box from {master} reached /api/analytics/live within 60 s: "
                            "check video_srv's log for 'ONVIF metadata track found' and VmsOnvif's for 'scene objects'")
@@ -335,8 +371,10 @@ class Lab:
     def _with_mark_walker(self, pair, action):
         """Runs `action` with a person standing on the pair's first landmark, then takes them away.
 
-        In the demo world the walking person lives in the hall, so the road pair sees nobody unless
-        one is put on its shoulder: the same trick the ground calibration uses, for the same reason."""
+        In the demo world the walking person is often not where a pair's master can see them — the
+        hall pair works on them indoors, the road pair outside, and the route spends time in
+        between — so a person is put on the pair's first landmark: the same trick the ground
+        calibration uses, for the same reason."""
         if not self.demo:
             return action()
         first = self.landmarks(pair)[0]
@@ -605,8 +643,11 @@ class Lab:
             self._aim_check(pair, self.provisioned(pair)["space_id"])
 
     def _aim_check(self, pair, space_id):
+        with self.walker_for(pair):
+            return self._aim_check_walker(pair, space_id)
+
+    def _aim_check_walker(self, pair, space_id):
         slave = self.cam_id(pair.slave)
-        self.sim.put_walker(W.WALKER_ID, self.walker())
         samples = self._zoom_samples(pair)
         log(f"aim {slave} at the walking person through POST /api/ptz-geo/{{id}}/aim, {self.args.seconds:.0f} s, "
             f"{len(samples)} zoom sample(s)")
@@ -719,11 +760,18 @@ class Lab:
         self.sim.put_walker(W.WALKER_ID, self.walker())
         for pair in self.pairs:
             if pair.space == "road":
-                self._run_road(pair)
+                if self.args.target == "person":
+                    self._run_road_person(pair)
+                else:
+                    self._run_road(pair)
             else:
                 self._run(pair)
 
     def _run(self, pair):
+        with self.walker_for(pair):
+            return self._run_walker(pair)
+
+    def _run_walker(self, pair):
         slave = self.cam_id(pair.slave)
         seconds = self.args.seconds
         # aim-check leaves the slave held for 30 s after its last aim, as the map's aim does for an
@@ -819,6 +867,19 @@ class Lab:
         return bool(low and high and all(0.0 <= v <= 1.0 for v in (*low, *high)))
 
     def _run_road(self, pair):
+        """Following the car: the road pair's check, with the person out of the world.
+
+        The slave keeps the target it has while the master still reports it, so a person walking
+        by would be followed instead of the car; the car's check takes them away for its duration
+        and puts the world's walker back afterwards."""
+        walker = self.walker()
+        self.sim.delete_walker(W.WALKER_ID)
+        try:
+            return self._run_road_car(pair)
+        finally:
+            self.sim.put_walker(W.WALKER_ID, walker)
+
+    def _run_road_car(self, pair):
         """Following the car: the road pair's check.
 
         The car crosses the master's picture in under five seconds of a two-minute lap, so the
@@ -901,6 +962,106 @@ class Lab:
         self.expect(framed and sum(framed) / len(framed) > 0.8,
                     f"the car is out of {slave}'s picture too often")
         log(f"road run of {slave} done")
+
+    def _run_road_person(self, pair):
+        """Following the person outside: the road pair's second check.
+
+        The person walks out of the building's doorway toward the ring road, into the road
+        master's picture. The step waits for them there and then measures the slave the way `run`
+        measures the hall pair, stopping when they leave the picture again. The car may cross
+        meanwhile, but the slave keeps the target it has, so the person stays followed.
+        """
+        slave = self.cam_id(pair.slave)
+        seconds = self.args.seconds
+        self.vms.hold(slave, 0)
+        log(f"waiting for the person to walk out of the building into {pair.master.id}'s picture")
+        deadline = time.monotonic() + max(seconds, 240.0)
+        person = None
+        while time.monotonic() < deadline:
+            person = self.sim.walker_pose(W.WALKER_ID)
+            if self._person_in_master(pair, person):
+                break
+            person = None
+            time.sleep(0.5)
+        require(person is not None,
+                f"the person did not walk into {pair.master.id}'s picture within "
+                f"{max(seconds, 240.0):.0f} s")
+
+        # The slave may still be on the car, which it keeps while the master reports both; wait for
+        # it to take the person.
+        log(f"the person is in {pair.master.id}'s picture; waiting for {slave} to take them")
+        deadline = time.monotonic() + max(seconds, 30.0)
+        while time.monotonic() < deadline:
+            state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), {})
+            if ((state.get("target") or {}).get("kind")) == "person":
+                break
+            time.sleep(0.5)
+
+        log("   t    person x  z     | moving | error°   | zoom  fill | event")
+        tracking, arrivals, framed, fills = [], [], [], []
+        rest, started_at, prev_feet = None, None, None
+        start = time.monotonic()
+        while time.monotonic() - start < seconds:
+            person = self.sim.walker_pose(W.WALKER_ID)
+            if not self._person_in_master(pair, person):
+                log("  the person has left the master's picture")
+                break
+            pose = self.sim.camera_pose(pair.slave.id)
+            cam = (pose["position"]["x"], pose["position"]["y"], pose["position"]["z"])
+            axis = W.axis_of(pose)
+            feet = (person["x"], person["y"], person["z"])
+            err = W.angle_between(axis, tuple(f - c for f, c in zip(feet, cam)))
+            in_frame, fill = W.person_in_frame(pose, feet, pair.slave.video)
+            framed.append(in_frame)
+            if in_frame:
+                fills.append(fill)
+            moving = bool(pose.get("moving"))
+            head = (pose["pan"], pose["tilt"])
+            event = ""
+            if moving and started_at is None:
+                started_at = prev_feet or feet
+                event = "command"
+            elif not moving:
+                if rest is not None and max(abs(a - b) for a, b in zip(head, rest)) > 1e-3:
+                    sent_for = started_at or prev_feet or feet
+                    arrival = W.angle_between(axis, tuple(f - c for f, c in zip(sent_for, cam)))
+                    arrivals.append(arrival)
+                    event = f"{'' if started_at else 'command, '}arrived {arrival:.2f}° from where it was sent"
+                rest, started_at = head, None
+                tracking.append(err)
+            log(f"{time.monotonic() - start:6.2f}  {person['x']:7.2f} {person['z']:7.2f} | "
+                f"{'yes' if moving else ' - ':>6} | {err:7.3f}  | {pose['zoom']:.3f} {fill:4.2f} | {event}")
+            prev_feet = feet
+            time.sleep(0.25)
+
+        state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), {})
+        require(arrivals, f"{slave} never moved on the person; tracking state: {state}")
+        log(_stats("arrival error (vs where the person was when the head set off)", arrivals))
+        log(_stats("tracking error (head at rest vs the person now)", tracking))
+        log(f"person in {slave}'s picture: {sum(framed)}/{len(framed)} samples")
+        log(f"commands: {len(arrivals)}; tracking state: {json.dumps(state)}")
+
+        mean, p95 = statistics.mean(arrivals), _percentile(arrivals, 95)
+        tracking_p95 = _percentile(tracking, 95) if tracking else math.inf
+        self.metrics.update(arrival_mean=mean, arrival_p95=p95, tracking_p95=tracking_p95,
+                            run_framed=sum(framed) / len(framed) if framed else 0.0)
+        # The person is 40-55 m from the slave here and walks at 1 m/s: a command at most every two
+        # seconds still costs a few degrees of motion, and the calibration is extrapolated from the
+        # ground by the door. These are the car check's chain, with a person's speed instead.
+        self.expect(mean < 3.0 and p95 < 4.0,
+                    f"{slave}: arrival error on the person mean {mean:.2f}°, p95 {p95:.2f}°")
+        self.expect(tracking_p95 < 12.0,
+                    f"{slave}: live error on the person p95 {tracking_p95:.2f}° (limit 12°)")
+        self.expect(framed and sum(framed) / len(framed) > 0.8,
+                    f"the person is out of {slave}'s picture too often")
+        log(f"road person run of {slave} done")
+
+    def _person_in_master(self, pair, person):
+        """Whether a person's box is in the master's picture, from the sim's own poses."""
+        pose = self.sim.camera_pose(pair.master.id)
+        inside, span = W.person_in_frame(pose, (person["x"], person["y"], person["z"]),
+                                         pair.master.video)
+        return inside and span >= 2 * W.MIN_BOX_HEIGHT
 
 
     # ── matrix ──────────────────────────────────────────────────────────────────
@@ -1168,6 +1329,9 @@ def main():
                    help="the WGS84 anchor a pair's space measures in; the world's own by default")
     p.add_argument("--lon0", type=float, default=None)
     p.add_argument("--seconds", type=float, default=60, help="aim-check and run duration")
+    p.add_argument("--target", choices=["car", "person"], default="car",
+                   help="run --pair road: the car the road slave follows, or the person who walks "
+                        "out of the building and onto the ground the same master watches")
     p.add_argument("--interval", type=float, default=3, help="aim-check: seconds between aims")
     p.add_argument("--outage", type=float, default=60, help="edge: how long the camera is off the network")
     p.add_argument("--reset", action="store_true",

@@ -548,9 +548,9 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 # rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
 # placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
 # so keep the two in step. The demo has two pairs: the hall pair stands in Room 101 with a person
-# walking between them, and the road pair watches the ring road north of the building, where the
-# master detects the car and the slave turns to follow it. Every slave reports its head in the
-# metadata track.
+# walking between them, and the road pair watches the ring road north of the building and the
+# doorway the person walks out of; the master detects the car and the person, and the slave follows
+# whichever its master reports. Every slave reports its head in the metadata track.
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -561,6 +561,12 @@ MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
 # Room 101 of the demo floor plan. The master and its PTZ slave work as one pair, so both stand in
 # this room, and the person they work on walks inside it (mirrors DemoWorlds.cs's Room101*).
 ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.99238, -76.93855, 38.99250, -76.93835
+# The doorway in the building's north wall, in world metres (X east, Z south): the only way between
+# the hall and the ground the road pair watches. Mirrors MarylandWorld.cs's Door* constants.
+MARYLAND_DOOR_X = -50.0
+MARYLAND_DOOR_WIDTH = 1.8
+# The north wall's line, in world metres: MarylandWorld.cs derives it from BuildingNorth.
+MARYLAND_NORTH_WALL_Z = -55.659744
 
 
 @dataclass(frozen=True)
@@ -578,8 +584,8 @@ class DemoPlacement:
 DEMO_PLACEMENTS = [
     DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
     DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
-    DemoPlacement("master2", 38.992884, -76.937858, 6.0, 0, 60),
-    DemoPlacement("ptz2", 38.993333, -76.938320, 6.0, 113, 60),
+    DemoPlacement("master2", 38.992884, -76.938447, 6.0, 0, 60),
+    DemoPlacement("ptz2", 38.993468, -76.938447, 6.0, 180, 60),
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
 # The car the road pair follows, and its body: width across, height up, length along its way. The
@@ -603,16 +609,17 @@ MARYLAND_HALL_LANDMARKS = (
     Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
 )
 
-# The landmarks on the road's shoulder, in world metres: south of the lane, so the car cannot pass
-# between the master at (-5, -65) and the person standing on one during calibration. They are not
-# on one line: a ground homography needs points that span a plane, and five marks on z = -97 are in
-# the lane besides (the road is 7 m wide, so its south edge is z = -96.5).
+# The landmarks on the ground between the building and the road, in world metres: south of the
+# lane, so the car cannot pass between the master at (-56, -65) and the person standing on one
+# during calibration, and on the walker's way out, so the ground the person walks over is the
+# ground the pair is calibrated on. They are not on one line: a ground homography needs points that
+# span a plane.
 MARYLAND_ROAD_LANDMARKS = (
-    Landmark("L1", -14.0, -91.0, "#e53935", "red"),
-    Landmark("L2", -9.0, -96.0, "#fdd835", "yellow"),
-    Landmark("L3", -4.0, -90.0, "#1e88e5", "blue"),
-    Landmark("L4", 1.0, -96.0, "#f5f5f5", "white"),
-    Landmark("L5", 6.0, -92.0, "#8e24aa", "purple"),
+    Landmark("L1", -60.0, -78.0, "#e53935", "red"),
+    Landmark("L2", -51.0, -78.0, "#fdd835", "yellow"),
+    Landmark("L3", -62.0, -88.0, "#1e88e5", "blue"),
+    Landmark("L4", -46.0, -88.0, "#f5f5f5", "white"),
+    Landmark("L5", -55.0, -83.0, "#8e24aa", "purple"),
 )
 
 
@@ -646,7 +653,8 @@ def demo_pairs(world):
     """The demo's two pairs: the hall in Room 101 and the road out on the map.
 
     The hall's master drives its slave with boxes of the walking person; the road's master drives
-    its slave with boxes of the car, which is why the pair carries the kinds it follows."""
+    its slave with boxes of the car and of that person when they walk outside, which is why the pair
+    carries the kinds it follows."""
     return [
         Pair(MARYLAND_HALL_PAIR,
              demo_camera(world, "master", MASTER),
@@ -657,7 +665,7 @@ def demo_pairs(world):
              demo_camera(world, "master2", MASTER2),
              demo_camera(world, "ptz2", SLAVE2),
              limits=demo_limits(world, "ptz2"),
-             landmarks=MARYLAND_ROAD_LANDMARKS, target_kinds=("vehicle",), space="road"),
+             landmarks=MARYLAND_ROAD_LANDMARKS, target_kinds=("vehicle", "person"), space="road"),
     ]
 
 
@@ -775,11 +783,47 @@ def check_maryland(world):
             assert ROOM101_SOUTH <= placement.lat <= ROOM101_NORTH \
                 and ROOM101_WEST <= placement.lon <= ROOM101_EAST, \
                 f"{placement.id} does not stand in Room 101 with its master/slave"
+    # The person walks inside Room 101, where the hall pair sees them, and out of the doorway in
+    # the north wall, where the road pair's master picks them up: both halves of the demo have
+    # someone to follow. The doorway is the only way between them, so every crossing of the wall
+    # line has to run through its gap.
+    hall = demo_camera(world, "master", MASTER)
+    hall_pose = level_pose(hall)
+    road_pose = level_pose(demo_pairs(world)[1].master)
+    door_west = MARYLAND_DOOR_X - MARYLAND_DOOR_WIDTH / 2
+    door_east = MARYLAND_DOOR_X + MARYLAND_DOOR_WIDTH / 2
     for walker in walkers:
-        for point in walker.get("route", []):
-            lat, lon, _ = world_to_wgs84(world, {"x": point["x"], "y": 0.0, "z": point["z"]})
-            assert ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST, \
-                f"the person at ({point['x']}, {point['z']}) walks outside Room 101"
+        route = [(point["x"], point["z"]) for point in walker.get("route", [])]
+        assert len(route) >= 2, "the person has nowhere to walk"
+        path = ([*route, route[0]] if walker.get("return", "loop") == "loop"
+                else [*route, *reversed(route[:-1])])
+        indoor, outdoor = [], []
+        for x, z in route:
+            lat, lon, _ = world_to_wgs84(world, {"x": x, "y": 0.0, "z": z})
+            if ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST:
+                indoor.append((x, z))
+            else:
+                outdoor.append((x, z))
+        assert indoor, "the person never walks inside Room 101, where the hall pair works"
+        assert outdoor, "the person never leaves the building, so the road pair has nobody outside"
+        for x, z in indoor:
+            inside, span = person_in_frame(hall_pose, (x, 0.0, z))
+            assert inside and span >= 1.5 * MIN_BOX_HEIGHT, \
+                f"the hall master does not see the person at ({x}, {z})"
+        visible = [
+            (x, z) for x, z in outdoor
+            if person_in_frame(road_pose, (x, 0.0, z))[0]
+            and person_in_frame(road_pose, (x, 0.0, z))[1] >= 1.5 * MIN_BOX_HEIGHT
+        ]
+        assert visible, "the road master never sees the person outside the building"
+        for (ax, az), (bx, bz) in zip(path, path[1:]):
+            from_side, to_side = az - MARYLAND_NORTH_WALL_Z, bz - MARYLAND_NORTH_WALL_Z
+            if from_side == 0 or to_side == 0 or (from_side > 0) == (to_side > 0):
+                continue
+            t = (MARYLAND_NORTH_WALL_Z - az) / (bz - az)
+            crossing = ax + (bx - ax) * t
+            assert door_west <= crossing <= door_east, \
+                f"the person walks through the north wall at x = {crossing:.2f}, outside the doorway"
 
     vehicle = cameras.get(DEMO_VEHICLE_CAMERA)
     assert vehicle is not None, f"the world has no '{DEMO_VEHICLE_CAMERA}' camera"
