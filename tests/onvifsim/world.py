@@ -596,7 +596,7 @@ DEMO_PLACEMENTS = [
     DemoPlacement("master", 38.9923000, -76.9383779, 2.8, 342.3, 45),
     DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
     DemoPlacement("master2", 38.9929468, -76.9388171, 6.0, 88.8, 55),
-    DemoPlacement("ptz2", 38.9928031, -76.9383779, 5.5, 0, 60),
+    DemoPlacement("ptz2", 38.9928749, -76.9385397, 5.5, 0, 60),
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
 # The car that drives the ring road and carries the vehicle camera. Neither pair follows it: from
@@ -624,16 +624,19 @@ MARYLAND_HALL_LANDMARKS = (
     Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
 )
 
-# The landmarks on the ground of the yard, in world metres: on the walker's way out and back, so
-# the ground the person walks over is the ground the pair is calibrated on, and across the yard
+# The landmarks on the ground of the yard, in world metres: across the stretch the person walks out
+# on, so the ground they walk over is the ground the pair is calibrated on, and across the yard
 # master's picture rather than in one corner of it. They are not on one line: a ground homography
-# needs points that span a plane.
+# needs points that span a plane. They stay inside the master's picture with a person's box big
+# enough for its analytics, which is why they stop short of the walk's turn along the road. The
+# farthest one also sets how far the slave's zoom samples reach: beyond it the slave keeps the
+# zoom it learnt there rather than guess, so the marks follow the walk out as far as they can.
 MARYLAND_ROAD_LANDMARKS = (
     Landmark("L1", -52.0, -64.0, "#e53935", "red"),
     Landmark("L2", -58.0, -66.0, "#fdd835", "yellow"),
     Landmark("L3", -50.0, -70.0, "#1e88e5", "blue"),
     Landmark("L4", -60.0, -78.0, "#f5f5f5", "white"),
-    Landmark("L5", -54.0, -84.0, "#8e24aa", "purple"),
+    Landmark("L5", -50.0, -86.0, "#8e24aa", "purple"),
 )
 
 

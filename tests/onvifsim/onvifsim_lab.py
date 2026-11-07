@@ -7,9 +7,10 @@ default every step does both, one after the other.
 
 With --world maryland the bench works in the demo world instead, which has two pairs, both on the
 same walking person: the hall master watches the line from its slave out to the doorway, and the
-yard pair works the ground outside it — its slave hangs over that doorway and its master looks back
-along the line the person walks. Their landmarks are world.py's MARYLAND_HALL_LANDMARKS and
-MARYLAND_ROAD_LANDMARKS, and the cameras are placed exactly where tests/demo's world puts them.
+yard pair works the ground outside it — its master looks back along the line the person walks, and
+its slave stands between that master and the doorway. Their landmarks are world.py's
+MARYLAND_HALL_LANDMARKS and MARYLAND_ROAD_LANDMARKS, and the cameras are placed exactly where
+tests/demo's world puts them.
 The demo world must be installed first; the bench adds no placements there. Only the aiming steps
 run in it — the matrix and edge import are the yard's.
 
@@ -79,8 +80,8 @@ EDGE_FILL_TIMEOUT = 8 * 60
 # How close a person may come to a slave's own head before a follow stops being measurable. An aim
 # is sent at most every two seconds (SlaveAimingSession.MinCommandInterval), and at 4 m a walker's
 # angular speed across the view is 29° a second: no aiming chain holds them, however exact, and the
-# samples would measure the cadence rather than the aim. The yard's slave hangs over the doorway the
-# person walks out of, so they pass under it every lap.
+# samples would measure the cadence rather than the aim. The hall's slave stands beside the line the
+# person walks in Room 101, so a lap there passes close by it; the yard's stands well off its route.
 HOLD_RADIUS_M = 4.0
 # The edge step's GOP: long, so that a replay asked to start between key frames comes from well before
 # it, and footage stamped from where the replay began rather than from the camera's own time shows.
@@ -215,9 +216,10 @@ class Lab:
     def yard_walker(self):
         """The demo walker with the route cut to the part outside the building.
 
-        The yard pair's slave hangs over the doorway and the master looks back along the line the
-        person walks out on; their checks measure the yard leg, so the person stays where both
-        cameras hold them for the whole measurement — in the building they are behind a wall."""
+        The yard pair's master looks back along the line the person walks out on, and its slave
+        stands between that master and the doorway; their checks measure the yard leg, so the person
+        stays where the master holds them for the whole measurement — in the building they are
+        behind a wall."""
         return self._cut_walker(lambda point: point["z"] < W.MARYLAND_NORTH_WALL_Z,
                                 "the demo walker never leaves the building")
 
