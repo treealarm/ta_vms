@@ -233,7 +233,8 @@ OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
 reinstalling once it is provisioned places it. They form two master/slave pairs: `sim-master` →
 `sim-ptz` in Room 101, and `sim-master2` → `sim-ptz2` out on the map, where the master watches the
-ring road north of the building and the slave turns after the car its boxes report. `sim-vehicle` is flagged `geo_from_device`: the
+ring road north of the building and the doorway in its north wall, and the slave turns after the
+car its boxes report and after the person who walks out of that doorway. `sim-vehicle` is flagged `geo_from_device`: the
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
