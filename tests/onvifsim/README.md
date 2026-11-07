@@ -53,13 +53,15 @@ above; that is why the camera is high and narrow.
 
 ## The demo world: Maryland
 
-The demo deployment runs OnvifSim with a different world, `Maryland`: the A.V. Williams building on
-the University of Maryland campus, where ta_vms's demo world
-(`dotnet/VmsMap/Demo/DemoWorlds.cs`) places its cameras. OnvifSim builds it from the same constants
-— the building envelope and the camera poses — and ships it as
-`../OnvifSim/data/worlds/maryland.json`; the building is made of wall plates, because the
-rasterizer culls back faces and a solid box would be invisible from inside. Around it the world is
-hand-made: the ring road the car drives, the car camera and the scenery.
+The demo deployment runs OnvifSim with a different world, `Maryland`: the real campus of the
+University of Maryland, where ta_vms's demo world (`dotnet/VmsMap/Demo/DemoWorlds.cs`) places its
+cameras. Everything of the place comes from OpenStreetMap — the Biomolecular Sciences building (way
+24303349, one `prism` of its 19-corner footprint at 11.78 m), the ring of Regents, Paint Branch and
+Technology Drive the car drives, the parking lots, the pond and the neighbours — and OnvifSim builds
+it from the same constants the demo uses, shipping it as `../OnvifSim/data/worlds/maryland.json`.
+The ground carries a raster map of the campus (`terrain.map`), which the simulator fetches into its
+own data directory on first start; `world.py --check-maryland` never needs it, and the world is valid
+without it.
 
 Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements — the
 hall pair around Room 101, the yard pair out by the doorway and the ground between it and the ring
