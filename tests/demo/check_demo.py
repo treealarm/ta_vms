@@ -546,10 +546,11 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Each pair works as one: the hall pair in Room 101, the road pair out on the map where the
-    # road and the car the master watches are.
+    # Each pair works as one: the hall slave in Room 101 with its master on the floor plan, since
+    # that master looks along the line out of the room to the doorway; the yard pair out on the map
+    # beyond the building, and the camera on the car there too.
     expected = {
-        camera_id("sim-master"): world["room"]["id"],
+        camera_id("sim-master"): world["building"]["id"],
         camera_id("sim-ptz"): world["room"]["id"],
         camera_id("sim-master2"): world["map"]["id"],
         camera_id("sim-ptz2"): world["map"]["id"],

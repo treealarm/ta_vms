@@ -154,28 +154,35 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheSecondPairStandsOnTheRoadWithItsBackToTheBuilding()
+  public void TheSecondPairStandsInTheYard_ItsSlaveOverTheDoorway()
   {
-    // The hall pair works in Room 101; the second one moved out to the map, where the ring road,
-    // the car and the doorway the person walks out of are: both cameras stand in space/umd,
-    // master2 looking north over the road and ptz2 looking south over the lane and the ground by
-    // the door.
-    Assert.Equal(9, _world.Version);
+    // The hall pair's master watches the line out of Room 101 to the doorway; the second pair works
+    // in the yard beyond it: ptz2 hangs over that doorway and master2 stands between it and the ring
+    // road, looking back along the line the person walks.
+    Assert.Equal(10, _world.Version);
+
+    var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
+    Assert.Equal("space/building", hall.SpaceKey);
+    Assert.Equal(38.9923000, hall.Lat, 6);
+    Assert.Equal(-76.9383779, hall.Lon, 6);
+    Assert.Equal(2.8, hall.HeightM);
+    Assert.Equal(342.3, hall.HeadingDeg);
+    Assert.Equal(45, hall.HfovDeg);
 
     var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
     Assert.Equal("space/umd", master.SpaceKey);
-    Assert.Equal(38.992884, master.Lat, 6);
-    Assert.Equal(-76.938447, master.Lon, 6);
+    Assert.Equal(38.9929468, master.Lat, 6);
+    Assert.Equal(-76.9388171, master.Lon, 6);
     Assert.Equal(6, master.HeightM);
-    Assert.Equal(0, master.HeadingDeg);
-    Assert.Equal(60, master.HfovDeg);
+    Assert.Equal(88.8, master.HeadingDeg);
+    Assert.Equal(55, master.HfovDeg);
 
     var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
     Assert.Equal("space/umd", ptz.SpaceKey);
-    Assert.Equal(38.993468, ptz.Lat, 6);
-    Assert.Equal(-76.938447, ptz.Lon, 6);
-    Assert.Equal(6, ptz.HeightM);
-    Assert.Equal(180, ptz.HeadingDeg);
+    Assert.Equal(38.9928031, ptz.Lat, 6);
+    Assert.Equal(-76.9383779, ptz.Lon, 6);
+    Assert.Equal(5.5, ptz.HeightM);
+    Assert.Equal(0, ptz.HeadingDeg);
     Assert.Equal(60, ptz.HfovDeg);
   }
 

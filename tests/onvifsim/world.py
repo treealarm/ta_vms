@@ -137,7 +137,7 @@ class Pair:
     # The landmarks one pair is calibrated on. The yard's two pairs watch the same yard; the demo's
     # hall and road are apart, and each has its own.
     landmarks: tuple = field(default_factory=lambda: tuple(LANDMARKS))
-    # What the master detects for this pair: people walking the hall, the car on the road.
+    # What the master's boxes aim the slave at: the walking person, in both demo pairs.
     target_kinds: tuple = ("person",)
     # The demo space the pair stands in: its own field because a pair's cameras are placed by the
     # demo world, and the bench has to know which space to look for.
@@ -547,10 +547,11 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 # and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
 # rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
 # placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
-# so keep the two in step. The demo has two pairs: the hall pair stands in Room 101 with a person
-# walking between them, and the road pair watches the ring road north of the building and the
-# doorway the person walks out of; the master detects the car and the person, and the slave follows
-# whichever its master reports. Every slave reports its head in the metadata track.
+# so keep the two in step. The demo has two pairs, both working on the same walking person: the
+# hall's master watches the line from its slave out to the doorway, and the yard pair works the
+# ground outside it — its slave hangs over that doorway and its master looks back along the line
+# the person walks. Every master detects the person; every slave reports its head in the metadata
+# track.
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -582,25 +583,29 @@ class DemoPlacement:
 
 
 DEMO_PLACEMENTS = [
-    DemoPlacement("master", 38.99240, -76.93852, 2.8, 55, 70),
+    DemoPlacement("master", 38.9923000, -76.9383779, 2.8, 342.3, 45),
     DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
-    DemoPlacement("master2", 38.992884, -76.938447, 6.0, 0, 60),
-    DemoPlacement("ptz2", 38.993468, -76.938447, 6.0, 180, 60),
+    DemoPlacement("master2", 38.9929468, -76.9388171, 6.0, 88.8, 55),
+    DemoPlacement("ptz2", 38.9928031, -76.9383779, 5.5, 0, 60),
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
-# The car the road pair follows, and its body: width across, height up, length along its way. The
-# box a detector gets is the car as the picture draws it, so the height of that box is what the
-# checks measure against ObjectDetector.MinBoxHeight.
+# The car that drives the ring road and carries the vehicle camera. Neither pair follows it: from
+# where their masters stand it is too small in the picture for the detector.
 DEMO_VEHICLE_ID = "v1"
-DEMO_VEHICLE_SIZE = (1.8, 1.45, 4.4)
 # The detector's threshold, in normalized picture units: a figure shorter than this is not seen.
 MIN_BOX_HEIGHT = 0.05
+# What a check asks of a person's box: the detector drops anything under MIN_BOX_HEIGHT, so a route
+# point has to clear it with a margin. A landmark a calibration stands a person on wants more, since
+# the ground fit is made from that box.
+SEEN_BOX_HEIGHT = 1.2 * MIN_BOX_HEIGHT
+MARK_BOX_HEIGHT = 1.5 * MIN_BOX_HEIGHT
 
 MARYLAND_HALL_PAIR = "hall"
 MARYLAND_ROAD_PAIR = "road"
 
-# The landmarks in the hall, in world metres (X east, Z south): between the master at
-# (-62.3, -11.1) and the slave at (-49.5, -20.5), every one of them inside both views.
+# The landmarks in the hall, in world metres (X east, Z south): in Room 101, where the master at
+# (-50, 0) and the slave at (-49.5, -20.5) both see them, and spread across the master's picture so
+# the ground fit is not extrapolated from one corner of it.
 MARYLAND_HALL_LANDMARKS = (
     Landmark("L1", -57.5, -13.5, "#e53935", "red"),
     Landmark("L2", -54.0, -16.0, "#fdd835", "yellow"),
@@ -609,17 +614,16 @@ MARYLAND_HALL_LANDMARKS = (
     Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
 )
 
-# The landmarks on the ground between the building and the road, in world metres: south of the
-# lane, so the car cannot pass between the master at (-56, -65) and the person standing on one
-# during calibration, and on the walker's way out, so the ground the person walks over is the
-# ground the pair is calibrated on. They are not on one line: a ground homography needs points that
-# span a plane.
+# The landmarks on the ground of the yard, in world metres: on the walker's way out and back, so
+# the ground the person walks over is the ground the pair is calibrated on, and across the yard
+# master's picture rather than in one corner of it. They are not on one line: a ground homography
+# needs points that span a plane.
 MARYLAND_ROAD_LANDMARKS = (
-    Landmark("L1", -60.0, -78.0, "#e53935", "red"),
-    Landmark("L2", -51.0, -78.0, "#fdd835", "yellow"),
-    Landmark("L3", -62.0, -88.0, "#1e88e5", "blue"),
-    Landmark("L4", -46.0, -88.0, "#f5f5f5", "white"),
-    Landmark("L5", -55.0, -83.0, "#8e24aa", "purple"),
+    Landmark("L1", -52.0, -64.0, "#e53935", "red"),
+    Landmark("L2", -58.0, -66.0, "#fdd835", "yellow"),
+    Landmark("L3", -50.0, -70.0, "#1e88e5", "blue"),
+    Landmark("L4", -60.0, -78.0, "#f5f5f5", "white"),
+    Landmark("L5", -54.0, -84.0, "#8e24aa", "purple"),
 )
 
 
@@ -650,11 +654,10 @@ def demo_limits(world, camera_id):
 
 
 def demo_pairs(world):
-    """The demo's two pairs: the hall in Room 101 and the road out on the map.
+    """The demo's two pairs: the hall by Room 101 and the yard outside its doorway.
 
-    The hall's master drives its slave with boxes of the walking person; the road's master drives
-    its slave with boxes of the car and of that person when they walk outside, which is why the pair
-    carries the kinds it follows."""
+    Both masters drive their slave with boxes of the walking person — the hall's indoors, the
+    yard's once they are out on the ground — which is why both follow the `person` kind."""
     return [
         Pair(MARYLAND_HALL_PAIR,
              demo_camera(world, "master", MASTER),
@@ -665,7 +668,7 @@ def demo_pairs(world):
              demo_camera(world, "master2", MASTER2),
              demo_camera(world, "ptz2", SLAVE2),
              limits=demo_limits(world, "ptz2"),
-             landmarks=MARYLAND_ROAD_LANDMARKS, target_kinds=("vehicle", "person"), space="road"),
+             landmarks=MARYLAND_ROAD_LANDMARKS, target_kinds=("person",), space="road"),
     ]
 
 
@@ -717,38 +720,6 @@ def _spread_ratio(points):
     return math.sqrt(minor / major) if major > 0 else 0.0
 
 
-def car_box(pose, x, z, heading, size=DEMO_VEHICLE_SIZE):
-    """The car's box in a picture whose pose is given, as (left, top, right, bottom) in 0..1 from
-    the top-left, or None behind the camera. The body is a box; the picture's own axes turn with
-    the mount, so this is the box ObjectDetector would cut, not a guess at the frame."""
-    width, height, length = size
-    turn = math.radians(heading)
-    forward, right = (math.sin(turn), -math.cos(turn)), (math.cos(turn), math.sin(turn))
-    corners = []
-    for along in (-length / 2, length / 2):
-        for across in (-width / 2, width / 2):
-            for up in (0.0, height):
-                px = x + forward[0] * along + right[0] * across
-                pz = z + forward[1] * along + right[1] * across
-                uv = project_pose(pose, (px, up, pz))
-                if uv is not None:
-                    corners.append(uv)
-    if not corners:
-        return None
-    us, vs = [c[0] for c in corners], [c[1] for c in corners]
-    return min(us), min(vs), max(us), max(vs)
-
-
-def route_samples(route, step=1.0, closed=True):
-    """Points along a vehicle's or walker's route, with the heading at each: (x, z, heading)."""
-    points = [*route, route[0]] if closed else route
-    for (ax, az), (bx, bz) in zip(points, points[1:]):
-        heading = bearing((ax, 0.0, az), (bx, 0.0, bz))[0]
-        count = max(1, int(math.hypot(bx - ax, bz - az) / step))
-        for i in range(count):
-            yield ax + (bx - ax) * i / count, az + (bz - az) * i / count, heading
-
-
 def check_maryland(world):
     """Raises AssertionError if the world does not stand where ta_vms's demo placements put it."""
     geo = world.get("geo") or {}
@@ -782,17 +753,16 @@ def check_maryland(world):
     walkers = world.get("walkers", [])
     assert walkers, "the world has no person for the pair to work on"
     assert all(w.get("detectable", True) for w in walkers), "the walker is not detectable"
-    # The pair must watch the same room: two rooms would make the slave aim at what the master
-    # cannot see (or at nothing), and the person walks between them.
-    for placement in DEMO_PLACEMENTS:
-        if placement.id in ("master", "ptz"):
-            assert ROOM101_SOUTH <= placement.lat <= ROOM101_NORTH \
-                and ROOM101_WEST <= placement.lon <= ROOM101_EAST, \
-                f"{placement.id} does not stand in Room 101 with its master/slave"
-    # The person walks inside Room 101, where the hall pair sees them, and out of the doorway in
-    # the north wall, where the road pair's master picks them up: both halves of the demo have
-    # someone to follow. The doorway is the only way between them, so every crossing of the wall
-    # line has to run through its gap.
+    # The slave stands in the room its master watches, so the person it is aimed at is the person
+    # its own picture holds; the master stands outside the room, on the line out of it, because one
+    # lens has to hold both the room and the doorway at the far end of the hall.
+    ptz = next(placement for placement in DEMO_PLACEMENTS if placement.id == "ptz")
+    assert ROOM101_SOUTH <= ptz.lat <= ROOM101_NORTH and ROOM101_WEST <= ptz.lon <= ROOM101_EAST, \
+        "ptz does not stand in Room 101 with the person it works on"
+    # The person walks the hall and Room 101, where the hall pair sees them, and out of the doorway
+    # in the north wall, where the yard pair takes over: both halves of the demo have someone to
+    # follow. The doorway is the only way between them, so every crossing of the wall line has to
+    # run through its gap.
     hall = demo_camera(world, "master", MASTER)
     hall_pose = level_pose(hall)
     road_pose = level_pose(demo_pairs(world)[1].master)
@@ -803,24 +773,29 @@ def check_maryland(world):
         assert len(route) >= 2, "the person has nowhere to walk"
         path = ([*route, route[0]] if walker.get("return", "loop") == "loop"
                 else [*route, *reversed(route[:-1])])
-        indoor = [
+        room = [
             (x, z) for x, z in route
             if _inside_room101(world, x, z)
         ]
-        # Outside the building, not merely out of Room 101: the route has to cross the north wall.
+        # Inside the building, where the hall pair works; and outside it, not merely out of Room
+        # 101, where the yard pair does: the route has to cross the north wall.
+        inside_building = [(x, z) for x, z in route if z > MARYLAND_NORTH_WALL_Z]
         outside = [(x, z) for x, z in route if z < MARYLAND_NORTH_WALL_Z]
-        assert indoor, "the person never walks inside Room 101, where the hall pair works"
-        assert outside, "the person never leaves the building, so the road pair has nobody outside"
-        for x, z in indoor:
+        assert room, "the person never walks inside Room 101, where the hall slave stands"
+        assert inside_building, "the person never walks inside the building"
+        assert outside, "the person never leaves the building, so the yard pair has nobody outside"
+        # Each master holds the whole of its own half of the walk, not a corner of it: the hall
+        # master from the room to the doorway, the yard master from the doorway to the road and
+        # back. The slave is aimed by those boxes, so a point either master misses is a point the
+        # slave stops following.
+        for x, z in inside_building:
             inside, span = person_in_frame(hall_pose, (x, 0.0, z))
-            assert inside and span >= 1.5 * MIN_BOX_HEIGHT, \
-                f"the hall master does not see the person at ({x}, {z})"
-        visible = [
-            (x, z) for x, z in outside
-            if person_in_frame(road_pose, (x, 0.0, z))[0]
-            and person_in_frame(road_pose, (x, 0.0, z))[1] >= 1.5 * MIN_BOX_HEIGHT
-        ]
-        assert visible, "the road master never sees the person outside the building"
+            assert inside and span >= SEEN_BOX_HEIGHT, \
+                f"the hall master does not see the person at ({x}, {z}): in frame {inside}, span {span:.3f}"
+        for x, z in outside:
+            inside, span = person_in_frame(road_pose, (x, 0.0, z))
+            assert inside and span >= SEEN_BOX_HEIGHT, \
+                f"the yard master does not see the person at ({x}, {z}): in frame {inside}, span {span:.3f}"
         for (ax, az), (bx, bz) in zip(path, path[1:]):
             from_side, to_side = az - MARYLAND_NORTH_WALL_Z, bz - MARYLAND_NORTH_WALL_Z
             if from_side == 0 or to_side == 0 or (from_side > 0) == (to_side > 0):
@@ -836,56 +811,44 @@ def check_maryland(world):
     assert vehicle_id and any(v["id"] == vehicle_id for v in world.get("vehicles", [])), \
         f"{DEMO_VEHICLE_CAMERA} does not ride a vehicle of the world"
 
-    # The road pair. Both cameras must see the shoulder the landmarks stand on, the marks must span
-    # a plane (a ground homography refuses five points on one line), and the car must be big enough
-    # in the master's picture for the detector all the way across the frame, not just in the middle.
-    _, road = demo_pairs(world)
-    marks = list(road.landmarks)
-    assert _spread_ratio([(lm.x, lm.z) for lm in marks]) >= 0.05, \
-        "the road landmarks lie almost on one line; a ground homography cannot be fitted"
-    for lm in marks:
-        for camera in (road.master, road.slave):
-            uv = project(camera, (lm.x, 0.0, lm.z))
+    # The landmarks of both pairs. They stand on the ground each master watches, so the master must
+    # hold them well inside its picture with a person on them big enough for its analytics; the
+    # marks must span a plane (a ground homography refuses five points on one line); and each slave
+    # must be able to turn onto every one of them within its own head's limits, with enough spread
+    # in pan and tilt for the calibration to tell its axes apart.
+    for pair in demo_pairs(world):
+        marks = list(pair.landmarks)
+        assert _spread_ratio([(lm.x, lm.z) for lm in marks]) >= 0.05, \
+            f"the {pair.name} landmarks lie almost on one line; a ground homography cannot be fitted"
+        for lm in marks:
+            uv = project(pair.master, (lm.x, 0.0, lm.z))
             assert uv and 0.05 < uv[0] < 0.95 and 0.05 < uv[1] < 0.95, \
-                f"{lm.name} is not well inside {camera.id}'s picture: {uv}"
-        foot = project(road.master, (lm.x, 0.0, lm.z))
-        head = project(road.master, (lm.x, WALKER_HEIGHT, lm.z))
-        assert head and foot and foot[1] - head[1] >= 1.5 * MIN_BOX_HEIGHT, \
-            f"a person on {lm.name} is too small for {road.master.id}'s analytics"
-    pans = [ptz_degrees(road.slave, (lm.x, 0.0, lm.z)) for lm in marks]
-    assert max(p for p, _ in pans) - min(p for p, _ in pans) >= 5, \
-        f"{road.slave.id}: the road landmarks span only {max(p for p, _ in pans) - min(p for p, _ in pans):.1f} deg of pan"
-    assert max(t for _, t in pans) - min(t for _, t in pans) >= 1, \
-        f"{road.slave.id}: the road landmarks span only {max(t for _, t in pans) - min(t for _, t in pans):.1f} deg of tilt"
-    assert not (cameras["ptz2"].get("metadata") or {}).get("analytics"), \
-        "ptz2 boxes the car itself; the master's boxes are what aims it"
+                f"{lm.name} is not well inside {pair.master.id}'s picture: {uv}"
+            foot = project(pair.master, (lm.x, 0.0, lm.z))
+            head = project(pair.master, (lm.x, WALKER_HEIGHT, lm.z))
+            assert head and foot and foot[1] - head[1] >= MARK_BOX_HEIGHT, \
+                f"a person on {lm.name} is too small for {pair.master.id}'s analytics"
+            pan, tilt = ptz_degrees(pair.slave, (lm.x, 0.0, lm.z))
+            assert pair.limits.pan_min <= pan <= pair.limits.pan_max \
+                and pair.limits.tilt_min <= tilt <= pair.limits.tilt_max, \
+                f"{lm.name} is beyond {pair.slave.id}'s head: pan {pan:.1f}, tilt {tilt:.1f}"
+        pans = [ptz_degrees(pair.slave, (lm.x, 0.0, lm.z)) for lm in marks]
+        assert max(p for p, _ in pans) - min(p for p, _ in pans) >= 5, \
+            f"{pair.slave.id}: the {pair.name} landmarks span only " \
+            f"{max(p for p, _ in pans) - min(p for p, _ in pans):.1f} deg of pan"
+        assert max(t for _, t in pans) - min(t for _, t in pans) >= 1, \
+            f"{pair.slave.id}: the {pair.name} landmarks span only " \
+            f"{max(t for _, t in pans) - min(t for _, t in pans):.1f} deg of tilt"
+    for name in ("ptz", "ptz2"):
+        assert not (cameras[name].get("metadata") or {}).get("analytics"), \
+            f"{name} boxes for itself; its master's boxes are what aims it"
 
+    # The car still drives the ring road and still carries its own camera; it is ambience now, not
+    # what either pair follows.
     car = next((v for v in world.get("vehicles", []) if v["id"] == DEMO_VEHICLE_ID), None)
-    assert car is not None, f"the world has no '{DEMO_VEHICLE_ID}' car for the road pair"
+    assert car is not None, f"the world has no '{DEMO_VEHICLE_ID}' car"
     assert car.get("detectable", True), f"{DEMO_VEHICLE_ID} is not detectable"
-    size = (car.get("width", DEMO_VEHICLE_SIZE[0]), car.get("height", DEMO_VEHICLE_SIZE[1]),
-            car.get("length", DEMO_VEHICLE_SIZE[2]))
-    route = [(point["x"], point["z"]) for point in car.get("route", [])]
-    assert len(route) >= 2, f"{DEMO_VEHICLE_ID} has no route to drive"
-    master_pose = level_pose(road.master)
-    box_heights, seen_x = [], []
-    for x, z, heading in route_samples(route, closed=car.get("return", "loop") == "loop"):
-        box = car_box(master_pose, x, z, heading, size)
-        if box is None:
-            continue
-        left, top, right, bottom = box
-        # Only the part of the pass where the whole car is in the picture: that is what a detector
-        # sees, and a box cut by the frame says nothing about how small the car gets.
-        if left < 0.0 or right > 1.0 or top < 0.0 or bottom > 1.0:
-            continue
-        box_heights.append(bottom - top)
-        seen_x.append(x)
-    assert box_heights, f"{road.master.id} never sees the whole of {DEMO_VEHICLE_ID}"
-    assert min(box_heights) >= 0.06, \
-        f"{DEMO_VEHICLE_ID} is only {min(box_heights):.3f} of {road.master.id}'s picture at its smallest " \
-        f"(the detector's threshold is {MIN_BOX_HEIGHT}); narrow the master's hfov"
-    assert max(seen_x) - min(seen_x) >= 30, \
-        f"{DEMO_VEHICLE_ID} is in {road.master.id}'s picture over only {max(seen_x) - min(seen_x):.0f} m of road"
+    assert len(car.get("route", [])) >= 2, f"{DEMO_VEHICLE_ID} has no route to drive"
 
     # The master's three relays show every kind of link a relay can have: one lights a lamp, one
     # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an

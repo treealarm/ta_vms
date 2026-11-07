@@ -231,10 +231,13 @@ each rack's first slot and eight ports on every switch. The third port of the fi
 synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
-reinstalling once it is provisioned places it. They form two master/slave pairs: `sim-master` →
-`sim-ptz` in Room 101, and `sim-master2` → `sim-ptz2` out on the map, where the master watches the
-ring road north of the building and the doorway in its north wall, and the slave turns after the
-car its boxes report and after the person who walks out of that doorway. `sim-vehicle` is flagged `geo_from_device`: the
+reinstalling once it is provisioned places it. They form two master/slave pairs, both on the same
+walking person: `sim-master` → `sim-ptz`, whose master stands south of Room 101 on the line the
+person walks out by and holds the room and the doorway at the far end of the hall in one lens; and
+`sim-master2` → `sim-ptz2` out on the map, whose slave hangs over the doorway in the building's
+north wall and whose master, on a pole between that doorway and the ring road, looks back along the
+line and reports the person's boxes. The car still drives the ring road, but neither master is
+close enough to it to detect it. `sim-vehicle` is flagged `geo_from_device`: the
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 

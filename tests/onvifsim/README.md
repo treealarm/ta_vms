@@ -87,17 +87,18 @@ bench are kept from drifting apart.
 
 ### Aiming in the demo world
 
-The demo world has two pairs, and both are calibrated here. The **hall pair** is `sim-master` and
-`sim-ptz`, in Room 101: the master's person boxes drive the slave's aim, and it follows the person
-until they leave its picture on the way out. The **road pair** is `sim-master2` and `sim-ptz2`, on
-the map: the master stands on a pole outside the building's north wall, an overview of the ring
-road and the doorway, and the slave, north of the road, looks south over both the lane and the
-ground by the door. Its master reports the car and the person; the slave follows whichever it
-already has and keeps it while the master reports it. Each pair has its own five landmarks —
-`world.py`'s `MARYLAND_HALL_LANDMARKS` and `MARYLAND_ROAD_LANDMARKS` — both visible from both
-cameras of the pair. The road's marks are on the ground between the wall and the lane, where the
-person walks out, and are spread over depth as well as across: five marks on one line would not fit
-a ground homography.
+The demo world has two pairs, and both follow the same walking person. The **hall pair** is
+`sim-master` and `sim-ptz`: the master stands south of Room 101, on the line the person walks out
+by, and one lens holds the room and the doorway at the far end of the hall; the slave is the room's
+north-east corner. The **yard pair** is `sim-master2` and `sim-ptz2`, on the map beyond the
+building: the slave hangs over the doorway the person walks out of, and the master — on a pole
+between that doorway and the ring road — looks back along the line, reporting the person's boxes
+that aim it. The car still drives the ring road (the vehicle camera rides it), but from where the
+masters now stand it is too small in their pictures to be detected, so neither pair follows it.
+Each pair has its own five landmarks — `world.py`'s `MARYLAND_HALL_LANDMARKS` and
+`MARYLAND_ROAD_LANDMARKS` — held by its master's picture with a person's box big enough to mark the
+ground on, and reachable by its slave. Both sets are spread over depth as well as across: five marks
+on one line would not fit a ground homography.
 
 The demo world must be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench
 adds no placements there and refuses to invent a space. It takes the cameras' true poses from the
@@ -111,39 +112,25 @@ tests/onvifsim/onvifsim_lab.py provision --world maryland
 tests/onvifsim/onvifsim_lab.py calibrate --world maryland
 tests/onvifsim/onvifsim_lab.py bind --world maryland
 tests/onvifsim/onvifsim_lab.py aim-check --world maryland --seconds 30
-tests/onvifsim/onvifsim_lab.py run --world maryland --pair road --seconds 30
-tests/onvifsim/onvifsim_lab.py run --world maryland --pair road --target person --seconds 30
+tests/onvifsim/onvifsim_lab.py run --world maryland --seconds 60
 ```
 
-The person walking the hall's route is what the hall master detects; for either pair the bench puts
-a person on one of its landmarks while it waits for the first boxes, then takes them away — the
-walking person's route passes in and out of both masters' pictures.
-`calibrate` stops the car (`PUT /api/vehicles/v1`, speed 0) for the calibration and puts it back
-exactly as the world file has it afterwards, in a `finally` — a failed calibration does not leave
-the demo world changed. `aim-check` and the hall `run` measure the person indoors, so for their
-duration the bench cuts the walker's route to the part inside Room 101 and puts the world's one
-back afterwards. `aim-check` skips the road pair: `run --pair road` follows the car there, and
-`run --pair road --target person` the person who walks out of the building.
+Both pairs work on the same walking person, each from its own side. The hall master stands south
+of Room 101 on the line the person walks out by, with a lens narrow enough to hold the room and the
+doorway 56 m away; the yard pair's slave hangs over that doorway and its master, on a pole between
+the doorway and the ring road, looks back along the line. Each pair is measured on the half of the
+route it works on: the bench cuts the walker's route to the room for the hall pair and to the
+ground outside for the yard pair, and for either pair it also puts a person on one of its landmarks
+while it waits for the first boxes — the world's own walker is out of that pair's picture part of
+the time.
 
-The road slave records no framing zoom: the car crosses 16 m between two commands (8 m/s and a
-command at most every two seconds), and a frame cut for a person 30 m away is about 15° wide, so
-the car would leave it between commands. It stays at the wide end, where the whole pass is inside
-its picture.
+`aim-check` and `run` work on both pairs, and both slaves record a framing zoom: the target is a
+person walking at 1 m/s in each, so a frame cut for them stays on them between commands.
 
-`run --pair road` waits for the car to drive into the master's picture (the ring road lap is about
-two minutes, and the car is in view for under five seconds of it), then measures while it crosses.
-The live error against the car includes the command lag; the threshold is on the arrival figure —
-the head at rest against where the car was when the head set off. The person is taken out of the
-world for that measurement: the slave keeps the target it already has, so a person walking by would
-be followed instead of the car.
-
-`run --pair road --target person` waits instead for the person to walk out of the doorway and into
-the same master's picture (they are in it for about a minute of the four-and-a-half-minute lap),
-waits for the slave to take them — it may still be following the car, which it keeps while the
-master reports it — and then measures the follow until they leave the picture again. The person
-crosses the road toward the slave, from about 45 m down to 20 m; the ground by the door is what the
-slave's calibration is marked on, and the way out keeps clear of the master's picture edges, where
-a box's foot would map to ground metres away.
+`run --pair road` waits for the person to walk out of the doorway into the yard master's picture,
+then measures the follow the way the hall's is measured. The person is 10–35 m from the slave
+there, against 3–9 m in the room, so the same command lag costs a much smaller angle: the yard
+slave's tracking error is the tighter of the two, and the thresholds are the same.
 
 The matrix and edge-import steps are the yard's: they rehang cameras and cut one off the network,
 which the demo world has no place for.
@@ -166,8 +153,7 @@ tests/onvifsim/onvifsim_lab.py provision [--reset]
 tests/onvifsim/onvifsim_lab.py calibrate [--no-zoom]  # --no-zoom: no zoom samples, slaves stay wide
 tests/onvifsim/onvifsim_lab.py aim-check [--seconds 60]
 tests/onvifsim/onvifsim_lab.py bind
-tests/onvifsim/onvifsim_lab.py run [--seconds 60]   # --pair road: follows the car, waits for its pass
-                                                    #   --target person: the person outside the building
+tests/onvifsim/onvifsim_lab.py run [--seconds 60]   # both demo pairs follow the walking person
 tests/onvifsim/onvifsim_lab.py edge --pair map [--outage 60]   # edge import, see below; not part of all
 tests/onvifsim/onvifsim_lab.py down [--purge]   # --purge also removes the cameras (and the yard's spaces)
 tests/onvifsim/onvifsim_lab.py matrix [--mounts a,b] [--seconds 30]   # the map pair hung every way, see Mounts

@@ -26,7 +26,10 @@ namespace VmsMap.Demo
     //    the demo configured.
     // 9: the person walks out of a doorway in the building's north wall; the road pair moved west to
     //    see both the road and the ground outside the door, and follows the person as well as the car.
-    public const int UmdDataCenterVersion = 9;
+    // 10: both masters turned to face the person's line rather than a room or a road: the hall master
+    //     stands south of Room 101 on the line out to the doorway, and the yard pair's slave hangs over
+    //     that doorway while its master watches the line from between the door and the ring road.
+    public const int UmdDataCenterVersion = 10;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -160,15 +163,16 @@ namespace VmsMap.Demo
 
       var placements = new List<DemoPlacement>
       {
-        // The pair works as one: the master's boxes drive the slave's aim, so both stand in Room 101,
-        // facing each other across it, with a person walking between them in the simulator's world.
-        new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
+        // The pair works as one: the master's boxes drive the slave's aim. The master stands south of
+        // Room 101, on the line the person walks out by, and one lens holds the room and the doorway at
+        // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
+        new("sim-master", "space/building", 38.9923000, -76.9383779, HeightM: 2.8, HeadingDeg: 342.3, HfovDeg: 45, RangeM: 60),
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
-        // The second pair works as one north of the building: master2 is an overview of the ring road
-        // and the doorway the person walks out of, its boxes drive ptz2, which stands north of the
-        // road and looks south over both the lane and the ground by the door.
-        new("sim-master2", "space/umd", 38.992884, -76.938447, HeightM: 6, HeadingDeg: 0, HfovDeg: 60, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.993468, -76.938447, HeightM: 6, HeadingDeg: 180, HfovDeg: 60, RangeM: 150),
+        // The second pair works as one out in the yard: ptz2 hangs over the doorway the person walks out
+        // of, and master2 stands on a pole between that doorway and the ring road, looking back along
+        // the line — its boxes are what aim the slave.
+        new("sim-master2", "space/umd", 38.9929468, -76.9388171, HeightM: 6, HeadingDeg: 88.8, HfovDeg: 55, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.9928031, -76.9383779, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
         new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
