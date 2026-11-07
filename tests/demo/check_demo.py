@@ -638,6 +638,14 @@ def check_monitor(vms, allow_missing):
 
     check(wall.get("layout") == "3x3", "the wall is a 3x3 grid: a row per pair, the car camera last")
     cameras = wall.get("cameraIds") or []
+    # The cells, not just the pool: a pair is on a row of its own only if the cells are named.
+    cells = {slot.get("slotIndex"): slot.get("cameraId") for slot in wall.get("slots") or []}
+    for slot, name in ((0, "sim-master"), (1, "sim-ptz"), (3, "sim-master2"),
+                       (4, "sim-ptz2"), (6, "sim-vehicle")):
+        cam_id = camera_id(name)
+        if allow_missing and cam_id not in cameras:
+            continue
+        check(cells.get(slot) == cam_id, f"the wall's cell {slot + 1} shows {name}")
     expected = [camera_id(name) for name in DEMO_CAMERAS]
     if allow_missing:
         # A world installed before the simulator's cameras are provisioned: what exists is shown,

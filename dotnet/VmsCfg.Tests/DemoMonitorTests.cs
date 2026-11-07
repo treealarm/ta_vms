@@ -3,41 +3,53 @@ using VmsCfg.Demo;
 namespace VmsCfg.Tests;
 
 // The wall's plan is the part that decides what a second install writes; the rows themselves are
-// the ordinary monitor tables. A camera the deployment lacks must be skipped, not invented.
+// the ordinary monitor tables. A camera the deployment lacks must be skipped, not invented, and a
+// pair must keep its own row: cells are named, never counted off.
 public class DemoMonitorTests
 {
   private static readonly string[] DemoCameras =
     ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"];
 
   [Fact]
-  public void TheWallShowsTheDemoCamerasInItsOwnOrder()
-  {
-    var plan = DemoMonitor.Plan([DemoCameraIds.For("sim-ptz2"), DemoCameraIds.For("sim-master")]);
-
-    Assert.Equal([DemoCameraIds.For("sim-master"), DemoCameraIds.For("sim-ptz2")], plan.Cameras);
-    Assert.Equal(["sim-ptz", "sim-master2", "sim-vehicle"], plan.Skipped);
-    Assert.Equal("3x3", plan.Layout);
-    Assert.Equal("UMD DC", plan.Name);
-  }
-
-  [Fact]
-  public void TheFiveCamerasFillTheWallInTheOrderItShowsThem()
+  public void TheWallPutsEachPairOnARowOfItsOwn()
   {
     var plan = DemoMonitor.Plan(DemoCameras.Select(DemoCameraIds.For));
 
+    Assert.Equal("3x3", plan.Layout);
+    Assert.Equal("UMD DC", plan.Name);
+    Assert.Equal(
+      [
+        (0, DemoCameraIds.For("sim-master")),
+        (1, DemoCameraIds.For("sim-ptz")),
+        (3, DemoCameraIds.For("sim-master2")),
+        (4, DemoCameraIds.For("sim-ptz2")),
+        (6, DemoCameraIds.For("sim-vehicle")),
+      ],
+      plan.Slots.Select(slot => (slot.SlotIndex, slot.CameraId)));
     Assert.Equal(DemoCameras.Select(DemoCameraIds.For), plan.Cameras);
     Assert.Empty(plan.Skipped);
   }
 
   [Fact]
-  public void AWorldWithoutTheVehicleCameraIsStillAWall()
+  public void ACameraTheDeploymentLacksLeavesItsCellEmpty()
   {
     // sim-vehicle is a moving camera, not one of the demo's devices: a deployment that has not
-    // provisioned it yet still gets the four that stand in the world.
+    // provisioned it yet still gets the four that stand in the world, in their own cells.
     var plan = DemoMonitor.Plan(DemoCameras.Where(name => name != "sim-vehicle").Select(DemoCameraIds.For));
 
-    Assert.Equal(new[] { "sim-master", "sim-ptz", "sim-master2", "sim-ptz2" }.Select(DemoCameraIds.For), plan.Cameras);
+    Assert.Equal([0, 1, 3, 4], plan.Slots.Select(slot => slot.SlotIndex));
     Assert.Equal(["sim-vehicle"], plan.Skipped);
+  }
+
+  [Fact]
+  public void TheWallShowsTheCamerasItHasInTheirOwnCells()
+  {
+    var plan = DemoMonitor.Plan([DemoCameraIds.For("sim-ptz2"), DemoCameraIds.For("sim-master")]);
+
+    Assert.Equal(
+      [(0, DemoCameraIds.For("sim-master")), (4, DemoCameraIds.For("sim-ptz2"))],
+      plan.Slots.Select(slot => (slot.SlotIndex, slot.CameraId)));
+    Assert.Equal(["sim-ptz", "sim-master2", "sim-vehicle"], plan.Skipped);
   }
 
   [Fact]
@@ -49,7 +61,7 @@ public class DemoMonitorTests
 
     Assert.Equal(first.MonitorId, second.MonitorId);
     Assert.Equal(DemoMonitor.MonitorId.ToString(), first.MonitorId);
-    Assert.Equal(first.Cameras, second.Cameras);
+    Assert.Equal(first.Slots, second.Slots);
     Assert.Empty(first.Skipped);
     Assert.Empty(second.Skipped);
   }
@@ -59,6 +71,7 @@ public class DemoMonitorTests
   {
     var plan = DemoMonitor.Plan([]);
 
+    Assert.Empty(plan.Slots);
     Assert.Empty(plan.Cameras);
     Assert.Equal(5, plan.Skipped.Count);
   }
