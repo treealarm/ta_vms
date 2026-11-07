@@ -7,7 +7,7 @@ namespace VmsCfg.Tests;
 public class DemoMonitorTests
 {
   private static readonly string[] DemoCameras =
-    ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"];
+    ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"];
 
   [Fact]
   public void TheWallShowsTheDemoCamerasInItsOwnOrder()
@@ -15,8 +15,8 @@ public class DemoMonitorTests
     var plan = DemoMonitor.Plan([DemoCameraIds.For("sim-ptz2"), DemoCameraIds.For("sim-master")]);
 
     Assert.Equal([DemoCameraIds.For("sim-master"), DemoCameraIds.For("sim-ptz2")], plan.Cameras);
-    Assert.Equal(["sim-master2", "sim-ptz", "sim-vehicle"], plan.Skipped);
-    Assert.Equal("1+5", plan.Layout);
+    Assert.Equal(["sim-ptz", "sim-master2", "sim-vehicle"], plan.Skipped);
+    Assert.Equal("3x3", plan.Layout);
     Assert.Equal("UMD DC", plan.Name);
   }
 
@@ -36,7 +36,7 @@ public class DemoMonitorTests
     // provisioned it yet still gets the four that stand in the world.
     var plan = DemoMonitor.Plan(DemoCameras.Where(name => name != "sim-vehicle").Select(DemoCameraIds.For));
 
-    Assert.Equal(new[] { "sim-master", "sim-master2", "sim-ptz", "sim-ptz2" }.Select(DemoCameraIds.For), plan.Cameras);
+    Assert.Equal(new[] { "sim-master", "sim-ptz", "sim-master2", "sim-ptz2" }.Select(DemoCameraIds.For), plan.Cameras);
     Assert.Equal(["sim-vehicle"], plan.Skipped);
   }
 

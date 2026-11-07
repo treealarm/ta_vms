@@ -23,19 +23,20 @@ public sealed class DemoMonitor(IDbContextFactory<VmsCfgDbContext> dbFactory, Ca
 {
     public const string DemoKey = "umd-datacenter";
     public const string Name = "UMD DC";
-    // Six cells: the first is a 2x2 feature, the other five are small. Five demo cameras fill all
-    // but the last; a 3x3 grid would leave four cells empty.
-    public const string Layout = "1+5";
+    // A 3x3 grid: a row per pair — master beside the slave it aims — and the camera on the car
+    // alone on the last row. The four corners of the bottom rows stay empty: the wall shows the
+    // demo's five cameras, not a filled grid.
+    public const string Layout = "3x3";
 
     // A constant of its own, not a hash: this row is a configuration object like any other, and a
     // second install has to name the same one.
     public static readonly Guid MonitorId = new("6f0b8d6e-5f2b-4a6a-9c1e-2d3a4b5c6d7e");
 
     // The order the wall shows them in, by the names the demo world gives them. OnvifSim's
-    // cameras, as tests/onvifsim provision creates them. The first takes the feature cell: the
-    // master the Room 101 pair is calibrated from.
+    // cameras, as tests/onvifsim provision creates them: master and slave of the hall on the first
+    // row, master and slave of the yard on the second, and the camera on the car on the third.
     private static readonly string[] CameraOrder =
-      ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"];
+      ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"];
 
     /// Which of the demo cameras exist, in wall order. Pure: the same cameras give the same plan,
     /// which is what makes a second install a no-op on the rows. `Cameras` are the ids the wall

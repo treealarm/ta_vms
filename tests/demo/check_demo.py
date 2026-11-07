@@ -37,7 +37,7 @@ ROOM_DIAGRAM_NAME = "Room 102"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
-DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"]
+DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
 TELEMETRY_NAME = "Camera sim-vehicle"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
@@ -636,7 +636,7 @@ def check_monitor(vms, allow_missing):
     if not check(wall is not None, "the 'UMD DC' video wall is in VmsCfg"):
         return
 
-    check(wall.get("layout") == "1+5", "the wall is a 1+5 grid: one feature cell and five small ones")
+    check(wall.get("layout") == "3x3", "the wall is a 3x3 grid: a row per pair, the car camera last")
     cameras = wall.get("cameraIds") or []
     expected = [camera_id(name) for name in DEMO_CAMERAS]
     if allow_missing:
