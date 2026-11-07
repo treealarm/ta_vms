@@ -374,6 +374,16 @@ def person_in_frame(pose, feet, size=(VIDEO_W, VIDEO_H), height=WALKER_HEIGHT):
     return inside, max(abs(low[0] - high[0]), abs(low[1] - high[1]))
 
 
+def feet_in_frame(pose, feet, size=(VIDEO_W, VIDEO_H)):
+    """Whether a person's feet are inside a camera's picture — the ground point an aim is sent to.
+
+    A person who walks under a camera cannot be wholly inside any lens: at 2 m their head and feet
+    are further apart than the picture is tall. The feet are what the aiming chain follows, so a
+    follow is checked on them."""
+    uv = project_pose(pose, feet, *size)
+    return uv is not None and 0.0 <= uv[0] <= 1.0 and 0.0 <= uv[1] <= 1.0
+
+
 
 # ── Mounts: the ways a camera can hang ─────────────────────────────────────────
 

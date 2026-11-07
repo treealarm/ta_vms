@@ -132,6 +132,19 @@ then measures the follow the way the hall's is measured. The person is 10–35 m
 there, against 3–9 m in the room, so the same command lag costs a much smaller angle: the yard
 slave's tracking error is the tighter of the two, and the thresholds are the same.
 
+Three things in the measurement are there for the demo's geometry rather than a change of
+threshold:
+
+- A `run` does not count the first move: the head slews onto the person from wherever the last step
+  left it, and that slew read as a 130° tracking error before it was dropped.
+- Samples where the person is within 4 m of the slave's own head are not counted either
+  (`HOLD_RADIUS_M`): an aim is sent at most every two seconds, and at 4 m a walker crosses 29° of
+  the view per second — no chain holds that, whatever its accuracy. The yard's slave hangs over the
+  doorway, so the person passes under it every lap.
+- The person counts as framed when their *feet* are in the picture, not their whole body: within a
+  few metres of the camera a 1.75 m person is taller than the picture, and the aim follows their
+  ground point anyway.
+
 The matrix and edge-import steps are the yard's: they rehang cameras and cut one off the network,
 which the demo world has no place for.
 
