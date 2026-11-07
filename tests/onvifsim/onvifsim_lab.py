@@ -925,11 +925,16 @@ class Lab:
             moving = bool(pose.get("moving"))
             head = (pose["pan"], pose["tilt"])
             event = ""
-            if moving and started_at is None:
-                started_at = prev_feet or feet
-                event = "command"
-            elif not moving:
-                if rest is not None and max(abs(a - b) for a, b in zip(head, rest)) > 1e-3:
+            if moving:
+                if started_at is None:
+                    started_at = prev_feet or feet
+                    event = "command"
+            else:
+                # A move that began before this loop's first sample has no `rest` to compare with,
+                # but `started_at` is set: its arrival still counts, or a pass this short (the car
+                # crosses in under five seconds) could be logged with fewer moves than it caused.
+                moved = rest is not None and max(abs(a - b) for a, b in zip(head, rest)) > 1e-3
+                if started_at is not None or moved:
                     sent_for = started_at or prev_feet or feet
                     arrival = W.angle_between(axis, tuple(f - c for f, c in zip(sent_for, cam)))
                     arrivals.append(arrival)
@@ -1018,11 +1023,16 @@ class Lab:
             moving = bool(pose.get("moving"))
             head = (pose["pan"], pose["tilt"])
             event = ""
-            if moving and started_at is None:
-                started_at = prev_feet or feet
-                event = "command"
-            elif not moving:
-                if rest is not None and max(abs(a - b) for a, b in zip(head, rest)) > 1e-3:
+            if moving:
+                if started_at is None:
+                    started_at = prev_feet or feet
+                    event = "command"
+            else:
+                # A move that began before this loop's first sample has no `rest` to compare with,
+                # but `started_at` is set: its arrival still counts, or a pass this short (the car
+                # crosses in under five seconds) could be logged with fewer moves than it caused.
+                moved = rest is not None and max(abs(a - b) for a, b in zip(head, rest)) > 1e-3
+                if started_at is not None or moved:
                     sent_for = started_at or prev_feet or feet
                     arrival = W.angle_between(axis, tuple(f - c for f, c in zip(sent_for, cam)))
                     arrivals.append(arrival)

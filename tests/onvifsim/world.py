@@ -684,6 +684,12 @@ def world_to_wgs84(world, position):
     return lat0 + north / per_deg_lat, lon0 + east / per_deg_lon, geo.get("elevation", 0.0) + y
 
 
+def _inside_room101(world, x, z):
+    """Whether a world point is inside Room 101, where the demo's hall pair works."""
+    lat, lon, _ = world_to_wgs84(world, {"x": x, "y": 0.0, "z": z})
+    return ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST
+
+
 def ground_gap(lat1, lon1, lat2, lon2):
     """How far apart two WGS84 points are on the ground, metres."""
     per_deg_lat = EARTH_RADIUS_M * math.pi / 180.0
@@ -797,21 +803,20 @@ def check_maryland(world):
         assert len(route) >= 2, "the person has nowhere to walk"
         path = ([*route, route[0]] if walker.get("return", "loop") == "loop"
                 else [*route, *reversed(route[:-1])])
-        indoor, outdoor = [], []
-        for x, z in route:
-            lat, lon, _ = world_to_wgs84(world, {"x": x, "y": 0.0, "z": z})
-            if ROOM101_SOUTH <= lat <= ROOM101_NORTH and ROOM101_WEST <= lon <= ROOM101_EAST:
-                indoor.append((x, z))
-            else:
-                outdoor.append((x, z))
+        indoor = [
+            (x, z) for x, z in route
+            if _inside_room101(world, x, z)
+        ]
+        # Outside the building, not merely out of Room 101: the route has to cross the north wall.
+        outside = [(x, z) for x, z in route if z < MARYLAND_NORTH_WALL_Z]
         assert indoor, "the person never walks inside Room 101, where the hall pair works"
-        assert outdoor, "the person never leaves the building, so the road pair has nobody outside"
+        assert outside, "the person never leaves the building, so the road pair has nobody outside"
         for x, z in indoor:
             inside, span = person_in_frame(hall_pose, (x, 0.0, z))
             assert inside and span >= 1.5 * MIN_BOX_HEIGHT, \
                 f"the hall master does not see the person at ({x}, {z})"
         visible = [
-            (x, z) for x, z in outdoor
+            (x, z) for x, z in outside
             if person_in_frame(road_pose, (x, 0.0, z))[0]
             and person_in_frame(road_pose, (x, 0.0, z))[1] >= 1.5 * MIN_BOX_HEIGHT
         ]
