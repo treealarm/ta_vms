@@ -605,7 +605,7 @@ class DemoPlacement:
 
 DEMO_PLACEMENTS = [
     DemoPlacement("master", 38.9928120, -76.9378925, 2.8, 0, 45),
-    DemoPlacement("ptz", 38.9928803, -76.9378370, 2.8, 310, 65),
+    DemoPlacement("ptz", 38.9928722, -76.9378196, 2.8, 310, 65),
     DemoPlacement("master2", 38.9933061, -76.9381467, 6.0, 125, 55),
     DemoPlacement("ptz2", 38.9931085, -76.9380312, 5.5, 88, 60),
 ]
@@ -625,14 +625,14 @@ MARYLAND_HALL_PAIR = "hall"
 MARYLAND_ROAD_PAIR = "road"
 
 # The landmarks in the hall, in world metres (X east, Z south): in Room 101, around the square the
-# person walks, where the master at (-8, -57) and the slave at (-3.2, -64.6) both see them, and spread
+# person walks, where the master at (-8, -57) and the slave at (-1.7, -63.7) both see them, and spread
 # across the master's picture so the ground fit is not extrapolated from one corner of it.
 MARYLAND_HALL_LANDMARKS = (
-    Landmark("L1", -10.6, -69.6, "#e53935", "red"),
-    Landmark("L2", -6.4, -69.6, "#fdd835", "yellow"),
-    Landmark("L3", -10.6, -65.9, "#1e88e5", "blue"),
-    Landmark("L4", -6.4, -65.9, "#f5f5f5", "white"),
-    Landmark("L5", -8.5, -67.8, "#8e24aa", "purple"),
+    Landmark("L1", -10.6, -71.6, "#e53935", "red"),
+    Landmark("L2", -6.4, -71.6, "#fdd835", "yellow"),
+    Landmark("L3", -10.6, -67.9, "#1e88e5", "blue"),
+    Landmark("L4", -6.4, -67.9, "#f5f5f5", "white"),
+    Landmark("L5", -8.5, -69.8, "#8e24aa", "purple"),
 )
 
 # The landmarks on the ground of the yard, in world metres: across the stretch the person walks out

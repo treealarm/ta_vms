@@ -29,6 +29,10 @@ namespace VmsMap.Demo
     public const int CameraPanelWidth = 480;
     public const int CameraPanelHeight = 320;
 
+    // A degree of a great circle, in metres: the WGS84 sphere the map's coordinates are laid out on.
+    // A plan is drawn in degrees, so a size in metres comes from this, at the latitude it stands at.
+    private const double EarthRadiusM = 6378137.0;
+
     // The four sockets of the rear panel, left to right.
     private static readonly (string Key, string Label)[] PanelSockets =
     [
@@ -258,17 +262,26 @@ namespace VmsMap.Demo
       svg.Append(
         $"<polygon points=\"{Points(outline.Select(Px))}\" fill=\"#e8eaed\" stroke=\"#565c64\" stroke-width=\"9\" stroke-linejoin=\"round\"/>");
 
-      // Room 101: a room of the floor, with walls of its own.
-      var (x0, y0) = Px(roomNorthEast);
-      var (x1, y1) = Px(roomSouthWest);
+      // Room 101: a room of the floor, with walls of its own. The corners come in as north-east and
+      // south-west, which is right-to-left and bottom-to-top on the picture: a rectangle is the
+      // leftmost and topmost corner, and its sizes are positive either way.
+      var (northEastX, northEastY) = Px(roomNorthEast);
+      var (southWestX, southWestY) = Px(roomSouthWest);
+      var roomX = Math.Min(northEastX, southWestX);
+      var roomY = Math.Min(northEastY, southWestY);
+      var roomWidth = Math.Abs(southWestX - northEastX);
+      var roomHeight = Math.Abs(southWestY - northEastY);
       svg.Append(
-        $"<rect x=\"{N(x0)}\" y=\"{N(y0)}\" width=\"{N(x1 - x0)}\" height=\"{N(y1 - y0)}\" fill=\"#d6dae0\" stroke=\"#3f454d\" stroke-width=\"7\"/>");
+        $"<rect x=\"{N(roomX)}\" y=\"{N(roomY)}\" width=\"{N(roomWidth)}\" height=\"{N(roomHeight)}\" fill=\"#d6dae0\" stroke=\"#3f454d\" stroke-width=\"7\"/>");
       svg.Append(
-        $"<text x=\"{N((x0 + x1) / 2)}\" y=\"{N((y0 + y1) / 2)}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"sans-serif\" font-size=\"30\" fill=\"#5b616a\">101</text>");
+        $"<text x=\"{N(roomX + roomWidth / 2)}\" y=\"{N(roomY + roomHeight / 2)}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"sans-serif\" font-size=\"30\" fill=\"#5b616a\">101</text>");
 
-      // The doorway out to the parking lot: the wall's own gap, as wide as the world's.
+      // The doorway out to the parking lot: the wall's own gap, as wide as the world's. The picture
+      // is laid out in degrees, so a width in metres becomes one at the door's own latitude — the
+      // same conversion the simulator's WorldGeo makes.
       var (dx, dy) = Px(door);
-      var half = doorWidthM / perPixelX / 2;
+      var metresPerDegreeLon = EarthRadiusM * Math.Cos(door.Lat * Math.PI / 180) * Math.PI / 180;
+      var half = doorWidthM / metresPerDegreeLon / perPixelX / 2;
       svg.Append(
         $"<line x1=\"{N(dx - half)}\" y1=\"{N(dy)}\" x2=\"{N(dx + half)}\" y2=\"{N(dy)}\" stroke=\"#e8eaed\" stroke-width=\"12\"/>");
       return Close(svg);

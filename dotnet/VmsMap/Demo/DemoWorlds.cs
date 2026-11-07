@@ -201,9 +201,9 @@ namespace VmsMap.Demo
       {
         // The pair works as one: the master's boxes drive the slave's aim. The master stands south of
         // Room 101, on the line the person walks out by, and one lens holds the room and the doorway at
-        // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
+        // the far end of the hall; the slave is in the room's south-east corner, looking across it.
         new("sim-master", "space/building", 38.9928120, -76.9378925, HeightM: 2.8, HeadingDeg: 0, HfovDeg: 45, RangeM: 60),
-        new("sim-ptz", Room101, 38.9928803, -76.9378370, HeightM: 2.8, HeadingDeg: 310, HfovDeg: 65, RangeM: 15),
+        new("sim-ptz", Room101, 38.9928722, -76.9378196, HeightM: 2.8, HeadingDeg: 310, HfovDeg: 65, RangeM: 15),
         // The second pair works as one out in the yard: master2 stands on a pole between the doorway
         // and the ring road, looking back along the line the person walks — its boxes are what aim the
         // slave; ptz2 hangs on a pole of its own between that doorway and the master, nearer the

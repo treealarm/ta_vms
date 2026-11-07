@@ -175,8 +175,8 @@ public class DemoWorldTests
 
     var hallSlave = _world.Placements.Single(placement => placement.CameraId == "sim-ptz");
     Assert.Equal("space/room-101", hallSlave.SpaceKey);
-    Assert.Equal(38.9928803, hallSlave.Lat, 6);
-    Assert.Equal(-76.9378370, hallSlave.Lon, 6);
+    Assert.Equal(38.9928722, hallSlave.Lat, 6);
+    Assert.Equal(-76.9378196, hallSlave.Lon, 6);
     Assert.Equal(310, hallSlave.HeadingDeg);
 
     var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
@@ -276,6 +276,57 @@ public class DemoWorldTests
       Assert.StartsWith("<svg", text);
       Assert.EndsWith("</svg>", text);
     }
+  }
+
+  [Fact]
+  public void TheFloorPlanDrawsTheRoomAndAGapInTheWall()
+  {
+    // The plan is the building's silhouette, not a picture of a room: the room lies in it at the
+    // world's own 14 × 10 m, and the doorway is the world's 1.8 m cut out of the north wall. A
+    // rectangle with a negative width is an SVG error and draws nothing at all, so a plan can look
+    // like a silhouette with a floating "101" and still pass a check that only reads its header.
+    var file = _world.Files.Single(candidate => candidate.Key == "file/floor-plan");
+    var text = System.Text.Encoding.UTF8.GetString(file.Content);
+
+    var building = _world.Spaces.Single(space => space.Key == "space/building");
+    var room = _world.Spaces.Single(space => space.Key == "space/room-101");
+    var perPixelX = (building.East - building.West) / DemoArt.FloorPlanWidth;
+    var perPixelY = (building.North - building.South) / DemoArt.FloorPlanHeight;
+    const double EarthRadiusM = 6378137.0;
+    var metresPerDegreeLon = EarthRadiusM * Math.Cos(building.South * Math.PI / 180) * Math.PI / 180;
+    var metresPerDegreeLat = EarthRadiusM * Math.PI / 180;
+
+    // The outline is the whole picture: its own corners land on the canvas's.
+    var polygon = System.Text.RegularExpressions.Regex.Match(text, "<polygon points=\"([^\"]+)\"");
+    Assert.True(polygon.Success, "the plan draws no building");
+    var corners = polygon.Groups[1].Value.Split(' ')
+      .Select(pair => pair.Split(',').Select(value => double.Parse(value, System.Globalization.CultureInfo.InvariantCulture)).ToArray())
+      .ToList();
+    Assert.Equal(building.Footprint!.Count, corners.Count);
+    Assert.InRange(corners.Min(corner => corner[0]), 0, 1);
+    Assert.InRange(corners.Max(corner => corner[0]), DemoArt.FloorPlanWidth - 1, DemoArt.FloorPlanWidth);
+    Assert.InRange(corners.Min(corner => corner[1]), 0, 1);
+    Assert.InRange(corners.Max(corner => corner[1]), DemoArt.FloorPlanHeight - 1, DemoArt.FloorPlanHeight);
+
+    // Room 101: the world's room, at the world's place in the floor.
+    var rect = System.Text.RegularExpressions.Regex.Match(text,
+      "<rect x=\"([-0-9.]+)\" y=\"([-0-9.]+)\" width=\"([-0-9.]+)\" height=\"([-0-9.]+)\"");
+    Assert.True(rect.Success, "the plan draws no room");
+    double Number(int group) => double.Parse(rect.Groups[group].Value, System.Globalization.CultureInfo.InvariantCulture);
+    Assert.InRange(Number(3) * perPixelX * metresPerDegreeLon, 13.9, 14.1);
+    Assert.InRange(Number(4) * perPixelY * metresPerDegreeLat, 9.9, 10.1);
+    var roomX = (room.West - building.West) / perPixelX;
+    var roomY = (building.North - room.North) / perPixelY;
+    Assert.InRange(Number(1), roomX - 1, roomX + 1);
+    Assert.InRange(Number(2), roomY - 1, roomY + 1);
+
+    // The doorway is a gap in the north wall, as wide as the world's door.
+    var line = System.Text.RegularExpressions.Regex.Match(text, "<line x1=\"([-0-9.]+)\" y1=\"([-0-9.]+)\" x2=\"([-0-9.]+)\" y2=\"([-0-9.]+)\"");
+    Assert.True(line.Success, "the plan draws no doorway");
+    double Point(int group) => double.Parse(line.Groups[group].Value, System.Globalization.CultureInfo.InvariantCulture);
+    Assert.InRange((Point(3) - Point(1)) * perPixelX * metresPerDegreeLon, 1.7, 1.9);
+    Assert.InRange(Point(2), corners.Min(corner => corner[1]) - 1, corners.Min(corner => corner[1]) + 4);
+    Assert.Equal(Point(2), Point(4), 1);
   }
 
   [Fact]

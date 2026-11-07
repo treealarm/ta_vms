@@ -93,7 +93,7 @@ bench are kept from drifting apart.
 The demo world has two pairs, and both follow the same walking person. The **hall pair** is
 `sim-master` and `sim-ptz`: the master stands south of Room 101, on the line the person walks out
 by, and one lens holds the room and the doorway at the far end of the hall; the slave is the room's
-north-east corner. The **yard pair** is `sim-master2` and `sim-ptz2`, on the map beyond the
+south-east corner, looking across it. The **yard pair** is `sim-master2` and `sim-ptz2`, on the map beyond the
 building: the slave hangs over the doorway the person walks out of, and the master — on a pole
 between that doorway and the ring road — looks back along the line, reporting the person's boxes
 that aim it. The car still drives the ring road (the vehicle camera rides it), but from where the
