@@ -24,7 +24,9 @@ namespace VmsMap.Demo
     //    building's north wall, ptz2 turns after the car.
     // 8: a device's diagram — the camera's rear panel, drawn from its model, its regions the parts
     //    the demo configured.
-    public const int UmdDataCenterVersion = 8;
+    // 9: the person walks out of a doorway in the building's north wall; the road pair moved west to
+    //    see both the road and the ground outside the door, and follows the person as well as the car.
+    public const int UmdDataCenterVersion = 9;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -162,10 +164,11 @@ namespace VmsMap.Demo
         // facing each other across it, with a person walking between them in the simulator's world.
         new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
-        // The second pair works as one on the road north of the building: master2 watches the ring
-        // road, its vehicle boxes drive ptz2, which looks south-east along the same stretch.
-        new("sim-master2", "space/umd", 38.992884, -76.937858, HeightM: 6, HeadingDeg: 0, HfovDeg: 60, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.993333, -76.938320, HeightM: 6, HeadingDeg: 113, HfovDeg: 60, RangeM: 150),
+        // The second pair works as one north of the building: master2 is an overview of the ring road
+        // and the doorway the person walks out of, its boxes drive ptz2, which stands north of the
+        // road and looks south over both the lane and the ground by the door.
+        new("sim-master2", "space/umd", 38.992884, -76.938447, HeightM: 6, HeadingDeg: 0, HfovDeg: 60, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.993468, -76.938447, HeightM: 6, HeadingDeg: 180, HfovDeg: 60, RangeM: 150),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
         new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
