@@ -777,6 +777,9 @@ class Lab:
         # aim-check leaves the slave held for 30 s after its last aim, as the map's aim does for an
         # operator; with only bind in between, run would otherwise start by watching it stand still.
         self.vms.hold(slave, 0)
+        # The head may still be pointing wherever the last step left it; measure only once it has
+        # taken the person and come to rest, or the first slew reads as a tracking error.
+        self._wait_for_target(pair, "person")
         log(f"ta_vms follows the person with {slave} on its own for {seconds:.0f} s")
 
         zoomed = bool(self._zoom_samples(pair))
@@ -995,14 +998,9 @@ class Lab:
                 f"{max(seconds, 300.0):.0f} s")
 
         # The slave may still be on the car, which it keeps while the master reports both; wait for
-        # it to take the person.
+        # it to take the person and settle before measuring.
         log(f"the person is in {pair.master.id}'s picture; waiting for {slave} to take them")
-        deadline = time.monotonic() + max(seconds, 30.0)
-        while time.monotonic() < deadline:
-            state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), {})
-            if ((state.get("target") or {}).get("kind")) == "person":
-                break
-            time.sleep(0.5)
+        self._wait_for_target(pair, "person")
 
         log("   t    person x  z     | moving | error°   | zoom  fill | event")
         tracking, arrivals, framed, fills = [], [], [], []
@@ -1076,6 +1074,24 @@ class Lab:
         # The detector's own threshold, not a margin above it: the far end of the route, where the
         # person is 45 m from the master, is still a picture the master boxes.
         return inside and span >= W.MIN_BOX_HEIGHT
+
+    def _wait_for_target(self, pair, kind, seconds=30.0):
+        """Waits until the slave has taken an object of this kind and its head has come to rest.
+
+        A measurement that starts while the head is still slewing from wherever the last step left
+        it records that slew as a tracking error, and one pass can carry the p95 past its limit.
+        """
+        slave = self.cam_id(pair.slave)
+        deadline = time.monotonic() + seconds
+        state = {}
+        while time.monotonic() < deadline:
+            state = next((s for s in self.vms.tracking_states() if s["cameraId"] == slave), {})
+            if ((state.get("target") or {}).get("kind")) == kind \
+                    and not self.sim.camera_pose(pair.slave.id).get("moving"):
+                return True
+            time.sleep(0.5)
+        log(f"warning: {slave} did not settle on a {kind} within {seconds:.0f} s: {json.dumps(state)}")
+        return False
 
 
     # ── matrix ──────────────────────────────────────────────────────────────────
