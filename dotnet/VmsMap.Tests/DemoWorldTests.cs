@@ -20,7 +20,10 @@ public class DemoWorldTests
 
     var building = Assert.Single(_world.Spaces, space => space.Key == "space/building");
     Assert.Equal(map.Key, building.ParentKey);
-    Assert.NotNull(building.Footprint);
+    // The building is the real one, named by its floor: its footprint is the 19-corner outline of
+    // Biomolecular Sciences, the same the simulator builds its prism from.
+    Assert.Equal("First floor", building.Name);
+    Assert.Equal(19, building.Footprint?.Count);
     Assert.NotNull(building.Plan);
 
     // Room 101 is a plan of its own: a space nested in the building.
@@ -154,36 +157,42 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheSecondPairStandsInTheYard_ItsSlaveBetweenTheDoorwayAndTheMaster()
+  public void TheSecondPairStandsInTheParkingLot_ItsSlaveBetweenTheDoorwayAndTheMaster()
   {
     // The hall pair's master watches the line out of Room 101 to the doorway; the second pair works
-    // in the yard beyond it: master2 stands between that doorway and the ring road, looking back
-    // along the line the person walks, and ptz2 on a pole of its own between the two, nearer the
-    // master, so it holds the doorway at one side and the yard at the other.
-    Assert.Equal(11, _world.Version);
+    // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
+    // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
+    // at one side and the lot the person turns into at the other.
+    Assert.Equal(12, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
-    Assert.Equal(38.9923000, hall.Lat, 6);
-    Assert.Equal(-76.9383779, hall.Lon, 6);
+    Assert.Equal(38.9928120, hall.Lat, 6);
+    Assert.Equal(-76.9378925, hall.Lon, 6);
     Assert.Equal(2.8, hall.HeightM);
-    Assert.Equal(342.3, hall.HeadingDeg);
+    Assert.Equal(0, hall.HeadingDeg);
     Assert.Equal(45, hall.HfovDeg);
+
+    var hallSlave = _world.Placements.Single(placement => placement.CameraId == "sim-ptz");
+    Assert.Equal("space/room-101", hallSlave.SpaceKey);
+    Assert.Equal(38.9928803, hallSlave.Lat, 6);
+    Assert.Equal(-76.9378370, hallSlave.Lon, 6);
+    Assert.Equal(310, hallSlave.HeadingDeg);
 
     var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
     Assert.Equal("space/umd", master.SpaceKey);
-    Assert.Equal(38.9929468, master.Lat, 6);
-    Assert.Equal(-76.9388171, master.Lon, 6);
+    Assert.Equal(38.9933061, master.Lat, 6);
+    Assert.Equal(-76.9381467, master.Lon, 6);
     Assert.Equal(6, master.HeightM);
-    Assert.Equal(88.8, master.HeadingDeg);
+    Assert.Equal(125, master.HeadingDeg);
     Assert.Equal(55, master.HfovDeg);
 
     var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
     Assert.Equal("space/umd", ptz.SpaceKey);
-    Assert.Equal(38.9928749, ptz.Lat, 6);
-    Assert.Equal(-76.9385397, ptz.Lon, 6);
+    Assert.Equal(38.9931085, ptz.Lat, 6);
+    Assert.Equal(-76.9380312, ptz.Lon, 6);
     Assert.Equal(5.5, ptz.HeightM);
-    Assert.Equal(0, ptz.HeadingDeg);
+    Assert.Equal(88, ptz.HeadingDeg);
     Assert.Equal(60, ptz.HfovDeg);
   }
 
@@ -249,14 +258,15 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheDiagramBackgroundsAreVector()
+  public void ThePicturesAreVector()
   {
     // A raster background cannot be told from its regions by construction, and a scaled one blurs;
-    // the diagrams the demo draws are SVG, whose features are the regions themselves.
+    // the diagrams the demo draws are SVG, whose features are the regions themselves. The plans are
+    // drawn the same way — from the building's own constants — so they are vector too.
     foreach (var key in new[]
     {
       "file/room-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
-      "file/device-telemetry-background",
+      "file/device-telemetry-background", "file/floor-plan", "file/room-101-plan",
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);

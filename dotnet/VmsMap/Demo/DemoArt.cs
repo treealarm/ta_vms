@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace VmsMap.Demo
@@ -227,6 +229,73 @@ namespace VmsMap.Demo
 
       return Close(svg);
     }
+
+    // The plans' own paper, in pixels. The server stretches a plan between its footprint's corners,
+    // so each keeps the aspect of the ground it covers: the building 54.8 × 31.4 m, the room 14 × 10.
+    public const int FloorPlanWidth = 1745;
+    public const int FloorPlanHeight = 1000;
+    public const int RoomPlanWidth = 1400;
+    public const int RoomPlanHeight = 1000;
+
+    /// The first floor of the demo's building, drawn over its real footprint: the walls, Room 101 and
+    /// its door. Transparent outside the outline, so on the map the plan lies in the building's own
+    /// silhouette instead of a rectangle, and decided by the same constants the simulator builds its
+    /// prism from: `outline`, the room's corners and the doorway are the world's, not a second version
+    /// of it.
+    public static byte[] FloorPlan(
+      IReadOnlyList<DemoPoint> outline, DemoPoint roomSouthWest, DemoPoint roomNorthEast,
+      DemoPoint door, double doorWidthM)
+    {
+      var south = outline.Min(p => p.Lat);
+      var north = outline.Max(p => p.Lat);
+      var west = outline.Min(p => p.Lon);
+      var east = outline.Max(p => p.Lon);
+      var perPixelX = (east - west) / FloorPlanWidth;
+      var perPixelY = (north - south) / FloorPlanHeight;
+      (double X, double Y) Px(DemoPoint p) => ((p.Lon - west) / perPixelX, (north - p.Lat) / perPixelY);
+
+      var svg = Open(FloorPlanWidth, FloorPlanHeight);
+      svg.Append(
+        $"<polygon points=\"{Points(outline.Select(Px))}\" fill=\"#e8eaed\" stroke=\"#565c64\" stroke-width=\"9\" stroke-linejoin=\"round\"/>");
+
+      // Room 101: a room of the floor, with walls of its own.
+      var (x0, y0) = Px(roomNorthEast);
+      var (x1, y1) = Px(roomSouthWest);
+      svg.Append(
+        $"<rect x=\"{N(x0)}\" y=\"{N(y0)}\" width=\"{N(x1 - x0)}\" height=\"{N(y1 - y0)}\" fill=\"#d6dae0\" stroke=\"#3f454d\" stroke-width=\"7\"/>");
+      svg.Append(
+        $"<text x=\"{N((x0 + x1) / 2)}\" y=\"{N((y0 + y1) / 2)}\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-family=\"sans-serif\" font-size=\"30\" fill=\"#5b616a\">101</text>");
+
+      // The doorway out to the parking lot: the wall's own gap, as wide as the world's.
+      var (dx, dy) = Px(door);
+      var half = doorWidthM / perPixelX / 2;
+      svg.Append(
+        $"<line x1=\"{N(dx - half)}\" y1=\"{N(dy)}\" x2=\"{N(dx + half)}\" y2=\"{N(dy)}\" stroke=\"#e8eaed\" stroke-width=\"12\"/>");
+      return Close(svg);
+    }
+
+    /// Room 101's own plan: a server room's raised floor, its walls and its door. One pixel is a
+    /// centimetre, so the panels are the 60 × 60 cm of a raised floor and the door is a metre wide.
+    public static byte[] RoomPlan()
+    {
+      var svg = Open(RoomPlanWidth, RoomPlanHeight);
+      svg.Append(
+        $"<rect x=\"10\" y=\"10\" width=\"{RoomPlanWidth - 20}\" height=\"{RoomPlanHeight - 20}\" fill=\"#dfe3e7\" stroke=\"#3f454d\" stroke-width=\"20\"/>");
+      for (var x = 10 + 60; x < RoomPlanWidth - 10; x += 60)
+        svg.Append($"<line x1=\"{x}\" y1=\"10\" x2=\"{x}\" y2=\"{RoomPlanHeight - 10}\" stroke=\"#c9ced4\" stroke-width=\"1.5\"/>");
+      for (var y = 10 + 60; y < RoomPlanHeight - 10; y += 60)
+        svg.Append($"<line x1=\"10\" y1=\"{y}\" x2=\"{RoomPlanWidth - 10}\" y2=\"{y}\" stroke=\"#c9ced4\" stroke-width=\"1.5\"/>");
+      // The door on the south wall, a metre wide, in the wall's own colour: a gap, not a picture of one.
+      var doorCentre = RoomPlanWidth / 2;
+      svg.Append(
+        $"<line x1=\"{doorCentre - 50}\" y1=\"{RoomPlanHeight - 10}\" x2=\"{doorCentre + 50}\" y2=\"{RoomPlanHeight - 10}\" stroke=\"#dfe3e7\" stroke-width=\"20\"/>");
+      svg.Append(
+        $"<text x=\"{doorCentre}\" y=\"64\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"30\" fill=\"#5b616a\">101</text>");
+      return Close(svg);
+    }
+
+    private static string Points(IEnumerable<(double X, double Y)> points) =>
+      string.Join(' ', points.Select(p => $"{N(p.X)},{N(p.Y)}"));
 
     private static StringBuilder Open(int width, int height) =>
       new StringBuilder()

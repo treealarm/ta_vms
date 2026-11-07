@@ -5,9 +5,11 @@ using VmsMap.Domain;
 
 namespace VmsMap.Demo
 {
-  /// The worlds we install. Today there is one: a fictional data centre in the A.V. Williams
-  /// building on the University of Maryland campus — a map, a floor, two rooms, racks standing in
-  /// them, switches in the racks and ports in the switches, with the OnvifSim cameras looking on.
+  /// The worlds we install. Today there is one: a data centre on the first floor of Biomolecular
+  /// Sciences on the University of Maryland campus — a map, a floor, two rooms, racks standing in
+  /// them, switches in the racks and ports in the switches, with the OnvifSim cameras looking on. The
+  /// building's footprint, its room and its doorway are the simulator's own (MarylandWorld.cs), so the
+  /// plan on the map and the prism in the world cannot disagree.
   ///
   /// Everything is built from loops and constants: a rack's ports are the same rows for every
   /// rack, and an empty slot is simply a region nothing was put in.
@@ -31,17 +33,45 @@ namespace VmsMap.Demo
     //     that doorway while its master watches the line from between the door and the ring road.
     // 11: the yard slave moved off the doorway onto a pole of its own between the door and the master,
     //     and the person turns right in the yard to walk a stretch along the ring road.
-    public const int UmdDataCenterVersion = 11;
+    // 12: the world is the real campus — the first floor of Biomolecular Sciences with its own
+    //     footprint, the parking lot outside, the real roads — so every camera, Room 101 and the
+    //     person's walk moved with the building, and the plans are drawn from the same constants.
+    public const int UmdDataCenterVersion = 12;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
       string.Equals(key, UmdDataCenterKey, StringComparison.Ordinal) ? UmdDataCenter() : null;
 
-    // The building, in WGS84. Its floor is a plan nested in the map.
-    private const double BuildingSouth = 38.9918;
-    private const double BuildingNorth = 38.9928;
-    private const double BuildingWest = -76.9390;
-    private const double BuildingEast = -76.9365;
+    // The building in WGS84: Biomolecular Sciences' real footprint (OSM way 24303349), the same
+    // outline MarylandWorld builds its prism from. Its first floor is a plan nested in the map.
+    private static readonly DemoPoint[] BuildingOutline =
+    [
+      new(38.9930303, -76.9379976), new(38.9929189, -76.9379965), new(38.9929180, -76.9380254),
+      new(38.9928668, -76.9380242), new(38.9928677, -76.9379965), new(38.9928579, -76.9379965),
+      new(38.9927492, -76.9379942), new(38.9927519, -76.9374255), new(38.9928641, -76.9374255),
+      new(38.9928659, -76.9373943), new(38.9928731, -76.9373920), new(38.9929198, -76.9373920),
+      new(38.9929198, -76.9374244), new(38.9929549, -76.9374232), new(38.9929549, -76.9376601),
+      new(38.9929917, -76.9376613), new(38.9929917, -76.9376740), new(38.9929908, -76.9377619),
+      new(38.9930312, -76.9377619),
+    ];
+
+    private const double BuildingSouth = 38.9927492;
+    private const double BuildingNorth = 38.9930312;
+    private const double BuildingWest = -76.9380254;
+    private const double BuildingEast = -76.9373920;
+
+    // The doorway out to the parking lot, on the north wall: the simulator's own opening, at x = -8
+    // of its metres.
+    private static readonly DemoPoint Door = new(38.9930307, -76.9378925);
+    private const double DoorWidthM = 1.8;
+
+    // The demo's Room 101 in WGS84: 14 × 10 m of the first floor, where the hall pair stands. The
+    // simulator has no wall across it — it is one hall under the roof — but the demo's map places both
+    // cameras, the racks and the person's first lap in this room.
+    private const double Room101South = 38.9928704;
+    private const double Room101West = -76.9379791;
+    private const double Room101North = 38.9929603;
+    private const double Room101East = -76.9378173;
 
     // A room is a plan (Room 101, top-down) or a diagram on the floor (Room 102, schematic): both
     // are rooms in the same building, and the tree alone says which representation was chosen.
@@ -62,8 +92,12 @@ namespace VmsMap.Demo
     {
       var files = new List<DemoFile>
       {
-        DemoFile.Asset("file/floor-plan", "building-floor.png", "image/png"),
-        DemoFile.Asset("file/room-101-plan", "room-101.png", "image/png"),
+        // The plans are drawn from the building's own constants: the first floor over its real
+        // footprint, and Room 101 as the room it is in the world.
+        new("file/floor-plan", DemoArt.FloorPlan(BuildingOutline,
+          new DemoPoint(Room101South, Room101West), new DemoPoint(Room101North, Room101East), Door, DoorWidthM),
+          "image/svg+xml"),
+        new("file/room-101-plan", DemoArt.RoomPlan(), "image/svg+xml"),
         DemoFile.Asset("file/room-icon", "room-icon.png", "image/png"),
         // The diagram backgrounds are vector, and their regions are drawn from the same geometry:
         // see DemoArt, where a socket and the region a port takes are one rectangle.
@@ -89,15 +123,15 @@ namespace VmsMap.Demo
       {
         new("space/umd", "UMD Data Center (demo)", null, SpaceKind.Map,
           38.9908, -76.9408, 38.9936, -76.9348),
-        new("space/building", "A.V. Williams Building", "space/umd", SpaceKind.Plan,
+        new("space/building", "First floor", "space/umd", SpaceKind.Plan,
           BuildingSouth, BuildingWest, BuildingNorth, BuildingEast,
           RealCoordinates: true,
-          Footprint: Rectangle(BuildingSouth, BuildingWest, BuildingNorth, BuildingEast),
-          Plan: new DemoPlan("file/floor-plan", 1200, 600,
+          Footprint: BuildingOutline,
+          Plan: new DemoPlan("file/floor-plan", DemoArt.FloorPlanWidth, DemoArt.FloorPlanHeight,
             new DemoPoint(BuildingNorth, BuildingWest),
             new DemoPoint(BuildingNorth, BuildingEast),
             new DemoPoint(BuildingSouth, BuildingWest))),
-        RoomPlan(Room101, "Room 101", 38.99238, -76.93855, 38.99250, -76.93835, "file/room-101-plan"),
+        RoomPlan(Room101, "Room 101", Room101South, Room101West, Room101North, Room101East, "file/room-101-plan"),
       };
 
       var nodes = new List<DemoNode>();
@@ -110,7 +144,7 @@ namespace VmsMap.Demo
       // zoomed to its own detail.
       nodes.Add(new DemoNode(Room102Layout, "Room 102", "space/building", RoomLayoutType,
         Canvas: new DemoRect(0, 0, DemoArt.RoomLayoutWidth, DemoArt.RoomLayoutHeight),
-        At: new DemoPoint(38.99244, -76.93750),
+        At: new DemoPoint(38.9928210, -76.9376266),
         VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
 
       // The camera on the vehicle reports its own place, its speed and the state of the relay and
@@ -119,7 +153,7 @@ namespace VmsMap.Demo
       nodes.Add(new DemoNode(VehicleTelemetry, "Camera sim-vehicle", "space/building",
         DemoTelemetry.TypeKey,
         Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
-        At: new DemoPoint(38.99206, -76.93875),
+        At: new DemoPoint(38.9927941, -76.9377075),
         OwnerCameraId: "sim-vehicle"));
 
       // Four racks stand in Room 101 (on its plan, top-down), two in Room 102's schematic. Every
@@ -128,10 +162,10 @@ namespace VmsMap.Demo
       // in room-101.png, so the dot the editor moves sits on the cabinet it opens.
       var racks = new (string Key, string Name, string Parent, string? Region, double? Lat, double? Lon)[]
       {
-        ("object/rack-a-01", "Rack A-01", Room101, null, 38.992468, -76.938516),
-        ("object/rack-a-02", "Rack A-02", Room101, null, 38.992468, -76.938471),
-        ("object/rack-a-03", "Rack A-03", Room101, null, 38.992436, -76.938516),
-        ("object/rack-a-04", "Rack A-04", Room101, null, 38.992436, -76.938471),
+        ("object/rack-a-01", "Rack A-01", Room101, null, 38.992943, -76.937944),
+        ("object/rack-a-02", "Rack A-02", Room101, null, 38.992914, -76.937944),
+        ("object/rack-a-03", "Rack A-03", Room101, null, 38.992943, -76.937892),
+        ("object/rack-a-04", "Rack A-04", Room101, null, 38.992914, -76.937892),
         ("object/rack-b-01", "Rack B-01", Room102Layout, "rack-1", null, null),
         ("object/rack-b-02", "Rack B-02", Room102Layout, "rack-2", null, null),
       };
@@ -168,17 +202,17 @@ namespace VmsMap.Demo
         // The pair works as one: the master's boxes drive the slave's aim. The master stands south of
         // Room 101, on the line the person walks out by, and one lens holds the room and the doorway at
         // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
-        new("sim-master", "space/building", 38.9923000, -76.9383779, HeightM: 2.8, HeadingDeg: 342.3, HfovDeg: 45, RangeM: 60),
-        new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
+        new("sim-master", "space/building", 38.9928120, -76.9378925, HeightM: 2.8, HeadingDeg: 0, HfovDeg: 45, RangeM: 60),
+        new("sim-ptz", Room101, 38.9928803, -76.9378370, HeightM: 2.8, HeadingDeg: 310, HfovDeg: 65, RangeM: 15),
         // The second pair works as one out in the yard: master2 stands on a pole between the doorway
         // and the ring road, looking back along the line the person walks — its boxes are what aim the
         // slave; ptz2 hangs on a pole of its own between that doorway and the master, nearer the
         // master, so it holds the doorway at one side of its picture and the yard at the other.
-        new("sim-master2", "space/umd", 38.9929468, -76.9388171, HeightM: 6, HeadingDeg: 88.8, HfovDeg: 55, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.9928749, -76.9385397, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
+        new("sim-master2", "space/umd", 38.9933061, -76.9381467, HeightM: 6, HeadingDeg: 125, HfovDeg: 55, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.9931085, -76.9380312, HeightM: 5.5, HeadingDeg: 88, HfovDeg: 60, RangeM: 100),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
-        new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
+        new("sim-vehicle", "space/umd", 38.9936565, -76.9373030, HeightM: 2, HeadingDeg: 270, HfovDeg: 70, RangeM: 40),
       };
 
       return new DemoWorld(
@@ -205,7 +239,7 @@ namespace VmsMap.Demo
       new(key, name, "space/building", SpaceKind.Plan, south, west, north, east,
         RealCoordinates: true,
         Footprint: Rectangle(south, west, north, east),
-        Plan: new DemoPlan(fileKey, 800, 600,
+        Plan: new DemoPlan(fileKey, DemoArt.RoomPlanWidth, DemoArt.RoomPlanHeight,
           new DemoPoint(north, west),
           new DemoPoint(north, east),
           new DemoPoint(south, west)));

@@ -31,7 +31,7 @@ from vmsapi import Vms  # noqa: E402
 
 DEMO_KEY = "umd-datacenter"
 MAP_NAME = "UMD Data Center (demo)"
-BUILDING_NAME = "A.V. Williams Building"
+BUILDING_NAME = "First floor"
 ROOM_PLAN_NAME = "Room 101"
 ROOM_DIAGRAM_NAME = "Room 102"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
@@ -417,6 +417,23 @@ def walk_the_world(vms):
         "layout_racks": layout_racks, "rack": rack,
         "switch": computer, "port": port, "ports": ports,
     }
+
+
+def check_plans(world):
+    """The plans are drawings of the world, not pictures of something else: vector, and the
+    building's footprint is the simulator's own outline corner for corner, so the plan on the map
+    lies in the building the cameras stand in."""
+    for key, label in (("building", BUILDING_NAME), ("room", ROOM_PLAN_NAME)):
+        mime = ((world[key].get("plan") or {}).get("mime") or "")
+        check(mime == "image/svg+xml", f"the plan of {label} is a drawing, not a picture ({mime or 'none'})")
+
+    footprint = [(point.get("lat"), point.get("lon")) for point in world["building"].get("footprint") or []]
+    check(len(footprint) == len(W.MARYLAND_BUILDING_OUTLINE),
+          f"the floor's footprint has {len(W.MARYLAND_BUILDING_OUTLINE)} corners (got {len(footprint)})")
+    for x, z in W.MARYLAND_BUILDING_OUTLINE:
+        lat, lon = W.to_wgs84(x, z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+        check(any(W.ground_gap(lat, lon, flat, flon) <= 0.01 for flat, flon in footprint),
+              f"the footprint has the world's corner ({lat:.7f}, {lon:.7f})")
 
 
 def check_positions(vms, world):
@@ -1123,6 +1140,9 @@ def main():
     if world is None:
         print("\nThe demo world is not in the shape it promises.")
         return 1
+
+    print("Plans")
+    check_plans(world)
 
     print("Regions and canvases")
     check_positions(vms, world)
