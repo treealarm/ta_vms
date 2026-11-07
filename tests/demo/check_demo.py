@@ -419,15 +419,21 @@ def walk_the_world(vms):
     }
 
 
-def check_plans(world):
+def check_plans(vms, world):
     """The plans are drawings of the world, not pictures of something else: vector, and the
     building's footprint is the simulator's own outline corner for corner, so the plan on the map
-    lies in the building the cameras stand in."""
+    lies in the building the cameras stand in.
+
+    A node listing carries neither a plan nor a footprint — those are the space's, from
+    `api/spatial/spaces`, which the map itself is served by."""
+    spaces_by_id = {space.get("id"): space for space in spaces(vms)}
     for key, label in (("building", BUILDING_NAME), ("room", ROOM_PLAN_NAME)):
-        mime = ((world[key].get("plan") or {}).get("mime") or "")
+        space = spaces_by_id.get(world[key].get("id")) or {}
+        mime = ((space.get("plan") or {}).get("mime") or "")
         check(mime == "image/svg+xml", f"the plan of {label} is a drawing, not a picture ({mime or 'none'})")
 
-    footprint = [(point.get("lat"), point.get("lon")) for point in world["building"].get("footprint") or []]
+    floor = spaces_by_id.get(world["building"].get("id")) or {}
+    footprint = [(point.get("lat"), point.get("lon")) for point in floor.get("footprint") or []]
     check(len(footprint) == len(W.MARYLAND_BUILDING_OUTLINE),
           f"the floor's footprint has {len(W.MARYLAND_BUILDING_OUTLINE)} corners (got {len(footprint)})")
     for x, z in W.MARYLAND_BUILDING_OUTLINE:
@@ -1142,7 +1148,7 @@ def main():
         return 1
 
     print("Plans")
-    check_plans(world)
+    check_plans(vms, world)
 
     print("Regions and canvases")
     check_positions(vms, world)
