@@ -223,22 +223,23 @@ An empty installation shows an empty map. An optional demo world, `umd-datacente
 Center"), fills it with a fictional data centre so the product can be looked at — and checked
 without a browser — right after an install.
 
-**What it contains.** A map named `UMD Data Center (demo)` over the A.V. Williams building on the
-University of Maryland campus; the building's floor as a plan with a picture; two rooms — Room 101
-as a plan of its own and Room 102 as a room diagram standing on the floor (a schematic with its two
-racks in regions of its type, each opening on its own canvas) — six racks between them, a switch in
-each rack's first slot and eight ports on every switch. The third port of the first rack is `CONNECTED`: the demo writes no
+**What it contains.** A map named `UMD Data Center (demo)` over the real campus of the University of
+Maryland; the first floor of **Biomolecular Sciences** as a plan — named `First floor`, its footprint
+the building's own 19-corner outline, the one OnvifSim builds its prism from — and two rooms: Room
+101 as a plan of its own and Room 102 as a room diagram standing on the floor (a schematic with its
+two racks in regions of its type, each opening on its own canvas) — six racks between them, a switch
+in each rack's first slot and eight ports on every switch. The third port of the first rack is `CONNECTED`: the demo writes no
 synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
 reinstalling once it is provisioned places it. They form two master/slave pairs, both on the same
 walking person: `sim-master` → `sim-ptz`, whose master stands south of Room 101 on the line the
-person walks out by and holds the room and the doorway at the far end of the hall in one lens; and
-`sim-master2` → `sim-ptz2` out on the map, whose master, on a pole between the doorway in the
-building's north wall and the ring road, looks back along the line and reports the person's boxes,
-and whose slave stands on a pole of its own between that doorway and the master, nearer the master:
-it holds the doorway at one side of its picture and the yard the person turns into at the other. The car still drives the ring road, but neither master is
-close enough to it to detect it. `sim-vehicle` is flagged `geo_from_device`: the
+person walks out by and holds the room and the doorway in one lens; and `sim-master2` → `sim-ptz2`
+out in the parking lot, whose master, on a pole north-west of the doorway, looks back along the line
+and reports the person's boxes, and whose slave stands on a pole of its own between that doorway and
+the master: it holds the doorway at one side of its picture and the lot the person turns into at the
+other. The car still drives the block's real ring (Regents, Paint Branch and Technology Drive), but
+neither master is close enough to it to detect it. `sim-vehicle` is flagged `geo_from_device`: the
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
