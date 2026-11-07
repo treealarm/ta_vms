@@ -178,6 +178,9 @@ public class DeviceIoServiceImpl(
         if (location.Latitude is { } lat) response.Lat = lat;
         if (location.Longitude is { } lon) response.Lon = lon;
         if (location.ElevationMeters is { } elevation) response.ElevationM = elevation;
+        // The camera's own bearing, already a compass bearing (0 = north, clockwise). A camera on a
+        // vehicle turns it as it drives; the map follows it for the cameras that follow themselves.
+        if (entry.Orientation?.Yaw is { } yaw) response.HeadingDeg = ((yaw % 360) + 360) % 360;
       }
     }
     catch (Exception ex)

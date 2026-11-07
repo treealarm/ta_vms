@@ -4,10 +4,24 @@ using System.Threading.Tasks;
 
 namespace VmsMap.Clients
 {
-  /// <summary>Where a camera says it stands, in WGS84.</summary>
-  public readonly record struct CameraGeoPoint(double Lat, double Lon)
+  /// <summary>
+  /// Where a camera says it stands, in WGS84, and the bearing it says it looks along — a compass
+  /// bearing (0 = north, clockwise), or null for a camera that says nothing about its orientation.
+  /// </summary>
+  public readonly record struct CameraGeoPoint(double Lat, double Lon, double? HeadingDeg = null)
   {
     private const double EarthRadiusMeters = 6_378_137;
+
+    /// <summary>
+    /// How far two bearings are apart, in degrees, the short way round; zero when either of them
+    /// reported none, because a camera that says nothing about its bearing has not turned.
+    /// </summary>
+    public double HeadingDeltaDegTo(CameraGeoPoint other)
+    {
+      if (HeadingDeg is not { } mine || other.HeadingDeg is not { } theirs) return 0;
+      var delta = Math.Abs(mine - theirs) % 360;
+      return Math.Min(delta, 360 - delta);
+    }
 
     /// <summary>
     /// How far apart two points are on the ground, in metres. Equirectangular over the same radius

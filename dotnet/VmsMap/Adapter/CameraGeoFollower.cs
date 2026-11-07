@@ -26,6 +26,9 @@ namespace VmsMap.Adapter
     /// <summary>Below this a move is not worth a tree write; ENU metres, the same frame as the map.</summary>
     internal const double MoveThresholdMeters = 0.5;
 
+    /// <summary>Below this a turn is not worth a tree write, in degrees.</summary>
+    internal const double TurnThresholdDeg = 2;
+
     private readonly IServiceScopeFactory _scopes;
     private readonly ICameraCatalog _catalog;
     private readonly ICameraGeoSource _source;
@@ -100,17 +103,22 @@ namespace VmsMap.Adapter
         if (point is not { } position)
           continue;
 
+        // A camera standing still but turning — the one on a vehicle — is a change worth writing too:
+        // the map draws its view from the heading, and a sector left pointing where the car was
+        // facing a minute ago is worse than no sector at all.
         if (_lastWritten.TryGetValue(camera.CameraId, out var previous)
-          && previous.DistanceMetersTo(position) < MoveThresholdMeters)
+          && previous.DistanceMetersTo(position) < MoveThresholdMeters
+          && previous.HeadingDeltaDegTo(position) < TurnThresholdDeg)
           continue;
 
-        if (!await writer.MoveReferencePointAsync(camera.CameraId, position.Lat, position.Lon, ct))
+        if (!await writer.MoveReferencePointAsync(camera.CameraId, position.Lat, position.Lon, position.HeadingDeg, ct))
           continue; // no reference placement — nothing to move. Retried when one appears.
 
         _lastWritten[camera.CameraId] = position;
         _logger.LogInformation(
-          "Camera '{CameraId}' moved to {Lat:F6},{Lon:F6} as reported by the device",
-          camera.CameraId, position.Lat, position.Lon);
+          "Camera '{CameraId}' moved to {Lat:F6},{Lon:F6} heading {Heading} as reported by the device",
+          camera.CameraId, position.Lat, position.Lon,
+          position.HeadingDeg is { } heading ? $"{heading:F0}°" : "(not reported)");
       }
     }
 

@@ -451,14 +451,18 @@ namespace VmsMap.Db
     /// </summary>
     /// <remarks>
     /// Deliberately narrower than <see cref="UpsertPlacementAsync"/>: this is the device talking,
-    /// and the only thing it can be trusted to say is where it is. The space, the parent, the
-    /// height, the heading and the field of view stay the administrator's, and no picture moves.
-    /// A camera with no reference placement is a no-op — inventing one is a decision for a person,
-    /// and the next tick will move the point as soon as one exists.
+    /// and the only things it can be trusted to say are where it is and, when it says so, which way
+    /// it looks. The space, the parent, the height and the field of view stay the administrator's,
+    /// and no picture moves. A camera with no reference placement is a no-op — inventing one is a
+    /// decision for a person, and the next tick will move the point as soon as one exists.
     /// </remarks>
+    /// <param name="headingDeg">
+    /// A compass bearing (0 = north, clockwise), or null to leave the heading as the administrator
+    /// set it.
+    /// </param>
     /// <returns>False when the camera has no reference placement.</returns>
     public async Task<bool> MoveReferencePointAsync(
-      string cameraId, double lat, double lon, CancellationToken ct)
+      string cameraId, double lat, double lon, double? headingDeg, CancellationToken ct)
     {
       RequireLatLon(lat, lon, "camera");
 
@@ -469,6 +473,13 @@ namespace VmsMap.Db
 
       await using var tx = await BeginTransactionAsync(ct);
       await _geoService.CreateGeo([PointFigure(reference.object_id, lat, lon)]);
+      if (headingDeg is { } heading)
+      {
+        // Tracked, not no-tracking: the same row the figure belongs to, turned to the bearing the
+        // device reports.
+        var row = await _db.CameraPlacements.FirstAsync(p => p.object_id == reference.object_id, ct);
+        row.heading_deg = NormalizeBearing(heading);
+      }
       await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);

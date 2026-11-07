@@ -292,7 +292,7 @@ public class SpatialPostgresTests
     var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == replicaId);
     var parentBefore = (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId)).parent_id;
 
-    var moved = await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, CancellationToken.None);
+    var moved = await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, null, CancellationToken.None);
 
     Assert.True(moved);
     var figure = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == replicaId);
@@ -300,7 +300,8 @@ public class SpatialPostgresTests
     Assert.Equal(0.71, point.X, 6); // longitude
     Assert.Equal(0.61, point.Y, 6); // latitude
 
-    // The device says where it is, not how it is mounted: the values an administrator set stay.
+    // A camera that says nothing about its bearing keeps the one it was mounted at: every other
+    // value an administrator set stays too.
     var after = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.object_id == replicaId);
     Assert.Equal(before.height_m, after.height_m);
     Assert.Equal(before.heading_deg, after.heading_deg);
@@ -318,6 +319,28 @@ public class SpatialPostgresTests
     Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
   }
 
+  // A camera that reports a bearing — the one on a vehicle — has its placement turned to it, while
+  // the mount's height and the lens's field of view stay as the administrator set them.
+  [Fact]
+  public async Task ADeviceReportedBearingTurnsThePlacement()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true, 0.5, 0.5), CancellationToken.None);
+
+    var before = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.camera_id == TestCameras.One);
+    Assert.True(await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, 392.5, CancellationToken.None));
+
+    var after = await test.Db.CameraPlacements.AsNoTracking().SingleAsync(p => p.camera_id == TestCameras.One);
+    Assert.Equal(32.5, after.heading_deg, 6); // 392.5° the short way round
+    Assert.Equal(before.height_m, after.height_m);
+    Assert.Equal(before.hfov_deg, after.hfov_deg);
+    Assert.Equal(before.range_m, after.range_m);
+  }
+
   [Fact]
   public async Task AnUnplacedCameraHasNowhereToMove()
   {
@@ -325,7 +348,7 @@ public class SpatialPostgresTests
     if (test is null)
       return;
 
-    Assert.False(await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, CancellationToken.None));
+    Assert.False(await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, null, CancellationToken.None));
   }
 
   [Fact]
