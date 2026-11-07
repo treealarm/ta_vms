@@ -980,7 +980,9 @@ class Lab:
         seconds = self.args.seconds
         self.vms.hold(slave, 0)
         log(f"waiting for the person to walk out of the building into {pair.master.id}'s picture")
-        deadline = time.monotonic() + max(seconds, 240.0)
+        # A lap is about four and a half minutes; the person is in the master's picture for a lot
+        # of it, but the wait must still survive having just missed the window.
+        deadline = time.monotonic() + max(seconds, 300.0)
         person = None
         while time.monotonic() < deadline:
             person = self.sim.walker_pose(W.WALKER_ID)
@@ -990,7 +992,7 @@ class Lab:
             time.sleep(0.5)
         require(person is not None,
                 f"the person did not walk into {pair.master.id}'s picture within "
-                f"{max(seconds, 240.0):.0f} s")
+                f"{max(seconds, 300.0):.0f} s")
 
         # The slave may still be on the car, which it keeps while the master reports both; wait for
         # it to take the person.
@@ -1071,7 +1073,9 @@ class Lab:
         pose = self.sim.camera_pose(pair.master.id)
         inside, span = W.person_in_frame(pose, (person["x"], person["y"], person["z"]),
                                          pair.master.video)
-        return inside and span >= 2 * W.MIN_BOX_HEIGHT
+        # The detector's own threshold, not a margin above it: the far end of the route, where the
+        # person is 45 m from the master, is still a picture the master boxes.
+        return inside and span >= W.MIN_BOX_HEIGHT
 
 
     # ── matrix ──────────────────────────────────────────────────────────────────
