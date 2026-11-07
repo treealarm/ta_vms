@@ -62,10 +62,11 @@ rasterizer culls back faces and a solid box would be invisible from inside. Arou
 hand-made: the ring road the car drives, the car camera and the scenery.
 
 Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements — the
-hall pair in Room 101, the road pair out on the map by the ring road — and the fifth, `vehicle`,
-rides the car. The building's north wall has a doorway on the walker's way out: the person circles
-Room 101, walks through the hall and out of the doorway, curves across the ring road toward the
-road pair's camera — where that master picks them up — and comes back through the same doorway. ta_vms knows them as
+hall pair around Room 101, the yard pair out by the doorway and the ground between it and the ring
+road — and the fifth, `vehicle`, rides the car. The building's north wall has a doorway on the
+walker's way out: the person circles Room 101, walks through the hall and out of the doorway, out
+into the yard toward the ring road — where the slave hanging over the doorway follows them — and
+comes back through the same doorway. ta_vms knows them as
 `sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
 car carries no device — a wire to it would move with it. `master` has three relays showing every
 kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
