@@ -29,7 +29,9 @@ namespace VmsMap.Demo
     // 10: both masters turned to face the person's line rather than a room or a road: the hall master
     //     stands south of Room 101 on the line out to the doorway, and the yard pair's slave hangs over
     //     that doorway while its master watches the line from between the door and the ring road.
-    public const int UmdDataCenterVersion = 10;
+    // 11: the yard slave moved off the doorway onto a pole of its own between the door and the master,
+    //     and the person turns right in the yard to walk a stretch along the ring road.
+    public const int UmdDataCenterVersion = 11;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -168,11 +170,12 @@ namespace VmsMap.Demo
         // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
         new("sim-master", "space/building", 38.9923000, -76.9383779, HeightM: 2.8, HeadingDeg: 342.3, HfovDeg: 45, RangeM: 60),
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
-        // The second pair works as one out in the yard: ptz2 hangs over the doorway the person walks out
-        // of, and master2 stands on a pole between that doorway and the ring road, looking back along
-        // the line — its boxes are what aim the slave.
+        // The second pair works as one out in the yard: master2 stands on a pole between the doorway
+        // and the ring road, looking back along the line the person walks — its boxes are what aim the
+        // slave; ptz2 hangs on a pole of its own between that doorway and the master, nearer the
+        // master, so it holds the doorway at one side of its picture and the yard at the other.
         new("sim-master2", "space/umd", 38.9929468, -76.9388171, HeightM: 6, HeadingDeg: 88.8, HfovDeg: 55, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.9928031, -76.9383779, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
+        new("sim-ptz2", "space/umd", 38.9928749, -76.9385397, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
         new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),

@@ -154,12 +154,13 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheSecondPairStandsInTheYard_ItsSlaveOverTheDoorway()
+  public void TheSecondPairStandsInTheYard_ItsSlaveBetweenTheDoorwayAndTheMaster()
   {
     // The hall pair's master watches the line out of Room 101 to the doorway; the second pair works
-    // in the yard beyond it: ptz2 hangs over that doorway and master2 stands between it and the ring
-    // road, looking back along the line the person walks.
-    Assert.Equal(10, _world.Version);
+    // in the yard beyond it: master2 stands between that doorway and the ring road, looking back
+    // along the line the person walks, and ptz2 on a pole of its own between the two, nearer the
+    // master, so it holds the doorway at one side and the yard at the other.
+    Assert.Equal(11, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -179,8 +180,8 @@ public class DemoWorldTests
 
     var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
     Assert.Equal("space/umd", ptz.SpaceKey);
-    Assert.Equal(38.9928031, ptz.Lat, 6);
-    Assert.Equal(-76.9383779, ptz.Lon, 6);
+    Assert.Equal(38.9928749, ptz.Lat, 6);
+    Assert.Equal(-76.9385397, ptz.Lon, 6);
     Assert.Equal(5.5, ptz.HeightM);
     Assert.Equal(0, ptz.HeadingDeg);
     Assert.Equal(60, ptz.HfovDeg);
