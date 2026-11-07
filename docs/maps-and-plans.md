@@ -234,9 +234,10 @@ where the world wants them; a camera the deployment does not have yet is skipped
 reinstalling once it is provisioned places it. They form two master/slave pairs, both on the same
 walking person: `sim-master` → `sim-ptz`, whose master stands south of Room 101 on the line the
 person walks out by and holds the room and the doorway at the far end of the hall in one lens; and
-`sim-master2` → `sim-ptz2` out on the map, whose slave hangs over the doorway in the building's
-north wall and whose master, on a pole between that doorway and the ring road, looks back along the
-line and reports the person's boxes. The car still drives the ring road, but neither master is
+`sim-master2` → `sim-ptz2` out on the map, whose master, on a pole between the doorway in the
+building's north wall and the ring road, looks back along the line and reports the person's boxes,
+and whose slave stands on a pole of its own between that doorway and the master, nearer the master:
+it holds the doorway at one side of its picture and the yard the person turns into at the other. The car still drives the ring road, but neither master is
 close enough to it to detect it. `sim-vehicle` is flagged `geo_from_device`: the
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
@@ -285,10 +286,10 @@ Maps, selecting it shows a draggable handle, and "+ diagram" in the node list pl
 centre of the current view. A room diagram is such a node; its icon on the floor is its
 `visual.image`.
 
-**The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout `1+5` (one 2×2 feature cell and
-five small ones), showing the five demo cameras the deployment has — `sim-master` in the feature
-cell. It is installed and removed with the world, and a camera that does not exist yet is simply
-absent from it. The two halves are independent: the wall is built from cameras, so when
+**The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout `3x3`, showing the five demo
+cameras the deployment has — a row per master/slave pair, the hall's first and the yard's second, and
+the camera on the car alone on the last row. It is installed and removed with the world, and a camera
+that does not exist yet is simply absent from it. The two halves are independent: the wall is built from cameras, so when
 VmsCfg is unreachable the map's world is still installed and the report says what the wall failed
 on, rather than failing the whole install.
 
