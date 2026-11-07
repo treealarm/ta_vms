@@ -64,8 +64,8 @@ hand-made: the ring road the car drives, the car camera and the scenery.
 Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements — the
 hall pair in Room 101, the road pair out on the map by the ring road — and the fifth, `vehicle`,
 rides the car. The building's north wall has a doorway on the walker's way out: the person circles
-Room 101, walks through the hall and out of the doorway to the ground before the ring road, then
-comes back the same way. ta_vms knows them as
+Room 101, walks through the hall and out of the doorway, curves across the ring road toward the
+road pair's camera — where that master picks them up — and comes back through the same doorway. ta_vms knows them as
 `sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
 car carries no device — a wire to it would move with it. `master` has three relays showing every
 kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
@@ -138,11 +138,12 @@ world for that measurement: the slave keeps the target it already has, so a pers
 be followed instead of the car.
 
 `run --pair road --target person` waits instead for the person to walk out of the doorway and into
-the same master's picture (they are in it for about half a minute of the three-minute lap), waits
-for the slave to take them — it may still be following the car, which it keeps while the master
-reports it — and then measures the follow until they leave the picture again. The person is 40–55 m
-from the slave there, and the ground by the door is what its calibration is marked on; the
-thresholds are looser than the hall pair's for that reason.
+the same master's picture (they are in it for about a minute of the four-and-a-half-minute lap),
+waits for the slave to take them — it may still be following the car, which it keeps while the
+master reports it — and then measures the follow until they leave the picture again. The person
+crosses the road toward the slave, from about 45 m down to 20 m; the ground by the door is what the
+slave's calibration is marked on, and the way out keeps clear of the master's picture edges, where
+a box's foot would map to ground metres away.
 
 The matrix and edge-import steps are the yard's: they rehang cameras and cut one off the network,
 which the demo world has no place for.
