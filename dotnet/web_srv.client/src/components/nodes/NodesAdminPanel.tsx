@@ -50,8 +50,11 @@ export default function NodesAdminPanel() {
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
-    if (spaces.length === 0) void dispatch(loadSpaces())
-  }, [roots, spaces.length, dispatch])
+    // Read on every visit rather than only when empty: a space's id is the server's, and a demo
+    // world removed and installed again gives every space a new one. A page left open across that
+    // would otherwise offer spaces that no longer exist.
+    void dispatch(loadSpaces())
+  }, [roots, dispatch])
 
   // Derived, not written back by an effect: a chosen space wins, otherwise the first one is the
   // one the form starts on.
@@ -176,6 +179,9 @@ export default function NodesAdminPanel() {
       setNotice(t('nodes.placed', { name: space?.name ?? '' }))
       setError(null)
     } catch (e) {
+      // The space may have gone since this page read the list (a world reinstall, or another
+      // administrator's removal): read the spaces again so the next attempt names one that exists.
+      void dispatch(loadSpaces())
       setError(errorText(e))
     }
   }
