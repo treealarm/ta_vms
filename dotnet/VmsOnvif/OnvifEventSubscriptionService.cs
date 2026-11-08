@@ -187,7 +187,7 @@ public sealed class OnvifEventSubscriptionService(
 
       var cts = new CancellationTokenSource();
       if (_cameraCts.TryAdd(cameraId, cts))
-        _ = RunCameraSubscriptionAsync(cameraId, setup!, cts.Token);
+        _ = RunCameraSubscriptionAsync(cameraId, setup!, cts);
       else
         cts.Dispose();
     }
@@ -207,8 +207,9 @@ public sealed class OnvifEventSubscriptionService(
   }
 
   private async Task RunCameraSubscriptionAsync(
-    string cameraId, CameraSetup setup, CancellationToken ct)
+    string cameraId, CameraSetup setup, CancellationTokenSource cts)
   {
+    var ct = cts.Token;
     var ip   = setup.OnvifConn!.Ip;
     var port = setup.OnvifConn.Port;
     var user = setup.Cred?.User ?? string.Empty;
@@ -246,19 +247,27 @@ public sealed class OnvifEventSubscriptionService(
       {
         logger.LogError(ex,
           "ONVIF subscription error for {CameraId}, retrying in 15s", cameraId);
-        await Task.Delay(TimeSpan.FromSeconds(15), ct);
+        try { await Task.Delay(TimeSpan.FromSeconds(15), ct); }
+        catch (OperationCanceledException) { break; }
       }
       finally
       {
         if (eventSvc != null)
         {
-          try { await eventSvc.StopReceivingAsync(); } catch { }
-          eventSvc.Dispose();
+          // DisposeAsync, not Dispose: it stops the loop, waits for it, and only then releases the
+          // pull point over the still-open subscription manager. A synchronous close would race the
+          // loop and leave the camera holding a pull point it will not get back — the bench's
+          // "at most 10 pull points" refusal after a few restarts.
+          try { await eventSvc.DisposeAsync(); } catch { }
         }
       }
     }
 
-    _cameraCts.TryRemove(cameraId, out _);
+    // Only this run's own entry. A restart removes ours and installs a newer one while this loop is
+    // still winding down; removing by key alone would take the newer run's token out of the map,
+    // and nothing could ever stop it — it would keep its pull point for the life of the process,
+    // which is how a camera reached its cap and refused every subscription after it.
+    _cameraCts.TryRemove(new KeyValuePair<string, CancellationTokenSource>(cameraId, cts));
     logger.LogInformation("ONVIF event subscription stopped for {CameraId}", cameraId);
   }
 

@@ -260,7 +260,16 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
     // A camera with no event service, or one that could not be reached, is left unremembered so a
     // later poll tries again instead of caching the failure forever.
     if (watch is null)
+    {
       _watchers.TryRemove(new KeyValuePair<string, Lazy<Task<Watch?>>>(cameraId, lazy));
+      return;
+    }
+
+    // A ForgetAsync may have run while this subscription was being opened, and the entry it removed
+    // is not put back by the read above. Nothing would ever dispose what was just started, and its
+    // receive loop would keep holding a pull point on the camera for the life of the process.
+    if (!_watchers.TryGetValue(cameraId, out var current) || !ReferenceEquals(current, lazy))
+      await watch.DisposeAsync();
   }
 
   private async Task<Watch?> StartAsync(string cameraId)
