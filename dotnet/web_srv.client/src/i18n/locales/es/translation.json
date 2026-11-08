@@ -33,12 +33,7 @@
     "replica": "vista de otro nodo",
     "part": "Parte de un dispositivo",
     "partHint": "Una parte es un nodo propio y en M2.4 no se coloca en el mapa: sus estados y eventos se leen aquí, bajo la cámara a la que pertenece.",
-    "statesEvents": "Estados / Eventos",
-    "placeOnMap": "Colocar en el mapa",
-    "placeHint": "Añade una imagen de esta cámara al espacio. La primera colocación se convierte en la de referencia; desde aquí nunca se mueve una existente.",
-    "space": "Espacio",
-    "place": "Colocar",
-    "placed": "Colocada en {{name}}"
+    "statesEvents": "Estados / Eventos"
   },
   "eventRouting": {
     "title": "Suscripciones",

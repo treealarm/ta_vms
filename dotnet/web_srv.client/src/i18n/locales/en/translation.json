@@ -33,12 +33,7 @@
     "replica": "view of another node",
     "part": "Part of a device",
     "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
-    "statesEvents": "States / Events",
-    "placeOnMap": "Place on map",
-    "placeHint": "Adds a picture of this camera to the space. The first placement becomes the reference; an existing reference is never moved from here.",
-    "space": "Space",
-    "place": "Place",
-    "placed": "Placed on {{name}}"
+    "statesEvents": "States / Events"
   },
   "eventRouting": {
     "title": "Subscriptions",

@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, IconButton, List,
-  ListItemButton, ListItemText, MenuItem, Stack, TextField, Tooltip, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, IconButton, List,
+  ListItemButton, ListItemText, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
-import AddLocationAltIcon from '@mui/icons-material/AddLocationAlt'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -12,10 +11,8 @@ import { useNavigate } from 'react-router-dom'
 import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
-import type { CameraPlacementDto, SpaceDto } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
-import { loadSpaces, upsertPlacement } from '../../store/spatialSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
 import DetailToolbar from '../settings/DetailToolbar'
@@ -35,30 +32,19 @@ export default function NodesAdminPanel() {
   const markers = useAppSelector((s) => s.objects.markers)
   const pages = useAppSelector((s) => s.objects.childrenByParent)
   const roots = useAppSelector((s) => s.objects.roots)
-  const spaces = useAppSelector((s) => s.spatial.spaces)
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<string[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [spaceId, setSpaceId] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   // The diagram open in a read-only viewer over the tree, and which one it is.
   const [viewer, setViewer] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
-    // Read on every visit rather than only when empty: a space's id is the server's, and a demo
-    // world removed and installed again gives every space a new one. A page left open across that
-    // would otherwise offer spaces that no longer exist.
-    void dispatch(loadSpaces())
   }, [roots, dispatch])
-
-  // Derived, not written back by an effect: a chosen space wins, otherwise the first one is the
-  // one the form starts on.
-  const chosenSpaceId = spaceId || spaces[0]?.id || ''
 
   // Server-side, two characters at least: a lazy tree cannot find a token inside an unopened
   // server, and a client-side filter would only search what the reader happened to open.
@@ -153,38 +139,6 @@ export default function NodesAdminPanel() {
   }
 
   const selected = selectedId ? markers[selectedId] : null
-
-  const placeOnMap = async () => {
-    if (!selected?.cameraId || !chosenSpaceId) return
-    const space = spaces.find((s) => s.id === chosenSpaceId)
-    const lat = space ? (space.view.southWest.lat + space.view.northEast.lat) / 2 : 0
-    const lon = space ? (space.view.southWest.lon + space.view.northEast.lon) / 2 : 0
-
-    const placement: CameraPlacementDto = {
-      cameraId: selected.cameraId,
-      spaceId: chosenSpaceId,
-      // The first placement of a camera becomes its reference in the service; a later one is a
-      // picture, and the reference is never moved from here.
-      isReference: false,
-      lat,
-      lon,
-      heightM: 3,
-      headingDeg: 0,
-      hfovDeg: 60,
-      rangeM: 30,
-    }
-
-    try {
-      await dispatch(upsertPlacement(placement)).unwrap()
-      setNotice(t('nodes.placed', { name: space?.name ?? '' }))
-      setError(null)
-    } catch (e) {
-      // The space may have gone since this page read the list (a world reinstall, or another
-      // administrator's removal): read the spaces again so the next attempt names one that exists.
-      void dispatch(loadSpaces())
-      setError(errorText(e))
-    }
-  }
 
   // A part is its own node kind now: the server resolves it from device_node, not from a guess
   // about the parent.
@@ -300,7 +254,6 @@ export default function NodesAdminPanel() {
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
             <Stack spacing={2}>
               {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-              {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Chip size="small" variant="outlined" label={selected.nodeKind ?? 'object'} />
@@ -325,38 +278,6 @@ export default function NodesAdminPanel() {
                     {t('nodes.statesEvents')}
                   </Button>
                 </Box>
-              )}
-
-              {selected.nodeKind === 'camera' && selected.cameraId && (
-                <>
-                  <Divider />
-                  <Box>
-                    <Typography variant="subtitle2">{t('nodes.placeOnMap')}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {t('nodes.placeHint')}
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <TextField
-                        select size="small" label={t('nodes.space')}
-                        value={chosenSpaceId}
-                        onChange={(e) => setSpaceId(e.target.value)}
-                        sx={{ minWidth: 240 }}
-                      >
-                        {spaces.map((space: SpaceDto) => (
-                          <MenuItem key={space.id} value={space.id ?? ''}>{space.name}</MenuItem>
-                        ))}
-                      </TextField>
-                      <Button
-                        variant="contained" size="small"
-                        startIcon={<AddLocationAltIcon fontSize="small" />}
-                        disabled={!chosenSpaceId}
-                        onClick={() => void placeOnMap()}
-                      >
-                        {t('nodes.place')}
-                      </Button>
-                    </Stack>
-                  </Box>
-                </>
               )}
             </Stack>
           </Box>
