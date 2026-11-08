@@ -111,9 +111,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const figuresById = useAppSelector((s) => s.objects.figures)
   const propsById = useAppSelector((s) => s.objects.props)
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null
-  const selectedNode = selectedNodeId ? markersById[selectedNodeId] : undefined
-  const selectedFigure = selectedNodeId ? figuresById[selectedNodeId] : undefined
-  const selectedProps = selectedNodeId ? propsById[selectedNodeId] : undefined
   const diagramContent = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
 
@@ -148,11 +145,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     if (levels.length === 0) void dispatch(loadLevels())
   }, [levels.length, dispatch])
 
-  // The editor needs the node's properties and look, which the tree read does not carry.
-  useEffect(() => {
-    if (selectedNodeId) void dispatch(loadObjProps(selectedNodeId))
-  }, [selectedNodeId, dispatch])
-
   const here = placements.filter((p) => p.spaceId === spaceId)
   // The spaces whose footprint is on this canvas, wherever the tree holds them.
   const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
@@ -179,6 +171,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     ?? selectedLandmark?.id
     ?? selectedNested?.id
     ?? undefined
+  // The node whichever panel shows: a camera by its placement's replica, a landmark, a nested
+  // space by its footprint — so the Object tab is the same form for all of them.
+  const selectedNode = selectionNodeId ? markersById[selectionNodeId] : undefined
+  const selectedFigure = selectionNodeId ? figuresById[selectionNodeId] : undefined
+  const selectedProps = selectionNodeId ? propsById[selectionNodeId] : undefined
+
+  // The editor needs the node's properties and look, which the tree read does not carry.
+  useEffect(() => {
+    if (selectionNodeId) void dispatch(loadObjProps(selectionNodeId))
+  }, [selectionNodeId, dispatch])
+
   // A container is any selected node: a new object goes inside it, as a parent is chosen in Square.
   const containerId = selection?.kind === 'node' ? selectedNodeId : null
 
@@ -482,6 +485,22 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       onClose={() => setSelection(null)}
     />
   ) : selectedNode ? (
+    /* A node with nothing contextual to show — a drawn shape, a container — is edited on the
+       Object tab, where every node of the canvas is edited the same way. */
+    <Box sx={{ p: 2 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('maps.objectOnItsTab')}
+      </Typography>
+      <Button size="small" variant="outlined" onClick={() => setSideTab('object')}>
+        {t('maps.tabObject')}
+      </Button>
+    </Box>
+  ) : (
+    <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.nothingSelected')}</Typography>
+  )
+
+  /** The selected node itself — its name, look and properties — whichever panel selected it. */
+  const objectPanel = selectedNode ? (
     selectedProps ? (
       <ObjectPropsEditor
         // The marker's version changes with every write, so a save reopens the form on what was
@@ -731,6 +750,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         >
           <Tab value="space" label={t('maps.tabSpace')} />
           <Tab value="selection" label={t('maps.tabSelection')} />
+          <Tab value="object" label={t('maps.tabObject')} />
           <Tab value="rights" label={t('rights.tab')} />
         </Tabs>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -751,7 +771,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             </>
           )}
           {/* The rights of what is selected — or of the space itself, when nothing else is. */}
-          {sideTab === 'rights' && <ObjectRights nodeId={selectedNodeId ?? spaceId} />}
+          {sideTab === 'object' && objectPanel}
+          {sideTab === 'rights' && <ObjectRights nodeId={selectionNodeId ?? spaceId} />}
         </Box>
       </Box>
 

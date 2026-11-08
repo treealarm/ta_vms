@@ -1475,7 +1475,9 @@
     "alarmNow": "Alarma",
     "alarmEnded": "Alarma terminada",
     "viewLive": "En vivo",
-    "viewAlarm": "Grabación de la alarma"
+    "viewAlarm": "Grabación de la alarma",
+    "tabObject": "Objeto",
+    "objectOnItsTab": "Los ajustes propios de este nodo — nombre, aspecto, propiedades — están en la pestaña Objeto."
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",

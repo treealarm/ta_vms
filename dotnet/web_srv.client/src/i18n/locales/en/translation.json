@@ -1476,7 +1476,9 @@
     "alarmNow": "Alarm",
     "alarmEnded": "Alarm ended",
     "viewLive": "Live",
-    "viewAlarm": "Alarm recording"
+    "viewAlarm": "Alarm recording",
+    "tabObject": "Object",
+    "objectOnItsTab": "This node's own settings — name, look, properties — are on the Object tab."
   },
   "ptzGeo": {
     "open": "Calibrate by landmarks…",
