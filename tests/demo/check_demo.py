@@ -38,6 +38,8 @@ LAYOUT_NAME = "First floor"
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
 DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
+# The replica of the indoor master: a diagram on the floor that shows the camera's own readings.
+TELEMETRY_NAME = "Camera sim-master"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
 DEMO_SUBSCRIPTION = "053df083-59b0-56b3-a28c-c5701d1fc3cf"
@@ -110,6 +112,25 @@ def alarmed(vms):
 def states_of(vms, ids):
     rows = (vms.call("POST", "/api/map/states", ids) or {}).get("states") or []
     return {row.get("id"): row.get("states") or [] for row in rows}
+
+
+def values_of(vms, owner_id):
+    return (vms.call("POST", "/api/map/values/by-owners", [owner_id]) or {}).get("values") or []
+
+
+def value_text(value):
+    carried = value.get("value") or {}
+    if "stringValue" in carried:
+        return carried["stringValue"]
+    if "doubleValue" in carried:
+        return str(carried["doubleValue"])
+    if "intValue" in carried:
+        return str(carried["intValue"])
+    return ""
+
+
+def values_by_name(vms, owner_id):
+    return {value.get("name"): value_text(value) for value in values_of(vms, owner_id)}
 
 
 def set_relay(vms, camera_id, token, active):
@@ -688,12 +709,11 @@ def check_port_not_alarmed(vms, world):
 
 
 def check_no_camera_replica(vms):
-    """The demo no longer shows a camera's readings on a diagram.
+    """The camera on the car keeps no replica of its own.
 
     A diagram stands where it is put, and `sim-vehicle` drives the ring road: its place is the car
-    on the map, which follows what the camera reports (geo_from_device). The telemetry *type* stays
-    in the demo's dictionary — an administrator can build such a diagram — but the world installs no
-    replica indoors, so the camera is one node and nothing copies it.
+    on the map, which follows what the camera reports (geo_from_device). The diagram on the floor is
+    the indoor master's, which does stand still (check_feeder).
     """
     found = map_search(vms, camera_id("sim-vehicle"))
     if not found:
@@ -702,22 +722,69 @@ def check_no_camera_replica(vms):
     check(len(found) == 1, f"nothing copies the camera on the car ({len(found)} nodes)")
 
 
-def check_wired_devices(vms, sim):
-    """`sim-master`'s lamp relay, end to end: ta_vms closes it over ONVIF, the simulator's wire
-    lights the hall's lamp, and the lamp goes dark again as the relay opens.
+def check_feeder(vms, world):
+    """The indoor master's own ONVIF readings, rewritten every five seconds into its replica's
+    regions."""
+    # Its kind reads "camera", not "diagram": it is a replica, and the map answers a replica with
+    # the camera id of what it shows.
+    telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
+    if not check(telemetry is not None,
+                 f"the floor shows {TELEMETRY_NAME}'s Device telemetry diagram"):
+        return None
 
-    The relay and the sensor it drives are read back from their own nodes' events in the M2.4
-    scenario below; the demo no longer carries a diagram that shows them as readings.
+    print("  ..    waiting for the value feeder")
+    time.sleep(8)
+    values = values_by_name(vms, telemetry["id"])
+    check({"lat", "lon"} <= set(values),
+          f"the diagram shows the camera's position (has {sorted(values)})")
+    check("speed" in values,
+          f"the diagram shows a speed once two positions are known (has {sorted(values)})")
+    check(values.get("relay") in ("on", "off"),
+          f"the diagram shows the relay (has {values.get('relay')!r})")
+    check(values.get("sensor") in ("on", "off"),
+          f"the diagram shows the sensor (has {values.get('sensor')!r})")
+    return telemetry
+
+
+def check_wired_devices(vms, sim, telemetry):
+    """`sim-master`'s relays: one drives `sim-ptz`'s sensor, one lights the hall's lamp.
+
+    Switching them changes what the demo's diagram reads, and the simulator's own lamp — which is
+    not a device with a state, so its rule (any wired relay closed) is applied to its world.
     """
-    set_relay(vms, camera_id("sim-master"), "lamp", False)
-    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is False, 20) is False,
-          "the lamp is dark with the relay open")
-    set_relay(vms, camera_id("sim-master"), "lamp", True)
-    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is True, 40) is True,
-          "the lamp in the simulator lights up when ta_vms closes the relay")
-    set_relay(vms, camera_id("sim-master"), "lamp", False)
-    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is False, 40) is False,
-          "the lamp goes dark again when the relay opens")
+    initial = values_by_name(vms, telemetry["id"])
+    if not check(initial.get("relay") in ("on", "off") and initial.get("sensor") in ("on", "off"),
+                 f"the demo starts with a relay and a sensor reading (has {initial.get('relay')!r}/"
+                 f"{initial.get('sensor')!r})"):
+        return
+
+    def switch(active):
+        set_relay(vms, camera_id("sim-master"), "peer", active)
+        set_relay(vms, camera_id("sim-master"), "lamp", active)
+        # The camera's event (its pull point is polled), VmsOnvif's cache, then the feeder's next
+        # tick. Polling for the reading rather than sleeping a fixed time keeps a slower source
+        # from turning into a false failure.
+        want_relay = "on" if active else "off"
+        # The input's idle state is open, so the closed circuit the relay makes is its active state.
+        want_sensor = "on" if active else "off"
+        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("relay") == want_relay, 40)
+        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("sensor") == want_sensor, 20)
+
+    switch(True)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "on",
+          f"the diagram reports the relay on (has {values.get('relay')!r})")
+    check(values.get("sensor") == "on",
+          f"the wired sensor reads 1 (active) while the relay is closed (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
+
+    switch(False)
+    values = values_by_name(vms, telemetry["id"])
+    check(values.get("relay") == "off",
+          f"the diagram reports the relay off again (has {values.get('relay')!r})")
+    check(values.get("sensor") == "off",
+          f"the sensor returns to 0 (idle) (has {values.get('sensor')!r})")
+    check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
 
 
 def check_vehicle_picture(sim):
@@ -1118,8 +1185,9 @@ def main():
     check_events(vms)
     check_marker_follows_the_camera(vms)
 
-    print("Layers, the calm port and the camera that rides")
+    print("Layers, readings, the calm port and the camera that rides")
     check_levels(vms)
+    telemetry = check_feeder(vms, world)
     check_no_camera_replica(vms)
     check_port_not_alarmed(vms, world)
 
@@ -1127,10 +1195,11 @@ def main():
     if not sim_up:
         warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
     if sim_up:
-        print("Wired relays and the lamp")
-        check_wired_devices(vms, sim)
         print("The moving camera")
         check_vehicle_picture(sim)
+        if telemetry is not None:
+            print("Wired relays and the lamp")
+            check_wired_devices(vms, sim, telemetry)
 
     # The M2.4e scenario: a real contact, a real alarm, a real subscription. It needs the
     # simulator's wire; without it the map half above still proves the world.

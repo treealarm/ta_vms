@@ -41,7 +41,10 @@ namespace VmsMap.Demo
     //     floor", in place of Room 102's: its four racks are regions of it, and every rack is filled
     //     with switches, each with its ports. The camera on the car keeps no replica indoors — its
     //     place is the car on the map, which follows the camera it reports.
-    public const int UmdDataCenterVersion = 13;
+    // 14: the readings the demo shows are the indoor master's: a Device telemetry diagram of
+    //     `sim-master` stands on the floor beside it — a camera that does stand still, so a diagram
+    //     on a plan means something.
+    public const int UmdDataCenterVersion = 14;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -74,6 +77,11 @@ namespace VmsMap.Demo
     // plan, with no plan of a room nested in it. What stands on the floor — the four racks — is a
     // diagram of the floor, not a place with coordinates of its own.
     private const string FloorLayout = "object/floor-layout";
+
+    // A replica of the indoor master, showing the readings the camera itself reports. Its owner is
+    // the camera's canonical node, so values written there appear here. It is a camera that stands
+    // still, which is what makes a diagram on a plan honest: the one on the car is a car on the map.
+    private const string MasterTelemetry = "object/telemetry-sim-master";
 
     private const string RackType = "type/rack";
     private const string SwitchType = "type/switch";
@@ -134,6 +142,15 @@ namespace VmsMap.Demo
         Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
         At: new DemoPoint(38.9928210, -76.9376266),
         VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
+
+      // The indoor master's own readings, on a replica standing beside it on the floor: its place,
+      // how fast it moves (nought — it is bolted to the wall), and the relay and sensor wired around
+      // it. `DemoValueFeeder` keeps the values fresh from what the camera reports over ONVIF.
+      nodes.Add(new DemoNode(MasterTelemetry, "Camera sim-master", "space/building",
+        DemoTelemetry.TypeKey,
+        Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
+        At: new DemoPoint(38.9928060, -76.9379290),
+        OwnerCameraId: "sim-master"));
 
       // The four racks stand in the floor's schematic, filled with switches: every slot takes one,
       // and every switch eight ports. A rack has no point of its own — its place is its region of

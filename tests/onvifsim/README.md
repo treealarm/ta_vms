@@ -73,8 +73,9 @@ comes back through the same doorway. ta_vms knows them as
 car carries no device — a wire to it would move with it. `master` has three relays showing every
 kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
 `loop` drives a sensor of the master itself. The demo's own map is in `tests/demo`, not here: the
-floor plan shows the room and the hall pair, and a diagram of the same name shows its four racks
-filled with switches; the `geo_from_device` flag makes the map follow the camera on the car.
+floor plan shows the room and the hall pair, a diagram of the same name shows its four racks filled
+with switches, and a `Device telemetry` replica beside the indoor master shows its position, speed,
+relay and sensor; the `geo_from_device` flag makes the map follow the camera on the car.
 
 Load it into the bench's simulator:
 

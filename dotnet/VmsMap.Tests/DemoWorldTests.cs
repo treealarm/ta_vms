@@ -149,7 +149,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(13, _world.Version);
+    Assert.Equal(14, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -180,6 +180,20 @@ public class DemoWorldTests
     Assert.Equal(5.5, ptz.HeightM);
     Assert.Equal(88, ptz.HeadingDeg);
     Assert.Equal(60, ptz.HfovDeg);
+  }
+
+  [Fact]
+  public void TheIndoorMasterShowsItsReadingsOnAReplica()
+  {
+    // A replica: its owner is the camera's canonical node, which the seeder resolves through
+    // device_node. It carries the readings' type and stands as a diagram, so it takes no placement.
+    var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-master");
+    Assert.Equal("sim-master", node.OwnerCameraId);
+    Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
+    Assert.Equal("space/building", node.ParentKey);
+    Assert.NotNull(node.At);
+    Assert.NotNull(node.Canvas);
+    Assert.Null(node.RegionKey);
   }
 
   [Fact]

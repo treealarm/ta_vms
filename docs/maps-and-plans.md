@@ -245,18 +245,19 @@ neither master is close enough to it to detect it. `sim-vehicle` is flagged `geo
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
-**The camera's own readings.** The `Device telemetry` type stays in the demo's dictionary — five
-regions, `lat`, `lon`, `speed`, `relay`, `sensor`, with the picture's labels drawn from the same
-geometry — but the world stations no replica of it: a diagram stands where it is put, and the only
-camera whose readings are of interest drives the ring road, so its place is the car on the map, which
-follows it. An administrator can build such a diagram on a demo node; `DemoValueFeeder` then writes
-the values to the diagram's owner every five seconds — the position from the camera's own
-`GetGeoLocation` (six decimals of a degree), the speed from two fixes and the wall clock (km/h, one
-decimal), and the relay and sensor states from whichever demo camera has the device (`sim-master`'s
-relay is wired to `sim-ptz`'s input in the simulator's world), as `on`/`off`. A camera the map does
-not know yet, or one that reports no place, writes nothing. The map answers a replica with its
-owner's values, so the diagram shows the camera's readings while owning none of them; a removal takes
-them away with the world.
+**The camera's own readings.** The `Device telemetry` type carries five regions — `lat`, `lon`,
+`speed`, `relay`, `sensor`, with the picture's labels drawn from the same geometry — and a replica of
+the indoor master `sim-master` stands on the floor plan beside it, showing them. It is a camera that
+does stand still, which is what makes a diagram pinned to a plan honest; the one on the car has no
+replica, because its place is the car on the map, which follows it (`geo_from_device`). The replica
+has `objects.owner_id` set to the camera's canonical node and no `camera_placement`: a diagram's
+canvas is not a space. `DemoValueFeeder` writes the values to that owner every five seconds — the
+position from the camera's own `GetGeoLocation` (six decimals of a degree), the speed from two fixes
+and the wall clock (km/h, one decimal; nought for a camera bolted to a wall), and the relay and
+sensor states from whichever demo camera has the device (`sim-master`'s relay is wired to `sim-ptz`'s
+input in the simulator's world), as `on`/`off`. A camera the map does not know yet, or one that
+reports no place, writes nothing. The map answers a replica with its owner's values, so the diagram
+shows the camera's readings while owning none of them; a removal takes them away with the world.
 
 **The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
 `DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera
