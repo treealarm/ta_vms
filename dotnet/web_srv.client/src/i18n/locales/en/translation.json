@@ -30,7 +30,7 @@
     "pick": "Pick a node to see what can be done with it.",
     "openInTree": "Open in tree",
     "openDiagram": "Open diagram",
-    "replica": "picture of another node",
+    "replica": "view of another node",
     "part": "Part of a device",
     "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
     "statesEvents": "States / Events",

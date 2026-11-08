@@ -30,7 +30,7 @@
     "pick": "Elija un nodo para ver qué se puede hacer con él.",
     "openInTree": "Abrir en el árbol",
     "openDiagram": "Abrir diagrama",
-    "replica": "imagen de otro nodo",
+    "replica": "vista de otro nodo",
     "part": "Parte de un dispositivo",
     "partHint": "Una parte es un nodo propio y en M2.4 no se coloca en el mapa: sus estados y eventos se leen aquí, bajo la cámara a la que pertenece.",
     "statesEvents": "Estados / Eventos",
