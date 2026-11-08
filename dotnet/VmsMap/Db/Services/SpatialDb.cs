@@ -451,14 +451,18 @@ namespace VmsMap.Db
     /// </summary>
     /// <remarks>
     /// Deliberately narrower than <see cref="UpsertPlacementAsync"/>: this is the device talking,
-    /// and the only thing it can be trusted to say is where it is. The space, the parent, the
-    /// height, the heading and the field of view stay the administrator's, and no picture moves.
-    /// A camera with no reference placement is a no-op — inventing one is a decision for a person,
-    /// and the next tick will move the point as soon as one exists.
+    /// and the only things it can be trusted to say are where it is and, when it says so, which way
+    /// it looks. The space, the parent, the height and the field of view stay the administrator's,
+    /// and no picture moves. A camera with no reference placement is a no-op — inventing one is a
+    /// decision for a person, and the next tick will move the point as soon as one exists.
     /// </remarks>
+    /// <param name="headingDeg">
+    /// A compass bearing (0 = north, clockwise), or null to leave the heading as the administrator
+    /// set it.
+    /// </param>
     /// <returns>False when the camera has no reference placement.</returns>
     public async Task<bool> MoveReferencePointAsync(
-      string cameraId, double lat, double lon, CancellationToken ct)
+      string cameraId, double lat, double lon, double? headingDeg, CancellationToken ct)
     {
       RequireLatLon(lat, lon, "camera");
 
@@ -469,6 +473,13 @@ namespace VmsMap.Db
 
       await using var tx = await BeginTransactionAsync(ct);
       await _geoService.CreateGeo([PointFigure(reference.object_id, lat, lon)]);
+      if (headingDeg is { } heading)
+      {
+        // Tracked, not no-tracking: the same row the figure belongs to, turned to the bearing the
+        // device reports.
+        var row = await _db.CameraPlacements.FirstAsync(p => p.object_id == reference.object_id, ct);
+        row.heading_deg = NormalizeBearing(heading);
+      }
       await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
@@ -586,11 +597,19 @@ namespace VmsMap.Db
       // The observations on the landmark describe nothing once it is gone; in PostgreSQL the
       // foreign keys cascade, and they are removed here explicitly as well so that the same code
       // runs wherever the context points.
+      //
+      // Saved in three steps, in the order the foreign keys demand: EF does not model these
+      // relationships, so a single batch may delete the object before the landmark it cascades to,
+      // and then the landmark's own delete affects no row and throws a concurrency error.
       _db.PtzGeoObservations.RemoveRange(
         await _db.PtzGeoObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
       _db.GroundObservations.RemoveRange(
         await _db.GroundObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
+      await _db.SaveChangesAsync(ct);
+
       _db.Landmarks.Remove(row);
+      await _db.SaveChangesAsync(ct);
+
       _db.GeoObjects.RemoveRange(
         await _db.GeoObjects.Where(g => g.id == landmarkId).ToListAsync(ct));
       _db.Markers.RemoveRange(

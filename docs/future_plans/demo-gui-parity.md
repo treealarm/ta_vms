@@ -27,7 +27,7 @@
 | Видеостена: раскладка, слоты, камеры | Admin → Monitors |
 | Настройки входа/реле (`device_settings`: имя, охрана, `trigger_on`) | Admin → Cameras → **Devices** (вкладка устройства); ONVIF settings остаётся настройкой железа |
 | Подписка на событие (`event_subscriptions`: селектор и действия) | Admin → Event routing (`EventSubscriptionsPanel`, JSON-селектор с серверной валидацией) |
-| Демо-мир и его стена | Admin → Maps, нижняя панель (установить/удалить); `DEMO_CONFIG` ставит то же при старте |
+| Демо-мир и его стена | Admin → Deployment, нижний блок (установить/удалить); `DEMO_CONFIG` ставит то же при старте |
 
 ## Что примитивом не является
 

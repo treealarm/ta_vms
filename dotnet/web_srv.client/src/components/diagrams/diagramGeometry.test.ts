@@ -88,6 +88,16 @@ describe('diagramPaper', () => {
     expect(diagramPaper({ id: 'empty', geometry: { left: 5, top: 5, width: 0, height: 0 } }))
       .toEqual({ left: 0, top: 0, width: 800, height: 600, rotation: 0 })
   })
+
+  it('takes the size of its picture when it was given none', () => {
+    // A diagram placed on a map is sized by its type's picture — the sheet the template was drawn
+    // on — so a 640×400 panel is not stretched onto the plain 800×600 sheet.
+    expect(diagramPaper({ id: 'placed' }, { width: 640, height: 400 }))
+      .toEqual({ left: 0, top: 0, width: 640, height: 400, rotation: 0 })
+    // A stored rectangle still wins: that is the administrator's.
+    expect(diagramPaper({ id: 'sized', geometry: { left: 0, top: 0, width: 300, height: 200 } },
+      { width: 640, height: 400 }).width).toBe(300)
+  })
 })
 
 describe('ownRect', () => {

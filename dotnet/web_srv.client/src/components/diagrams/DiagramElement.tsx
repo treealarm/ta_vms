@@ -5,6 +5,7 @@ import type {
 } from '../../dto/mapDtos'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { nodeStyle } from '../../map/nodeStyle'
+import { visualImageUrl } from '../../map/visualImage'
 import { elementRect, regionRect, type Rect } from './diagramGeometry'
 
 const SELECTED_COLOR = '#64b5f6'
@@ -52,9 +53,7 @@ export default function DiagramElement({
 
   const fileId = diagram?.fileId || type?.fileId
   const fileUrl = useMapFileImage(fileId)
-  const icon = visual?.image
-    ? (visual.image.startsWith('data:') ? visual.image : `data:image/png;base64,${visual.image}`)
-    : null
+  const icon = visual?.image ? visualImageUrl(visual.image) : null
   const picture = fileUrl ?? icon
 
   // A replica's states and alarms are its owner's: the map answers them under the replica's id.
@@ -65,6 +64,12 @@ export default function DiagramElement({
   const selected = marker.id === selectedId
   const ownValues = values[marker.id] ?? []
 
+  // The picture is small and its states are what an operator reads first: the tooltip says them
+  // in the dictionary's own words, not in the codes the device reports.
+  const describesStates = (state?.states ?? [])
+    .map((name) => descriptions[name]?.stateDescr || name)
+    .filter(Boolean)
+
   const children = useMemo(
     () => (depth > 0 ? (content.children ?? []).filter((child) => child.parentId === marker.id) : []),
     [content.children, marker.id, depth],
@@ -74,7 +79,7 @@ export default function DiagramElement({
     <Box
       onClick={(event) => { event.stopPropagation(); onPick(marker) }}
       onPointerDown={onMove && movable ? (event) => onMove(marker, shown, event) : undefined}
-      title={[marker.name, ...(state?.states ?? [])].filter(Boolean).join(' · ')}
+      title={[marker.name, ...describesStates].filter(Boolean).join(' · ')}
       sx={{
         position: 'absolute',
         left: shown.left,
@@ -110,12 +115,21 @@ export default function DiagramElement({
             border: '1px dashed',
             borderColor: 'divider',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
           }}
         >
           <Typography variant="caption" color="text.secondary" noWrap>{marker.name}</Typography>
+          {/* An element without a picture of its own — a region of a device's template holding one
+              of its parts — writes its state where the template left room for it, in the state's
+              colour, as the readings panel writes a value into its region. */}
+          {describesStates.length > 0 ? (
+            <Typography variant="caption" noWrap sx={{ color: style.color }}>
+              {describesStates.join(' · ')}
+            </Typography>
+          ) : null}
         </Box>
       )}
 

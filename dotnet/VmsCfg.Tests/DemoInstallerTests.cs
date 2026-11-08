@@ -54,4 +54,43 @@ public class DemoInstallerTests
     Assert.Equal("94681efe-57da-5093-b420-1bed3b28dae8", DemoCameraIds.For("sim-master"));
     Assert.Equal("9f097856-169d-58d4-9d8a-db7405e20549", DemoCameraIds.For("sim-ptz"));
   }
+
+  [Fact]
+  public void TheDemoInstallsTheSimulatorsFiveCameras()
+  {
+    // The world's cameras in its own order: OnvifSim hands out its ONVIF ports from 8101 by that
+    // index, so the port is the position in this list, not a value chosen here.
+    var plan = DemoCameras.Plan();
+
+    Assert.Equal(
+      ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"],
+      plan.Select(camera => camera.Name));
+    Assert.Equal([8101, 8102, 8103, 8104, 8105], plan.Select(camera => camera.OnvifPort));
+    Assert.Equal([false, true, false, true, false], plan.Select(camera => camera.HasTelemetry));
+    // The car's camera takes its place from the device; the rest are bolted where the world puts them.
+    Assert.Equal([false, false, false, false, true], plan.Select(camera => camera.GeoFromDevice));
+    Assert.Equal(DemoCameraIds.For("sim-master"), plan[0].CameraId);
+  }
+
+  [Fact]
+  public void ADemoCameraIsWhatTheAdministratorsFormWouldWrite()
+  {
+    var camera = DemoCameras.Plan()[1].ToProto("host.docker.internal", "vms");
+
+    Assert.Equal(DemoCameraIds.For("sim-ptz"), camera.CameraId);
+    Assert.Equal("OnvifSim Main room slave (PTZ)", camera.Name);
+    Assert.Equal("vms", camera.ServerId);
+    Assert.Equal("host.docker.internal", camera.OnvifConn.Ip);
+    Assert.Equal(8102, camera.OnvifConn.Port);
+    Assert.Equal("http://host.docker.internal:8102/onvif/device_service", camera.OnvifConn.Xaddr);
+    Assert.Equal("admin", camera.Cred.User);
+    Assert.Equal("admin", camera.Cred.Pass);
+    Assert.True(camera.HasTelemetry);
+    Assert.False(camera.GeoFromDevice);
+
+    var stream = Assert.Single(camera.Streams);
+    Assert.Equal("main", stream.StreamName);
+    Assert.Equal("Profile_2", stream.ProfileToken);
+    Assert.True(stream.WebRtc);
+  }
 }

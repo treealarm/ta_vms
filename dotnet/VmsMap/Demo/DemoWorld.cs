@@ -16,7 +16,8 @@ namespace VmsMap.Demo
   /// with the code and never depends on a file on the instance's disk.
   public sealed record DemoFile(string Key, byte[] Content, string Mime)
   {
-    /// A picture that is an embedded raster: the plans and the room's icon on the floor.
+    /// A picture that is an embedded raster: the plans, and the two icons that stand on the floor —
+    /// the server room's and the readings panel's.
     public static DemoFile Asset(string key, string asset, string mime) =>
       new(key, DemoAssets.Read(asset), mime);
   }
@@ -82,9 +83,6 @@ namespace VmsMap.Demo
     // camera_placement — a diagram's canvas is not a space.
     string? OwnerCameraId = null);
 
-  /// A scale layer: zoom levels at which the nodes that name it are drawn.
-  public sealed record DemoLevel(string Name, int Min, int Max);
-
   /// A camera from the installation, placed where the world wants it. A camera the deployment
   /// does not have yet is skipped and reported; the world without cameras is still valid.
   public sealed record DemoPlacement(
@@ -98,9 +96,43 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
+  /// A landmark a calibration is made against: a named, coloured point of the world a camera can
+  /// see. It is a node of the space it stands in, and the marks and observations are made on it.
+  public sealed record DemoLandmark(
+    string Key,
+    string Name,
+    string SpaceKey,
+    double Lat,
+    double Lon,
+    double HeightM = 0);
+
+  /// The foot of a person standing on a landmark, as the master's picture shows it: x and y in
+  /// shares of the frame, from the top left — what the ground calibration stores for a fixed
+  /// camera.
+  public sealed record DemoGroundMark(string CameraKey, string LandmarkKey, double X, double Y);
+
+  /// Where a PTZ camera's head points to centre a landmark, in the camera's own ONVIF generic
+  /// units; `Zoom` is the framing zoom at that distance, for a pair that uses one.
+  public sealed record DemoPtzObservation(
+    string CameraKey, string LandmarkKey, double Pan, double Tilt, double? Zoom = null);
+
   /// A state row on a node. The demo writes no alarm: its one row is `CONNECTED` on a switch
   /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
+
+  /// A device's own diagram, drawn on a canvas of the world: the registry key it is remembered
+  /// under, the device, the template its model names, and where it stands. It is made by the
+  /// device-diagram service, not written as a node — the service owns the diagram and binds the
+  /// device's parts to its regions.
+  public sealed record DemoDeviceDiagram(
+    string Key,
+    string CameraKey,
+    string TypeKey,
+    string SpaceKey,
+    DemoPoint At,
+    string VisualKey,
+    int VisualWidth,
+    int VisualHeight);
 
   /// A right on a node. The world grants `view` to the deployment's `user` role at its root.
   public sealed record DemoRight(string NodeKey, string Subject, string Action);
@@ -114,8 +146,11 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoDiagramType> Types,
     IReadOnlyList<DemoSpace> Spaces,
     IReadOnlyList<DemoNode> Nodes,
-    IReadOnlyList<DemoLevel> Levels,
     IReadOnlyList<DemoPlacement> Placements,
+    IReadOnlyList<DemoLandmark> Landmarks,
+    IReadOnlyList<DemoGroundMark> GroundMarks,
+    IReadOnlyList<DemoPtzObservation> PtzObservations,
+    IReadOnlyList<DemoDeviceDiagram> DeviceDiagrams,
     IReadOnlyList<DemoState> States,
     IReadOnlyList<DemoRight> Rights);
 }

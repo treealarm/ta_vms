@@ -2,9 +2,9 @@
 """End-to-end check of the demo world through the gateway.
 
 The world is installed through the same API the administrator's button uses, then walked the way
-an operator walks it: map -> building -> room -> rack -> switch -> port, with the types and their
-regions, the camera placements, the video wall, the readings the cameras report about themselves
-(position, speed, relay, sensor) and the port that no longer alarms. It then proves what the registry
+an operator walks it: map -> building (the floor is the room) -> rack -> switch -> port, with the
+types and their regions, the camera placements, the video wall, the lamp the camera's relay lights
+and the port that no longer alarms. It then proves what the registry
 is for — a second install changes no id, the administrator's own node survives both an install and
 a removal, and a removal takes only the demo.
 
@@ -31,14 +31,15 @@ from vmsapi import Vms  # noqa: E402
 
 DEMO_KEY = "umd-datacenter"
 MAP_NAME = "UMD Data Center (demo)"
-BUILDING_NAME = "A.V. Williams Building"
-ROOM_PLAN_NAME = "Room 101"
-ROOM_DIAGRAM_NAME = "Room 102"
+BUILDING_NAME = "First floor"
+# The diagram standing on that plan: the same room as a schematic, with the racks drawn in it.
+LAYOUT_NAME = "First floor Diagram"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
 DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
-TELEMETRY_NAME = "Camera sim-vehicle"
+# The replica of the indoor master: a diagram on the floor that shows the camera's own readings.
+TELEMETRY_NAME = "Camera sim-master readings"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
 DEMO_SUBSCRIPTION = "053df083-59b0-56b3-a28c-c5701d1fc3cf"
@@ -320,7 +321,10 @@ def monitors(vms):
 
 
 def provision_cameras(vms, sim_host, server_id):
-    """The four OnvifSim cameras, added the way the bench's provision step adds them."""
+    """The five OnvifSim cameras, added the way the bench's provision step adds them.
+
+    The demo installs them itself now (VmsCfg, from DEMO_ONVIFSIM_HOST); this remains for a
+    deployment installed before that, and finds the cameras already there otherwise."""
     existing = {camera.get("cameraId") for camera in vms.cameras()}
     # `geo_from_device` only for the camera on the vehicle: its place on the map is the camera's
     # own ONVIF position, which the map follows. The others are placed by hand.
@@ -377,73 +381,114 @@ def walk_the_world(vms):
                  f"the map holds '{BUILDING_NAME}' as a plan"):
         return None
 
-    rooms = children(vms, building["id"])
+    floor = children(vms, building["id"])
 
-    # A room is either a plan of its own or a diagram standing on the floor.
-    room = by_name(vms, rooms, ROOM_PLAN_NAME)
-    if not check(room is not None and room.get("nodeKind") == "space",
-                 f"the building holds {ROOM_PLAN_NAME} as a plan"):
+    # The floor is the room: no plan is nested in it, so the hall pair and the person's walk are on
+    # this one plan. What stands in the room is one diagram of the floor.
+    check(not any(node.get("nodeKind") == "space" for node in floor),
+          "the floor holds no plan of a room of its own")
+
+    layout = by_name(vms, floor, LAYOUT_NAME)
+    if not check(layout is not None and layout.get("nodeKind") == "diagram",
+                 f"the floor holds the '{LAYOUT_NAME}' diagram"):
         return None
 
-    room_diagram = by_name(vms, rooms, ROOM_DIAGRAM_NAME)
-    if not check(room_diagram is not None and room_diagram.get("nodeKind") == "diagram",
-                 f"the building holds {ROOM_DIAGRAM_NAME} as a room diagram"):
-        return None
+    # The four racks are regions of the floor's schematic, and every rack is filled with switches.
+    layout_racks = children(vms, layout["id"])
+    expected_racks = {f"Rack A-{index:02}" for index in range(1, 5)}
+    check({r.get("name") for r in layout_racks} == expected_racks,
+          f"the floor diagram shows Rack A-01 … A-04 (got {sorted(r.get('name') for r in layout_racks)})")
 
-    # The intermediate diagram: several racks on one schematic, each a canvas of its own.
-    layout_racks = children(vms, room_diagram["id"])
-    check(len(layout_racks) == 2 and {r.get("name") for r in layout_racks} == {"Rack B-01", "Rack B-02"},
-          f"{ROOM_DIAGRAM_NAME} shows Rack B-01 and Rack B-02 on one diagram")
-
-    racks = children(vms, room["id"])
-    rack = by_name(vms, racks, "Rack A-01")
+    rack = by_name(vms, layout_racks, "Rack A-01")
     if not check(rack is not None and rack.get("nodeKind") == "diagram",
-                 "Room 101 holds Rack A-01 as a mnemoscheme"):
+                 "the floor diagram holds Rack A-01 as a mnemoscheme"):
         return None
 
-    computers = children(vms, rack["id"])
-    computer = by_name(vms, computers, "Switch A-01")
+    switches = children(vms, rack["id"])
+    check(len(switches) == 6, f"Rack A-01 takes a switch in each of its six slots (got {len(switches)})")
+
+    computer = by_name(vms, switches, "Switch A-01 U1")
     if not check(computer is not None and computer.get("nodeKind") == "diagram",
-                 "Rack A-01 holds Switch A-01"):
+                 "Rack A-01 holds Switch A-01 U1"):
         return None
 
     ports = children(vms, computer["id"])
-    check(len(ports) == 8, f"Switch A-01 holds 8 ports (got {len(ports)})")
+    check(len(ports) == 8, f"Switch A-01 U1 holds 8 ports (got {len(ports)})")
     port = by_name(vms, ports, "Port 3")
     check(port is not None, "Port 3 is among them")
 
     return {
-        "map": demo_map, "building": building, "room": room, "room102": room_diagram,
+        "map": demo_map, "building": building, "layout": layout,
         "layout_racks": layout_racks, "rack": rack,
         "switch": computer, "port": port, "ports": ports,
     }
 
 
+def check_plans(vms, world):
+    """The plans are drawings of the world, not pictures of something else: vector, and the
+    building's footprint is the simulator's own outline corner for corner, so the plan on the map
+    lies in the building the cameras stand in.
+
+    A node listing carries neither a plan nor a footprint — those are the space's, from
+    `api/spatial/spaces`, which the map itself is served by."""
+    spaces_by_id = {space.get("id"): space for space in spaces(vms)}
+    space = spaces_by_id.get(world["building"].get("id")) or {}
+    mime = ((space.get("plan") or {}).get("mime") or "")
+    check(mime == "image/svg+xml",
+          f"the plan of {BUILDING_NAME} is a drawing, not a picture ({mime or 'none'})")
+    check(not any(child.get("parentId") == world["building"].get("id") for child in spaces(vms)),
+          "no plan of a room is nested in the floor")
+
+    floor = spaces_by_id.get(world["building"].get("id")) or {}
+    footprint = [(point.get("lat"), point.get("lon")) for point in floor.get("footprint") or []]
+    check(len(footprint) == len(W.MARYLAND_BUILDING_OUTLINE),
+          f"the floor's footprint has {len(W.MARYLAND_BUILDING_OUTLINE)} corners (got {len(footprint)})")
+    for x, z in W.MARYLAND_BUILDING_OUTLINE:
+        lat, lon = W.to_wgs84(x, z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+        check(any(W.ground_gap(lat, lon, flat, flon) <= 0.01 for flat, flon in footprint),
+              f"the footprint has the world's corner ({lat:.7f}, {lon:.7f})")
+
+
+def check_diagram_marker(vms, world):
+    """The floor diagram is marked where the simulator's racks stand: the middle of the row along
+    Room 101's west wall. A marker in the building's east wing looks like a diagram of some other
+    room."""
+    layout = world["layout"]
+    figs = figures_of(vms, [layout["id"]])
+    fig = next((candidate for candidate in figs if candidate.get("id") == layout["id"]), None)
+    coord = ((fig or {}).get("geometry") or {}).get("coord") or []
+    if not check(coord, "the floor diagram has a point on the plan"):
+        return
+
+    lat, lon = coord[0].get("lat"), coord[0].get("lon")
+    x = W.MARYLAND_RACK_X
+    z = sum(W.MARYLAND_RACK_Z) / len(W.MARYLAND_RACK_Z)
+    expected = W.to_wgs84(x, z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+    gap = W.ground_gap(lat, lon, *expected[:2])
+    check(gap <= 0.5, f"the diagram stands {gap:.2f} m from the rack row "
+                      f"({expected[0]:.7f}, {expected[1]:.7f})")
+
+
 def check_positions(vms, world):
     """Regions give the place; the geometry stays the diagram's own canvas (M2.2 step 1)."""
-    ids = [world[key]["id"] for key in ("rack", "switch", "port", "room102")]
+    ids = [world[key]["id"] for key in ("rack", "switch", "port", "layout")]
     ids += [rack["id"] for rack in world["layout_racks"]]
     diagrams = {d["id"]: d for d in diagrams_by_ids(vms, ids)}
 
-    room = diagrams.get(world["room102"]["id"], {})
-    check(room.get("geometry", {}).get("width") == 800 and room.get("geometry", {}).get("height") == 600,
-          "the room diagram opens on its own 800x600 canvas")
-    check(not room.get("regionId"), "the room diagram stands by its own rectangle on the floor")
+    layout = diagrams.get(world["layout"]["id"], {})
+    check(layout.get("geometry", {}).get("width") == 800 and layout.get("geometry", {}).get("height") == 600,
+          "the floor diagram opens on its own 800x600 canvas")
+    check(not layout.get("regionId"), "the floor diagram stands by its own rectangle on the floor")
 
-    # The children come back unordered; the rack's own name says which slot it fills.
-    slots = {"Rack B-01": "rack-1", "Rack B-02": "rack-2"}
+    # Every rack fills a region of the floor's schematic, and keeps a canvas of its own inside it.
+    # The children come back unordered; the rack's own name says which region it fills.
     for rack in world["layout_racks"]:
-        region = slots[rack["name"]]
+        index = int(rack["name"].rsplit("-", 1)[1])
         placed = diagrams.get(rack["id"], {})
-        check(placed.get("regionId") == region,
-              f"{rack['name']} fills the room diagram's {region} region")
+        check(placed.get("regionId") == f"rack-{index}",
+              f"{rack['name']} fills the floor diagram's rack-{index} region")
         check(placed.get("geometry", {}).get("width") == 240,
               f"{rack['name']} keeps its own 240-wide canvas beside the region")
-
-    rack = diagrams.get(world["rack"]["id"], {})
-    check(rack.get("geometry", {}).get("width") == 240 and rack.get("geometry", {}).get("height") == 720,
-          "the plan rack opens on its own 240x720 canvas")
-    check(not rack.get("regionId"), "the plan rack stands by its own rectangle in the room")
 
     computer = diagrams.get(world["switch"]["id"], {})
     check(computer.get("regionId") == "slot-1", "the switch sits in the rack's slot-1 region")
@@ -454,31 +499,46 @@ def check_positions(vms, world):
     check(port.get("regionId") == "port-3", "Port 3 sits in the switch's port-3 region")
 
 
-def check_device_diagram(vms):
-    """The camera drawn from its model: the panel under it, its sockets holding the parts that
-    were configured — and a socket that lights up with its relay, because a replica shows its
-    owner's state rather than keeping one of its own."""
+def check_device_diagram(vms, world):
+    """The camera drawn from its model: an object of the map on the plan beside it, not a child of
+    the device in the logical tree. Its sockets hold the parts that were configured — and a socket
+    lights up with its relay, because a replica shows its owner's state rather than keeping one of
+    its own."""
     camera_node, parts = device_nodes(vms, "sim-master")
     if not check(camera_node is not None, "sim-master has a canonical node"):
         return
 
-    # Drawn when the parts are configured — a settings change, not the next sweep minutes away.
-    # `nodeKind` is what the node list carries; the diagram's own row is only in its content.
+    camera_name = camera_node.get("name") or ""
+    # The demo ships it with the world; a diagram an administrator places appears through the
+    # node's own action, so this waits only for the world's own.
     diagram = wait_until(
-        lambda: next((kid for kid in children(vms, camera_node["id"])
-                      if kid.get("nodeKind") == "diagram"), None),
+        lambda: next((kid for kid in children(vms, world["building"]["id"])
+                      if kid.get("nodeKind") == "diagram"
+                      and (kid.get("name") or "").startswith(f"{camera_name} /")), None),
         60)
-    if not check(diagram is not None, "the camera's rear panel is drawn under it"):
+    if not check(diagram is not None, "the camera's rear panel is drawn on the plan beside it"):
         return
 
     check((diagram.get("name") or "").endswith("Camera rear panel"),
           f"the diagram is named after its type (has {diagram.get('name')!r})")
 
-    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
-    placements = {row.get("id"): row for row in content.get("content") or []}
-    replicas = [row for row in content.get("children") or [] if row.get("id") in placements]
+    # Beside the camera, not in the middle of the plan: the demo places it at a point of its own.
+    placement = next((row for row in placements(vms)
+                      if row.get("cameraId") == camera_node.get("cameraId")
+                      and row.get("isReference")), None)
+    figure = next((candidate for candidate in figures_of(vms, [diagram["id"]])
+                   if candidate.get("id") == diagram["id"]), None)
+    coord = ((figure or {}).get("geometry") or {}).get("coord") or []
+    if check(placement is not None and coord, "the panel has its own point on the plan"):
+        gap = W.ground_gap(coord[0]["lat"], coord[0]["lon"],
+                           placement["lat"], placement["lon"])
+        check(gap <= 10, f"the panel stands {gap:.1f} m from the camera")
 
-    regions = {placements[row["id"]].get("regionId") for row in replicas}
+    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
+    rows = {row.get("id"): row for row in content.get("content") or []}
+    replicas = [row for row in content.get("children") or [] if row.get("id") in rows]
+
+    regions = {rows[row["id"]].get("regionId") for row in replicas}
     check(regions == {"input", "lamp", "peer", "loop"},
           f"the panel's four sockets hold a replica each (has {sorted(regions)})")
 
@@ -515,6 +575,11 @@ def check_types(vms):
     check({"lat", "lon", "speed", "relay", "sensor"} <= telemetry_regions,
           f"Device telemetry offers lat, lon, speed, relay and sensor (has {sorted(telemetry_regions)})")
 
+    layout = types.get("Floor layout", {})
+    layout_regions = {r.get("regionKey") for r in layout.get("regions") or []}
+    check(layout_regions == {"rack-1", "rack-2", "rack-3", "rack-4"},
+          f"Floor layout offers its four rack regions (has {sorted(layout_regions)})")
+
     computer = types.get("Cisco Catalyst 9300", {})
     computer_regions = {r.get("regionKey") for r in computer.get("regions") or []}
     check(len(computer_regions) == 8 and "port-8" in computer_regions,
@@ -546,12 +611,12 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Each pair works as one: the hall slave in Room 101 with its master on the floor plan, since
-    # that master looks along the line out of the room to the doorway; the yard pair out on the map
+    # Each pair works as one: the hall pair stands on the floor plan — the floor is the room, and
+    # the master looks along the line out of the hall to the doorway; the yard pair out on the map
     # beyond the building, and the camera on the car there too.
     expected = {
         camera_id("sim-master"): world["building"]["id"],
-        camera_id("sim-ptz"): world["room"]["id"],
+        camera_id("sim-ptz"): world["building"]["id"],
         camera_id("sim-master2"): world["map"]["id"],
         camera_id("sim-ptz2"): world["map"]["id"],
         # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
@@ -563,6 +628,89 @@ def check_cameras(vms, world, allow_missing):
         placement = placed.get(cam_id)
         check(placement is not None and placement.get("spaceId") == space_id,
               f"{cam_id} stands in its space")
+
+
+def check_calibration(vms, world, allow_missing):
+    """The demo arrives calibrated: every landmark is the simulator's own block, and each camera's
+    marks are the projection of those blocks from its pose. The expected numbers are world.py's,
+    computed from the world and checked against it (``world.py --check-maryland``), so a drift here
+    means the map, the world and the pinned constants have parted ways."""
+    pairs = (
+        ("hall", W.MARYLAND_HALL_LANDMARKS, world["building"]["id"],
+         "sim-master", "sim-ptz", W.MARYLAND_HALL_GROUND, W.MARYLAND_HALL_PTZ, True),
+        ("road", W.MARYLAND_ROAD_LANDMARKS, world["map"]["id"],
+         "sim-master2", "sim-ptz2", W.MARYLAND_ROAD_GROUND, W.MARYLAND_ROAD_PTZ, False),
+    )
+    configured = {camera.get("cameraId") for camera in vms.cameras()}
+
+    for name, landmarks, space_id, master_name, slave_name, ground_pins, ptz_pins, with_zoom in pairs:
+        master, slave = camera_id(master_name), camera_id(slave_name)
+        if master not in configured or slave not in configured:
+            if allow_missing:
+                warn(f"the {name} pair is not configured: its calibration is not checked")
+            else:
+                check(False, f"the {name} pair is configured, so its calibration can be checked")
+            continue
+
+        placed = {landmark["name"].split()[0]: landmark
+                  for landmark in vms.landmarks(space_id) if landmark.get("name")}
+        for landmark in landmarks:
+            found = placed.get(landmark.name)
+            if not check(found is not None, f"the {name} space holds the {landmark.label} landmark"):
+                continue
+            lat, lon = W.to_wgs84(landmark.x, landmark.z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+            gap = W.ground_gap(found["lat"], found["lon"], lat, lon)
+            check(gap <= 0.5, f"{landmark.label} stands {gap:.2f} m from the world's block")
+            check(abs(found.get("heightM") or 0) <= 0.01, f"{landmark.label} stands on the ground")
+
+        short_name = {landmark["id"]: name.split()[0] for name, landmark in placed.items()}
+
+        ground = vms.get_ground_geo(master) or {}
+        marks = {short_name.get(mark.get("landmarkId")): mark
+                 for mark in ground.get("observations") or []}
+        check(len(marks) == len(landmarks),
+              f"{master_name} marks all {len(landmarks)} landmarks (has {len(marks)})")
+        check(ground.get("fitted") is True,
+              f"{master_name}'s ground fit is made ({ground.get('error')})")
+        for landmark in landmarks:
+            mark = marks.get(landmark.name)
+            if not check(mark is not None, f"{master_name} marks {landmark.label}"):
+                continue
+            ex, ey = ground_pins[landmark.name]
+            check(abs(mark["x"] - ex) <= 1e-3 and abs(mark["y"] - ey) <= 1e-3,
+                  f"{master_name}'s mark at {landmark.label} is "
+                  f"({mark['x']:.6f}, {mark['y']:.6f}); the world projects ({ex}, {ey})")
+
+        ptz = vms.get_ptz_geo(slave) or {}
+        observations = {short_name.get(row.get("landmarkId")): row
+                        for row in ptz.get("observations") or []}
+        check(len(observations) == len(landmarks),
+              f"{slave_name} observes all {len(landmarks)} landmarks (has {len(observations)})")
+        check(ptz.get("fitted") is True, f"{slave_name}'s PTZ fit is made ({ptz.get('error')})")
+        for landmark in landmarks:
+            row = observations.get(landmark.name)
+            if not check(row is not None, f"{slave_name} observes {landmark.label}"):
+                continue
+            ex, ey, *rest = ptz_pins[landmark.name]
+            check(abs(row["pan"] - ex) <= 1e-3 and abs(row["tilt"] - ey) <= 1e-3,
+                  f"{slave_name}'s observation of {landmark.label} is "
+                  f"({row['pan']:.6f}, {row['tilt']:.6f}); the world projects ({ex}, {ey})")
+            if with_zoom:
+                check(row.get("zoom") is not None and abs(row["zoom"] - rest[0]) <= 1e-3,
+                      f"{slave_name}'s zoom at {landmark.label} is the framing zoom ({rest[0]})")
+            else:
+                check(row.get("zoom") is None, f"{slave_name} keeps the wide lens")
+
+        binding = vms.get_binding(slave) or {}
+        check(binding.get("masterCameraId") == master,
+              f"{slave_name} is bound to {master_name} (got {binding.get('masterCameraId')})")
+        check(binding.get("method") == "geo", f"{slave_name} is aimed through the map")
+        check(not binding.get("unusable"), f"{slave_name}'s binding can aim ({binding.get('unusable')})")
+
+        policy = vms.call("GET", f"/api/ptz-tracking-policy/{slave}") or {}
+        check(policy.get("enabled") is True, f"{slave_name} follows its master")
+        check("person" in (policy.get("kinds") or []), f"{slave_name} follows people")
+        check("onvif" in (policy.get("sources") or []), f"{slave_name} follows the master's own boxes")
 
 
 def check_camera_poses(vms, allow_missing):
@@ -660,9 +808,16 @@ def check_monitor(vms, allow_missing):
 
 
 def check_levels(vms):
+    """The dictionary is the map's own names for scales, not a row for every range of zooms."""
     names = {level.get("zoomLevel") for level in levels(vms)}
-    check({"Campus", "Building", "Room", "Rack"} <= names,
-          "the Campus, Building, Room and Rack layers are in the dictionary")
+    expected = {"World", "Continent", "Country", "Region", "City",
+                "District", "Street", "Building", "Room"}
+    check(expected <= names,
+          f"the nine map scales are in the dictionary (missing {sorted(expected - names)})")
+    check(not {"Campus", "Rack"} & names,
+          f"the old demo layers are gone (has {sorted({'Campus', 'Rack'} & names)})")
+    ranges = sorted(name for name in names if name and name[0].isdigit())
+    check(not ranges, f"the rows for single zoom ranges are gone (has {ranges[:3]})")
 
 
 def check_port_not_alarmed(vms, world):
@@ -681,14 +836,29 @@ def check_port_not_alarmed(vms, world):
     check(port_id not in alarmed_ids, "Port 3 is not among the alarmed nodes")
 
 
+def check_no_camera_replica(vms):
+    """The camera on the car keeps no replica of its own.
+
+    A diagram stands where it is put, and `sim-vehicle` drives the ring road: its place is the car
+    on the map, which follows what the camera reports (geo_from_device). The diagram on the floor is
+    the indoor master's, which does stand still (check_feeder).
+    """
+    found = map_search(vms, camera_id("sim-vehicle"))
+    if not found:
+        warn("the camera on the car has no node yet: its replica is not checked")
+        return
+    check(len(found) == 1, f"nothing copies the camera on the car ({len(found)} nodes)")
+
+
 def check_feeder(vms, world):
-    """The camera's own ONVIF readings, rewritten every five seconds into the replica's regions."""
+    """The indoor master's own ONVIF readings, rewritten every five seconds into its replica's
+    regions."""
     # Its kind reads "camera", not "diagram": it is a replica, and the map answers a replica with
     # the camera id of what it shows.
     telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
     if not check(telemetry is not None,
-                 "the building shows the camera's Device telemetry diagram"):
-        return
+                 f"the floor shows {TELEMETRY_NAME}'s Device telemetry diagram"):
+        return None
 
     print("  ..    waiting for the value feeder")
     time.sleep(8)
@@ -704,7 +874,7 @@ def check_feeder(vms, world):
     return telemetry
 
 
-def check_wired_devices(vms, sim, world, telemetry):
+def check_wired_devices(vms, sim, telemetry):
     """`sim-master`'s relays: one drives `sim-ptz`'s sensor, one lights the hall's lamp.
 
     Switching them changes what the demo's diagram reads, and the simulator's own lamp — which is
@@ -1026,8 +1196,8 @@ def check_camera_removal_cascade(vms, sensor):
 
 
 def ids_of(vms, world):
-    ids = {key: world[key]["id"] for key in ("map", "building", "room", "room102", "rack", "switch", "port")}
-    ids["layout"] = [rack["id"] for rack in world["layout_racks"]]
+    ids = {key: world[key]["id"] for key in ("map", "building", "layout", "rack", "switch", "port")}
+    ids["layout_racks"] = [rack["id"] for rack in world["layout_racks"]]
     return ids
 
 
@@ -1107,7 +1277,6 @@ def main():
     if args.provision_cameras:
         print("Provisioning the demo cameras")
         provision_cameras(vms, args.sim_host, args.server_id)
-        subscribe_events(vms)
 
     # Installing is idempotent, so it is always called first: on a fresh database it writes the
     # world, on an older one it brings it to the current version.
@@ -1118,11 +1287,19 @@ def main():
     if report.get("skippedCameras"):
         print(f"  ..    cameras not provisioned yet: {report.get('skippedCameras')}")
 
+    # The demo installs the cameras and their calibration; the optional ONVIF event subscription
+    # is not its business, so turning it on stays a step of the check.
+    subscribe_events(vms)
+
     print("Walking the world")
     world = walk_the_world(vms)
     if world is None:
         print("\nThe demo world is not in the shape it promises.")
         return 1
+
+    print("Plans")
+    check_plans(vms, world)
+    check_diagram_marker(vms, world)
 
     print("Regions and canvases")
     check_positions(vms, world)
@@ -1135,24 +1312,29 @@ def main():
     check_camera_poses(vms, args.allow_missing_cameras)
     check_monitor(vms, args.allow_missing_cameras)
 
+    print("Calibration and the master/slave pairs")
+    check_calibration(vms, world, args.allow_missing_cameras)
+
     print("ONVIF position, events and the marker")
     check_geo_flag(vms)
     check_events(vms)
     check_marker_follows_the_camera(vms)
 
-    print("Layers, readings and the calm port")
+    print("Layers, readings, the calm port and the camera that rides")
     check_levels(vms)
     telemetry = check_feeder(vms, world)
+    check_no_camera_replica(vms)
     check_port_not_alarmed(vms, world)
 
     sim_up = sim.ready()
     if not sim_up:
         warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
-    if telemetry is not None and sim_up:
-        print("Wired relays and the lamp")
-        check_wired_devices(vms, sim, world, telemetry)
+    if sim_up:
         print("The moving camera")
         check_vehicle_picture(sim)
+        if telemetry is not None:
+            print("Wired relays and the lamp")
+            check_wired_devices(vms, sim, telemetry)
 
     # The M2.4e scenario: a real contact, a real alarm, a real subscription. It needs the
     # simulator's wire; without it the map half above still proves the world.
@@ -1161,7 +1343,7 @@ def main():
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
         print("The device's own diagram")
-        check_device_diagram(vms)
+        check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
             since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()

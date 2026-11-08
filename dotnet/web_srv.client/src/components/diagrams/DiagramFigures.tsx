@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Box } from '@mui/material'
 import type { MapFigure } from '../../dto/mapDtos'
 import { figurePoint } from './diagramGeometry'
+import { visualImageUrl } from '../../map/visualImage'
 
 type Props = {
   figures: MapFigure[]
@@ -146,9 +147,7 @@ export default function DiagramFigures({
           >
             {figure.visual?.image ? (
               <img
-                src={figure.visual.image.startsWith('data:')
-                  ? figure.visual.image
-                  : `data:image/png;base64,${figure.visual.image}`}
+                src={visualImageUrl(figure.visual.image)}
                 alt=""
                 draggable={false}
                 style={{

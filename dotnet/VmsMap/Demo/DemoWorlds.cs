@@ -5,12 +5,14 @@ using VmsMap.Domain;
 
 namespace VmsMap.Demo
 {
-  /// The worlds we install. Today there is one: a fictional data centre in the A.V. Williams
-  /// building on the University of Maryland campus — a map, a floor, two rooms, racks standing in
-  /// them, switches in the racks and ports in the switches, with the OnvifSim cameras looking on.
+  /// The worlds we install. Today there is one: a data centre on the first floor of Biomolecular
+  /// Sciences on the University of Maryland campus — a map, the floor as one room, racks standing in
+  /// it, switches in the racks and ports in the switches, with the OnvifSim cameras looking on. The
+  /// building's footprint and its doorway are the simulator's own (MarylandWorld.cs), so the plan on
+  /// the map and the prism in the world cannot disagree.
   ///
-  /// Everything is built from loops and constants: a rack's ports are the same rows for every
-  /// rack, and an empty slot is simply a region nothing was put in.
+  /// Everything is built from loops and constants: a rack's switches are the same rows for every
+  /// rack, and so are their ports.
   public static class DemoWorlds
   {
     public const string UmdDataCenterKey = "umd-datacenter";
@@ -31,43 +33,146 @@ namespace VmsMap.Demo
     //     that doorway while its master watches the line from between the door and the ring road.
     // 11: the yard slave moved off the doorway onto a pole of its own between the door and the master,
     //     and the person turns right in the yard to walk a stretch along the ring road.
-    public const int UmdDataCenterVersion = 11;
+    // 12: the world is the real campus — the first floor of Biomolecular Sciences with its own
+    //     footprint, the parking lot outside, the real roads — so every camera, Room 101 and the
+    //     person's walk moved with the building, and the plans are drawn from the same constants.
+    // 13: the floor is the room: Room 101 is gone as a plan of its own, and the hall pair and the
+    //     landmarks stand on the first floor directly. What stands in the room is one diagram, "First
+    //     floor", in place of Room 102's: its four racks are regions of it, and every rack is filled
+    //     with switches, each with its ports. The camera on the car keeps no replica indoors — its
+    //     place is the car on the map, which follows the camera it reports.
+    // 14: the readings the demo shows are the indoor master's: a Device telemetry diagram of
+    //     `sim-master` stands on the floor beside it — a camera that does stand still, so a diagram
+    //     on a plan means something.
+    // 15: the diagram is named apart from the floor it stands on, and its marker stands on the rack
+    //     row the simulator builds along the room's west wall, not in the building's east wing; the
+    //     readings replica is named by what it shows.
+    // 16: the camera's device diagram is the camera itself — body, lens, cable and the terminal
+    //     block its parts are wired to — rather than a schematic panel of sockets.
+    // 17: the landmarks name the place they stand in, so the tree's two sets are told apart.
+    // 18: the indoor master's device diagram stands on the floor beside it, as an object of the
+    //     plan rather than a child of the camera in the iron tree: a diagram is a logical object,
+    //     and what hangs under the server is hardware.
+    // 19: the world no longer brings zoom layers of its own: the dictionary names the map's scales
+    //     (`World` … `Room`) and nothing in the demo used the three it wrote.
+    public const int UmdDataCenterVersion = 19;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
       string.Equals(key, UmdDataCenterKey, StringComparison.Ordinal) ? UmdDataCenter() : null;
 
-    // The building, in WGS84. Its floor is a plan nested in the map.
-    private const double BuildingSouth = 38.9918;
-    private const double BuildingNorth = 38.9928;
-    private const double BuildingWest = -76.9390;
-    private const double BuildingEast = -76.9365;
+    // Where the racks stand in the world: `rack-1` … `rack-4` of MarylandWorld are boxes along the
+    // west wall of Room 101, at x = -14.6, z = -72.4 … -64.9, and the diagram's marker stands at
+    // the middle of that row — the plan draws no room, so the marker is the only thing that says
+    // where the equipment is. Pinned in WGS84, as the camera poses are; the simulator's constants
+    // and this point are checked against each other by tests/onvifsim.
+    private static readonly DemoPoint Racks = new(38.9929167, -76.9379687);
 
-    // A room is a plan (Room 101, top-down) or a diagram on the floor (Room 102, schematic): both
-    // are rooms in the same building, and the tree alone says which representation was chosen.
-    private const string Room101 = "space/room-101";
-    private const string Room102Layout = "object/room-102-layout";
+    // The calibration landmarks of the two pairs: the points MarylandWorld marks with coloured
+    // blocks, on the floor of the hall and out on the lot. Their names are what an operator reads
+    // — `L1 red` — plus the place they stand in, because the tree shows both sets side by side and
+    // `L1 red` twice says nothing; their keys are what the marks and observations name.
+    private static List<DemoLandmark> Landmarks() =>
+    [
+      new("landmark/hall/l1", "L1 red (hall)", "space/building", 38.9929432, -76.9379225),
+      new("landmark/hall/l2", "L2 yellow (hall)", "space/building", 38.9929432, -76.9378740),
+      new("landmark/hall/l3", "L3 blue (hall)", "space/building", 38.9929100, -76.9379225),
+      new("landmark/hall/l4", "L4 white (hall)", "space/building", 38.9929100, -76.9378740),
+      new("landmark/hall/l5", "L5 purple (hall)", "space/building", 38.9929270, -76.9378982),
+      new("landmark/road/l1", "L1 red (road)", "space/umd", 38.9930546, -76.9378925),
+      new("landmark/road/l2", "L2 yellow (road)", "space/umd", 38.9931175, -76.9379271),
+      new("landmark/road/l3", "L3 blue (road)", "space/umd", 38.9931265, -76.9378462),
+      new("landmark/road/l4", "L4 white (road)", "space/umd", 38.9931803, -76.9378925),
+      new("landmark/road/l5", "L5 purple (road)", "space/umd", 38.9931983, -76.9377769),
+    ];
+
+    // The calibration of the four cameras, computed once from the simulator's own world: the feet
+    // of a person standing on each landmark in the master's picture, and the head position (and,
+    // for the hall's slave, the framing zoom) that centres it on the slave. The world is
+    // deterministic — cameras bolted down, landmarks fixed — so these are constants, and
+    // tests/onvifsim/world.py projects the same points again to catch a drift.
+    private static readonly DemoGroundMark[] GroundMarks =
+    [
+      new("sim-master", "landmark/hall/l1", 0.288942, 0.606953),
+      new("sim-master", "landmark/hall/l2", 0.630300, 0.606953),
+      new("sim-master", "landmark/hall/l3", 0.219821, 0.740750),
+      new("sim-master", "landmark/hall/l4", 0.672973, 0.740750),
+      new("sim-master", "landmark/hall/l5", 0.454114, 0.662673),
+      new("sim-master2", "landmark/road/l1", 0.786424, 0.514470),
+      new("sim-master2", "landmark/road/l2", 0.714613, 0.582389),
+      new("sim-master2", "landmark/road/l3", 0.542411, 0.526134),
+      new("sim-master2", "landmark/road/l4", 0.458604, 0.603585),
+      new("sim-master2", "landmark/road/l5", 0.256542, 0.523149),
+    ];
+
+    private static readonly DemoPtzObservation[] PtzObservations =
+    [
+      new("sim-ptz", "landmark/hall/l1", 0.008838, 0.395735, 0.208905),
+      new("sim-ptz", "landmark/hall/l2", 0.106873, 0.328499, 0.133485),
+      new("sim-ptz", "landmark/hall/l3", -0.081842, 0.347742, 0.153152),
+      new("sim-ptz", "landmark/hall/l4", 0.009885, 0.201190, 0.029643),
+      new("sim-ptz", "landmark/hall/l5", 0.010502, 0.326694, 0.131707),
+      // The yard's slave keeps the wide lens: its landmarks are 10–25 m away along a walk that
+      // leaves the frame at both ends, and a framing zoom would follow the person into the zoom
+      // limit rather than hold the stretch of road they walk.
+      new("sim-ptz2", "landmark/road/l1", 0.158695, 0.231184),
+      new("sim-ptz2", "landmark/road/l2", -0.024035, 0.067931),
+      new("sim-ptz2", "landmark/road/l3", -0.028428, 0.293989),
+      new("sim-ptz2", "landmark/road/l4", -0.175978, 0.256873),
+      new("sim-ptz2", "landmark/road/l5", -0.124647, 0.403267),
+    ];
+
+    // The building in WGS84: Biomolecular Sciences' real footprint (OSM way 24303349), the same
+    // outline MarylandWorld builds its prism from. Its first floor is a plan nested in the map.
+    private static readonly DemoPoint[] BuildingOutline =
+    [
+      new(38.9930303, -76.9379976), new(38.9929189, -76.9379965), new(38.9929180, -76.9380254),
+      new(38.9928668, -76.9380242), new(38.9928677, -76.9379965), new(38.9928579, -76.9379965),
+      new(38.9927492, -76.9379942), new(38.9927519, -76.9374255), new(38.9928641, -76.9374255),
+      new(38.9928659, -76.9373943), new(38.9928731, -76.9373920), new(38.9929198, -76.9373920),
+      new(38.9929198, -76.9374244), new(38.9929549, -76.9374232), new(38.9929549, -76.9376601),
+      new(38.9929917, -76.9376613), new(38.9929917, -76.9376740), new(38.9929908, -76.9377619),
+      new(38.9930312, -76.9377619),
+    ];
+
+    private const double BuildingSouth = 38.9927492;
+    private const double BuildingNorth = 38.9930312;
+    private const double BuildingWest = -76.9380254;
+    private const double BuildingEast = -76.9373920;
+
+    // The doorway out to the parking lot, on the north wall: the simulator's own opening, at x = -8
+    // of its metres.
+    private static readonly DemoPoint Door = new(38.9930307, -76.9378925);
+    private const double DoorWidthM = 1.8;
+
+    // The floor is the room: the hall pair and the person's first lap stand on the first floor's own
+    // plan, with no plan of a room nested in it. What stands on the floor — the four racks — is a
+    // diagram of the floor, not a place with coordinates of its own.
+    private const string FloorLayout = "object/floor-layout";
+
+    // A replica of the indoor master, showing the readings the camera itself reports. Its owner is
+    // the camera's canonical node, so values written there appear here. It is a camera that stands
+    // still, which is what makes a diagram on a plan honest: the one on the car is a car on the map.
+    private const string MasterTelemetry = "object/telemetry-sim-master";
 
     private const string RackType = "type/rack";
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
-    private const string RoomLayoutType = "type/room-layout";
+    private const string FloorLayoutType = "type/floor-layout";
     private const string CameraPanelType = "type/camera-rear-panel";
-
-    // A replica of the camera on the vehicle, showing the readings the camera itself reports. Its
-    // owner is the camera's canonical node, so values written there appear here.
-    private const string VehicleTelemetry = "object/telemetry-sim-vehicle";
 
     public static DemoWorld UmdDataCenter()
     {
       var files = new List<DemoFile>
       {
-        DemoFile.Asset("file/floor-plan", "building-floor.png", "image/png"),
-        DemoFile.Asset("file/room-101-plan", "room-101.png", "image/png"),
-        DemoFile.Asset("file/room-icon", "room-icon.png", "image/png"),
+        // The plan is drawn from the building's own constants: the first floor over its real
+        // footprint, with the doorway the simulator cuts in its north wall.
+        new("file/floor-plan", DemoArt.FloorPlan(BuildingOutline, Door, DoorWidthM), "image/svg+xml"),
+        DemoFile.Asset("file/server-room-icon", "server-room-icon.png", "image/png"),
+        DemoFile.Asset("file/readings-icon", "readings-icon.png", "image/png"),
         // The diagram backgrounds are vector, and their regions are drawn from the same geometry:
         // see DemoArt, where a socket and the region a port takes are one rectangle.
-        new("file/room-layout-background", DemoArt.RoomLayout(), "image/svg+xml"),
+        new("file/floor-layout-background", DemoArt.FloorLayout(), "image/svg+xml"),
         new("file/rack-background", DemoArt.Rack(), "image/svg+xml"),
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
@@ -77,7 +182,7 @@ namespace VmsMap.Demo
 
       var types = new List<DemoDiagramType>
       {
-        RoomLayoutTypeDefinition(),
+        FloorLayoutTypeDefinition(),
         RackTypeDefinition(),
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
@@ -89,96 +194,93 @@ namespace VmsMap.Demo
       {
         new("space/umd", "UMD Data Center (demo)", null, SpaceKind.Map,
           38.9908, -76.9408, 38.9936, -76.9348),
-        new("space/building", "A.V. Williams Building", "space/umd", SpaceKind.Plan,
+        new("space/building", "First floor", "space/umd", SpaceKind.Plan,
           BuildingSouth, BuildingWest, BuildingNorth, BuildingEast,
           RealCoordinates: true,
-          Footprint: Rectangle(BuildingSouth, BuildingWest, BuildingNorth, BuildingEast),
-          Plan: new DemoPlan("file/floor-plan", 1200, 600,
+          Footprint: BuildingOutline,
+          Plan: new DemoPlan("file/floor-plan", DemoArt.FloorPlanWidth, DemoArt.FloorPlanHeight,
             new DemoPoint(BuildingNorth, BuildingWest),
             new DemoPoint(BuildingNorth, BuildingEast),
             new DemoPoint(BuildingSouth, BuildingWest))),
-        RoomPlan(Room101, "Room 101", 38.99238, -76.93855, 38.99250, -76.93835, "file/room-101-plan"),
       };
 
       var nodes = new List<DemoNode>();
       var states = new List<DemoState>();
 
-      // Room 102 has no plan of its own: it is a diagram standing on the floor plan, and its two
-      // racks are elements of that schematic. Each rack still opens on its own canvas.
-      // No layer: like a nested plan's footprint, the room's entrance is on the floor at every
-      // zoom the floor is looked at. A "Room" layer here would hide it as soon as the plan is
-      // zoomed to its own detail.
-      nodes.Add(new DemoNode(Room102Layout, "Room 102", "space/building", RoomLayoutType,
-        Canvas: new DemoRect(0, 0, DemoArt.RoomLayoutWidth, DemoArt.RoomLayoutHeight),
-        At: new DemoPoint(38.99244, -76.93750),
-        VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
+      // What stands on the floor is one diagram: the first floor in schematic, its four racks drawn
+      // into its regions. Each rack opens on its own canvas, and so does every switch inside it.
+      // No layer: like the plan's own footprint, the diagram's marker stands on the floor at every
+      // zoom the floor is looked at.
+      nodes.Add(new DemoNode(FloorLayout, "First floor Diagram", "space/building", FloorLayoutType,
+        Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
+        At: Racks,
+        VisualKey: "file/server-room-icon", VisualWidth: 44, VisualHeight: 44));
 
-      // The camera on the vehicle reports its own place, its speed and the state of the relay and
-      // sensor wired around it. This diagram is a replica — it shows the camera node's values and
-      // owns none of them — and it stands on the plan, because a diagram's canvas is not a space.
-      nodes.Add(new DemoNode(VehicleTelemetry, "Camera sim-vehicle", "space/building",
+      // The indoor master's own readings, on a replica standing beside it on the floor: its place,
+      // how fast it moves (nought — it is bolted to the wall), and the relay and sensor wired around
+      // it. `DemoValueFeeder` keeps the values fresh from what the camera reports over ONVIF.
+      nodes.Add(new DemoNode(MasterTelemetry, "Camera sim-master readings", "space/building",
         DemoTelemetry.TypeKey,
         Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
-        At: new DemoPoint(38.99206, -76.93875),
-        OwnerCameraId: "sim-vehicle"));
+        At: new DemoPoint(38.9928060, -76.9379290),
+        VisualKey: "file/readings-icon", VisualWidth: 40, VisualHeight: 40,
+        OwnerCameraId: "sim-master"));
 
-      // Four racks stand in Room 101 (on its plan, top-down), two in Room 102's schematic. Every
-      // rack holds one switch in its first slot and eight ports on that switch; the rest of the
-      // rack's slots stay empty on purpose. Each point is the centre of the rack's own rectangle
-      // in room-101.png, so the dot the editor moves sits on the cabinet it opens.
-      var racks = new (string Key, string Name, string Parent, string? Region, double? Lat, double? Lon)[]
+      // The four racks stand in the floor's schematic, filled with switches: every slot takes one,
+      // and every switch eight ports. A rack has no point of its own — its place is its region of
+      // the diagram, which is where it is drawn.
+      for (var index = 1; index <= DemoArt.RackCount; index += 1)
       {
-        ("object/rack-a-01", "Rack A-01", Room101, null, 38.992468, -76.938516),
-        ("object/rack-a-02", "Rack A-02", Room101, null, 38.992468, -76.938471),
-        ("object/rack-a-03", "Rack A-03", Room101, null, 38.992436, -76.938516),
-        ("object/rack-a-04", "Rack A-04", Room101, null, 38.992436, -76.938471),
-        ("object/rack-b-01", "Rack B-01", Room102Layout, "rack-1", null, null),
-        ("object/rack-b-02", "Rack B-02", Room102Layout, "rack-2", null, null),
-      };
-
-      foreach (var rack in racks)
-      {
-        nodes.Add(new DemoNode(rack.Key, rack.Name, rack.Parent, RackType,
-          RegionKey: rack.Region,
+        var rackKey = $"object/rack-a-{index:00}";
+        var rackName = $"Rack A-{index:00}";
+        nodes.Add(new DemoNode(rackKey, rackName, FloorLayout, RackType,
+          RegionKey: $"rack-{index}",
           Canvas: new DemoRect(0, 0, DemoArt.RackWidth, DemoArt.RackHeight),
-          At: rack.Lat is { } lat && rack.Lon is { } lon ? new DemoPoint(lat, lon) : null,
           ZoomLevel: "Rack"));
 
-        var slug = rack.Key["object/".Length..];
-        var switchKey = $"object/switch-{slug}";
-        nodes.Add(new DemoNode(switchKey, "Switch " + rack.Name[5..], rack.Key, SwitchType,
-          RegionKey: "slot-1",
-          Canvas: new DemoRect(0, 0, DemoArt.SwitchWidth, DemoArt.SwitchHeight)));
-
-        for (var port = 1; port <= 8; port += 1)
+        var slug = rackKey["object/".Length..];
+        for (var slot = 1; slot <= DemoArt.RackSlots; slot += 1)
         {
-          nodes.Add(new DemoNode($"object/port-{slug}-{port:00}", $"Port {port}", switchKey, PortType,
-            RegionKey: $"port-{port}",
-            Canvas: new DemoRect(0, 0, DemoArt.PortWidth, DemoArt.PortHeight)));
+          var switchKey = $"object/switch-{slug}-{slot}";
+          nodes.Add(new DemoNode(switchKey, $"Switch A-{index:00} U{slot}", rackKey, SwitchType,
+            RegionKey: $"slot-{slot}",
+            Canvas: new DemoRect(0, 0, DemoArt.SwitchWidth, DemoArt.SwitchHeight)));
+
+          for (var port = 1; port <= DemoArt.PortsPerSwitch; port += 1)
+          {
+            nodes.Add(new DemoNode($"object/port-{slug}-{slot}-{port:00}", $"Port {port}", switchKey, PortType,
+              RegionKey: $"port-{port}",
+              Canvas: new DemoRect(0, 0, DemoArt.PortWidth, DemoArt.PortHeight)));
+          }
         }
       }
+
+      // The camera on the vehicle has no replica of its own: it is a node under its server, and
+      // what it reports is the car's place on the map, which follows it (geo_from_device). A
+      // diagram standing still on a floor while the camera drives round the block says the wrong
+      // thing.
 
       // The ports are calm: a state is what an owner reports, and the demo owns no device. The
       // row is still written so the seeder replaces the older world's DISCONNECTED instead of
       // leaving it behind — CONNECTED carries no alarm.
-      states.Add(new DemoState("object/port-rack-a-01-03", "CONNECTED"));
+      states.Add(new DemoState("object/port-rack-a-01-1-03", "CONNECTED"));
 
       var placements = new List<DemoPlacement>
       {
-        // The pair works as one: the master's boxes drive the slave's aim. The master stands south of
-        // Room 101, on the line the person walks out by, and one lens holds the room and the doorway at
-        // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
-        new("sim-master", "space/building", 38.9923000, -76.9383779, HeightM: 2.8, HeadingDeg: 342.3, HfovDeg: 45, RangeM: 60),
-        new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
+        // The pair works as one: the master's boxes drive the slave's aim. The master stands south
+        // of the hall, on the line the person walks out by, and one lens holds the hall and the
+        // doorway at the far end; the slave is in the hall's south-east corner, looking across it.
+        new("sim-master", "space/building", 38.9928120, -76.9378925, HeightM: 2.8, HeadingDeg: 0, HfovDeg: 45, RangeM: 60),
+        new("sim-ptz", "space/building", 38.9928722, -76.9378196, HeightM: 2.8, HeadingDeg: 310, HfovDeg: 65, RangeM: 15),
         // The second pair works as one out in the yard: master2 stands on a pole between the doorway
         // and the ring road, looking back along the line the person walks — its boxes are what aim the
         // slave; ptz2 hangs on a pole of its own between that doorway and the master, nearer the
         // master, so it holds the doorway at one side of its picture and the yard at the other.
-        new("sim-master2", "space/umd", 38.9929468, -76.9388171, HeightM: 6, HeadingDeg: 88.8, HfovDeg: 55, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.9928749, -76.9385397, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
+        new("sim-master2", "space/umd", 38.9933061, -76.9381467, HeightM: 6, HeadingDeg: 125, HfovDeg: 55, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.9931085, -76.9380312, HeightM: 5.5, HeadingDeg: 88, HfovDeg: 60, RangeM: 100),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
-        new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
+        new("sim-vehicle", "space/umd", 38.9936565, -76.9373030, HeightM: 2, HeadingDeg: 270, HfovDeg: 70, RangeM: 40),
       };
 
       return new DemoWorld(
@@ -188,48 +290,41 @@ namespace VmsMap.Demo
         types,
         spaces,
         nodes,
-        [
-          new DemoLevel("Campus", 9, 12),
-          new DemoLevel("Building", 13, 15),
-          new DemoLevel("Room", 16, 17),
-          new DemoLevel("Rack", 18, 22),
-        ],
         placements,
+        Landmarks(),
+        GroundMarks,
+        PtzObservations,
+        [
+          // The indoor master, drawn as the camera it is: body, lens, cable and the terminal block
+          // its relay and input parts are wired to. It stands on the floor beside the camera, a
+          // diagram of the device rather than the device's node in the tree.
+          new DemoDeviceDiagram(
+            "object/camera-panel-sim-master",
+            "sim-master",
+            CameraPanelType,
+            "space/building",
+            new DemoPoint(38.9927950, -76.9379400),
+            "file/camera-panel-background",
+            VisualWidth: 44,
+            VisualHeight: 28),
+        ],
         states,
         [new DemoRight("space/umd", "user", RightActions.View)]);
     }
 
-    /// A plan on the floor: its footprint there, its own picture, its own view.
-    private static DemoSpace RoomPlan(
-      string key, string name, double south, double west, double north, double east, string fileKey) =>
-      new(key, name, "space/building", SpaceKind.Plan, south, west, north, east,
-        RealCoordinates: true,
-        Footprint: Rectangle(south, west, north, east),
-        Plan: new DemoPlan(fileKey, 800, 600,
-          new DemoPoint(north, west),
-          new DemoPoint(north, east),
-          new DemoPoint(south, west)));
+    /// The first floor drawn as a schematic instead of a plan: its rack slots are the regions its
+    /// racks fill, and each of them opens on the rack's own canvas.
+    private static DemoDiagramType FloorLayoutTypeDefinition()
+    {
+      var regions = new List<DemoRegion>();
+      for (var rack = 1; rack <= DemoArt.RackCount; rack += 1)
+      {
+        regions.Add(new DemoRegion($"rack-{rack}", DemoArt.RackRegion(rack),
+          new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }));
+      }
 
-    private static IReadOnlyList<DemoPoint> Rectangle(double south, double west, double north, double east) =>
-    [
-      new DemoPoint(south, west),
-      new DemoPoint(south, east),
-      new DemoPoint(north, east),
-      new DemoPoint(north, west),
-    ];
-
-    /// A room drawn as a schematic instead of a plan: its rack slots are the regions its racks
-    /// fill, and each of them opens on the rack's own canvas.
-    private static DemoDiagramType RoomLayoutTypeDefinition() => new(
-      RoomLayoutType,
-      "Room layout",
-      "file/room-layout-background",
-      [
-        new DemoRegion("rack-1", DemoArt.RoomRack(1),
-          new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
-        new DemoRegion("rack-2", DemoArt.RoomRack(2),
-          new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
-      ]);
+      return new(FloorLayoutType, "Floor layout", "file/floor-layout-background", regions);
+    }
 
     /// A camera as a switch is drawn: the model's rear panel, one region per terminal. The parts
     /// are found by their tokens — `sim-master` declares exactly these four — and the type attaches
@@ -257,12 +352,11 @@ namespace VmsMap.Demo
     private static readonly Dictionary<string, string> PanelStyle =
       new() { ["color"] = "#4fc3f7", ["fontSize"] = "12px" };
 
-    /// A rack cabinet with six equipment slots. The synthetic readings the demo used to keep here
-    /// are gone: the world now shows the camera's own, on its Device telemetry diagram.
+    /// A rack cabinet with six equipment slots, one switch in every slot.
     private static DemoDiagramType RackTypeDefinition()
     {
       var regions = new List<DemoRegion>();
-      for (var slot = 1; slot <= 6; slot += 1)
+      for (var slot = 1; slot <= DemoArt.RackSlots; slot += 1)
       {
         regions.Add(new DemoRegion($"slot-{slot}", DemoArt.RackSlot(slot),
           new Dictionary<string, string> { ["color"] = "#d9e2ec", ["fontSize"] = "12px" }));

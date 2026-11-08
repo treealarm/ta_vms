@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-  Radio, RadioGroup, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
+  Radio, RadioGroup, Snackbar, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import { useSearchParams } from 'react-router-dom'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
@@ -18,16 +18,17 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
+import { loadNodes, resolveCameraNode, revealNode, childrenOf, loadChildren } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
+import type { CameraPlacementDto } from '../../dto/dtos'
 import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
 import TracksLayer from '../../map/TracksLayer'
-import { pointsCentre } from '../../map/geo'
+import { figureAtPlacement, pointsCentre } from '../../map/geo'
 import { enterZoom } from '../../map/zoomLevels'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
@@ -80,6 +81,7 @@ export default function MapsOperatorPanel() {
   const loaded = useAppSelector((s) => s.spatial.loaded)
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
   const markers = useAppSelector((s) => s.objects.markers)
+  const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const statesById = useAppSelector((s) => s.states.states)
   const alarmsById = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
@@ -104,6 +106,7 @@ export default function MapsOperatorPanel() {
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
+  const [notice, setNotice] = useState<string | null>(null)
   // The row an operator picked and the action they picked for it; confirmed in one dialog.
   const [alarmDialog, setAlarmDialog] = useState<AlarmDialogState | null>(null)
   const [alarmComment, setAlarmComment] = useState('')
@@ -163,7 +166,7 @@ export default function MapsOperatorPanel() {
   // its server and is never drawn on a canvas. A reference and a picture differ by the flag, not by
   // the node, so the matching marker is the one with an owner.
   const nodeForPlacement = (p: { cameraId: string }) =>
-    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
+    figureAtPlacement(spaceData.figures, p as CameraPlacementDto)
       ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
@@ -171,12 +174,16 @@ export default function MapsOperatorPanel() {
     return nodeStyle(figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions).color
   }
 
-  const cameraFigureIds = useMemo(
-    () => new Set(spaceData.markers
-      .filter((m) => m.cameraId && here.some((p) => p.cameraId === m.cameraId))
-      .map((m) => m.id)),
-    [spaceData.markers, here],
-  )
+  // Only the picture a placement draws: a camera may have another replica in the same space — a
+  // diagram of its readings — and that one is an ordinary figure, not the marker's stand-in.
+  const cameraFigureIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const placement of here) {
+      const figure = figureAtPlacement(spaceData.figures, placement)
+      if (figure) ids.add(figure.id)
+    }
+    return ids
+  }, [spaceData.figures, here])
 
   // The counters live on the space nodes; every watched space with an alarm below it is marked.
   const alarmed = useMemo(() => {
@@ -311,12 +318,43 @@ export default function MapsOperatorPanel() {
     setSelectedNodeId(marker.id)
 
     // A node that is not a camera is drawn from its own shape, which this canvas may not know yet.
-    if (!marker.cameraId) {
+    // A diagram fits its whole paper in the view, so there is nothing to pan there: the map behind
+    // it keeps the focus it had.
+    if (!marker.cameraId && canvas?.nodeKind !== 'diagram') {
       const loaded = await dispatch(loadNodes([marker.id])).unwrap().catch(() => null)
       const figure = loaded?.figures.find((candidate) => candidate.id === marker.id)
       const centre = pointsCentre(figure?.geometry?.coord ?? [])
       if (centre) setFocus((previous) => ({ ...centre, seq: (previous?.seq ?? 0) + 1 }))
     }
+  }
+
+  /**
+   * Finds the node selected in the tree on the canvas that draws it: the space or diagram it
+   * stands on is opened, the node is selected, and a camera or a figure is brought into view --
+   * the move a search result makes, without a result list to read first.
+   */
+  const locateNode = (id: string) => {
+    const marker = markers[id]
+    if (marker) void revealFromSearch(marker)
+  }
+
+  /**
+   * The diagram a camera's template draws hangs under the canonical node, not under the picture of
+   * it standing on a canvas: the owner's children are where to look.
+   */
+  const openDeviceDiagram = async (id: string) => {
+    const marker = markers[id]
+    const parentId = marker?.ownerId ?? id
+    const page = await dispatch(loadChildren({ parentId })).unwrap().catch(() => null)
+    const children = page?.children ?? childrenOf(markers, childrenByParent, parentId)
+    const diagram = children.find((child) => child.nodeKind === 'diagram')
+    if (!diagram) {
+      setNotice(t('diagramEditor.noDeviceDiagram'))
+      return
+    }
+
+    setDiagramId(diagram.id)
+    setSelectedNodeId(diagram.id)
   }
 
   /**
@@ -595,6 +633,8 @@ export default function MapsOperatorPanel() {
             onClose={() => setSelectedNodeId(null)}
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             onEnter={enterNode}
+            onLocate={locateNode}
+            onOpenDiagram={(id) => void openDeviceDiagram(id)}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}
@@ -610,6 +650,14 @@ export default function MapsOperatorPanel() {
           descriptions={descriptions}
         />
       )}
+
+      <Snackbar
+        open={!!notice}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        message={notice}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
 
       {alarmDialog && (
         <Dialog open onClose={() => setAlarmDialog(null)} maxWidth="xs" fullWidth>

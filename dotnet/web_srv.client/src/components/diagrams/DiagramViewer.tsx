@@ -23,6 +23,7 @@ import {
   saveNodeDetails,
 } from '../../store/mapEditsSlice'
 import { useMapLive } from '../../hooks/useMapLive'
+import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import { diagramPaper, figureCoordinate, fitScale, moveGeometry, regionAtPoint, type Rect } from './diagramGeometry'
 import DiagramElement from './DiagramElement'
@@ -151,11 +152,32 @@ export default function DiagramViewer({
 
   const root = shown?.content?.find((candidate) => candidate.id === diagramId)
   const rootMarker = shown?.parents?.find((candidate) => candidate.id === diagramId) ?? { id: diagramId }
+  const openType = shown?.dgrTypes?.find((candidate) => candidate.id === root?.dgrType)
+
+  // A diagram placed on a map has no size of its own to store: the sheet is the picture its type
+  // draws it on, so the picture is measured. A diagram with a stored rectangle never asks.
+  const backgroundUrl = useMapFileImage(openType?.fileId)
+  const [picture, setPicture] = useState<{ width: number; height: number } | null>(null)
+  useEffect(() => {
+    if (!backgroundUrl) {
+      setPicture(null)
+      return
+    }
+
+    let cancelled = false
+    const image = new Image()
+    image.onload = () => {
+      if (!cancelled) setPicture({ width: image.naturalWidth, height: image.naturalHeight })
+    }
+    image.src = backgroundUrl
+    return () => { cancelled = true }
+  }, [backgroundUrl])
+
   // The paper is the diagram's own canvas; where it stands in its parent is the parent's business.
-  const paper = diagramPaper(root)
+  const paper = diagramPaper(root, picture)
   const scale = fitScale(size, paper) * factor
   const shownDepth = shown?.depth ?? depth
-  const openType = shown?.dgrTypes?.find((candidate) => candidate.id === root?.dgrType)
+
 
   const pick = (marker: MapMarker) => {
     // Entering a nested diagram is the same movement as opening a plan on the map.

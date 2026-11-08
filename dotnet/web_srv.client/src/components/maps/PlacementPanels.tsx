@@ -3,9 +3,11 @@ import { Box, Button, Collapse, Divider, FormControlLabel, Stack, Switch, TextFi
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import NumberField from './NumberField'
 import ZoomLevelField from './ZoomLevelField'
+import CameraUnifiedCard from '../CameraUnifiedCard'
 import { formatLatLon } from './spatialUtils'
 
 type CameraProps = {
@@ -13,6 +15,10 @@ type CameraProps = {
   placement: CameraPlacementDto
   /** The node that carries this placement: its shape carries the scale layer. */
   nodeId?: string
+  /** Whether the canvas this stands on is a map; a plan is looked at at one scale and has no layers. */
+  showLayer?: boolean
+  /** The canonical node of the device this picture shows — where its parts and diagram hang. */
+  ownerNodeId?: string
   /** Where the camera really stands, when that is another space; null when it stands nowhere. */
   referenceSpace: SpaceDto | null
   onChange: (placement: CameraPlacementDto) => void
@@ -24,9 +30,11 @@ type CameraProps = {
 
 /** The selected camera's placement in this space. Each field saves when left; drags on the map save on release. */
 export function CameraPlacementPanel({
-  camera, placement, nodeId, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
+  camera, placement, nodeId, showLayer, ownerNodeId,
+  referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   // The sector is drawing only -- aiming never reads it -- so it stays folded until asked for.
   const [sectorOpen, setSectorOpen] = useState(false)
   const set = <K extends keyof CameraPlacementDto>(key: K) => (value: CameraPlacementDto[K]) =>
@@ -37,7 +45,36 @@ export function CameraPlacementPanel({
       <Box>
         <Typography variant="subtitle2" noWrap>{camera?.name || placement.cameraId}</Typography>
         <Typography variant="caption" color="text.secondary">{formatLatLon(placement.lat, placement.lon)}</Typography>
+        {/* This picture is a replica: the device's own node — its parts, its diagram — is elsewhere
+            in the tree, and that is what the button opens. */}
+        {ownerNodeId ? (
+          <Box>
+            <Button
+              size="small"
+              sx={{ px: 0 }}
+              onClick={() => navigate(`/admin/nodes?node=${encodeURIComponent(ownerNodeId)}`)}
+            >
+              {t('maps.editor.nodeInTree')}
+            </Button>
+          </Box>
+        ) : null}
       </Box>
+
+      {/* The device itself, beside its placement: one camera, and the map is where it stands. */}
+      {camera ? (
+        <Box>
+          <Box sx={{ height: 200, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+            <CameraUnifiedCard camera={camera} slotKey={`editor:${camera.cameraId}`} />
+          </Box>
+          <Button
+            size="small"
+            sx={{ px: 0 }}
+            onClick={() => navigate(`/admin/cameras?camera=${encodeURIComponent(camera.cameraId)}`)}
+          >
+            {t('maps.editor.cameraSettings')}
+          </Button>
+        </Box>
+      ) : null}
       <Box>
         <FormControlLabel
           control={<Switch size="small" checked={placement.isReference} onChange={(e) => set('isReference')(e.target.checked)} />}
@@ -83,8 +120,12 @@ export function CameraPlacementPanel({
           <Button variant="outlined" size="small" onClick={onCalibrate}>{t('ptzGeo.open')}</Button>
         </>
       )}
-      <Divider />
-      <ZoomLevelField nodeId={nodeId} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={nodeId} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('maps.removeFromSpace')}</Button>
@@ -96,13 +137,14 @@ export function CameraPlacementPanel({
 
 type LandmarkProps = {
   landmark: LandmarkDto
+  showLayer?: boolean
   onChange: (landmark: LandmarkDto) => void
   onRemove: () => void
   onClose: () => void
 }
 
 /** A landmark's name and height. Its position is changed by dragging it. */
-export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: LandmarkProps) {
+export function LandmarkPanel({ landmark, showLayer, onChange, onRemove, onClose }: LandmarkProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(landmark.name)
 
@@ -127,8 +169,12 @@ export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: Landmar
         helperText={t('maps.landmarkHeightHint')}
       />
       <Typography variant="caption" color="text.secondary">{t('maps.landmarkHint')}</Typography>
-      <Divider />
-      <ZoomLevelField nodeId={landmark.id} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={landmark.id} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('common.delete')}</Button>
@@ -140,13 +186,14 @@ export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: Landmar
 
 type FootprintProps = {
   space: SpaceDto
+  showLayer?: boolean
   onOpen: () => void
   onRemoveFootprint: () => void
   onClose: () => void
 }
 
 /** A nested space selected by its footprint on this one: open it, or reshape the outline on the map. */
-export function FootprintPanel({ space, onOpen, onRemoveFootprint, onClose }: FootprintProps) {
+export function FootprintPanel({ space, showLayer, onOpen, onRemoveFootprint, onClose }: FootprintProps) {
   const { t } = useTranslation()
   return (
     <Stack spacing={1.5} sx={{ p: 1.5 }}>
@@ -156,8 +203,12 @@ export function FootprintPanel({ space, onOpen, onRemoveFootprint, onClose }: Fo
       </Box>
       <Button variant="contained" size="small" onClick={onOpen}>{t('maps.openSpace')}</Button>
       <Typography variant="caption" color="text.secondary">{t('maps.footprintHint')}</Typography>
-      <Divider />
-      <ZoomLevelField nodeId={space.id} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={space.id} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemoveFootprint}>{t('maps.removeFootprint')}</Button>

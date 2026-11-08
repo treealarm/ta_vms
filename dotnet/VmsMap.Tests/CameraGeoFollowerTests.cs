@@ -46,7 +46,7 @@ public class CameraGeoFollowerTests
 
   private sealed class FakeWriter : ICameraGeoWriter
   {
-    public List<(string CameraId, double Lat, double Lon)> Moves { get; } = [];
+    public List<(string CameraId, double Lat, double Lon, double? HeadingDeg)> Moves { get; } = [];
 
     public int Attempts { get; private set; }
 
@@ -54,13 +54,13 @@ public class CameraGeoFollowerTests
     public HashSet<string> WithoutPlacement { get; } = new(StringComparer.Ordinal);
 
     public Task<bool> MoveReferencePointAsync(
-      string cameraId, double lat, double lon, CancellationToken ct)
+      string cameraId, double lat, double lon, double? headingDeg, CancellationToken ct)
     {
       Attempts++;
       if (WithoutPlacement.Contains(cameraId))
         return Task.FromResult(false);
 
-      Moves.Add((cameraId, lat, lon));
+      Moves.Add((cameraId, lat, lon, headingDeg));
       return Task.FromResult(true);
     }
   }
@@ -173,6 +173,49 @@ public class CameraGeoFollowerTests
 
     Assert.Single(writer.Moves);
     Assert.Equal(2, writer.Attempts);
+  }
+
+  // A camera on a vehicle turns where it stands: the bearing is news even when the point is not,
+  // or the map would draw its sector where the car was facing a minute ago.
+  [Fact]
+  public async Task ATurnInPlaceIsWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 275);
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Equal(2, writer.Moves.Count);
+    Assert.Equal(275, writer.Moves[1].HeadingDeg);
+  }
+
+  [Fact]
+  public async Task ATurnBelowTheThresholdIsNotWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    // Just under two degrees: a camera reporting a jittering bearing costs no writes.
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 271.5);
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Single(writer.Moves);
+  }
+
+  // A camera that says nothing about its bearing keeps the one the administrator set: the write
+  // carries no heading, and the row is left alone.
+  [Fact]
+  public async Task ACameraWithoutABearing_WritesThePointOnly()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378);
+
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Null(Assert.Single(writer.Moves).HeadingDeg);
   }
 
   [Fact]

@@ -35,6 +35,7 @@ namespace VmsMap.Adapter
     private readonly IDiagramServiceInternal _diagrams;
     private readonly IDeviceSettingsSource _settings;
     private readonly ICameraCatalog _catalog;
+    private readonly IGeoService _geo;
     private readonly ILogger<DeviceDiagramService> _logger;
 
     public DeviceDiagramService(
@@ -44,6 +45,7 @@ namespace VmsMap.Adapter
       IDiagramServiceInternal diagrams,
       IDeviceSettingsSource settings,
       ICameraCatalog catalog,
+      IGeoService geo,
       ILogger<DeviceDiagramService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
@@ -52,6 +54,7 @@ namespace VmsMap.Adapter
       _diagrams = diagrams ?? throw new ArgumentNullException(nameof(diagrams));
       _settings = settings ?? throw new ArgumentNullException(nameof(settings));
       _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+      _geo = geo ?? throw new ArgumentNullException(nameof(geo));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -83,15 +86,21 @@ namespace VmsMap.Adapter
         await tx.CommitAsync(ct);
     }
 
-    public async Task AttachAsync(
-      string sourceKind, string sourceId, string diagramTypeId, string slot, CancellationToken ct)
+    public async Task<string?> AttachAsync(
+      string sourceKind, string sourceId, string? diagramTypeId, string slot,
+      DiagramSite? site, CancellationToken ct)
     {
-      if (!IsSupported(sourceKind, sourceId) || string.IsNullOrWhiteSpace(diagramTypeId))
-        return;
+      if (!IsSupported(sourceKind, sourceId))
+        return null;
 
-      var typeId = Utils.ConvertObjectIdToGuid(diagramTypeId);
-      if (typeId is null)
-        return;
+      var wantedType = string.IsNullOrWhiteSpace(diagramTypeId)
+        ? null
+        : Utils.ConvertObjectIdToGuid(diagramTypeId);
+
+      // A template that is gone is not a template: the diagram is made without one rather than
+      // pointing at nothing.
+      if (wantedType is { } named && !await _db.DiagramTypes.AnyAsync(t => t.id == named, ct))
+        return null;
 
       await using var tx = await OwnTransactionAsync(ct);
       await MapLocks.AcquireAllAsync(_db, ct);
@@ -102,15 +111,37 @@ namespace VmsMap.Adapter
 
       if (row is null)
       {
-        row = await CreateDiagramAsync(sourceKind, sourceId, slot, typeId.Value, autoCreated: false, ct);
+        // No template named: the device's own model decides. None matching is not a failure — the
+        // sheet is blank, and the administrator draws on it.
+        var chosen = wantedType;
+        if (chosen is null && (await SelectTypeAsync(sourceId, ct)).TypeId is { } match)
+          chosen = Utils.ConvertObjectIdToGuid(match);
+
+        row = await CreatePlacedAsync(sourceKind, sourceId, slot, chosen, site, ct);
         if (row is null)
-          return;
+          return null;
       }
-      else if (row.diagram_type_id != typeId)
+      else if (site is not null)
+      {
+        // A diagram made before diagrams were map objects hangs under the camera, and a device that
+        // is drawn again on another canvas moves with it: the attach is "draw it here".
+        await PlaceAsync(row, site, ct);
+      }
+
+      if (wantedType is null && row.diagram_type_id is null
+          && (await SelectTypeAsync(sourceId, ct)).TypeId is { } matched
+          && Utils.ConvertObjectIdToGuid(matched) is { } matchedId)
+      {
+        // A sheet left blank takes its model's template once there is one: the administrator asked
+        // for the device's diagram, not for a permanently empty one.
+        await SetTypeAsync(row, matchedId, ct);
+      }
+
+      if (wantedType is { } type && row.diagram_type_id != type)
       {
         // The administrator's choice replaces whatever the template said before; the replicas are
         // rebuilt below against the new rules.
-        row.diagram_type_id = typeId.Value;
+        await SetTypeAsync(row, type, ct);
         row.auto_created = false;
       }
 
@@ -118,12 +149,14 @@ namespace VmsMap.Adapter
 
       if (tx is not null)
         await tx.CommitAsync(ct);
+
+      return Utils.ConvertGuidToObjectId(row.object_id);
     }
 
     /// <summary>
     /// Whether the diagram already says what it should — asked without a transaction, so the
-    /// sweep over every camera costs reads and nothing else. A diagram that is not there yet is
-    /// never settled: creating it is the one case that is rare enough to pay for the locks.
+    /// sweep over every camera costs reads and nothing else. A device with no diagram is settled:
+    /// a diagram is a map object and the administrator is the one who places it.
     /// </summary>
     private async Task<bool> IsSettledAsync(
       string sourceKind, string sourceId, string slot, CancellationToken ct)
@@ -131,8 +164,15 @@ namespace VmsMap.Adapter
       var row = await _db.DeviceDiagrams.AsNoTracking().FirstOrDefaultAsync(
         d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot, ct);
 
-      if (row is null || row.diagram_type_id is null)
-        return row is not null; // a diagram nobody maintains is settled; a missing one is not
+      if (row is null)
+        return true;
+
+      // Deleting a type leaves the canvas where it is, and the service stops maintaining it — but
+      // a template for the device coming back is the same null: a demo reinstall deletes the type
+      // and creates it again under a new id. So a diagram without a type is settled only while
+      // nothing fits the device; once something does, the locks are worth taking to adopt it.
+      if (row.diagram_type_id is null)
+        return (await SelectTypeAsync(sourceId, ct)).TypeId is null;
 
       var resolved = await ResolveTypeAsync(row, sourceId, ct);
       if (resolved != row.diagram_type_id)
@@ -176,31 +216,8 @@ namespace VmsMap.Adapter
         d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot, ct);
 
       if (row is null)
-      {
-        // Nothing to create from: no template for this model, or not a single part configured for
-        // it. A device with a template but no parts would be an empty canvas, and the plan's rule
-        // is to skip it — `sim-vehicle` shares `sim-master`'s model and has no parts at all.
-        var parts = await ConfiguredPartsAsync(sourceId, ct);
-        if (parts.Count == 0)
-          return;
-
-        var selection = await SelectTypeAsync(sourceId, ct);
-        if (selection.TypeId is null)
-        {
-          if (selection.Ambiguity is not null)
-            _logger.LogWarning("No device diagram for camera {CameraId}: {Ambiguity}",
-              sourceId, selection.Ambiguity);
-          return;
-        }
-
-        row = await CreateDiagramAsync(
-          sourceKind, sourceId, slot, Guid.Parse(selection.TypeId), autoCreated: true, ct);
-        if (row is null)
-          return;
-
-        await ReconcileAsync(row, sourceId, parts, ct);
+        // Nothing to maintain: a diagram is a map object, and the administrator places one.
         return;
-      }
 
       // Reconciliation happens whether or not anything is configured now: a part removed from the
       // settings has to take its replica with it, and an early return would leave it behind.
@@ -214,7 +231,7 @@ namespace VmsMap.Adapter
 
       if (row.diagram_type_id != resolved)
       {
-        row.diagram_type_id = resolved.Value;
+        await SetTypeAsync(row, resolved.Value, ct);
         _logger.LogInformation(
           "Camera {CameraId}: device diagram moved to type {TypeId}", sourceId, resolved);
       }
@@ -329,37 +346,77 @@ namespace VmsMap.Adapter
       return parts;
     }
 
+    /// <summary>
+    /// Points the node at the type's picture as well as the row at the type: the canvas is what is
+    /// drawn, and a row naming a template the canvas does not is blank paper with replicas on it.
+    /// The node keeps its own name, as its id keeps its slot — renaming a device's diagram is not
+    /// what a template change is about.
+    /// </summary>
+    private async Task SetTypeAsync(DBDeviceDiagram row, Guid typeId, CancellationToken ct)
+    {
+      row.diagram_type_id = typeId;
+      await _diagrams.UpdateListAsync([
+        new DiagramDTO
+        {
+          id = Utils.ConvertGuidToObjectId(row.object_id),
+          dgr_type = Utils.ConvertGuidToObjectId(typeId),
+          geometry = null,
+          region_id = null,
+        }
+      ]);
+    }
+
     private sealed record ConfiguredPart(string ObjectId, DevicePartRef Ref, string DisplayName);
 
-    private async Task<DBDeviceDiagram?> CreateDiagramAsync(
-      string sourceKind, string sourceId, string slot, Guid typeId, bool autoCreated,
+    /// <summary>
+    /// Creates the diagram as an object of the given canvas: a node of the space, a point on it, and
+    /// the paper its template draws. The parts are bound afterwards by reconciliation, because the
+    /// device may not have declared them yet — a demo installs before OnvifSim says what it has.
+    /// </summary>
+    private async Task<DBDeviceDiagram?> CreatePlacedAsync(
+      string sourceKind, string sourceId, string slot, Guid? typeId, DiagramSite? site,
       CancellationToken ct)
     {
-      var type = await _db.DiagramTypes.AsNoTracking().FirstOrDefaultAsync(t => t.id == typeId, ct);
-      if (type is null)
+      // A diagram is a map object: without a space there is nowhere to draw it.
+      var spaceGuid = site is null ? null : Utils.ConvertObjectIdToGuid(site.SpaceId);
+      if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
         return null;
+
+      var point = site!.Lat is { } lat && site.Lon is { } lon
+        ? (Lat: lat, Lon: lon)
+        : await BesideCameraAsync(sourceId, spaceGuid.Value, ct);
+
+      var type = typeId is { } id
+        ? await _db.DiagramTypes.AsNoTracking().FirstOrDefaultAsync(t => t.id == id, ct)
+        : null;
 
       var camera = await _catalog.GetAsync(sourceId, ct);
       var objectId = DeviceObjectId.ForDeviceDiagram(sourceKind, sourceId, slot);
+      var name = $"{camera?.Name ?? sourceId} / {type?.name ?? "Diagram"}";
 
       await _map.UpdateHierarchyAsync([
-        new BaseMarkerDTO
-        {
-          id = objectId,
-          parent_id = CameraObjectId.For(sourceId),
-          name = $"{camera?.Name ?? sourceId} / {type.name}",
-        }
+        new BaseMarkerDTO { id = objectId, parent_id = site.SpaceId, name = name }
       ]);
 
       await _diagrams.UpdateListAsync([
         new DiagramDTO
         {
           id = objectId,
-          dgr_type = Utils.ConvertGuidToObjectId(typeId),
-          // Not on any map: the diagram hangs under its device and is opened from there. The
-          // canvas it is drawn on is the type's own picture.
+          dgr_type = typeId is { } drawn ? Utils.ConvertGuidToObjectId(drawn) : null,
+          // The paper is the template's picture; the point below is where the diagram itself stands
+          // on the map, and the two are different things.
           geometry = null,
           region_id = null,
+        }
+      ]);
+
+      await _geo.CreateGeo([
+        new FigureGeoDTO
+        {
+          id = objectId,
+          parent_id = site.SpaceId,
+          name = name,
+          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
         }
       ]);
 
@@ -370,11 +427,87 @@ namespace VmsMap.Adapter
         source_id = sourceId,
         slot = slot,
         diagram_type_id = typeId,
-        auto_created = autoCreated,
+        // The administrator asked for it: an automatic one would mean a diagram nobody placed.
+        auto_created = false,
       };
       _db.DeviceDiagrams.Add(row);
       await _db.SaveChangesAsync(ct);
       return row;
+    }
+
+    /// <summary>
+    /// Puts an existing diagram on a canvas: the node moves under the space and gets its point, and
+    /// a diagram that is already there is left alone — a reinstall must not move what was dragged.
+    /// </summary>
+    private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite site, CancellationToken ct)
+    {
+      var spaceGuid = Utils.ConvertObjectIdToGuid(site.SpaceId);
+      if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
+        return;
+
+      var marker = await _db.Markers.AsNoTracking()
+        .FirstOrDefaultAsync(m => m.id == row.object_id, ct);
+      if (marker is null)
+        return;
+
+      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
+      if (marker.parent_id == spaceGuid && await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct))
+        return;
+
+      var point = site.Lat is { } lat && site.Lon is { } lon
+        ? (Lat: lat, Lon: lon)
+        : await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+
+      await _map.UpdateHierarchyAsync([
+        new BaseMarkerDTO { id = objectId, parent_id = site.SpaceId, name = marker.name }
+      ]);
+
+      await _geo.CreateGeo([
+        new FigureGeoDTO
+        {
+          id = objectId,
+          parent_id = site.SpaceId,
+          name = marker.name,
+          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
+        }
+      ]);
+    }
+
+    /// A few metres off the camera: on its marker would hide one behind the other. The camera's own
+    /// picture in that space says where; a space it is not drawn in yet falls back to the middle of
+    /// the view, because a diagram without a point cannot be drawn at all.
+    private async Task<(double Lat, double Lon)> BesideCameraAsync(
+      string cameraId, Guid spaceId, CancellationToken ct)
+    {
+      var placement = await (
+        from p in _db.CameraPlacements
+        join m in _db.Markers on p.object_id equals m.id
+        where p.camera_id == cameraId && m.parent_id == spaceId
+        select p.object_id).FirstOrDefaultAsync(ct);
+
+      if (placement != Guid.Empty)
+      {
+        var geo = await _db.GeoObjects.AsNoTracking()
+          .FirstOrDefaultAsync(g => g.id == placement, ct);
+        if (geo?.figure is NetTopologySuite.Geometries.Point point)
+          return Offset(point.Y, point.X);
+      }
+
+      var space = await _db.Spaces.AsNoTracking()
+        .FirstOrDefaultAsync(s => s.object_id == spaceId, ct);
+      return space is null
+        ? (0, 0)
+        : ((space.view_south + space.view_north) / 2, (space.view_west + space.view_east) / 2);
+    }
+
+    /// Four metres east and north: a fixed offset, because the diagram's exact place is the
+    /// administrator's to drag, and a stored preference would be a setting for one drag.
+    private static (double Lat, double Lon) Offset(double lat, double lon)
+    {
+      const double metres = 4;
+      var dLat = metres / 111_320.0;
+      var dLon = metres / (111_320.0 * Math.Cos(lat * Math.PI / 180));
+      return (lat + dLat, lon + dLon);
     }
 
     /// <summary>

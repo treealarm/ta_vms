@@ -333,6 +333,40 @@ namespace VmsMap.Grpc
       return Ok();
     }
 
+    /// <summary>
+    /// Draws a device on the map — the administrator's path: the diagram is an object of the named
+    /// canvas, drawn from the template that matches the device's model (or a blank sheet when none
+    /// does), with the device's configured parts bound to its regions.
+    /// </summary>
+    public override async Task<MapProto.Marker> AttachDeviceDiagram(
+      MapProto.AttachDeviceDiagramRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      if (string.IsNullOrWhiteSpace(request.SourceId) || string.IsNullOrWhiteSpace(request.SpaceId))
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, "A device and the canvas it is drawn on are required"));
+
+      var sourceKind = string.IsNullOrWhiteSpace(request.SourceKind)
+        ? DeviceObjectId.CameraSource
+        : request.SourceKind;
+      var slot = string.IsNullOrWhiteSpace(request.Slot)
+        ? IDeviceDiagramService.DefaultSlot
+        : request.Slot;
+
+      var site = new DiagramSite(request.SpaceId, request.At?.Lat, request.At?.Lon);
+      var objectId = await _deviceDiagrams.AttachAsync(
+        sourceKind, request.SourceId, request.DiagramTypeId, slot, site, ct);
+      if (objectId is null)
+        throw new RpcException(new Status(StatusCode.FailedPrecondition,
+          "The diagram could not be drawn: the space does not exist, or the template is gone"));
+
+      var marker = (await _mapService.GetAsync([objectId])).GetValueOrDefault(objectId);
+      if (marker is null)
+        throw new RpcException(new Status(StatusCode.Internal, "The diagram node is missing"));
+
+      return ToMarker(marker, false, null, NodeKind.Diagram);
+    }
+
     // ── Demo world ────────────────────────────────────────────────────────────────────────────
 
     public override async Task<MapProto.DemoReport> InstallDemo(

@@ -10,27 +10,18 @@ namespace VmsCfg
   public partial class CfgServiceImpl(
     CameraStorage storage,
     NodeRegistry nodes,
-    StorageDb storageDb,
     DeviceStorage deviceStorage,
     AlarmDefinitionStorage alarmDefinitions,
     EventSubscriptionStorage eventSubscriptions,
     ScheduleDb scheduleDb,
     ScheduleCache scheduleCache,
     DaprClient daprClient,
+    ConfigNotifier notifier,
+    CameraConfigService cameraConfig,
     VmsCfg.Demo.DemoInstaller demoInstaller,
     DeviceSettingsNotifier deviceSettingsNotifier,
     ILogger<CfgServiceImpl> logger) : CfgService.CfgServiceBase
   {
-    // One event for "something changed on this node, here is what". Replaces the old pair of
-    // per-camera and per-server topics: the bulk paths published both anyway, one message per
-    // camera, and every subscriber received every message. Now a schedule boundary is one message
-    // per affected node instead of one per camera, and a node-scoped subscriber can tell at a glance
-    // whether an event concerns it — before, deciding that cost a GetCamera round trip per instance.
-    //
-    // Payload: { "server_id": "...", "camera_ids": [...] }. An empty camera_ids means everything on
-    // that node. The ids are addressing, not state: a receiver still re-reads the configuration it
-    // needs, so a late or reordered message cannot make it act on a stale snapshot.
-    private const string ServerConfigChangedTopic = "server-config-changed";
     private const string CameraStateChangedTopic       = "camera-state-changed";
     // The alarm definitions have travelled on this topic since M2.4c; M2.4d makes it mean the
     // subscriptions too. A replicable VmsMap reads the shared subscriptions-version key instead of
@@ -44,11 +35,6 @@ namespace VmsCfg
     // the ticker's next poll.
     private const string RecordingScheduleChangedTopic = "recording-schedule-changed";
 
-    // Bumped when a camera's media server changes. web_srv.Server caches camera → node to route
-    // ONVIF calls, and it runs in several replicas, so a pub/sub event would reach exactly one of
-    // them; a key everyone reads has no such asymmetry. Same mechanism as the permission version.
-    private const string CamNodeVersionKey          = "cam-node-version";
-
     // The truth for a replicable VmsMap: the pub/sub event reaches one replica, the shared key is
     // read by all of them. The value is meaningless — only "different from last time" matters.
 
@@ -56,44 +42,17 @@ namespace VmsCfg
     // person can accumulate is capped. Walls are unaffected — they are admin-managed.
     private const int MaxInvestigationBoardsPerOwner = 8;
 
-    private readonly string _pubSubName =
-      Environment.GetEnvironmentVariable("PUBSUB_NAME")
-        ?? throw new InvalidOperationException("Required environment variable 'PUBSUB_NAME' is not set");
 
-    // Field names are spelled out rather than left to a naming policy: DaprClient serializes with
-    // web defaults (camelCase), the subscribers — one of them a hand-rolled C++ reader — expect
-    // snake_case, and the mismatch does not fail. It deserializes into an all-null record and the
-    // event is dropped in silence by every consumer at once.
-    private sealed record ServerConfigChanged(
-      [property: JsonPropertyName("server_id")] string ServerId,
-      [property: JsonPropertyName("camera_ids")] IReadOnlyList<string> CameraIds);
 
-    /// One camera changed. The owning node is resolved here rather than threaded through every
-    /// write handler: it is one indexed lookup on a path a human triggers, and it keeps all twelve
-    /// call sites unaware of the topic's shape.
-    private void InvalidateFsCache(string cameraId)
-    {
-      _ = Task.Run(async () =>
-      {
-        try
-        {
-          var servers = await scheduleDb.ListCameraServersAsync([cameraId], CancellationToken.None);
-          servers.TryGetValue(cameraId, out var serverId);
-          await PublishServerConfigChangedAsync(serverId ?? string.Empty, [cameraId], CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Camera config invalidation publish failed for '{CameraId}'", cameraId);
-        }
-      });
-    }
+    // The signals themselves live in ConfigNotifier, which the demo installer also uses: it
+    // writes cameras the way an administrator's save does and has to announce them the same way,
+    // and it cannot depend on this class, which depends on it.
 
-    private async Task PublishServerConfigChangedAsync(
-      string serverId, IReadOnlyList<string> cameraIds, CancellationToken ct)
-    {
-      await daprClient.PublishEventAsync(
-        _pubSubName, ServerConfigChangedTopic, new ServerConfigChanged(serverId, cameraIds), ct);
-    }
+    private void InvalidateFsCache(string cameraId) => notifier.InvalidateFsCache(cameraId);
+
+    private Task PublishServerConfigChangedAsync(
+      string serverId, IReadOnlyList<string> cameraIds, CancellationToken ct) =>
+      notifier.PublishServerConfigChangedAsync(serverId, cameraIds, ct);
 
     private void NotifyCameraStateChanged(string cameraId)
     {
@@ -101,7 +60,7 @@ namespace VmsCfg
       {
         try
         {
-          await daprClient.PublishEventAsync(_pubSubName, CameraStateChangedTopic, cameraId);
+          await daprClient.PublishEventAsync(notifier.PubSubName, CameraStateChangedTopic, cameraId);
         }
         catch (Exception ex)
         {
@@ -116,7 +75,7 @@ namespace VmsCfg
       {
         try
         {
-          await daprClient.PublishEventAsync(_pubSubName, AnalyticsWatchChangedTopic, watchId);
+          await daprClient.PublishEventAsync(notifier.PubSubName, AnalyticsWatchChangedTopic, watchId);
         }
         catch (Exception ex)
         {
@@ -125,21 +84,7 @@ namespace VmsCfg
       });
     }
 
-    /// Tells web_srv replicas that a camera may have moved between nodes, so their ONVIF routing
-    /// cache stops pointing at the old one. Awaited: camera moves are rare admin actions, and a lost
-    /// bump leaves PTZ going to the wrong node until the cache's own TTL expires.
-    private async Task BumpCamNodeVersionAsync(CancellationToken ct)
-    {
-      try
-      {
-        await daprClient.SaveStateAsync(
-          StateStoreName, CamNodeVersionKey, Guid.NewGuid().ToString("N"), cancellationToken: ct);
-      }
-      catch (Exception ex)
-      {
-        logger.LogWarning(ex, "Bumping the camera node version failed — replicas will pick the move up by TTL");
-      }
-    }
+    private Task BumpCamNodeVersionAsync(CancellationToken ct) => notifier.BumpCamNodeVersionAsync(ct);
 
     /// Tells the other VmsCfg replicas that their schedule snapshot is stale. Awaited, like the
     /// permission version: schedule edits are rare admin actions, and a lost bump leaves a replica
@@ -163,7 +108,7 @@ namespace VmsCfg
       {
         try
         {
-          await daprClient.PublishEventAsync(_pubSubName, RecordingScheduleChangedTopic, string.Empty);
+          await daprClient.PublishEventAsync(notifier.PubSubName, RecordingScheduleChangedTopic, string.Empty);
         }
         catch (Exception ex)
         {
@@ -172,24 +117,8 @@ namespace VmsCfg
       });
     }
 
-    /// One camera changed on a node the caller already knows — used where InvalidateFsCache cannot
-    /// resolve it from the database, either because the row is gone or because the node it names is
-    /// the one the camera just left.
-    private void NotifyCameraChanged(string serverId, string cameraId)
-    {
-      if (string.IsNullOrWhiteSpace(serverId)) return;
-      _ = Task.Run(async () =>
-      {
-        try
-        {
-          await PublishServerConfigChangedAsync(serverId, [cameraId], CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-          logger.LogWarning(ex, "Camera config notification failed for '{CameraId}'", cameraId);
-        }
-      });
-    }
+    private void NotifyCameraChanged(string serverId, string cameraId) =>
+      notifier.NotifyCameraChanged(serverId, cameraId);
 
     /// Everything on this node may have changed — an empty camera list says so.
     private void NotifyMediaServer(string serverId)
@@ -255,87 +184,10 @@ namespace VmsCfg
 
 
 
-    private static readonly string StateStoreName =
-      Environment.GetEnvironmentVariable("DAPR_STATE_STORE_NAME")
-        ?? throw new InvalidOperationException("Required environment variable 'DAPR_STATE_STORE_NAME' is not set");
+    private static string StateStoreName => ConfigNotifier.StateStoreName;
 
-    public override async Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context)
-    {
-      if (!Guid.TryParse(request.CameraId, out _))
-        return new OperationStatus { Success = false, Message = "camera_id must be a UUID" };
-
-      if (string.IsNullOrWhiteSpace(request.ServerId))
-        return new OperationStatus { Success = false, Message = "server_id must not be empty" };
-
-      if (!await nodes.IsKnownServerAsync(request.ServerId, context.CancellationToken))
-        return new OperationStatus { Success = false, Message = $"server_id '{request.ServerId}' is not a known media server" };
-
-      // Get old server before updating so we can notify it if server_id changed
-      var (_, existing) = await storage.GetCameraAsync(request.CameraId, context.CancellationToken);
-
-      await storage.SetupCameraAsync(request, context.CancellationToken);
-      logger.LogInformation("Camera '{CameraId}' configured (server={ServerId})", request.CameraId, request.ServerId);
-      await EnsureCameraHasStorageAsync(request.CameraId, context.CancellationToken);
-      // The camera's own event already names this node — InvalidateFsCache resolves it from the
-      // row just written — so there is no second, node-wide notification here. That one would make
-      // every subscriber drop its whole cache on an ordinary camera edit.
-      InvalidateFsCache(request.CameraId);
-
-      // The node it left hears about the camera by name, so it can release it at once instead of
-      // waiting for its next reconciliation sweep.
-      if (existing is not null && existing.ServerId != request.ServerId)
-        NotifyCameraChanged(existing.ServerId, request.CameraId);
-
-      // A new camera has no cached route yet; a moved one has a stale one.
-      if (existing is null || existing.ServerId != request.ServerId)
-        await BumpCamNodeVersionAsync(context.CancellationToken);
-
-      return new OperationStatus { Success = true };
-    }
-
-
-    /// <summary>
-    /// Gives a camera with no storage assignment the first configured storage.
-    /// </summary>
-    /// <remarks>
-    /// A camera without one silently records nothing and cannot receive an archive import — the
-    /// failure only surfaces much later as "no writable storage", long after whoever added the
-    /// camera has moved on. An explicit assignment is still respected: this only fills a gap, and
-    /// only when a storage exists to fill it with.
-    /// </remarks>
-    private async Task EnsureCameraHasStorageAsync(string cameraId, CancellationToken ct)
-    {
-      try
-      {
-        var assigned = await storageDb.GetCameraStoragesAsync(cameraId, ct);
-        if (assigned.Count > 0)
-          return;
-
-        var storages = await storageDb.ListStoragesAsync(ct);
-        if (storages.Count == 0)
-        {
-          logger.LogWarning(
-            "Camera '{CameraId}' has no storage assigned and none is configured — it will record nothing",
-            cameraId);
-          return;
-        }
-
-        var fallback = storages[0];
-        await storageDb.SetCameraStoragesAsync(
-          cameraId,
-          [new CameraStorageAssignment { StorageId = fallback.StorageId, Priority = 0 }],
-          ct);
-        logger.LogInformation(
-          "Camera '{CameraId}' had no storage assigned; defaulted it to '{StorageId}'",
-          cameraId, fallback.StorageId);
-      }
-      catch (Exception ex)
-      {
-        // Never fail camera setup over this — the camera is still usable, just without a place to
-        // record until someone assigns one.
-        logger.LogWarning(ex, "Could not assign a default storage to camera '{CameraId}'", cameraId);
-      }
-    }
+    public override Task<OperationStatus> SetupCamera(CameraSetup request, ServerCallContext context) =>
+      cameraConfig.ConfigureCameraAsync(request, context.CancellationToken);
 
     /// Everything the schedule ticker in VmsSingleton needs, resolved here against the wall clock.
     /// The evaluator and the schedule cache stay in this service — the ticker only spots transitions
@@ -1043,14 +895,18 @@ namespace VmsCfg
       var plan = installation.Monitor;
 
       logger.LogInformation(
-        "Demo wall '{Name}' installed: {Placed} cameras placed, {Skipped} skipped; " +
-        "parts configured: {Parts}; reaction installed: {Rule}",
-        plan.Name, plan.Cameras.Count, plan.Skipped.Count,
-        string.Join(", ", installation.Devices.Configured), installation.Routing.Installed);
+        "Demo installed: {Cameras} cameras, wall '{Name}' with {Placed} placed, {Skipped} skipped; " +
+        "parts configured: {Parts}; reaction installed: {Rule}; slaves following: {Slaves}",
+        installation.Cameras.Installed.Count, plan.Name, plan.Cameras.Count, plan.Skipped.Count,
+        string.Join(", ", installation.Devices.Configured), installation.Routing.Installed,
+        string.Join(", ", installation.Bindings.Bound));
 
       var report = new DemoMonitorReport { Installed = true };
       report.PlacedCameras.AddRange(plan.Cameras);
-      report.SkippedCameras.AddRange(plan.Skipped);
+      // The cameras written, then the ones the world could not place: the wall's skipped list and
+      // the cameras' own are the same names when the simulator is not there to be provisioned.
+      report.SkippedCameras.AddRange(
+        installation.Cameras.Skipped.Concat(plan.Skipped).Distinct(StringComparer.Ordinal));
       return report;
     }
 
@@ -1281,7 +1137,7 @@ namespace VmsCfg
           StateStoreName, SubscriptionsVersionKey, Guid.NewGuid().ToString("N"),
           cancellationToken: ct);
         await daprClient.PublishEventAsync(
-          _pubSubName, EventSubscriptionsChangedTopic, string.Empty, ct);
+          notifier.PubSubName, EventSubscriptionsChangedTopic, string.Empty, ct);
       }
       catch (Exception ex)
       {
@@ -1392,22 +1248,9 @@ namespace VmsCfg
       return new GetPtzTrackingPolicyResponse { Found = true, Policy = policy };
     }
 
-    public override async Task<OperationStatus> UpsertPtzTrackingPolicy(
-      UpsertPtzTrackingPolicyRequest request, ServerCallContext context)
-    {
-      if (string.IsNullOrWhiteSpace(request.Policy?.CameraId))
-        return new OperationStatus { Success = false, Message = "camera_id must not be empty" };
-
-      var result = await storage.UpsertPtzTrackingPolicyAsync(request.Policy, context.CancellationToken);
-      logger.LogInformation(
-        "Self-guidance for camera '{CameraId}' is now {State}",
-        result.CameraId, result.Enabled ? "on" : "off");
-      // The same signal every other camera write sends. VmsPtzTrackingSingleton is subscribed to it
-      // and reconciles its sessions against the new configuration -- which is what makes switching
-      // the mode on start a camera tracking without anything else being pressed.
-      InvalidateFsCache(result.CameraId);
-      return new OperationStatus { Success = true };
-    }
+    public override Task<OperationStatus> UpsertPtzTrackingPolicy(
+      UpsertPtzTrackingPolicyRequest request, ServerCallContext context) =>
+      cameraConfig.ConfigurePtzTrackingAsync(request.Policy, context.CancellationToken);
 
     public override async Task<ListPtzTrackingPoliciesResponse> ListPtzTrackingPolicies(
       Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)
@@ -1434,46 +1277,13 @@ namespace VmsCfg
       return new GetPtzSlaveBindingResponse { Found = true, Binding = binding };
     }
 
-    public override async Task<OperationStatus> UpsertPtzSlaveBinding(
-      UpsertPtzSlaveBindingRequest request, ServerCallContext context)
-    {
-      var binding = request.Binding;
-      if (string.IsNullOrWhiteSpace(binding?.SlaveCameraId))
-        return new OperationStatus { Success = false, Message = "slave_camera_id must not be empty" };
-      if (string.IsNullOrWhiteSpace(binding.MasterCameraId))
-        return new OperationStatus { Success = false, Message = "master_camera_id must not be empty" };
-      if (binding.MasterCameraId == binding.SlaveCameraId)
-        return new OperationStatus
-        {
-          Success = false,
-          // Not merely useless: it would have the open-loop aiming law fight the closed-loop one
-          // over the same motor, each moving the picture the other is measuring.
-          Message = "A camera cannot be its own master -- switch self-guidance on instead",
-        };
+    public override Task<OperationStatus> UpsertPtzSlaveBinding(
+      UpsertPtzSlaveBindingRequest request, ServerCallContext context) =>
+      cameraConfig.ConfigurePtzSlaveBindingAsync(request.Binding, context.CancellationToken);
 
-      var result = await storage.UpsertPtzSlaveBindingAsync(binding, context.CancellationToken);
-      logger.LogInformation(
-        "Slave binding for camera '{Slave}' -> master '{Master}' upserted: {Points} point(s), method {Method}",
-        result.SlaveCameraId, result.MasterCameraId, result.Points.Count, result.Method);
-      InvalidateFsCache(result.SlaveCameraId);
-      return new OperationStatus { Success = true };
-    }
-
-    public override async Task<OperationStatus> RemovePtzSlaveBinding(
-      RemovePtzSlaveBindingRequest request, ServerCallContext context)
-    {
-      if (string.IsNullOrWhiteSpace(request.SlaveCameraId))
-        return new OperationStatus { Success = false, Message = "slave_camera_id must not be empty" };
-
-      var removed = await storage.RemovePtzSlaveBindingAsync(
-        request.SlaveCameraId, context.CancellationToken);
-      if (removed)
-      {
-        logger.LogInformation("Slave binding for camera '{Slave}' removed", request.SlaveCameraId);
-        InvalidateFsCache(request.SlaveCameraId);
-      }
-      return new OperationStatus { Success = removed };
-    }
+    public override Task<OperationStatus> RemovePtzSlaveBinding(
+      RemovePtzSlaveBindingRequest request, ServerCallContext context) =>
+      cameraConfig.RemovePtzSlaveBindingAsync(request.SlaveCameraId, context.CancellationToken);
 
     public override async Task<ListPtzSlaveBindingsResponse> ListPtzSlaveBindings(
       Google.Protobuf.WellKnownTypes.Empty request, ServerCallContext context)

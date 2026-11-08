@@ -552,32 +552,44 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 
 # ── The demo world: Maryland ─────────────────────────────────────────────────────
 #
-# ta_vms's demo world (dotnet/VmsMap/Demo/DemoWorlds.cs) places its cameras in the A.V. Williams
-# building on the University of Maryland campus. OnvifSim builds that world from the same constants
-# and ships it as data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file
-# rather than keeping a second copy of the geometry, and checks the cameras in it against the demo
-# placements below. Those mirror DemoWorlds.cs — the building envelope and the four camera poses —
-# so keep the two in step. The demo has two pairs, both working on the same walking person: the
-# hall's master watches the line from its slave out to the doorway, and the yard pair works the
-# ground outside it — its slave hangs over that doorway and its master looks back along the line
-# the person walks. Every master detects the person; every slave reports its head in the metadata
-# track.
+# ta_vms's demo world (dotnet/VmsMap/Demo/DemoWorlds.cs) places its cameras on the first floor of
+# Biomolecular Sciences on the University of Maryland campus — the real building, at the place
+# OpenStreetMap puts it. OnvifSim builds that world from the same constants and ships it as
+# data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file rather than keeping a
+# second copy of the geometry, and checks the cameras and the building in it against the constants
+# below. Those mirror DemoWorlds.cs — the building's footprint, the doorway and the four camera
+# poses — so keep the two in step. The demo has two pairs, both working on the same walking person:
+# the hall's master watches the line from its slave out to the doorway, and the yard pair works the
+# parking lot outside it. Every master detects the person; every slave reports its head in the
+# metadata track.
 
 REPO = Path(__file__).resolve().parents[2]
 
-MARYLAND_LAT0 = 38.9923  # the centre of the demo building
+MARYLAND_LAT0 = 38.9923  # the demo world's anchor
 MARYLAND_LON0 = -76.9378
 MARYLAND_POSITION_TOLERANCE_M = 0.5
 MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
-# Room 101 of the demo floor plan. The master and its PTZ slave work as one pair, so both stand in
-# this room, and the person they work on walks inside it (mirrors DemoWorlds.cs's Room101*).
-ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.99238, -76.93855, 38.99250, -76.93835
-# The doorway in the building's north wall, in world metres (X east, Z south): the only way between
-# the hall and the ground the road pair watches. Mirrors MarylandWorld.cs's Door* constants.
-MARYLAND_DOOR_X = -50.0
+# The hall of the demo's first floor — Room 101 of the building, though the demo's map has no plan of
+# a room nested in the floor. The master and its PTZ slave work as one pair, so both stand in this
+# hall, and the person they work on walks inside it.
+ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.9928704, -76.9379791, 38.9929603, -76.9378173
+# The building's footprint in world metres (X east, Z south), in the direction the simulator stores
+# it: Biomolecular Sciences as OpenStreetMap draws it, one corner per line. The demo's plan space must
+# be this same outline, and the simulator's prism — one object of the world — the same shape.
+MARYLAND_BUILDING_OUTLINE = (
+    (-17.1, -81.3), (-17.0, -68.9), (-19.5, -68.8), (-19.4, -63.1), (-17.0, -63.2), (-17.0, -62.1),
+    (-16.8, -50.0), (32.4, -50.3), (32.4, -62.8), (35.1, -63.0), (35.3, -63.8), (35.3, -69.0),
+    (32.5, -69.0), (32.6, -72.9), (12.1, -72.9), (12.0, -77.0), (10.9, -77.0), (3.3, -76.9),
+    (3.3, -81.4),
+)
+MARYLAND_BUILDING_HEIGHT_M = 11.78
+# Every road of the world is this wide, so a building may come no closer than half of it.
+MARYLAND_ROAD_WIDTH_M = 7.0
+# The doorway in the building's north wall, in world metres: the only way between the hall and the
+# parking lot the road pair watches. Mirrors MarylandWorld.cs's Door* constants.
+MARYLAND_DOOR_X = -8.0
 MARYLAND_DOOR_WIDTH = 1.8
-# The north wall's line, in world metres: MarylandWorld.cs derives it from BuildingNorth.
-MARYLAND_NORTH_WALL_Z = -55.659744
+MARYLAND_NORTH_WALL_Z = -81.35
 
 
 @dataclass(frozen=True)
@@ -593,10 +605,10 @@ class DemoPlacement:
 
 
 DEMO_PLACEMENTS = [
-    DemoPlacement("master", 38.9923000, -76.9383779, 2.8, 342.3, 45),
-    DemoPlacement("ptz", 38.992484, -76.938372, 2.8, 235, 65),
-    DemoPlacement("master2", 38.9929468, -76.9388171, 6.0, 88.8, 55),
-    DemoPlacement("ptz2", 38.9928749, -76.9385397, 5.5, 0, 60),
+    DemoPlacement("master", 38.9928120, -76.9378925, 2.8, 0, 45),
+    DemoPlacement("ptz", 38.9928722, -76.9378196, 2.8, 310, 65),
+    DemoPlacement("master2", 38.9933061, -76.9381467, 6.0, 125, 55),
+    DemoPlacement("ptz2", 38.9931085, -76.9380312, 5.5, 88, 60),
 ]
 DEMO_VEHICLE_CAMERA = "vehicle"
 # The car that drives the ring road and carries the vehicle camera. Neither pair follows it: from
@@ -612,16 +624,22 @@ MARK_BOX_HEIGHT = 1.5 * MIN_BOX_HEIGHT
 
 MARYLAND_HALL_PAIR = "hall"
 MARYLAND_ROAD_PAIR = "road"
+# How big the world marks a landmark: a block of the landmark's own colour, standing on its point.
+# MarylandWorld.LandmarkSize, and half a metre — the yard's own size — so a person walking over one
+# is still a person.
+MARYLAND_LANDMARK_SIZE = 0.5
 
-# The landmarks in the hall, in world metres (X east, Z south): in Room 101, where the master at
-# (-50, 0) and the slave at (-49.5, -20.5) both see them, and spread across the master's picture so
-# the ground fit is not extrapolated from one corner of it.
+# The landmarks in the hall, in world metres (X east, Z south): in Room 101, around the square the
+# person walks, where the master at (-8, -57) and the slave at (-1.7, -63.7) both see them, and spread
+# across the master's picture so the ground fit is not extrapolated from one corner of it.
+# The world marks each of them (MarylandWorld.Landmarks, `lm-hall-L1` …) — a landmark on the map
+# and what a camera's picture shows are one point, which is what makes it findable while aiming.
 MARYLAND_HALL_LANDMARKS = (
-    Landmark("L1", -57.5, -13.5, "#e53935", "red"),
-    Landmark("L2", -54.0, -16.0, "#fdd835", "yellow"),
-    Landmark("L3", -60.0, -16.0, "#1e88e5", "blue"),
-    Landmark("L4", -53.0, -13.0, "#f5f5f5", "white"),
-    Landmark("L5", -56.0, -19.5, "#8e24aa", "purple"),
+    Landmark("L1", -10.6, -71.6, "#e53935", "red"),
+    Landmark("L2", -6.4, -71.6, "#fdd835", "yellow"),
+    Landmark("L3", -10.6, -67.9, "#1e88e5", "blue"),
+    Landmark("L4", -6.4, -67.9, "#f5f5f5", "white"),
+    Landmark("L5", -8.5, -69.8, "#8e24aa", "purple"),
 )
 
 # The landmarks on the ground of the yard, in world metres: across the stretch the person walks out
@@ -632,12 +650,63 @@ MARYLAND_HALL_LANDMARKS = (
 # farthest one also sets how far the slave's zoom samples reach: beyond it the slave keeps the
 # zoom it learnt there rather than guess, so the marks follow the walk out as far as they can.
 MARYLAND_ROAD_LANDMARKS = (
-    Landmark("L1", -52.0, -64.0, "#e53935", "red"),
-    Landmark("L2", -58.0, -66.0, "#fdd835", "yellow"),
-    Landmark("L3", -50.0, -70.0, "#1e88e5", "blue"),
-    Landmark("L4", -60.0, -78.0, "#f5f5f5", "white"),
-    Landmark("L5", -50.0, -86.0, "#8e24aa", "purple"),
+    Landmark("L1", -8.0, -84.0, "#e53935", "red"),
+    Landmark("L2", -11.0, -91.0, "#fdd835", "yellow"),
+    Landmark("L3", -4.0, -92.0, "#1e88e5", "blue"),
+    Landmark("L4", -8.0, -98.0, "#f5f5f5", "white"),
+    Landmark("L5", 2.0, -100.0, "#8e24aa", "purple"),
 )
+
+# The demo's calibration, as ta_vms's DemoWorlds pins it: the foot of a person standing on each
+# landmark in the master's picture (x, y in shares of the frame), and the generic pan/tilt — and,
+# for the hall's slave, the framing zoom — that centres it on the slave. Computed once from this
+# world and checked against it below, so a pose or landmark that moves breaks the check instead of
+# leaving the demo aiming at the old point.
+MARYLAND_HALL_GROUND = {
+    "L1": (0.288942, 0.606953), "L2": (0.630300, 0.606953), "L3": (0.219821, 0.740750),
+    "L4": (0.672973, 0.740750), "L5": (0.454114, 0.662673),
+}
+MARYLAND_HALL_PTZ = {
+    "L1": (0.008838, 0.395735, 0.208905), "L2": (0.106873, 0.328499, 0.133485),
+    "L3": (-0.081842, 0.347742, 0.153152), "L4": (0.009885, 0.201190, 0.029643),
+    "L5": (0.010502, 0.326694, 0.131707),
+}
+MARYLAND_ROAD_GROUND = {
+    "L1": (0.786424, 0.514470), "L2": (0.714613, 0.582389), "L3": (0.542411, 0.526134),
+    "L4": (0.458604, 0.603585), "L5": (0.256542, 0.523149),
+}
+# The yard's slave keeps the wide lens, so only its head is pinned.
+MARYLAND_ROAD_PTZ = {
+    "L1": (0.158695, 0.231184), "L2": (-0.024035, 0.067931), "L3": (-0.028428, 0.293989),
+    "L4": (-0.175978, 0.256873), "L5": (-0.124647, 0.403267),
+}
+
+# The racks the simulator stands in Room 101: MarylandWorld's `rack-1` … `rack-4`, boxes along the
+# room's west wall. ta_vms's floor diagram is marked at the middle of that row, so the picture on the
+# plan stands where the cabinets do; check_demo compares the marker with these.
+MARYLAND_RACK_X = -14.6
+MARYLAND_RACK_Z = (-72.4, -69.9, -67.4, -64.9)
+
+
+def demo_ground_marks(world, camera_id, landmarks):
+    """The foot of a person standing on each landmark, in the master's picture: what ta_vms stores
+    as ground marks, keyed by the landmark's name."""
+    camera = demo_camera(world, camera_id, MASTER)
+    return {landmark.name: project(camera, (landmark.x, 0.0, landmark.z)) for landmark in landmarks}
+
+
+def demo_ptz_observations(world, camera_id, landmarks):
+    """The generic pan/tilt that centre each landmark on a slave, and the framing zoom at its
+    distance — what ta_vms stores as PTZ observations, keyed by the landmark's name."""
+    camera = demo_camera(world, camera_id, SLAVE)
+    limits = demo_limits(world, camera_id)
+    result = {}
+    for landmark in landmarks:
+        target = (landmark.x, 0.0, landmark.z)
+        pan, tilt = ptz_degrees(camera, target)
+        _, _, distance = bearing(camera.position, target)
+        result[landmark.name] = (*to_generic(pan, tilt, limits), framing_zoom(distance, limits))
+    return result
 
 
 def demo_camera(world, camera_id, base):
@@ -667,7 +736,7 @@ def demo_limits(world, camera_id):
 
 
 def demo_pairs(world):
-    """The demo's two pairs: the hall by Room 101 and the yard outside its doorway.
+    """The demo's two pairs: the hall pair indoors and the yard pair outside its doorway.
 
     Both masters drive their slave with boxes of the walking person — the hall's indoors, the
     yard's once they are out on the ground — which is why both follow the `person` kind."""
@@ -717,6 +786,45 @@ def angle_gap(a, b):
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
+def _ring_of(obj):
+    """A prism object's outline in the world's own metres: its points, which are local, moved to
+    where the object stands."""
+    position = obj.get("position") or {}
+    return [(point["x"] + position.get("x", 0.0), point["z"] + position.get("z", 0.0))
+            for point in obj.get("points") or []]
+
+
+def _ground_segment_gap(a, b, p):
+    dx, dz = b[0] - a[0], b[1] - a[1]
+    length_squared = dx * dx + dz * dz
+    t = 0.0 if length_squared <= 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dz) / length_squared))
+    return math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dz * t))
+
+
+def _distance_to_polyline(line, p):
+    return min((_ground_segment_gap(a, b, p) for a, b in zip(line, line[1:])), default=float("inf"))
+
+
+def _segments_cross(a0, a1, b0, b1):
+    def cross(o, p, q):
+        return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+
+    d1, d2, d3, d4 = cross(b0, b1, a0), cross(b0, b1, a1), cross(a0, a1, b0), cross(a0, a1, b1)
+    return ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0))
+
+
+def _ring_to_road_gap(ring, line):
+    """How far a footprint's outline is from a road's centre line: the road's own width has to fit in
+    the gap, or the building stands on the road."""
+    best = min((_distance_to_polyline(line, p) for p in ring), default=float("inf"))
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        for c, d in zip(line, line[1:]):
+            if _segments_cross(a, b, c, d):
+                return 0.0
+            best = min(best, _ground_segment_gap(a, b, c))
+    return best
+
+
 def _spread_ratio(points):
     """How far a set of points spans a plane rather than a line: the smaller principal spread
     against the larger one, as GroundHomography's fit measures it (it refuses below 0.05)."""
@@ -756,6 +864,67 @@ def check_maryland(world):
         assert hfov is not None and abs(hfov - placement.hfov) <= MARYLAND_ANGLE_TOLERANCE_DEG, \
             f"{placement.id} is {hfov} deg wide, the demo {placement.hfov}"
 
+    # The building is the real one: one prism of Biomolecular Sciences' own footprint, at the height
+    # the map gives it. The demo's plan space is this same outline, so the map and the world agree
+    # corner for corner rather than merely overlapping.
+    building = next((obj for obj in world.get("objects", []) if obj.get("id") == "building"), None)
+    assert building is not None, "the world has no 'building' object"
+    assert building.get("type") == "prism", f"the building is a '{building.get('type')}', not a prism"
+    assert abs((building.get("scale") or {}).get("y", 0.0) - MARYLAND_BUILDING_HEIGHT_M) <= 0.01, \
+        f"the building is {(building.get('scale') or {}).get('y')} m tall, not {MARYLAND_BUILDING_HEIGHT_M}"
+    ring = _ring_of(building)
+    assert len(ring) == len(MARYLAND_BUILDING_OUTLINE), \
+        f"the building has {len(ring)} corners, not {len(MARYLAND_BUILDING_OUTLINE)}"
+    for x, z in MARYLAND_BUILDING_OUTLINE:
+        assert any(math.hypot(x - px, z - pz) <= 0.01 for px, pz in ring), \
+            f"the building has no corner at ({x}, {z})"
+
+    # The racks of the demo's floor diagram: boxes along Room 101's west wall, at the points the
+    # map's diagram marker stands in the middle of.
+    objects = {obj.get("id"): obj for obj in world.get("objects", [])}
+    for index, z in enumerate(MARYLAND_RACK_Z, start=1):
+        rack = objects.get(f"rack-{index}")
+        assert rack is not None, f"the world has no 'rack-{index}'"
+        assert rack.get("type") == "box", f"rack-{index} is a '{rack.get('type')}', not a box"
+        position = rack.get("position") or {}
+        assert abs(position.get("x", 0.0) - MARYLAND_RACK_X) <= 0.01, \
+            f"rack-{index} stands at x {position.get('x')}, not {MARYLAND_RACK_X}"
+        assert abs(position.get("z", 0.0) - z) <= 0.01, \
+            f"rack-{index} stands at z {position.get('z')}, not {z}"
+
+    # The calibration ta_vms ships with the demo must be this world's own projection: the feet of a
+    # person on each landmark in the masters' pictures, and the head positions that centre them on
+    # the slaves. A pose or a landmark that moves fails here rather than leaving the demo aiming at
+    # the old point.
+    for master_id, slave_id, landmarks, ground, ptz, pinned_zoom in (
+        ("master", "ptz", MARYLAND_HALL_LANDMARKS, MARYLAND_HALL_GROUND, MARYLAND_HALL_PTZ, True),
+        ("master2", "ptz2", MARYLAND_ROAD_LANDMARKS, MARYLAND_ROAD_GROUND, MARYLAND_ROAD_PTZ, False),
+    ):
+        for name, (x, y) in demo_ground_marks(world, master_id, landmarks).items():
+            ex, ey = ground[name]
+            assert abs(x - ex) <= 1e-4 and abs(y - ey) <= 1e-4, \
+                f"{master_id}'s ground mark at {name} is ({x:.6f}, {y:.6f}), the demo pins ({ex}, {ey})"
+        for name, (pan, tilt, zoom) in demo_ptz_observations(world, slave_id, landmarks).items():
+            row = ptz[name]
+            assert abs(pan - row[0]) <= 1e-4 and abs(tilt - row[1]) <= 1e-4, \
+                f"{slave_id}'s observation of {name} is ({pan:.6f}, {tilt:.6f}), the demo pins {row[:2]}"
+            if pinned_zoom:
+                assert abs(zoom - row[2]) <= 1e-4, \
+                    f"{slave_id}'s framing zoom at {name} is {zoom:.6f}, the demo pins {row[2]}"
+
+    # No building of this world stands on a road: the defect this milestone was opened for was a hall
+    # laid over two real streets.
+    roads = world.get("roads", [])
+    assert roads, "the world has no roads"
+    for obj in world.get("objects", []):
+        if obj.get("type") != "prism" or (obj.get("scale") or {}).get("y", 0.0) < 1:
+            continue
+        for road in roads:
+            line = [(point["x"], point["z"]) for point in road.get("points", [])]
+            gap = _ring_to_road_gap(_ring_of(obj), line)
+            half = road.get("width", MARYLAND_ROAD_WIDTH_M) / 2
+            assert gap >= half, f"{obj.get('id')} is {gap:.1f} m from {road.get('id')}, whose half width is {half:.1f}"
+
     # Each pair works as one: the master detects, the slave aims where its boxes say. Every slave
     # carries its head in the metadata track, and every master boxes what it sees.
     for name in ("master", "master2"):
@@ -771,7 +940,7 @@ def check_maryland(world):
     # lens has to hold both the room and the doorway at the far end of the hall.
     ptz = next(placement for placement in DEMO_PLACEMENTS if placement.id == "ptz")
     assert ROOM101_SOUTH <= ptz.lat <= ROOM101_NORTH and ROOM101_WEST <= ptz.lon <= ROOM101_EAST, \
-        "ptz does not stand in Room 101 with the person it works on"
+        "ptz does not stand in the hall with the person it works on"
     # The person walks the hall and Room 101, where the hall pair sees them, and out of the doorway
     # in the north wall, where the yard pair takes over: both halves of the demo have someone to
     # follow. The doorway is the only way between them, so every crossing of the wall line has to
@@ -856,12 +1025,35 @@ def check_maryland(world):
         assert not (cameras[name].get("metadata") or {}).get("analytics"), \
             f"{name} boxes for itself; its master's boxes are what aims it"
 
+    # The markers the world stands on the landmarks: one block per point, of the landmark's own
+    # colour, on the ground the calibration aims at. Without them a landmark on the demo's map has
+    # nothing to find in a camera's picture — the demo is a laboratory, and the operator aiming or
+    # calibrating a camera has to see what they are aiming at.
+    objects = {obj.get("id"): obj for obj in world.get("objects", [])}
+    for pair in demo_pairs(world):
+        for lm in pair.landmarks:
+            marker_id = f"lm-{pair.name}-{lm.name.lower()}"
+            marker = objects.get(marker_id)
+            assert marker is not None, f"the world has no '{marker_id}' marker for {lm.label}"
+            assert marker.get("type") == "box", f"{marker_id} is a '{marker.get('type')}', not a box"
+            position = marker.get("position") or {}
+            scale = marker.get("scale") or {}
+            assert math.hypot(position.get("x", 0) - lm.x, position.get("z", 0) - lm.z) <= 0.01, \
+                f"{marker_id} stands at ({position.get('x')}, {position.get('z')}), not at ({lm.x}, {lm.z})"
+            assert abs(position.get("y", 0)) <= 0.01, f"{marker_id} does not stand on the ground"
+            assert (marker.get("color") or "").lower() == lm.color.lower(), \
+                f"{marker_id} is {marker.get('color')}, not {lm.color}"
+            assert all(abs(scale.get(axis, 0) - MARYLAND_LANDMARK_SIZE) <= 0.01 for axis in "xyz"), \
+                f"{marker_id} is {scale}, not a {MARYLAND_LANDMARK_SIZE} m block"
+
     # The car still drives the ring road and still carries its own camera; it is ambience now, not
     # what either pair follows.
     car = next((v for v in world.get("vehicles", []) if v["id"] == DEMO_VEHICLE_ID), None)
     assert car is not None, f"the world has no '{DEMO_VEHICLE_ID}' car"
     assert car.get("detectable", True), f"{DEMO_VEHICLE_ID} is not detectable"
-    assert len(car.get("route", [])) >= 2, f"{DEMO_VEHICLE_ID} has no route to drive"
+    route = car.get("route", [])
+    assert len(route) >= 20, f"{DEMO_VEHICLE_ID} has no ring to drive, only {len(route)} points"
+    assert car.get("return") == "loop", f"{DEMO_VEHICLE_ID} does not come round the block again"
 
     # The master's three relays show every kind of link a relay can have: one lights a lamp, one
     # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an

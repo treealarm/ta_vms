@@ -30,12 +30,14 @@ public sealed class DemoInstallService(IServiceScopeFactory scopes, ILogger<Demo
                 .InstallAsync(stoppingToken);
 
             log.LogInformation(
-                "Demo world installed: wall '{Name}' with {Placed} camera(s) ({Skipped} not provisioned yet), " +
-                "parts {Parts}, reaction installed: {Rule}",
-                installation.Monitor.Name, installation.Monitor.Cameras.Count,
-                installation.Monitor.Skipped.Count,
+                "Demo world installed: {Cameras} camera(s), wall '{Name}' with {Placed} placed " +
+                "({Skipped} not provisioned yet), parts {Parts}, reaction installed: {Rule}, " +
+                "slaves following: {Slaves}",
+                installation.Cameras.Installed.Count, installation.Monitor.Name,
+                installation.Monitor.Cameras.Count, installation.Monitor.Skipped.Count,
                 string.Join(", ", installation.Devices.Configured),
-                installation.Routing.Installed);
+                installation.Routing.Installed,
+                string.Join(", ", installation.Bindings.Bound));
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

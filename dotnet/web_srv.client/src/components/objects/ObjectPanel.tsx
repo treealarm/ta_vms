@@ -4,7 +4,9 @@ import {
   Alert, Box, Button, Chip, Divider, IconButton, Stack, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
 import type { MapExtraProperty } from '../../dto/mapDtos'
@@ -13,7 +15,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
-import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
+import NodeStateChips from './NodeStateChips'
 
 type Props = {
   nodeId: string
@@ -21,6 +23,10 @@ type Props = {
   onSelect: (id: string) => void
   /** Enter a node that holds children: the canvas zooms into it, or a space opens its own. */
   onEnter?: (id: string) => void
+  /** Find the node on the canvas that draws it: its space or diagram is opened and it is centred. */
+  onLocate?: (id: string) => void
+  /** The diagram drawn for this camera by its template, if the deployment has one. */
+  onOpenDiagram?: (id: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -35,7 +41,8 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, onEnter, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
+  nodeId, onClose, onSelect, onEnter, onLocate, onOpenDiagram,
+  aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -63,8 +70,7 @@ export default function ObjectPanel({
 
   const kind = marker?.nodeKind ?? 'object'
   const childrenAlarms = alarm?.childrenAlarms ?? 0
-  // The alarm chip already says "Alarm"; the ALARM state chip would repeat it.
-  const states = (state?.states ?? []).filter((name) => !(alarm?.alarm && name === ALARM_STATE))
+  const states = state?.states ?? []
 
   return (
     <Stack sx={{ width: 420, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
@@ -87,6 +93,24 @@ export default function ObjectPanel({
             <Button size="small" startIcon={<LoginIcon fontSize="small" />} onClick={() => onEnter(nodeId)}>
               {t('maps.node.enter')}
             </Button>
+          </Tooltip>
+        ) : null}
+        {onLocate ? (
+          <Tooltip title={t('maps.node.locate')}>
+            <IconButton size="small" aria-label={t('maps.node.locate')} onClick={() => onLocate(nodeId)}>
+              <CenterFocusStrongIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+        {onOpenDiagram && kind === 'camera' ? (
+          <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
+            <IconButton
+              size="small"
+              aria-label={t('diagramEditor.openDeviceDiagram')}
+              onClick={() => onOpenDiagram(nodeId)}
+            >
+              <OpenInNewIcon fontSize="small" />
+            </IconButton>
           </Tooltip>
         ) : null}
         <Button
@@ -142,13 +166,6 @@ export default function ObjectPanel({
 
         <Section title={t('maps.node.states')}>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-            {alarm?.alarm ? (
-              <Chip
-                size="small"
-                label={t('maps.node.alarm')}
-                sx={{ bgcolor: ALARM_COLOR, color: '#fff' }}
-              />
-            ) : null}
             {childrenAlarms > 0 ? (
               <Chip
                 size="small"
@@ -157,29 +174,7 @@ export default function ObjectPanel({
                 label={t('maps.node.childAlarms', { count: childrenAlarms })}
               />
             ) : null}
-            {states.map((name) => {
-              const description = descriptions[name]
-              return (
-                <Chip
-                  key={name}
-                  size="small"
-                  variant="outlined"
-                  label={description?.stateDescr || name}
-                  icon={(
-                    <Box
-                      component="span"
-                      sx={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        bgcolor: description?.stateColor || 'text.disabled',
-                      }}
-                    />
-                  )}
-                  sx={{ borderColor: description?.stateColor }}
-                />
-              )
-            })}
+            <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} />
             {!alarm?.alarm && childrenAlarms === 0 && states.length === 0 ? (
               <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
             ) : null}

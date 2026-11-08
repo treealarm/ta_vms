@@ -39,9 +39,11 @@ namespace VmsMap.Clients
         return null;
 
       // Both coordinates or none: half a position is not a place, and an absent latitude is not the
-      // equator.
+      // equator. The heading is the camera's to say or not: a fixed one reports the bearing it was
+      // mounted at, one on a vehicle the bearing it is driving at.
       return response.HasLat && response.HasLon
-        ? new CameraGeoPoint(response.Lat, response.Lon)
+        ? new CameraGeoPoint(response.Lat, response.Lon,
+            response.HasHeadingDeg ? ((response.HeadingDeg % 360) + 360) % 360 : null)
         : null;
     }
 

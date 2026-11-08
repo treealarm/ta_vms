@@ -30,15 +30,13 @@
     "pick": "Elija un nodo para ver qué se puede hacer con él.",
     "openInTree": "Abrir en el árbol",
     "openDiagram": "Abrir diagrama",
-    "replica": "imagen de otro nodo",
+    "replica": "vista de otro nodo",
     "part": "Parte de un dispositivo",
     "partHint": "Una parte es un nodo propio y en M2.4 no se coloca en el mapa: sus estados y eventos se leen aquí, bajo la cámara a la que pertenece.",
     "statesEvents": "Estados / Eventos",
-    "placeOnMap": "Colocar en el mapa",
-    "placeHint": "Añade una imagen de esta cámara al espacio. La primera colocación se convierte en la de referencia; desde aquí nunca se mueve una existente.",
-    "space": "Espacio",
-    "place": "Colocar",
-    "placed": "Colocada en {{name}}"
+    "standsIn": "Está en {{name}}",
+    "standsNowhere": "Todavía no está en ningún mapa",
+    "showOnMap": "Mostrar en el mapa"
   },
   "eventRouting": {
     "title": "Suscripciones",
@@ -1199,12 +1197,10 @@
     "problemBindingNoValue": "La región \"{{key}}\" de \"{{name}}\" representa una parte pero no dice cómo encontrarla.",
     "problemBindingIndex": "La región \"{{key}}\" de \"{{name}}\" encuentra su parte por posición, que empieza en 1.",
     "problemBindingDuplicate": "Dos regiones de \"{{name}}\" reclaman la misma parte.",
-    "attachDeviceDiagram": "Añadir diagrama del dispositivo",
-    "attachDeviceDiagramHint": "Dibujar {{name}} a partir de una plantilla de su modelo. Solo las partes configuradas del dispositivo reciben una réplica.",
-    "noTemplates": "Todavía no hay plantillas: convierta un tipo en plantilla en Tipos.",
-    "attach": "Adjuntar",
     "openDeviceDiagram": "Abrir diagrama del dispositivo",
-    "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Añada uno desde una plantilla o ábralo en Administración → Mapas."
+    "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Dibuje uno desde la fila de la cámara en Administración → Mapas.",
+    "deviceDiagram": "Diagrama del dispositivo",
+    "diagramNotCreated": "No se pudo dibujar el diagrama"
   },
   "rights": {
     "tab": "Derechos",
@@ -1311,7 +1307,9 @@
       "moveToTitle": "Mover «{{name}}» a",
       "moveToHint": "Un espacio, o un contenedor de este lienzo. Lo que hace hijo a un nodo es su lugar en el árbol, nunca dónde está.",
       "moveToFind": "Buscar un espacio o contenedor",
-      "moveToNothing": "Nada coincide"
+      "moveToNothing": "Nada coincide",
+      "nodeInTree": "Nodo en el árbol",
+      "cameraSettings": "Ajustes de la cámara"
     },
     "dictionaries": {
       "title": "Diccionarios",
@@ -1330,21 +1328,6 @@
       "nextPage": "Página siguiente",
       "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
       "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
-    },
-    "demo": {
-      "install": "Instalar demo",
-      "remove": "Eliminar demo",
-      "confirmInstall": "¿Instalar el mundo de demostración? Solo añade o reemplaza objetos de la demo; todo lo que usted creó queda intacto.",
-      "confirmRemove": "¿Eliminar el mundo de demostración? Solo se eliminan los objetos de la demo; todo lo que usted creó queda intacto.",
-      "installed": "Mundo de demostración instalado",
-      "removed": "Mundo de demostración eliminado",
-      "summary": "Creados: {{created}} · actualizados: {{updated}} · eliminados: {{removed}}",
-      "wall": "Videowall: {{cameras}}",
-      "noWall": "El videowall aún no tiene cámaras.",
-      "skippedTitle": "Cámaras que la instalación aún no tiene",
-      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo.",
-      "wallErrorTitle": "El videowall no se actualizó",
-      "wallErrorHint": "VmsCfg no respondió, así que su videowall quedó como estaba. Inicie VmsCfg y repita la acción."
     },
     "node": {
       "kind": {
@@ -1369,7 +1352,8 @@
       "color": "Color",
       "caption": "Leyenda",
       "enter": "Entrar",
-      "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio"
+      "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio",
+      "locate": "Mostrar en el mapa"
     },
     "tabSpaces": "Espacios",
     "tabDevices": "Dispositivos",
@@ -1491,7 +1475,9 @@
     "alarmNow": "Alarma",
     "alarmEnded": "Alarma terminada",
     "viewLive": "En vivo",
-    "viewAlarm": "Grabación de la alarma"
+    "viewAlarm": "Grabación de la alarma",
+    "tabObject": "Objeto",
+    "objectOnItsTab": "Los ajustes propios de este nodo — nombre, aspecto, propiedades — están en la pestaña Objeto."
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",
@@ -1561,7 +1547,22 @@
     "enrollmentOpenWarning": "Mientras esté activado, cualquier máquina que llegue a este núcleo puede unirse como servidor y recibe las contraseñas de su base de datos y su broker. Manténgalo activado solo mientras se configura el despliegue.",
     "caFingerprint": "Autoridad de certificación de este despliegue",
     "caFingerprintHelper": "Cada máquina del despliegue presenta un certificado emitido por ella. A una máquina que se une se le da esta huella y comprueba el núcleo con ella; compárela con la que el núcleo mostró al configurarse.",
-    "downloadCa": "Descargar la autoridad de certificación"
+    "downloadCa": "Descargar la autoridad de certificación",
+    "demo": {
+      "install": "Instalar demo",
+      "remove": "Eliminar demo",
+      "confirmInstall": "¿Instalar el mundo de demostración? Solo añade o reemplaza objetos de la demo; todo lo que usted creó queda intacto.",
+      "confirmRemove": "¿Eliminar el mundo de demostración? Solo se eliminan los objetos de la demo; todo lo que usted creó queda intacto.",
+      "installed": "Mundo de demostración instalado",
+      "removed": "Mundo de demostración eliminado",
+      "summary": "Creados: {{created}} · actualizados: {{updated}} · eliminados: {{removed}}",
+      "wall": "Videowall: {{cameras}}",
+      "noWall": "El videowall aún no tiene cámaras.",
+      "skippedTitle": "Cámaras que la instalación aún no tiene",
+      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo.",
+      "wallErrorTitle": "El videowall no se actualizó",
+      "wallErrorHint": "VmsCfg no respondió, así que su videowall quedó como estaba. Inicie VmsCfg y repita la acción."
+    }
   },
   "alarms": {
     "handle": "Atender la alarma",

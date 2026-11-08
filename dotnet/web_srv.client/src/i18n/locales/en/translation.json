@@ -30,15 +30,13 @@
     "pick": "Pick a node to see what can be done with it.",
     "openInTree": "Open in tree",
     "openDiagram": "Open diagram",
-    "replica": "picture of another node",
+    "replica": "view of another node",
     "part": "Part of a device",
     "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
     "statesEvents": "States / Events",
-    "placeOnMap": "Place on map",
-    "placeHint": "Adds a picture of this camera to the space. The first placement becomes the reference; an existing reference is never moved from here.",
-    "space": "Space",
-    "place": "Place",
-    "placed": "Placed on {{name}}"
+    "standsIn": "Stands in {{name}}",
+    "standsNowhere": "Not placed on any map yet",
+    "showOnMap": "Show on map"
   },
   "eventRouting": {
     "title": "Subscriptions",
@@ -1199,12 +1197,10 @@
     "problemBindingNoValue": "The region \"{{key}}\" of \"{{name}}\" stands for a part but says nothing to find it by.",
     "problemBindingIndex": "The region \"{{key}}\" of \"{{name}}\" finds its part by position, which counts from 1.",
     "problemBindingDuplicate": "Two regions of \"{{name}}\" claim the same part.",
-    "attachDeviceDiagram": "Add device diagram",
-    "attachDeviceDiagramHint": "Draw {{name}} from a template for its model. Only parts configured for the device get a replica.",
-    "noTemplates": "No device templates yet: make a type a template in Types.",
-    "attach": "Attach",
     "openDeviceDiagram": "Open device diagram",
-    "noDeviceDiagram": "This device has no diagram yet. Add one from a template, or open it from Admin → Maps."
+    "noDeviceDiagram": "This device has no diagram yet. Draw one from the camera's row under Admin → Maps.",
+    "deviceDiagram": "Device diagram",
+    "diagramNotCreated": "The diagram could not be drawn"
   },
   "rights": {
     "tab": "Rights",
@@ -1311,7 +1307,9 @@
       "moveToTitle": "Move “{{name}}” into",
       "moveToHint": "A space, or a container on this canvas. A node's place in the tree is what makes it a child, never where it lies.",
       "moveToFind": "Find a space or container",
-      "moveToNothing": "Nothing matches"
+      "moveToNothing": "Nothing matches",
+      "nodeInTree": "Node in the tree",
+      "cameraSettings": "Camera settings"
     },
     "dictionaries": {
       "title": "Dictionaries",
@@ -1330,21 +1328,6 @@
       "nextPage": "Next page",
       "statesHint": "How a state is named and painted, and whether it counts as an alarm.",
       "levelsHint": "A node appears at zoom levels between the two bounds; a layer nobody uses hides nothing."
-    },
-    "demo": {
-      "install": "Install demo",
-      "remove": "Remove demo",
-      "confirmInstall": "Install the demo world? It adds or replaces only demo objects; everything you created stays as it is.",
-      "confirmRemove": "Remove the demo world? Only demo objects are removed; everything you created stays as it is.",
-      "installed": "Demo world installed",
-      "removed": "Demo world removed",
-      "summary": "Created: {{created}} · updated: {{updated}} · removed: {{removed}}",
-      "wall": "Video wall: {{cameras}}",
-      "noWall": "The video wall has no cameras yet.",
-      "skippedTitle": "Cameras the deployment does not have yet",
-      "skippedHint": "The world is installed without them. Provision the cameras, then install the demo again.",
-      "wallErrorTitle": "The video wall was not updated",
-      "wallErrorHint": "VmsCfg did not answer, so its wall was left as it was. Start VmsCfg and repeat the action."
     },
     "node": {
       "kind": {
@@ -1370,7 +1353,8 @@
       "color": "Colour",
       "caption": "Caption",
       "enter": "Enter",
-      "enterHint": "Zoom in to what is inside, or open a space's own canvas"
+      "enterHint": "Zoom in to what is inside, or open a space's own canvas",
+      "locate": "Show on map"
     },
     "tabSpaces": "Spaces",
     "tabDevices": "Devices",
@@ -1492,7 +1476,9 @@
     "alarmNow": "Alarm",
     "alarmEnded": "Alarm ended",
     "viewLive": "Live",
-    "viewAlarm": "Alarm recording"
+    "viewAlarm": "Alarm recording",
+    "tabObject": "Object",
+    "objectOnItsTab": "This node's own settings — name, look, properties — are on the Object tab."
   },
   "ptzGeo": {
     "open": "Calibrate by landmarks…",
@@ -1562,7 +1548,22 @@
     "enrollmentOpenWarning": "While this is on, any machine that can reach this core can join as a server and receives the core's database and broker passwords. Keep it on only while the deployment is being set up.",
     "caFingerprint": "Certificate authority of this deployment",
     "caFingerprintHelper": "Every machine of the deployment shows a certificate it issued. A machine joining is told this fingerprint and checks the core against it; compare it with the one the core printed when it was set up.",
-    "downloadCa": "Download the certificate authority"
+    "downloadCa": "Download the certificate authority",
+    "demo": {
+      "install": "Install demo",
+      "remove": "Remove demo",
+      "confirmInstall": "Install the demo world? It adds or replaces only demo objects; everything you created stays as it is.",
+      "confirmRemove": "Remove the demo world? Only demo objects are removed; everything you created stays as it is.",
+      "installed": "Demo world installed",
+      "removed": "Demo world removed",
+      "summary": "Created: {{created}} · updated: {{updated}} · removed: {{removed}}",
+      "wall": "Video wall: {{cameras}}",
+      "noWall": "The video wall has no cameras yet.",
+      "skippedTitle": "Cameras the deployment does not have yet",
+      "skippedHint": "The world is installed without them. Provision the cameras, then install the demo again.",
+      "wallErrorTitle": "The video wall was not updated",
+      "wallErrorHint": "VmsCfg did not answer, so its wall was left as it was. Start VmsCfg and repeat the action."
+    }
   },
   "alarms": {
     "handle": "Handle the alarm",

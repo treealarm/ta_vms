@@ -23,13 +23,13 @@ namespace VmsMap.Demo
   {
     // hashed into the lock by PostgreSQL; any stable number does, as long as it is ours alone.
 
-    private static readonly string[] DeleteOrder = ["object", "camera", "space", "type", "level", "file"];
+    private static readonly string[] DeleteOrder =
+      ["object", "camera", "landmark", "space", "type", "level", "file"];
 
     private readonly VmsMapDbContext _db;
     private readonly IMapUpdateService _updates;
     private readonly IDiagramServiceInternal _diagrams;
     private readonly IDiagramTypeService _types;
-    private readonly ILevelService _levels;
     private readonly IStatesUpdateService _states;
     private readonly IRightServiceInternal _rights;
     private readonly IGeoService _geo;
@@ -38,6 +38,9 @@ namespace VmsMap.Demo
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
     private readonly IDeviceNodeService _cameraNodes;
+    private readonly IDeviceDiagramService _deviceDiagrams;
+    // Only to remove the layers an older world wrote: the dictionary is the map's own now.
+    private readonly ILevelService _levels;
 
     public DemoSeeder(
       VmsMapDbContext db,
@@ -52,13 +55,13 @@ namespace VmsMap.Demo
       VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras,
-      IDeviceNodeService cameraNodes)
+      IDeviceNodeService cameraNodes,
+      IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
       _updates = updates;
       _diagrams = diagrams;
       _types = types;
-      _levels = levels;
       _states = states;
       _rights = rights;
       _geo = geo;
@@ -67,6 +70,8 @@ namespace VmsMap.Demo
       _spatial = spatial;
       _cameras = cameras;
       _cameraNodes = cameraNodes;
+      _deviceDiagrams = deviceDiagrams;
+      _levels = levels;
     }
 
     public async Task<DemoStatus> GetStatusAsync(string key, CancellationToken ct)
@@ -294,6 +299,7 @@ namespace VmsMap.Demo
       }
 
       // ── Cameras: placed where the world wants them, skipped when the deployment lacks one ──
+      var placedCameras = new HashSet<string>(StringComparer.Ordinal);
       foreach (var placement in world.Placements)
       {
         var key = $"camera/{placement.CameraId}";
@@ -330,24 +336,112 @@ namespace VmsMap.Demo
 
         ids[key] = spaceId;
         keep.Add(key);
+        placedCameras.Add(placement.CameraId);
         Written(key);
       }
 
-      // ── Levels: the zoom ranges the demo's names are drawn at ──────────────────────────────
-      foreach (var level in world.Levels)
+      // ── A device's own diagram: an object of a canvas, made by the service that owns it ────
+      foreach (var diagram in world.DeviceDiagrams)
       {
-        var key = $"level/{level.Name}";
-        var id = IdOf(key);
-        await _levels.UpdateAsync([new LevelDTO
+        if (!placedCameras.Contains(diagram.CameraKey))
         {
-          id = id.ToString(),
-          zoom_level = level.Name,
-          zoom_min = level.Min,
-          zoom_max = level.Max,
+          // The device is not in this deployment: the diagram would draw nothing and say nothing.
+          if (!report.SkippedCameras.Contains(diagram.CameraKey))
+            report.SkippedCameras.Add(diagram.CameraKey);
+          continue;
+        }
+
+        var diagramId = await _deviceDiagrams.AttachAsync(
+          DeviceObjectId.CameraSource, DemoIds.Camera(diagram.CameraKey),
+          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot,
+          new DiagramSite(Required(diagram.SpaceKey).ToString(), diagram.At.Lat, diagram.At.Lon), ct);
+        if (diagramId is null)
+          continue;
+
+        // The diagram's own marker on the map is a thumbnail of the device it draws: the paper it
+        // opens on is the same picture, so the point reads as "the panel".
+        var picture = world.Files.Single(file => file.Key == diagram.VisualKey);
+        await _visuals.UpdateListAsync([new VisualDTO
+        {
+          object_id = diagramId,
+          image = picture.Content,
+          image_width = diagram.VisualWidth,
+          image_height = diagram.VisualHeight,
         }]);
-        ids[key] = id;
-        keep.Add(key);
-        Written(key);
+
+        // Registered like every other object of the world, so a removal takes it: the node's delete
+        // is what also takes its replicas and the service's row for it.
+        ids[diagram.Key] = Guid.Parse(diagramId);
+        keep.Add(diagram.Key);
+        Written(diagram.Key);
+      }
+
+      // ── Landmarks: the points the cameras are calibrated against ───────────────────────────
+      foreach (var landmark in world.Landmarks)
+      {
+        // A landmark gets its id from the server on the first install and keeps it afterwards, as
+        // a space does: observations and marks recorded against it name the id, not the key.
+        var id = registered.TryGetValue(landmark.Key, out var known) ? known.ToString() : string.Empty;
+        var saved = await _spatial.UpsertLandmarkAsync(new Landmark
+        {
+          Id = id,
+          SpaceId = Required(landmark.SpaceKey).ToString(),
+          Name = landmark.Name,
+          Lat = landmark.Lat,
+          Lon = landmark.Lon,
+          HeightM = landmark.HeightM,
+        }, ct);
+
+        ids[landmark.Key] = Guid.Parse(saved.Id);
+        keep.Add(landmark.Key);
+        Written(landmark.Key);
+      }
+
+      // ── Calibration: what each camera sees of those landmarks ─────────────────────────────
+      // The marks replace the camera's whole list, so a world that drops one leaves none behind.
+      // A camera the deployment lacks is skipped with its placement, and reported there.
+      foreach (var group in world.GroundMarks.GroupBy(mark => mark.CameraKey, StringComparer.Ordinal))
+      {
+        if (!placedCameras.Contains(group.Key))
+        {
+          // A mark for a camera the world never placed is a camera this install cannot show either.
+          if (!report.SkippedCameras.Contains(group.Key))
+            report.SkippedCameras.Add(group.Key);
+          continue;
+        }
+
+        var marks = new GroundObservations { CameraId = DemoIds.Camera(group.Key) };
+        marks.Observations.AddRange(group.Select(mark => new GroundObservation
+        {
+          LandmarkId = Required(mark.LandmarkKey).ToString(),
+          X = (float)mark.X,
+          Y = (float)mark.Y,
+        }));
+        await _spatial.SetGroundObservationsAsync(marks, ct);
+      }
+
+      foreach (var group in world.PtzObservations.GroupBy(observation => observation.CameraKey, StringComparer.Ordinal))
+      {
+        if (!placedCameras.Contains(group.Key))
+        {
+          if (!report.SkippedCameras.Contains(group.Key))
+            report.SkippedCameras.Add(group.Key);
+          continue;
+        }
+
+        var observations = new PtzGeoObservations { CameraId = DemoIds.Camera(group.Key) };
+        foreach (var observation in group)
+        {
+          var row = new PtzGeoObservation
+          {
+            LandmarkId = Required(observation.LandmarkKey).ToString(),
+            Pan = (float)observation.Pan,
+            Tilt = (float)observation.Tilt,
+          };
+          if (observation.Zoom is { } zoom) row.Zoom = (float)zoom;
+          observations.Observations.Add(row);
+        }
+        await _spatial.SetObservationsAsync(observations, ct);
       }
 
       // ── States and rights: rows of the nodes above, they go with them ──────────────────────
@@ -460,6 +554,12 @@ namespace VmsMap.Demo
               var cameraName = pair.Key["camera/".Length..];
               await _spatial.RemovePlacementAsync(DemoIds.Camera(cameraName), pair.Value, ct);
             }
+            break;
+
+          case "landmark":
+            // A landmark takes its observations with it, so the calibration goes without naming it.
+            foreach (var pair in ofKind)
+              await _spatial.RemoveLandmarkAsync(pair.Value, ct);
             break;
 
           case "space":

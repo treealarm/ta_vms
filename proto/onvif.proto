@@ -530,6 +530,10 @@ message GetCameraGeoLocationResponse {
   optional double lon         = 3;
   optional double elevation_m = 4;
   string          error       = 5;
+  // The way the camera says it looks, as a compass bearing (0 = north, clockwise): the map's own
+  // heading convention. A fixed camera reports the heading it was mounted at; a camera on a vehicle
+  // reports a heading that turns with it. Absent when the camera says nothing about its orientation.
+  optional double heading_deg = 6;
 }
 
 // ONVIF's GetRelayOutputs has no field for the relay's current logical (active/inactive) state —

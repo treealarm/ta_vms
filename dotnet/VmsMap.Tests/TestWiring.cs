@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.Domain;
 using VmsMap.Domain.Arming;
 
 namespace VmsMap.Tests;
@@ -41,6 +42,12 @@ internal static class TestWiring
     VmsMapDbContext db, MapDb map, MapUpdateService updates, ICameraCatalog? catalog = null) =>
     new(db, map, updates, catalog ?? new AlwaysKnownCatalog(),
         new NoDeviceSettings(), NullLogger<DeviceNodeService>.Instance);
+
+  public static DeviceDiagramService DeviceDiagrams(
+    VmsMapDbContext db, MapDb map, MapUpdateService updates, IGeoService geo,
+    ICameraCatalog? catalog = null) =>
+    new(db, map, updates, new DiagramService(db), new NoDeviceSettings(),
+        catalog ?? new AlwaysKnownCatalog(), geo, NullLogger<DeviceDiagramService>.Instance);
 
   public static EffectiveArmingResolver Arming(
     VmsMapDbContext db, ICameraStateSource? cameraState = null) =>

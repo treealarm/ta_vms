@@ -12,6 +12,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
 import PropertyValueField from './PropertyValueField'
+import { visualImageUrl } from '../../map/visualImage'
 import {
   PROPERTY_TYPES, PROPERTY_TYPE_LABELS, normalizeType, normalizeValue,
 } from './propertyTypes'
@@ -23,6 +24,8 @@ type Props = {
   /** What the map says about the node besides its shape: properties and look. */
   loaded: MapObjProps | null
   levels: MapLevel[]
+  /** Whether the canvas this stands on is a map: a plan has one scale and no layers. */
+  showLayer?: boolean
   onDelete: () => void
   onClose: () => void
 }
@@ -61,7 +64,7 @@ const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b)
  * drawn — colour, icon, rotation, caption and the scale layer it belongs to. Nothing saves until
  * Apply: a node has several fields that belong together, unlike a drag on the canvas.
  */
-export default function ObjectPropsEditor({ node, figure, loaded, levels, onDelete, onClose }: Props) {
+export default function ObjectPropsEditor({ node, figure, loaded, levels, showLayer, onDelete, onClose }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   // A picture of another node carries its owner's id: two rows with one name are the node and
@@ -228,7 +231,7 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
               <Box
                 component="img"
                 alt=""
-                src={`data:image/png;base64,${draft.image.data}`}
+                src={visualImageUrl(draft.image.data)}
                 sx={{ width: 28, height: 28, objectFit: 'contain', bgcolor: '#000', borderRadius: 0.5 }}
               />
               <Button size="small" onClick={() => set('image', null)}>{t('maps.editor.clearIcon')}</Button>
@@ -247,7 +250,7 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
           />
         </Stack>
 
-        {figure ? (
+        {figure && showLayer ? (
           <TextField
             size="small"
             select

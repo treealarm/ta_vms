@@ -69,9 +69,9 @@ REPO = Path(__file__).resolve().parents[2]
 COMPOSE_FILE = Path(__file__).resolve().parent / "docker-compose.yml"
 STATE_DIR = Path("/tmp/onvifsim-lab")
 SPACE_NAMES = {W.MAP_PAIR.name: "OnvifSim lab", W.PLAN_PAIR.name: "OnvifSim lab plan"}
-# The demo's pairs stand in spaces the demo world already holds: the hall pair in Room 101, the
-# road pair out on the map.
-DEMO_SPACE_NAMES = {W.MARYLAND_HALL_PAIR: "Room 101", W.MARYLAND_ROAD_PAIR: "UMD Data Center (demo)"}
+# The demo's pairs stand in spaces the demo world already holds: the hall pair on the first floor's
+# plan — the floor is the room, there is no plan of a room inside it — and the road pair on the map.
+DEMO_SPACE_NAMES = {W.MARYLAND_HALL_PAIR: "First floor", W.MARYLAND_ROAD_PAIR: "UMD Data Center (demo)"}
 PROFILE = "Profile_2"  # OnvifSim's H.264 profile, the one video_srv pulls
 CONTINUOUS = "00000000-0000-0000-0000-000000000001"  # ta_vms's built-in continuous recording profile
 # How long ta_vms takes from a closed gap to edge clips: VMS_BACKFILL_SETTLE_SECONDS (60) before it
@@ -81,7 +81,7 @@ EDGE_FILL_TIMEOUT = 8 * 60
 # is sent at most every two seconds (SlaveAimingSession.MinCommandInterval), and at 4 m a walker's
 # angular speed across the view is 29° a second: no aiming chain holds them, however exact, and the
 # samples would measure the cadence rather than the aim. The hall's slave stands beside the line the
-# person walks in Room 101, so a lap there passes close by it; the yard's stands well off its route.
+# person walks in the hall, so a lap there passes close by it; the yard's stands well off its route.
 HOLD_RADIUS_M = 4.0
 # The edge step's GOP: long, so that a replay asked to start between key frames comes from well before
 # it, and footage stamped from where the replay began rather than from the camera's own time shows.
@@ -147,7 +147,7 @@ class Lab:
         self.vms = Vms(args.vms, args.user, args.password)
         self.state_file = state_file(args.vms)
         self.state = load_state(self.state_file)
-        # The demo world runs a pair of its own — the hall in Room 101 — and no heights or mounts:
+        # The demo world runs a pair of its own — the hall on the first floor — and no heights or mounts:
         # those belong to the yard. Its cameras come from the world OnvifSim serves, which the demo
         # world file fixes, so the bench calibrates where the demo has placed them.
         self.demo = args.world == "maryland"

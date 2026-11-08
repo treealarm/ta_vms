@@ -1,25 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, IconButton, List,
-  ListItemButton, ListItemText, MenuItem, Stack, TextField, Tooltip, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, IconButton, List,
+  ListItemButton, ListItemText, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
-import AddLocationAltIcon from '@mui/icons-material/AddLocationAlt'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
-import type { CameraPlacementDto, SpaceDto } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
+import { loadCameras } from '../../store/liveSlice'
+import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
 import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
-import { loadSpaces, upsertPlacement } from '../../store/spatialSlice'
+import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
+import CameraUnifiedCard from '../CameraUnifiedCard'
+import NodeStateChips from '../objects/NodeStateChips'
 import DiagramViewer from '../diagrams/DiagramViewer'
 
 /**
@@ -31,31 +33,32 @@ import DiagramViewer from '../diagrams/DiagramViewer'
 export default function NodesAdminPanel() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // `?node=` is a way in from the map: the same link the camera's placement panel offers.
+  const [searchParams] = useSearchParams()
+  const linkedNode = searchParams.get('node')
   const dispatch = useAppDispatch()
   const markers = useAppSelector((s) => s.objects.markers)
   const pages = useAppSelector((s) => s.objects.childrenByParent)
   const roots = useAppSelector((s) => s.objects.roots)
+  const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const placements = useAppSelector((s) => s.spatial.placements)
   const spaces = useAppSelector((s) => s.spatial.spaces)
+  const states = useAppSelector((s) => s.states.states)
+  const alarms = useAppSelector((s) => s.states.alarms)
+  const descriptions = useAppSelector((s) => s.states.descriptions)
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<string[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [spaceId, setSpaceId] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
   // The diagram open in a read-only viewer over the tree, and which one it is.
   const [viewer, setViewer] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
-    if (spaces.length === 0) void dispatch(loadSpaces())
-  }, [roots, spaces.length, dispatch])
-
-  // Derived, not written back by an effect: a chosen space wins, otherwise the first one is the
-  // one the form starts on.
-  const chosenSpaceId = spaceId || spaces[0]?.id || ''
+  }, [roots, dispatch])
 
   // Server-side, two characters at least: a lazy tree cannot find a token inside an unopened
   // server, and a client-side filter would only search what the reader happened to open.
@@ -126,6 +129,18 @@ export default function NodesAdminPanel() {
     setSelectedId(marker.id)
   }
 
+  // A link from the map names a node the page has not read yet: read it, then unfold the path.
+  // Re-running on every marker change would fight the reader's own navigation.
+  useEffect(() => {
+    if (!linkedNode) return
+    void (async () => {
+      const loaded = await dispatch(loadNodes([linkedNode])).unwrap().catch(() => null)
+      const marker = loaded?.markers.find((candidate) => candidate.id === linkedNode)
+      if (marker) await openInTree(marker)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedNode, dispatch])
+
   /**
    * The diagram a camera carries is a child of its canonical node, so opening it from the camera
    * means reading that node's children first. A diagram node opens as itself.
@@ -151,34 +166,23 @@ export default function NodesAdminPanel() {
 
   const selected = selectedId ? markers[selectedId] : null
 
-  const placeOnMap = async () => {
-    if (!selected?.cameraId || !chosenSpaceId) return
-    const space = spaces.find((s) => s.id === chosenSpaceId)
-    const lat = space ? (space.view.southWest.lat + space.view.northEast.lat) / 2 : 0
-    const lon = space ? (space.view.southWest.lon + space.view.northEast.lon) / 2 : 0
+  // The row is a device like any other: the camera behind it is shown here as the map shows it,
+  // and its states are the device's own, not the tree's.
+  useEffect(() => {
+    if (Object.keys(camerasById).length === 0) void dispatch(loadCameras())
+    void dispatch(loadPlacements())
+    void dispatch(loadSpaces())
+  }, [camerasById, dispatch])
 
-    const placement: CameraPlacementDto = {
-      cameraId: selected.cameraId,
-      spaceId: chosenSpaceId,
-      // The first placement of a camera becomes its reference in the service; a later one is a
-      // picture, and the reference is never moved from here.
-      isReference: false,
-      lat,
-      lon,
-      heightM: 3,
-      headingDeg: 0,
-      hfovDeg: 60,
-      rangeM: 30,
-    }
+  useEffect(() => {
+    if (selectedId) void dispatch(loadVisualStates([selectedId]))
+  }, [selectedId, dispatch])
 
-    try {
-      await dispatch(upsertPlacement(placement)).unwrap()
-      setNotice(t('nodes.placed', { name: space?.name ?? '' }))
-      setError(null)
-    } catch (e) {
-      setError(errorText(e))
-    }
-  }
+  const selectedCamera = selected?.cameraId ? camerasById[selected.cameraId] : undefined
+  const reference = selected?.cameraId
+    ? placements.find((placement) => placement.cameraId === selected.cameraId && placement.isReference)
+    : undefined
+  const referenceSpace = spaces.find((space) => space.id === reference?.spaceId)
 
   // A part is its own node kind now: the server resolves it from device_node, not from a guess
   // about the parent.
@@ -294,7 +298,6 @@ export default function NodesAdminPanel() {
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
             <Stack spacing={2}>
               {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
-              {notice && <Alert severity="success" onClose={() => setNotice(null)}>{notice}</Alert>}
 
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                 <Chip size="small" variant="outlined" label={selected.nodeKind ?? 'object'} />
@@ -305,6 +308,45 @@ export default function NodesAdminPanel() {
                   <Chip size="small" variant="outlined" color="info" label={t('nodes.replica')} />
                 )}
               </Stack>
+
+              {selected.nodeKind === 'part' || selectedCamera ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('maps.node.states')}</Typography>
+                  {alarms[selected.id]?.alarm || (states[selected.id]?.states?.length ?? 0) > 0 ? (
+                    <NodeStateChips
+                      state={states[selected.id]}
+                      alarm={alarms[selected.id]}
+                      descriptions={descriptions}
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
+                  )}
+                </Box>
+              ) : null}
+
+              {selected?.cameraId ? (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }} useFlexGap>
+                  <Typography variant="body2" color="text.secondary">
+                    {reference
+                      ? t('nodes.standsIn', { name: referenceSpace?.name ?? reference.spaceId })
+                      : t('nodes.standsNowhere')}
+                  </Typography>
+                  {reference ? (
+                    <Button
+                      size="small"
+                      onClick={() => navigate(`/admin/maps?camera=${encodeURIComponent(selected.cameraId!)}`)}
+                    >
+                      {t('nodes.showOnMap')}
+                    </Button>
+                  ) : null}
+                </Stack>
+              ) : null}
+
+              {selectedCamera ? (
+                <Box sx={{ height: 340, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                  <CameraUnifiedCard camera={selectedCamera} slotKey={`nodes:${selectedCamera.cameraId}`} />
+                </Box>
+              ) : null}
 
               {isPart && (
                 <Box>
@@ -319,38 +361,6 @@ export default function NodesAdminPanel() {
                     {t('nodes.statesEvents')}
                   </Button>
                 </Box>
-              )}
-
-              {selected.nodeKind === 'camera' && selected.cameraId && (
-                <>
-                  <Divider />
-                  <Box>
-                    <Typography variant="subtitle2">{t('nodes.placeOnMap')}</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                      {t('nodes.placeHint')}
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <TextField
-                        select size="small" label={t('nodes.space')}
-                        value={chosenSpaceId}
-                        onChange={(e) => setSpaceId(e.target.value)}
-                        sx={{ minWidth: 240 }}
-                      >
-                        {spaces.map((space: SpaceDto) => (
-                          <MenuItem key={space.id} value={space.id ?? ''}>{space.name}</MenuItem>
-                        ))}
-                      </TextField>
-                      <Button
-                        variant="contained" size="small"
-                        startIcon={<AddLocationAltIcon fontSize="small" />}
-                        disabled={!chosenSpaceId}
-                        onClick={() => void placeOnMap()}
-                      >
-                        {t('nodes.place')}
-                      </Button>
-                    </Stack>
-                  </Box>
-                </>
               )}
             </Stack>
           </Box>

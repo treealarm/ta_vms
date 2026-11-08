@@ -159,6 +159,8 @@ public class DeviceIoController(
       lat = response.HasLat ? response.Lat : (double?)null,
       lon = response.HasLon ? response.Lon : (double?)null,
       elevationM = response.HasElevationM ? response.ElevationM : (double?)null,
+      // The bearing it says it looks along, a compass bearing; absent when it says nothing.
+      headingDeg = response.HasHeadingDeg ? response.HeadingDeg : (double?)null,
     });
   }
 

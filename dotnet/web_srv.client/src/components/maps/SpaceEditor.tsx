@@ -34,7 +34,7 @@ import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
-import { cornersAround, distance, rescaleCorners } from '../../map/geo'
+import { cornersAround, distance, figureAtPlacement, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -111,9 +111,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const figuresById = useAppSelector((s) => s.objects.figures)
   const propsById = useAppSelector((s) => s.objects.props)
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null
-  const selectedNode = selectedNodeId ? markersById[selectedNodeId] : undefined
-  const selectedFigure = selectedNodeId ? figuresById[selectedNodeId] : undefined
-  const selectedProps = selectedNodeId ? propsById[selectedNodeId] : undefined
   const diagramContent = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
 
@@ -148,11 +145,6 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     if (levels.length === 0) void dispatch(loadLevels())
   }, [levels.length, dispatch])
 
-  // The editor needs the node's properties and look, which the tree read does not carry.
-  useEffect(() => {
-    if (selectedNodeId) void dispatch(loadObjProps(selectedNodeId))
-  }, [selectedNodeId, dispatch])
-
   const here = placements.filter((p) => p.spaceId === spaceId)
   // The spaces whose footprint is on this canvas, wherever the tree holds them.
   const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
@@ -166,11 +158,23 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   // The node that carries a placement is a replica of the camera -- always, reference or picture:
   // the canonical node stands under its server and is never drawn on a canvas.
   const nodeForPlacement = (p: CameraPlacementDto) =>
-    mapData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
-      ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
+    figureAtPlacement(mapData.figures, p) ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
-  const selectedPlacement = selection?.kind === 'camera' ? placementHere(selection.id) : undefined
+  // The camera behind the selection: a picture clicked on the canvas names it, a row picked in the
+  // tree names its node. Only the node a placement draws is that placement — another picture of the
+  // same camera (its readings, say) is a node of its own and has no placement here.
+  const selectedCameraId = selection?.kind === 'camera'
+    ? selection.id
+    : selection?.kind === 'node'
+      ? (() => {
+          const cameraId = markersById[selection.id]?.cameraId
+          if (!cameraId) return undefined
+          const placement = placementHere(cameraId)
+          return placement && nodeForPlacement(placement)?.id === selection.id ? cameraId : undefined
+        })()
+      : undefined
+  const selectedPlacement = selectedCameraId ? placementHere(selectedCameraId) : undefined
   const selectedLandmark = selection?.kind === 'landmark' ? landmarks.find((m) => m.id === selection.id) : undefined
   const selectedNested = selection?.kind === 'footprint' ? nested.find((s) => s.id === selection.id) : undefined
   // The node the selection stands for, whichever panel shows it: the one to move and to put a
@@ -180,6 +184,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     ?? selectedLandmark?.id
     ?? selectedNested?.id
     ?? undefined
+  // The node whichever panel shows: a camera by its placement's replica, a landmark, a nested
+  // space by its footprint — so the Object tab is the same form for all of them.
+  const selectedNode = selectionNodeId ? markersById[selectionNodeId] : undefined
+  const selectedFigure = selectionNodeId ? figuresById[selectionNodeId] : undefined
+  const selectedProps = selectionNodeId ? propsById[selectionNodeId] : undefined
+
+  // The editor needs the node's properties and look, which the tree read does not carry.
+  useEffect(() => {
+    if (selectionNodeId) void dispatch(loadObjProps(selectionNodeId))
+  }, [selectionNodeId, dispatch])
+
   // A container is any selected node: a new object goes inside it, as a parent is chosen in Square.
   const containerId = selection?.kind === 'node' ? selectedNodeId : null
 
@@ -430,6 +445,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         camera={camerasById[selectedPlacement.cameraId]}
         placement={selectedPlacement}
         nodeId={nodeForPlacement(selectedPlacement)?.id}
+        // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
+        showLayer={space.kind === 'map'}
+        ownerNodeId={nodeForPlacement(selectedPlacement)?.ownerId}
         referenceSpace={referenceSpace}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
@@ -445,6 +463,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     <LandmarkPanel
       key={selectedLandmark.id}
       landmark={selectedLandmark}
+      showLayer={space.kind === 'map'}
       onChange={(m) => void run(() => dispatch(upsertLandmark(m)).unwrap())}
       onRemove={() => {
         if (!window.confirm(t('maps.confirmRemoveLandmark', { name: selectedLandmark.name }))) return
@@ -459,6 +478,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     <FootprintPanel
       key={selectedNested.id}
       space={selectedNested}
+      showLayer={space.kind === 'map'}
       onOpen={() => selectedNested.id && onOpenSpace(selectedNested.id)}
       onRemoveFootprint={() => {
         void saveFootprint(selectedNested, [])
@@ -478,6 +498,22 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       onClose={() => setSelection(null)}
     />
   ) : selectedNode ? (
+    /* A node with nothing contextual to show — a drawn shape, a container — is edited on the
+       Object tab, where every node of the canvas is edited the same way. */
+    <Box sx={{ p: 2 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+        {t('maps.objectOnItsTab')}
+      </Typography>
+      <Button size="small" variant="outlined" onClick={() => setSideTab('object')}>
+        {t('maps.tabObject')}
+      </Button>
+    </Box>
+  ) : (
+    <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>{t('maps.nothingSelected')}</Typography>
+  )
+
+  /** The selected node itself — its name, look and properties — whichever panel selected it. */
+  const objectPanel = selectedNode ? (
     selectedProps ? (
       <ObjectPropsEditor
         // The marker's version changes with every write, so a save reopens the form on what was
@@ -487,6 +523,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         figure={selectedFigure ?? null}
         loaded={selectedProps}
         levels={levels}
+        showLayer={space.kind === 'map'}
         onDelete={() => void run(async () => {
           await dispatch(deleteNode(selectedNode.id)).unwrap()
           setSelection(null)
@@ -650,10 +687,13 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               levels={levels}
               selectedId={selectedNodeId}
               onSelect={selectOnCanvas}
-              // A camera placed here is drawn by its marker, not by the shape the node carries.
-              skipIds={new Set(mapData.markers
-                .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
-                .map((marker) => marker.id))}
+              // A camera placed here is drawn by its marker, not by the shape the node carries. A
+              // diagram that is a replica of a camera is not that picture: it is a node of its own
+              // on this canvas, and hiding it hid the whole readings panel. So only the replica
+              // standing exactly on a placement is skipped.
+              skipIds={new Set(here
+                .map((placement) => figureAtPlacement(mapData.figures, placement)?.id)
+                .filter((id): id is string => !!id))}
               editable={mode === 'select'}
               interactive={!picking}
               onGeometryChange={handleGeometryChange}
@@ -685,12 +725,19 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   placement={p}
                   label={camera?.name || p.cameraId}
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
-                  selected={selection?.kind === 'camera' && selection.id === p.cameraId}
+                  // A marker is the picture the placement draws: the one node, not every picture
+                  // of that camera.
+                  selected={selection?.kind === 'camera'
+                    ? selection.id === p.cameraId
+                    : nodeForPlacement(p)?.id === selectedNodeId}
                   editable={mode === 'select'}
                   interactive={!picking}
                   levels={levels}
                   zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
-                  onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
+                  onSelect={() => {
+                    const node = nodeForPlacement(p)
+                    setSelection(node ? { kind: 'node', id: node.id } : { kind: 'camera', id: p.cameraId })
+                  }}
                   onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
                 />
               )
@@ -715,14 +762,20 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       </Box>
 
       <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* Four labels in a 300px column: the tabs share the width and keep their own letter size,
+            so the last one is never the one that falls off the edge. */}
         <Tabs
           value={sideTab}
           onChange={(_, v: SideTab) => setSideTab(v)}
           variant="fullWidth"
-          sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40, '& .MuiTab-root': { minHeight: 40 } }}
+          sx={{
+            borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40,
+            '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
+          }}
         >
           <Tab value="space" label={t('maps.tabSpace')} />
           <Tab value="selection" label={t('maps.tabSelection')} />
+          <Tab value="object" label={t('maps.tabObject')} />
           <Tab value="rights" label={t('rights.tab')} />
         </Tabs>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -743,7 +796,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             </>
           )}
           {/* The rights of what is selected — or of the space itself, when nothing else is. */}
-          {sideTab === 'rights' && <ObjectRights nodeId={selectedNodeId ?? spaceId} />}
+          {sideTab === 'object' && objectPanel}
+          {sideTab === 'rights' && <ObjectRights nodeId={selectionNodeId ?? spaceId} />}
         </Box>
       </Box>
 

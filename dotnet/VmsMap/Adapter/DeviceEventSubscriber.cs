@@ -111,8 +111,8 @@ namespace VmsMap.Adapter
         await reconciler.ApplyAsync(snapshot, ct);
 
         // After the device, in the same order the plan fixes: the model was stored, the parts were
-        // brought into the tree, and only then is a diagram drawn from them. An unreachable camera
-        // published no parts, so there is nothing to draw from.
+        // brought into the tree, and only then are the replicas in a diagram the administrator
+        // placed brought in line with them. A device with no diagram costs one query here.
         if (snapshot.Reachable)
         {
           var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
