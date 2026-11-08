@@ -23,6 +23,7 @@ here is deleted or cut down to what is still left.
 | [ground-map-provider.md](ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
 | [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the camera read behind a tile's device list, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
+| [onvif-pull-point-leak.md](onvif-pull-point-leak.md) | Pull points are extended by every `PullMessages`; disposal does not wait for the receive loop or unsubscribe, so a busy bench exhausts a camera's `MaxPullPoints` |
 | [person-as-object.md](person-as-object.md) | Человек и любое движущееся — как объект с треком: идентичность, история, поиск по времени и зоне (в Square были треки); сейчас на карте только проекция бокса |
 | [plan-or-diagram.md](plan-or-diagram.md) | План и диаграмма: настоящая ось — географическая рамка, а не тип сущности; свободные объекты на диаграммах, затем необязательная рамка |
 | [prism-holes.md](prism-holes.md) | Призма с внутренними кольцами: сейчас контур с двором отвергается, нужна поддержка отверстий |
