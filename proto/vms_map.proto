@@ -1001,11 +1001,16 @@ message AttachDeviceDiagramRequest {
   string source_kind = 1;
   // The device's id in the owning service.
   string source_id = 2;
-  // The template to draw it from.
+  // The template to draw it from. Empty asks for the one that matches the device's model, and an
+  // empty sheet when none does.
   string diagram_type_id = 3;
   // Which view of the device: empty means the one every device has for now.
   string slot = 4;
   Caller caller = 5;
+  // The canvas the diagram is drawn on: a diagram is a map object, not a child of the device.
+  string space_id = 6;
+  // Where it stands on that canvas. Unset puts it beside the camera's own placement.
+  Coordinate at = 7;
 }
 
 message DiagramList {

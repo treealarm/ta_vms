@@ -29,6 +29,9 @@ public class DeviceDiagramServiceTests
     FakeSettings Settings,
     FakeCatalog Catalog);
 
+  /// The canvas every diagram of these tests is drawn on.
+  private static readonly Guid Space = Guid.Parse("4b1f0f6c-2a55-4a2c-9a3e-6f1c1e9b7d01");
+
   private sealed class FakeSettings : IDeviceSettingsSource
   {
     public List<DeviceSettingsInfo> Rows { get; } = [];
@@ -67,14 +70,21 @@ public class DeviceDiagramServiceTests
     var levels = new LevelService(db);
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), new GeoService(db, levels));
     var updates = new MapUpdateService(map, tracks, statesUpdate);
+    var geo = new GeoService(db, levels);
 
     var settings = new FakeSettings();
     var catalog = new FakeCatalog();
     var nodes = new DeviceNodeService(
       db, map, updates, catalog, settings, NullLogger<DeviceNodeService>.Instance);
     var diagrams = new DeviceDiagramService(
-      db, map, updates, new DiagramService(db), settings, catalog,
+      db, map, updates, new DiagramService(db), settings, catalog, geo,
       NullLogger<DeviceDiagramService>.Instance);
+
+    // The canvas the diagrams stand on: a diagram is a map object, and one of these tests needs
+    // only the space to exist.
+    db.Markers.Add(new DBMarker { id = Space, name = "Floor" });
+    db.Spaces.Add(new DBSpace { object_id = Space, kind = SpaceKinds.Map });
+    await db.SaveChangesAsync();
 
     return new Services(db, map, diagrams, nodes, settings, catalog);
   }
@@ -182,8 +192,15 @@ public class DeviceDiagramServiceTests
     s.Diagrams.EnsureAsync(
       DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot, default);
 
+  /// Draws the device on the tests' canvas; without a type the one its model names is taken.
+  private static Task<string?> AttachAsync(
+    Services s, string? typeId = null, string cameraId = CameraId, DiagramSite? site = null) =>
+    s.Diagrams.AttachAsync(
+      DeviceObjectId.CameraSource, cameraId, typeId, IDeviceDiagramService.DefaultSlot,
+      site ?? new DiagramSite(Utils.ConvertGuidToObjectId(Space), 38.99, -76.94), default);
+
   [Fact]
-  public async Task ATemplateDrawsTheConfiguredPartsUnderTheCamera()
+  public async Task ATemplateDrawsTheConfiguredPartsOnItsCanvas()
   {
     var s = await CreateAsync();
     await SeedCameraAsync(s);
@@ -195,14 +212,14 @@ public class DeviceDiagramServiceTests
       ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"),
       ("caption", string.Empty, string.Empty, string.Empty));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
     Assert.Equal(typeId, row.diagram_type_id);
-    Assert.True(row.auto_created);
-    Assert.Equal(
-      Guid.Parse(CameraObjectId.For(CameraId)),
-      (await s.Db.Markers.SingleAsync(m => m.id == row.object_id)).parent_id);
+    Assert.False(row.auto_created);
+    // A diagram is a map object: it stands on the canvas it was drawn on, at the point asked for.
+    Assert.Equal(Space, (await s.Db.Markers.SingleAsync(m => m.id == row.object_id)).parent_id);
+    Assert.NotNull(await s.Db.GeoObjects.SingleOrDefaultAsync(g => g.id == row.object_id));
 
     // Two regions bound; the third is a caption and draws nothing.
     var managed = await s.Db.DeviceDiagramParts.ToListAsync();
@@ -224,7 +241,7 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var first = (await s.Db.DeviceDiagrams.SingleAsync(), await s.Db.DeviceDiagramParts.SingleAsync());
 
     await EnsureAsync(s);
@@ -235,7 +252,7 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
-  public async Task ADeviceWithoutConfiguredPartsGetsNoDiagram()
+  public async Task ADeviceWithoutConfiguredPartsGetsAnEmptySheet()
   {
     var s = await CreateAsync();
     await SeedCameraAsync(s);
@@ -256,10 +273,50 @@ public class DeviceDiagramServiceTests
     await s.Db.SaveChangesAsync();
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
 
-    // Not a single part from the template is configured, so there is no diagram at all.
-    Assert.Empty(s.Db.DeviceDiagrams);
+    // The sheet is there — the administrator can draw on it — but nothing is bound into it.
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.NotNull(row.diagram_type_id);
+    Assert.Empty(s.Db.DeviceDiagramParts);
+  }
+
+  [Fact]
+  public async Task ADeviceWithNoTemplateGetsAnEmptySheet()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+
+    await AttachAsync(s);
+
+    // No template matches the model: a blank sheet rather than nothing at all.
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Null(row.diagram_type_id);
+    Assert.Empty(s.Db.DeviceDiagramParts);
+  }
+
+  [Fact]
+  public async Task ADiagramWithoutAPointStandsInTheMiddleOfTheSpace()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    // The camera is not drawn on this canvas, so there is no placement to stand beside.
+    var space = await s.Db.Spaces.SingleAsync();
+    space.view_south = 38.9; space.view_north = 39.0;
+    space.view_west = -77.0; space.view_east = -76.9;
+    await s.Db.SaveChangesAsync();
+
+    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(Space)));
+
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    var figure = await s.Db.GeoObjects.SingleAsync(g => g.id == row.object_id);
+    Assert.Equal(38.95, figure.figure!.Centroid.Y, 6);
+    Assert.Equal(-76.95, figure.figure!.Centroid.X, 6);
   }
 
   [Fact]
@@ -271,7 +328,7 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var replica = (await s.Db.DeviceDiagramParts.SingleAsync()).replica_object_id;
 
     s.Settings.Rows.Clear();
@@ -294,7 +351,7 @@ public class DeviceDiagramServiceTests
     var lamp = await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var row = await s.Db.DeviceDiagrams.SingleAsync();
 
     // The administrator puts a second picture of the same part in the same diagram, outside the
@@ -328,7 +385,7 @@ public class DeviceDiagramServiceTests
     await SeedTypeAsync(s, new TypeSpec(Name: "Front panel", Model: "Simulated PTZ camera"),
       ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var node = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
     var rear = await s.Db.DiagramTypes.SingleAsync(t => t.name == "Rear panel");
 
@@ -358,7 +415,7 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     var typeId = await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
 
     var info = await s.Db.DeviceInfos.SingleAsync();
     info.model = "Something else entirely";
@@ -380,7 +437,7 @@ public class DeviceDiagramServiceTests
     await SeedTypeAsync(s, new TypeSpec(),
       ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var nodeId = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
 
     // Deleting a type leaves the row and the canvas without one (ON DELETE SET NULL) — which is
@@ -408,7 +465,7 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
-  public async Task ATieBetweenTemplatesCreatesNothing()
+  public async Task ATieBetweenTemplatesMakesAnEmptySheet()
   {
     var s = await CreateAsync();
     await SeedCameraAsync(s);
@@ -419,10 +476,13 @@ public class DeviceDiagramServiceTests
     await SeedTypeAsync(s, new TypeSpec(Name: "Front panel"),
       ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
 
-    // Which panel to draw is the administrator's to say: a wrong one looks like a right one.
-    Assert.Empty(s.Db.DeviceDiagrams);
+    // Which panel to draw is the administrator's to say: a wrong one looks like a right one, so
+    // neither is drawn and the sheet is blank.
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Null(row.diagram_type_id);
+    Assert.Empty(s.Db.DeviceDiagramParts);
   }
 
   [Fact]
@@ -438,9 +498,7 @@ public class DeviceDiagramServiceTests
     await EnsureAsync(s);
     Assert.Empty(s.Db.DeviceDiagrams);
 
-    await s.Diagrams.AttachAsync(
-      DeviceObjectId.CameraSource, CameraId, Utils.ConvertGuidToObjectId(typeId),
-      IDeviceDiagramService.DefaultSlot, default);
+    await AttachAsync(s, Utils.ConvertGuidToObjectId(typeId));
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
     Assert.Equal(typeId, row.diagram_type_id);
@@ -460,8 +518,8 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp", cameraId: OtherCameraId);
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
-    await EnsureAsync(s, OtherCameraId);
+    await AttachAsync(s);
+    await AttachAsync(s, cameraId: OtherCameraId);
 
     Assert.Equal(2, await s.Db.DeviceDiagrams.CountAsync());
     Assert.Equal(2, await s.Db.DeviceDiagramParts.CountAsync());
@@ -479,7 +537,7 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     var typeId = await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var replica = (await s.Db.DeviceDiagramParts.SingleAsync()).replica_object_id;
 
     // The administrator moves the binding to another region of the same type.
@@ -526,7 +584,7 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    await EnsureAsync(s);
+    await AttachAsync(s);
     var row = await s.Db.DeviceDiagrams.SingleAsync();
     var replica = (await s.Db.DeviceDiagramParts.SingleAsync()).replica_object_id;
 

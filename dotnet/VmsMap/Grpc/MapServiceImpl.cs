@@ -334,17 +334,17 @@ namespace VmsMap.Grpc
     }
 
     /// <summary>
-    /// Draws a device from a template the administrator picked — the path for a model no template
-    /// attaches itself to. The diagram it creates hangs under the camera's canonical node and is
-    /// maintained exactly like an automatic one.
+    /// Draws a device on the map — the administrator's path: the diagram is an object of the named
+    /// canvas, drawn from the template that matches the device's model (or a blank sheet when none
+    /// does), with the device's configured parts bound to its regions.
     /// </summary>
     public override async Task<MapProto.Marker> AttachDeviceDiagram(
       MapProto.AttachDeviceDiagramRequest request, ServerCallContext context)
     {
       var ct = context.CancellationToken;
-      if (string.IsNullOrWhiteSpace(request.SourceId) || string.IsNullOrWhiteSpace(request.DiagramTypeId))
+      if (string.IsNullOrWhiteSpace(request.SourceId) || string.IsNullOrWhiteSpace(request.SpaceId))
         throw new RpcException(new Status(
-          StatusCode.InvalidArgument, "A device and a template are required"));
+          StatusCode.InvalidArgument, "A device and the canvas it is drawn on are required"));
 
       var sourceKind = string.IsNullOrWhiteSpace(request.SourceKind)
         ? DeviceObjectId.CameraSource
@@ -353,15 +353,13 @@ namespace VmsMap.Grpc
         ? IDeviceDiagramService.DefaultSlot
         : request.Slot;
 
-      await _deviceDiagrams.AttachAsync(sourceKind, request.SourceId, request.DiagramTypeId, slot, ct);
-
-      var row = await _db.DeviceDiagrams.AsNoTracking().FirstOrDefaultAsync(
-        d => d.source_kind == sourceKind && d.source_id == request.SourceId && d.slot == slot, ct);
-      if (row is null)
+      var site = new DiagramSite(request.SpaceId, request.At?.Lat, request.At?.Lon);
+      var objectId = await _deviceDiagrams.AttachAsync(
+        sourceKind, request.SourceId, request.DiagramTypeId, slot, site, ct);
+      if (objectId is null)
         throw new RpcException(new Status(StatusCode.FailedPrecondition,
-          "The diagram could not be drawn: the camera has no configured parts, or the template is unknown"));
+          "The diagram could not be drawn: the space does not exist, or the template is gone"));
 
-      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
       var marker = (await _mapService.GetAsync([objectId])).GetValueOrDefault(objectId);
       if (marker is null)
         throw new RpcException(new Status(StatusCode.Internal, "The diagram node is missing"));
