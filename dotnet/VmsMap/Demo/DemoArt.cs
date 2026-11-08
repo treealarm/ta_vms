@@ -27,8 +27,8 @@ namespace VmsMap.Demo
     public const int PortHeight = 40;
     public const int TelemetryWidth = 360;
     public const int TelemetryHeight = 220;
-    public const int CameraPanelWidth = 480;
-    public const int CameraPanelHeight = 320;
+    public const int CameraPanelWidth = 640;
+    public const int CameraPanelHeight = 400;
 
     // A degree of a great circle, in metres: the WGS84 sphere the map's coordinates are laid out on.
     // A plan is drawn in degrees, so a size in metres comes from this, at the latitude it stands at.
@@ -43,13 +43,16 @@ namespace VmsMap.Demo
       ("loop", "LOOP"),
     ];
 
-    private const double PanelSocketTop = 0.44;
-    private const double PanelSocketWidth = 0.18;
-    private const double PanelSocketHeight = 0.20;
-    private const double PanelSocketLeft = 0.06;
+    // The terminal block the camera's cable ends in: one screw terminal per part, left to right.
+    // The drawing and the regions come from the same numbers, so a replica sits on its terminal.
+    private const double TerminalTop = 0.55;
+    private const double TerminalWidth = 0.0625;
+    private const double TerminalHeight = 0.12;
+    private const double TerminalFirstLeft = 0.655;
+    private const double TerminalStep = 0.0725;
 
-    /// The socket a terminal of the camera's rear panel is drawn in; its region is the same
-    /// rectangle, so a replica placed there sits exactly on the terminal.
+    /// The terminal of the camera's rear panel a part is wired to; its region is the same
+    /// rectangle, so a replica placed there sits exactly on the screw terminal.
     public static DemoRect CameraPanelSocket(string key)
     {
       var index = Array.FindIndex(PanelSockets, socket => socket.Key == key);
@@ -57,8 +60,7 @@ namespace VmsMap.Demo
         throw new ArgumentException($"No socket '{key}' on the camera's rear panel", nameof(key));
 
       return new DemoRect(
-        PanelSocketLeft + index * (PanelSocketWidth + 0.025), PanelSocketTop,
-        PanelSocketWidth, PanelSocketHeight);
+        TerminalFirstLeft + index * TerminalStep, TerminalTop, TerminalWidth, TerminalHeight);
     }
 
     // A switch's sockets, and the switch a slot holds: eight ports and six slots in a rack. Public
@@ -202,21 +204,52 @@ namespace VmsMap.Demo
       return Close(svg);
     }
 
-    /// A camera seen from behind: the body, the terminal block, and one socket per part the demo
-    /// configures. A device's diagram is a picture with regions, exactly like a mnemoscheme.
+    /// The camera as an installer documents it: the body with its lens and illuminator, the cable
+    /// out of its back, and the terminal block it ends in. One screw terminal per configured part,
+    /// so a contact on the picture is a contact on the camera.
     public static byte[] CameraRearPanel()
     {
       var svg = Open(CameraPanelWidth, CameraPanelHeight);
-      svg.Append("<rect x=\"8\" y=\"8\" width=\"464\" height=\"304\" rx=\"12\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"3\"/>");
-      svg.Append("<text x=\"28\" y=\"46\" font-family=\"monospace\" font-size=\"18\" letter-spacing=\"3\" fill=\"#7f9ab1\">CAMERA — REAR PANEL</text>");
-      svg.Append("<rect x=\"28\" y=\"64\" width=\"424\" height=\"40\" rx=\"4\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"1\"/>");
-      svg.Append("<text x=\"40\" y=\"90\" font-family=\"monospace\" font-size=\"12\" fill=\"#5f7a91\">12V   GND   I/O   LAN   RESET</text>");
+      svg.Append("<rect x=\"3\" y=\"3\" width=\"634\" height=\"394\" rx=\"12\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"3\"/>");
+      svg.Append("<text x=\"24\" y=\"38\" font-family=\"monospace\" font-size=\"15\" letter-spacing=\"3\" fill=\"#7f9ab1\">CAMERA — TERMINALS</text>");
+
+      // The body: a sunshade over a barrel, the lens at its front, the illuminator and the PIR
+      // around it — the shape of the camera in the field, not a schematic rectangle.
+      svg.Append("<ellipse cx=\"230\" cy=\"306\" rx=\"150\" ry=\"12\" fill=\"#0a1018\"/>");
+      svg.Append("<rect x=\"150\" y=\"118\" width=\"212\" height=\"168\" rx=\"16\" fill=\"#1a2530\" stroke=\"#38506a\" stroke-width=\"3\"/>");
+      svg.Append("<rect x=\"134\" y=\"100\" width=\"244\" height=\"42\" rx=\"10\" fill=\"#223141\" stroke=\"#38506a\" stroke-width=\"2\"/>");
+      svg.Append("<rect x=\"78\" y=\"146\" width=\"86\" height=\"152\" rx=\"16\" fill=\"#223141\" stroke=\"#38506a\" stroke-width=\"3\"/>");
+
+      // The lens: three rings, and the ring of LEDs the picture shows as a crown.
+      svg.Append("<circle cx=\"120\" cy=\"222\" r=\"42\" fill=\"#0d151d\" stroke=\"#54718b\" stroke-width=\"2\"/>");
+      svg.Append("<circle cx=\"120\" cy=\"222\" r=\"27\" fill=\"#16222e\" stroke=\"#4a6a86\" stroke-width=\"2\"/>");
+      svg.Append("<circle cx=\"120\" cy=\"222\" r=\"12\" fill=\"#05090d\" stroke=\"#6c8aa4\" stroke-width=\"1.5\"/>");
+      for (var led = 0; led < 12; led += 1)
+      {
+        var angle = Math.PI * 2 * led / 12;
+        var x = 120 + Math.Cos(angle) * 52;
+        var y = 222 + Math.Sin(angle) * 52;
+        svg.Append($"<circle cx=\"{N(x)}\" cy=\"{N(y)}\" r=\"3\" fill=\"#f2d06b\"/>");
+      }
+
+      // The PIR dome on the body's face, beside the lens.
+      svg.Append("<circle cx=\"282\" cy=\"200\" r=\"14\" fill=\"#0d151d\" stroke=\"#54718b\" stroke-width=\"2\"/>");
+
+      // The cable out of the back and into the terminal block.
+      svg.Append("<path d=\"M 362 256 C 386 256, 386 240, 410 240\" fill=\"none\" stroke=\"#565c64\" stroke-width=\"6\" stroke-linecap=\"round\"/>");
+      svg.Append("<path d=\"M 362 264 C 382 264, 384 252, 408 252\" fill=\"none\" stroke=\"#3d4450\" stroke-width=\"4\" stroke-linecap=\"round\"/>");
+
+      // The terminal block and its screws: one terminal per part, drawn where its region is.
+      svg.Append("<rect x=\"398\" y=\"190\" width=\"212\" height=\"118\" rx=\"8\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"3\"/>");
+      svg.Append("<text x=\"404\" y=\"212\" font-family=\"monospace\" font-size=\"11\" letter-spacing=\"2\" fill=\"#5f7a91\">TERMINAL BLOCK</text>");
 
       foreach (var (key, label) in PanelSockets)
       {
         var (x, y, w, h) = Pixels(CameraPanelSocket(key), CameraPanelWidth, CameraPanelHeight);
-        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"4\" fill=\"#0f1a24\" stroke=\"#4a6a86\" stroke-width=\"2\"/>");
-        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y + h + 22)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"13\" fill=\"#9fb6cb\">{label}</text>");
+        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"3\" fill=\"#0d151d\" stroke=\"#54718b\" stroke-width=\"2\"/>");
+        svg.Append($"<circle cx=\"{N(x + w / 2)}\" cy=\"{N(y + h / 2 - 4)}\" r=\"9\" fill=\"#223141\" stroke=\"#9fb6cb\" stroke-width=\"1.5\"/>");
+        svg.Append($"<line x1=\"{N(x + w / 2)}\" y1=\"{N(y + h / 2 - 12)}\" x2=\"{N(x + w / 2)}\" y2=\"{N(y + h / 2 + 4)}\" stroke=\"#9fb6cb\" stroke-width=\"2\"/>");
+        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y + h + 20)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"12\" fill=\"#9fb6cb\">{label}</text>");
       }
 
       return Close(svg);

@@ -47,7 +47,9 @@ namespace VmsMap.Demo
     // 15: the diagram is named apart from the floor it stands on, and its marker stands on the rack
     //     row the simulator builds along the room's west wall, not in the building's east wing; the
     //     readings replica is named by what it shows.
-    public const int UmdDataCenterVersion = 15;
+    // 16: the camera's device diagram is the camera itself — body, lens, cable and the terminal
+    //     block its parts are wired to — rather than a schematic panel of sockets.
+    public const int UmdDataCenterVersion = 16;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
