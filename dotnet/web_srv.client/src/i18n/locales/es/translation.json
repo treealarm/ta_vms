@@ -1308,7 +1308,8 @@
       "moveToHint": "Un espacio, o un contenedor de este lienzo. Lo que hace hijo a un nodo es su lugar en el árbol, nunca dónde está.",
       "moveToFind": "Buscar un espacio o contenedor",
       "moveToNothing": "Nada coincide",
-      "nodeInTree": "Nodo en el árbol"
+      "nodeInTree": "Nodo en el árbol",
+      "cameraSettings": "Ajustes de la cámara"
     },
     "dictionaries": {
       "title": "Diccionarios",

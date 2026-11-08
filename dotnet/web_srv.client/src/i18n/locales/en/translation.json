@@ -1308,7 +1308,8 @@
       "moveToHint": "A space, or a container on this canvas. A node's place in the tree is what makes it a child, never where it lies.",
       "moveToFind": "Find a space or container",
       "moveToNothing": "Nothing matches",
-      "nodeInTree": "Node in the tree"
+      "nodeInTree": "Node in the tree",
+      "cameraSettings": "Camera settings"
     },
     "dictionaries": {
       "title": "Dictionaries",

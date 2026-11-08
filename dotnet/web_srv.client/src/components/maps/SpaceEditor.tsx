@@ -491,6 +491,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         figure={selectedFigure ?? null}
         loaded={selectedProps}
         levels={levels}
+        showLayer={space.kind === 'map'}
         onDelete={() => void run(async () => {
           await dispatch(deleteNode(selectedNode.id)).unwrap()
           setSelection(null)

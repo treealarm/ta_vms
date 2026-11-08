@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import NumberField from './NumberField'
 import ZoomLevelField from './ZoomLevelField'
+import CameraUnifiedCard from '../CameraUnifiedCard'
 import { formatLatLon } from './spatialUtils'
 
 type CameraProps = {
@@ -58,6 +59,22 @@ export function CameraPlacementPanel({
           </Box>
         ) : null}
       </Box>
+
+      {/* The device itself, beside its placement: one camera, and the map is where it stands. */}
+      {camera ? (
+        <Box>
+          <Box sx={{ height: 200, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+            <CameraUnifiedCard camera={camera} slotKey={`editor:${camera.cameraId}`} />
+          </Box>
+          <Button
+            size="small"
+            sx={{ px: 0 }}
+            onClick={() => navigate(`/admin/cameras?camera=${encodeURIComponent(camera.cameraId)}`)}
+          >
+            {t('maps.editor.cameraSettings')}
+          </Button>
+        </Box>
+      ) : null}
       <Box>
         <FormControlLabel
           control={<Switch size="small" checked={placement.isReference} onChange={(e) => set('isReference')(e.target.checked)} />}
