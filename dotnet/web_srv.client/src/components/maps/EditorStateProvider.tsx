@@ -34,6 +34,8 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       select: (kind, id, at) => {
         setSnapshot((s) => ({
           ...s, mode: 'select', pendingCameraId: null, selection: { kind, id }, sideTab: 'selection',
+          // A list acts on the space's own map: a diagram open over it hides the object picked.
+          openDiagramId: null,
           focus: { lat: at.lat, lon: at.lon, seq: (s.focus?.seq ?? 0) + 1 },
         }))
       },

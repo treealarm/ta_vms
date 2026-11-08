@@ -140,6 +140,9 @@ function SpacesTree({ tree, loaded, selectedId, onSelect }: {
   tree: Props['tree']; loaded: boolean; selectedId?: string; onSelect: (id: string) => void
 }) {
   const { t } = useTranslation()
+  // Picking a space means its map; a diagram opened over it steps aside. The editor state resets
+  // only when another space is opened, so the same space picked again has to say it itself.
+  const { openDiagram } = useEditorState()
   return (
     <List dense disablePadding>
       {tree.map(({ space, depth }) => (
@@ -147,7 +150,11 @@ function SpacesTree({ tree, loaded, selectedId, onSelect }: {
           key={space.id}
           depth={depth}
           selected={selectedId === space.id}
-          onClick={() => space.id && onSelect(space.id)}
+          onClick={() => {
+            if (!space.id) return
+            openDiagram(null)
+            onSelect(space.id)
+          }}
           primary={space.name}
           secondary={space.kind === 'map'
             ? t('maps.kindMap')
