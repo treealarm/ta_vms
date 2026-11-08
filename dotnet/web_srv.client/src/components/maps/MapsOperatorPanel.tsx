@@ -21,13 +21,14 @@ import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../sto
 import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
+import type { CameraPlacementDto } from '../../dto/dtos'
 import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
 import TracksLayer from '../../map/TracksLayer'
-import { pointsCentre } from '../../map/geo'
+import { figureAtPlacement, pointsCentre } from '../../map/geo'
 import { enterZoom } from '../../map/zoomLevels'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
@@ -163,8 +164,8 @@ export default function MapsOperatorPanel() {
   // its server and is never drawn on a canvas. A reference and a picture differ by the flag, not by
   // the node, so the matching marker is the one with an owner.
   const nodeForPlacement = (p: { cameraId: string }) =>
-    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId && m.nodeKind !== 'diagram')
-      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId && m.nodeKind !== 'diagram')
+    figureAtPlacement(spaceData.figures, p as CameraPlacementDto)
+      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
     if (!node) return DEFAULT_NODE_COLOR
@@ -173,12 +174,14 @@ export default function MapsOperatorPanel() {
 
   // Only the picture a placement draws: a camera may have another replica in the same space — a
   // diagram of its readings — and that one is an ordinary figure, not the marker's stand-in.
-  const cameraFigureIds = useMemo(
-    () => new Set(spaceData.markers
-      .filter((m) => m.cameraId && m.nodeKind !== 'diagram' && here.some((p) => p.cameraId === m.cameraId))
-      .map((m) => m.id)),
-    [spaceData.markers, here],
-  )
+  const cameraFigureIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const placement of here) {
+      const figure = figureAtPlacement(spaceData.figures, placement)
+      if (figure) ids.add(figure.id)
+    }
+    return ids
+  }, [spaceData.figures, here])
 
   // The counters live on the space nodes; every watched space with an alarm below it is marked.
   const alarmed = useMemo(() => {

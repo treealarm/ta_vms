@@ -1,5 +1,5 @@
 import type { CameraPlacementDto, GeoBoundsDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../dto/dtos'
-import type { MapBox, MapCoordinate } from '../dto/mapDtos'
+import type { MapBox, MapCoordinate, MapFigure } from '../dto/mapDtos'
 
 // The browser's half of the spatial maths: just enough to draw view cones, place a plan image and
 // show distances. Aiming is done on the server (VmsPtzTrackingSingleton/Geo), which owns the fit.
@@ -165,4 +165,23 @@ export function defaultFootprint(parent: SpaceDto): GeoPointDto[] {
     { lat: cLat - hLat, lon: cLon + hLon },
     { lat: cLat - hLat, lon: cLon - hLon },
   ]
+}
+
+/**
+ * The figure a camera placement draws: the replica standing exactly on the placement. A camera may
+ * have other replicas on the same canvas — a diagram of its readings, another picture of it — and
+ * those are figures of their own; the one to hide under the camera's marker is the one at its
+ * point.
+ */
+export function figureAtPlacement(
+  figures: MapFigure[],
+  placement: CameraPlacementDto,
+): MapFigure | undefined {
+  return figures.find((figure) => {
+    const point = figure.geometry?.coord?.[0]
+    return figure.cameraId === placement.cameraId
+      && !!point
+      && Math.abs((point.lat ?? 0) - placement.lat) < 1e-7
+      && Math.abs((point.lon ?? 0) - placement.lon) < 1e-7
+  })
 }

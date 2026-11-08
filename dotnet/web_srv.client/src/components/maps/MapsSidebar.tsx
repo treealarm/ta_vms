@@ -496,7 +496,8 @@ function NodesTree({ markers, space, onOpenSpace }: {
               <KindIcon kind={marker.nodeKind} />
               <ListItemText
                 primary={marker.name || marker.id}
-                primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
+                // A narrow sidebar cuts long names; the tooltip is how two of them are told apart.
+                primaryTypographyProps={{ noWrap: true, variant: 'body2', title: marker.name || marker.id }}
                 secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />

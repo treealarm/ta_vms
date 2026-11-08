@@ -34,7 +34,7 @@ import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
-import { cornersAround, distance, rescaleCorners } from '../../map/geo'
+import { cornersAround, distance, figureAtPlacement, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -166,8 +166,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   // The node that carries a placement is a replica of the camera -- always, reference or picture:
   // the canonical node stands under its server and is never drawn on a canvas.
   const nodeForPlacement = (p: CameraPlacementDto) =>
-    mapData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
-      ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
+    figureAtPlacement(mapData.figures, p) ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
   const selectedPlacement = selection?.kind === 'camera' ? placementHere(selection.id) : undefined
@@ -652,11 +651,11 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               onSelect={selectOnCanvas}
               // A camera placed here is drawn by its marker, not by the shape the node carries. A
               // diagram that is a replica of a camera is not that picture: it is a node of its own
-              // on this canvas, and hiding it hid the whole readings panel.
-              skipIds={new Set(mapData.markers
-                .filter((marker) => marker.cameraId && marker.nodeKind !== 'diagram'
-                  && here.some((p) => p.cameraId === marker.cameraId))
-                .map((marker) => marker.id))}
+              // on this canvas, and hiding it hid the whole readings panel. So only the replica
+              // standing exactly on a placement is skipped.
+              skipIds={new Set(here
+                .map((placement) => figureAtPlacement(mapData.figures, placement)?.id)
+                .filter((id): id is string => !!id))}
               editable={mode === 'select'}
               interactive={!picking}
               onGeometryChange={handleGeometryChange}
