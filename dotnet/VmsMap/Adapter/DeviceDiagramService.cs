@@ -121,7 +121,23 @@ namespace VmsMap.Adapter
         if (row is null)
           return null;
       }
-      else if (wantedType is { } type && row.diagram_type_id != type)
+      else if (site is not null)
+      {
+        // A diagram made before diagrams were map objects hangs under the camera, and a device that
+        // is drawn again on another canvas moves with it: the attach is "draw it here".
+        await PlaceAsync(row, site, ct);
+      }
+
+      if (wantedType is null && row.diagram_type_id is null
+          && (await SelectTypeAsync(sourceId, ct)).TypeId is { } matched
+          && Utils.ConvertObjectIdToGuid(matched) is { } matchedId)
+      {
+        // A sheet left blank takes its model's template once there is one: the administrator asked
+        // for the device's diagram, not for a permanently empty one.
+        await SetTypeAsync(row, matchedId, ct);
+      }
+
+      if (wantedType is { } type && row.diagram_type_id != type)
       {
         // The administrator's choice replaces whatever the template said before; the replicas are
         // rebuilt below against the new rules.
@@ -417,6 +433,44 @@ namespace VmsMap.Adapter
       _db.DeviceDiagrams.Add(row);
       await _db.SaveChangesAsync(ct);
       return row;
+    }
+
+    /// <summary>
+    /// Puts an existing diagram on a canvas: the node moves under the space and gets its point, and
+    /// a diagram that is already there is left alone — a reinstall must not move what was dragged.
+    /// </summary>
+    private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite site, CancellationToken ct)
+    {
+      var spaceGuid = Utils.ConvertObjectIdToGuid(site.SpaceId);
+      if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
+        return;
+
+      var marker = await _db.Markers.AsNoTracking()
+        .FirstOrDefaultAsync(m => m.id == row.object_id, ct);
+      if (marker is null)
+        return;
+
+      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
+      if (marker.parent_id == spaceGuid && await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct))
+        return;
+
+      var point = site.Lat is { } lat && site.Lon is { } lon
+        ? (Lat: lat, Lon: lon)
+        : await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+
+      await _map.UpdateHierarchyAsync([
+        new BaseMarkerDTO { id = objectId, parent_id = site.SpaceId, name = marker.name }
+      ]);
+
+      await _geo.CreateGeo([
+        new FigureGeoDTO
+        {
+          id = objectId,
+          parent_id = site.SpaceId,
+          name = marker.name,
+          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
+        }
+      ]);
     }
 
     /// A few metres off the camera: on its marker would hide one behind the other. The camera's own

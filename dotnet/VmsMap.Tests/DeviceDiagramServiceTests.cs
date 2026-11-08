@@ -465,6 +465,63 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
+  public async Task ASheepLeftBlankTakesItsTemplateOnceThereIsOne()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+
+    await AttachAsync(s);
+    Assert.Null((await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id);
+
+    // The template is added later; the same button fills the sheet the administrator placed.
+    var typeId = await SeedTypeAsync(s, new TypeSpec(),
+      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await AttachAsync(s);
+
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(typeId, row.diagram_type_id);
+    Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
+  }
+
+  [Fact]
+  public async Task APlacementMovesADiagramMadeUnderTheCameraOntoTheCanvas()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    // A diagram made when they still hung under the camera: the node's parent is the camera.
+    var objectId = DeviceObjectId.ForDeviceDiagram(
+      DeviceObjectId.CameraSource, CameraId, IDeviceDiagramService.DefaultSlot);
+    var objectGuid = Guid.Parse(objectId);
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = objectId, parent_id = CameraObjectId.For(CameraId), name = "Old panel" }
+    ]);
+    s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = objectGuid,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = CameraId,
+      slot = IDeviceDiagramService.DefaultSlot,
+      auto_created = true,
+    });
+    await s.Db.SaveChangesAsync();
+
+    await AttachAsync(s);
+
+    // The button draws it here: under the canvas, with a point of its own, and its parts bound.
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(objectGuid, row.object_id);
+    Assert.Equal(Space, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
+    Assert.Equal(1, await s.Db.GeoObjects.CountAsync(g => g.id == objectGuid));
+    Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
+  }
+
+  [Fact]
   public async Task ATieBetweenTemplatesMakesAnEmptySheet()
   {
     var s = await CreateAsync();
