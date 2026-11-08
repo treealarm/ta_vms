@@ -45,14 +45,18 @@ Conventions that hold everywhere:
   typed slots.
 - **A type can be the template of a real device.** Besides the picture and the regions, a type may
   name a device type (`source_kind`, `camera` today), the manufacturer and model it describes
-  (empty is any) and whether it attaches itself. Each of its regions may then stand for one part of
-  that device — a digital input or a relay, found by its token, the name the operator gave it, or
-  its position among parts of its kind. A device's diagram is an ordinary node hung under the
-  device, its children ordinary replicas: the region shows the owner's state, and clicking it picks
-  the part. Only parts the device actually declares *and* the operator configured get a replica; a
-  region with no such part stays as the template drew it. The service keeps the replicas it made in
-  `device_diagram_parts`, so one an administrator drew by hand is never moved or removed, and a
-  diagram created by hand from a template is maintained exactly like an automatic one.
+  (empty is any) and whether it matches a device's model by itself. Each of its regions may then
+  stand for one part of that device — a digital input or a relay, found by its token, the name the
+  operator gave it, or its position among parts of its kind. A device's diagram is a map object:
+  **the administrator draws it on a canvas** (the device's row in Admin → Maps), the service puts it
+  beside the camera's placement, takes the type whose manufacturer and model the device reports —
+  or a blank sheet when none does — and hangs the replicas under it. The tree under the server stays
+  hardware: a logical object does not live there. Only parts the device declares *and* the operator
+  configured get a replica; a region with no such part stays as the template drew it. The service
+  keeps the replicas it made in `device_diagram_parts`, so one an administrator drew by hand is
+  never moved or removed. A diagram placed on a map has no stored paper size: the viewer lays it out
+  on the size of its type's picture, so regions, stored in shares, land where the template draws
+  them.
 - **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
   child unless the tree says so, and a child need not lie inside anything. The administrator sets
   the parent: a new object is created under the selected node, or under the space when nothing is
@@ -258,6 +262,15 @@ sensor states from whichever demo camera has the device (`sim-master`'s relay is
 input in the simulator's world), as `on`/`off`. A camera the map does not know yet, or one that
 reports no place, writes nothing. The map answers a replica with its owner's values, so the diagram
 shows the camera's readings while owning none of them; a removal takes them away with the world.
+
+**The camera's own diagram.** The same floor carries the indoor master's device diagram: the
+`Camera rear panel` template — the camera's body, lens and cable, and the terminal block its parts
+are wired to — with the relay and input replicas in its four regions. It is not a world node like
+the readings replica: `DemoSeeder` asks the device-diagram service for it, exactly as the
+administrator's button in Admin → Maps does, so the demo ships the service's own object, placed on
+the floor beside the camera under the name of the device and its template. Its marker is a thumbnail
+of that same picture. Removing the demo removes it with the world and the next install makes it
+again.
 
 **The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
 `DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera
