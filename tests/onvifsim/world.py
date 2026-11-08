@@ -657,11 +657,56 @@ MARYLAND_ROAD_LANDMARKS = (
     Landmark("L5", 2.0, -100.0, "#8e24aa", "purple"),
 )
 
+# The demo's calibration, as ta_vms's DemoWorlds pins it: the foot of a person standing on each
+# landmark in the master's picture (x, y in shares of the frame), and the generic pan/tilt — and,
+# for the hall's slave, the framing zoom — that centres it on the slave. Computed once from this
+# world and checked against it below, so a pose or landmark that moves breaks the check instead of
+# leaving the demo aiming at the old point.
+MARYLAND_HALL_GROUND = {
+    "L1": (0.288942, 0.606953), "L2": (0.630300, 0.606953), "L3": (0.219821, 0.740750),
+    "L4": (0.672973, 0.740750), "L5": (0.454114, 0.662673),
+}
+MARYLAND_HALL_PTZ = {
+    "L1": (0.008838, 0.395735, 0.208905), "L2": (0.106873, 0.328499, 0.133485),
+    "L3": (-0.081842, 0.347742, 0.153152), "L4": (0.009885, 0.201190, 0.029643),
+    "L5": (0.010502, 0.326694, 0.131707),
+}
+MARYLAND_ROAD_GROUND = {
+    "L1": (0.786424, 0.514470), "L2": (0.714613, 0.582389), "L3": (0.542411, 0.526134),
+    "L4": (0.458604, 0.603585), "L5": (0.256542, 0.523149),
+}
+# The yard's slave keeps the wide lens, so only its head is pinned.
+MARYLAND_ROAD_PTZ = {
+    "L1": (0.158695, 0.231184), "L2": (-0.024035, 0.067931), "L3": (-0.028428, 0.293989),
+    "L4": (-0.175978, 0.256873), "L5": (-0.124647, 0.403267),
+}
+
 # The racks the simulator stands in Room 101: MarylandWorld's `rack-1` … `rack-4`, boxes along the
 # room's west wall. ta_vms's floor diagram is marked at the middle of that row, so the picture on the
 # plan stands where the cabinets do; check_demo compares the marker with these.
 MARYLAND_RACK_X = -14.6
 MARYLAND_RACK_Z = (-72.4, -69.9, -67.4, -64.9)
+
+
+def demo_ground_marks(world, camera_id, landmarks):
+    """The foot of a person standing on each landmark, in the master's picture: what ta_vms stores
+    as ground marks, keyed by the landmark's name."""
+    camera = demo_camera(world, camera_id, MASTER)
+    return {landmark.name: project(camera, (landmark.x, 0.0, landmark.z)) for landmark in landmarks}
+
+
+def demo_ptz_observations(world, camera_id, landmarks):
+    """The generic pan/tilt that centre each landmark on a slave, and the framing zoom at its
+    distance — what ta_vms stores as PTZ observations, keyed by the landmark's name."""
+    camera = demo_camera(world, camera_id, SLAVE)
+    limits = demo_limits(world, camera_id)
+    result = {}
+    for landmark in landmarks:
+        target = (landmark.x, 0.0, landmark.z)
+        pan, tilt = ptz_degrees(camera, target)
+        _, _, distance = bearing(camera.position, target)
+        result[landmark.name] = (*to_generic(pan, tilt, limits), framing_zoom(distance, limits))
+    return result
 
 
 def demo_camera(world, camera_id, base):
@@ -846,6 +891,26 @@ def check_maryland(world):
             f"rack-{index} stands at x {position.get('x')}, not {MARYLAND_RACK_X}"
         assert abs(position.get("z", 0.0) - z) <= 0.01, \
             f"rack-{index} stands at z {position.get('z')}, not {z}"
+
+    # The calibration ta_vms ships with the demo must be this world's own projection: the feet of a
+    # person on each landmark in the masters' pictures, and the head positions that centre them on
+    # the slaves. A pose or a landmark that moves fails here rather than leaving the demo aiming at
+    # the old point.
+    for master_id, slave_id, landmarks, ground, ptz, pinned_zoom in (
+        ("master", "ptz", MARYLAND_HALL_LANDMARKS, MARYLAND_HALL_GROUND, MARYLAND_HALL_PTZ, True),
+        ("master2", "ptz2", MARYLAND_ROAD_LANDMARKS, MARYLAND_ROAD_GROUND, MARYLAND_ROAD_PTZ, False),
+    ):
+        for name, (x, y) in demo_ground_marks(world, master_id, landmarks).items():
+            ex, ey = ground[name]
+            assert abs(x - ex) <= 1e-4 and abs(y - ey) <= 1e-4, \
+                f"{master_id}'s ground mark at {name} is ({x:.6f}, {y:.6f}), the demo pins ({ex}, {ey})"
+        for name, (pan, tilt, zoom) in demo_ptz_observations(world, slave_id, landmarks).items():
+            row = ptz[name]
+            assert abs(pan - row[0]) <= 1e-4 and abs(tilt - row[1]) <= 1e-4, \
+                f"{slave_id}'s observation of {name} is ({pan:.6f}, {tilt:.6f}), the demo pins {row[:2]}"
+            if pinned_zoom:
+                assert abs(zoom - row[2]) <= 1e-4, \
+                    f"{slave_id}'s framing zoom at {name} is {zoom:.6f}, the demo pins {row[2]}"
 
     # No building of this world stands on a road: the defect this milestone was opened for was a hall
     # laid over two real streets.

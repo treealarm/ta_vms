@@ -23,7 +23,8 @@ namespace VmsMap.Demo
   {
     // hashed into the lock by PostgreSQL; any stable number does, as long as it is ours alone.
 
-    private static readonly string[] DeleteOrder = ["object", "camera", "space", "type", "level", "file"];
+    private static readonly string[] DeleteOrder =
+      ["object", "camera", "landmark", "space", "type", "level", "file"];
 
     private readonly VmsMapDbContext _db;
     private readonly IMapUpdateService _updates;
@@ -294,6 +295,7 @@ namespace VmsMap.Demo
       }
 
       // ── Cameras: placed where the world wants them, skipped when the deployment lacks one ──
+      var placedCameras = new HashSet<string>(StringComparer.Ordinal);
       foreach (var placement in world.Placements)
       {
         var key = $"camera/{placement.CameraId}";
@@ -330,7 +332,76 @@ namespace VmsMap.Demo
 
         ids[key] = spaceId;
         keep.Add(key);
+        placedCameras.Add(placement.CameraId);
         Written(key);
+      }
+
+      // ── Landmarks: the points the cameras are calibrated against ───────────────────────────
+      foreach (var landmark in world.Landmarks)
+      {
+        // A landmark gets its id from the server on the first install and keeps it afterwards, as
+        // a space does: observations and marks recorded against it name the id, not the key.
+        var id = registered.TryGetValue(landmark.Key, out var known) ? known.ToString() : string.Empty;
+        var saved = await _spatial.UpsertLandmarkAsync(new Landmark
+        {
+          Id = id,
+          SpaceId = Required(landmark.SpaceKey).ToString(),
+          Name = landmark.Name,
+          Lat = landmark.Lat,
+          Lon = landmark.Lon,
+          HeightM = landmark.HeightM,
+        }, ct);
+
+        ids[landmark.Key] = Guid.Parse(saved.Id);
+        keep.Add(landmark.Key);
+        Written(landmark.Key);
+      }
+
+      // ── Calibration: what each camera sees of those landmarks ─────────────────────────────
+      // The marks replace the camera's whole list, so a world that drops one leaves none behind.
+      // A camera the deployment lacks is skipped with its placement, and reported there.
+      foreach (var group in world.GroundMarks.GroupBy(mark => mark.CameraKey, StringComparer.Ordinal))
+      {
+        if (!placedCameras.Contains(group.Key))
+        {
+          // A mark for a camera the world never placed is a camera this install cannot show either.
+          if (!report.SkippedCameras.Contains(group.Key))
+            report.SkippedCameras.Add(group.Key);
+          continue;
+        }
+
+        var marks = new GroundObservations { CameraId = DemoIds.Camera(group.Key) };
+        marks.Observations.AddRange(group.Select(mark => new GroundObservation
+        {
+          LandmarkId = Required(mark.LandmarkKey).ToString(),
+          X = (float)mark.X,
+          Y = (float)mark.Y,
+        }));
+        await _spatial.SetGroundObservationsAsync(marks, ct);
+      }
+
+      foreach (var group in world.PtzObservations.GroupBy(observation => observation.CameraKey, StringComparer.Ordinal))
+      {
+        if (!placedCameras.Contains(group.Key))
+        {
+          if (!report.SkippedCameras.Contains(group.Key))
+            report.SkippedCameras.Add(group.Key);
+          continue;
+        }
+
+        var observations = new PtzGeoObservations { CameraId = DemoIds.Camera(group.Key) };
+        foreach (var observation in group)
+        {
+          var row = new PtzGeoObservation
+          {
+            LandmarkId = Required(observation.LandmarkKey).ToString(),
+            Pan = (float)observation.Pan,
+            Tilt = (float)observation.Tilt,
+          };
+          if (observation.Zoom is { } zoom) row.Zoom = (float)zoom;
+          observations.Observations.Add(row);
+        }
+        await _spatial.SetObservationsAsync(observations, ct);
       }
 
       // ── Levels: the zoom ranges the demo's names are drawn at ──────────────────────────────
@@ -460,6 +531,12 @@ namespace VmsMap.Demo
               var cameraName = pair.Key["camera/".Length..];
               await _spatial.RemovePlacementAsync(DemoIds.Camera(cameraName), pair.Value, ct);
             }
+            break;
+
+          case "landmark":
+            // A landmark takes its observations with it, so the calibration goes without naming it.
+            foreach (var pair in ofKind)
+              await _spatial.RemoveLandmarkAsync(pair.Value, ct);
             break;
 
           case "space":

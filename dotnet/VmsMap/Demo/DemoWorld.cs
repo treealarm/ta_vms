@@ -99,6 +99,26 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
+  /// A landmark a calibration is made against: a named, coloured point of the world a camera can
+  /// see. It is a node of the space it stands in, and the marks and observations are made on it.
+  public sealed record DemoLandmark(
+    string Key,
+    string Name,
+    string SpaceKey,
+    double Lat,
+    double Lon,
+    double HeightM = 0);
+
+  /// The foot of a person standing on a landmark, as the master's picture shows it: x and y in
+  /// shares of the frame, from the top left — what the ground calibration stores for a fixed
+  /// camera.
+  public sealed record DemoGroundMark(string CameraKey, string LandmarkKey, double X, double Y);
+
+  /// Where a PTZ camera's head points to centre a landmark, in the camera's own ONVIF generic
+  /// units; `Zoom` is the framing zoom at that distance, for a pair that uses one.
+  public sealed record DemoPtzObservation(
+    string CameraKey, string LandmarkKey, double Pan, double Tilt, double? Zoom = null);
+
   /// A state row on a node. The demo writes no alarm: its one row is `CONNECTED` on a switch
   /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
@@ -117,6 +137,9 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoNode> Nodes,
     IReadOnlyList<DemoLevel> Levels,
     IReadOnlyList<DemoPlacement> Placements,
+    IReadOnlyList<DemoLandmark> Landmarks,
+    IReadOnlyList<DemoGroundMark> GroundMarks,
+    IReadOnlyList<DemoPtzObservation> PtzObservations,
     IReadOnlyList<DemoState> States,
     IReadOnlyList<DemoRight> Rights);
 }

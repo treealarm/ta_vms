@@ -60,6 +60,59 @@ namespace VmsMap.Demo
     // and this point are checked against each other by tests/onvifsim.
     private static readonly DemoPoint Racks = new(38.9929167, -76.9379687);
 
+    // The calibration landmarks of the two pairs: the points MarylandWorld marks with coloured
+    // blocks, on the floor of the hall and out on the lot. Their names are what an operator reads
+    // in the picture — `L1 red` — and their keys are what the marks and observations name.
+    private static List<DemoLandmark> Landmarks() =>
+    [
+      new("landmark/hall/l1", "L1 red", "space/building", 38.9929432, -76.9379225),
+      new("landmark/hall/l2", "L2 yellow", "space/building", 38.9929432, -76.9378740),
+      new("landmark/hall/l3", "L3 blue", "space/building", 38.9929100, -76.9379225),
+      new("landmark/hall/l4", "L4 white", "space/building", 38.9929100, -76.9378740),
+      new("landmark/hall/l5", "L5 purple", "space/building", 38.9929270, -76.9378982),
+      new("landmark/road/l1", "L1 red", "space/umd", 38.9930546, -76.9378925),
+      new("landmark/road/l2", "L2 yellow", "space/umd", 38.9931175, -76.9379271),
+      new("landmark/road/l3", "L3 blue", "space/umd", 38.9931265, -76.9378462),
+      new("landmark/road/l4", "L4 white", "space/umd", 38.9931803, -76.9378925),
+      new("landmark/road/l5", "L5 purple", "space/umd", 38.9931983, -76.9377769),
+    ];
+
+    // The calibration of the four cameras, computed once from the simulator's own world: the feet
+    // of a person standing on each landmark in the master's picture, and the head position (and,
+    // for the hall's slave, the framing zoom) that centres it on the slave. The world is
+    // deterministic — cameras bolted down, landmarks fixed — so these are constants, and
+    // tests/onvifsim/world.py projects the same points again to catch a drift.
+    private static readonly DemoGroundMark[] GroundMarks =
+    [
+      new("sim-master", "landmark/hall/l1", 0.288942, 0.606953),
+      new("sim-master", "landmark/hall/l2", 0.630300, 0.606953),
+      new("sim-master", "landmark/hall/l3", 0.219821, 0.740750),
+      new("sim-master", "landmark/hall/l4", 0.672973, 0.740750),
+      new("sim-master", "landmark/hall/l5", 0.454114, 0.662673),
+      new("sim-master2", "landmark/road/l1", 0.786424, 0.514470),
+      new("sim-master2", "landmark/road/l2", 0.714613, 0.582389),
+      new("sim-master2", "landmark/road/l3", 0.542411, 0.526134),
+      new("sim-master2", "landmark/road/l4", 0.458604, 0.603585),
+      new("sim-master2", "landmark/road/l5", 0.256542, 0.523149),
+    ];
+
+    private static readonly DemoPtzObservation[] PtzObservations =
+    [
+      new("sim-ptz", "landmark/hall/l1", 0.008838, 0.395735, 0.208905),
+      new("sim-ptz", "landmark/hall/l2", 0.106873, 0.328499, 0.133485),
+      new("sim-ptz", "landmark/hall/l3", -0.081842, 0.347742, 0.153152),
+      new("sim-ptz", "landmark/hall/l4", 0.009885, 0.201190, 0.029643),
+      new("sim-ptz", "landmark/hall/l5", 0.010502, 0.326694, 0.131707),
+      // The yard's slave keeps the wide lens: its landmarks are 10–25 m away along a walk that
+      // leaves the frame at both ends, and a framing zoom would follow the person into the zoom
+      // limit rather than hold the stretch of road they walk.
+      new("sim-ptz2", "landmark/road/l1", 0.158695, 0.231184),
+      new("sim-ptz2", "landmark/road/l2", -0.024035, 0.067931),
+      new("sim-ptz2", "landmark/road/l3", -0.028428, 0.293989),
+      new("sim-ptz2", "landmark/road/l4", -0.175978, 0.256873),
+      new("sim-ptz2", "landmark/road/l5", -0.124647, 0.403267),
+    ];
+
     // The building in WGS84: Biomolecular Sciences' real footprint (OSM way 24303349), the same
     // outline MarylandWorld builds its prism from. Its first floor is a plan nested in the map.
     private static readonly DemoPoint[] BuildingOutline =
@@ -234,6 +287,9 @@ namespace VmsMap.Demo
           new DemoLevel("Rack", 18, 22),
         ],
         placements,
+        Landmarks(),
+        GroundMarks,
+        PtzObservations,
         states,
         [new DemoRight("space/umd", "user", RightActions.View)]);
     }

@@ -126,6 +126,61 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void TheWorldCarriesTheLandmarksItsCamerasAreCalibratedOn()
+  {
+    // The points MarylandWorld marks with coloured blocks: five in the hall, five out on the lot,
+    // each on the ground. The camera poses and these are the same constants, so a landmark cannot
+    // move on the map without the world moving with it.
+    var hall = _world.Landmarks.Where(landmark => landmark.SpaceKey == "space/building").ToList();
+    var road = _world.Landmarks.Where(landmark => landmark.SpaceKey == "space/umd").ToList();
+
+    Assert.Equal(5, hall.Count);
+    Assert.Equal(5, road.Count);
+    Assert.Equal(["L1 red", "L2 yellow", "L3 blue", "L4 white", "L5 purple"],
+      hall.Select(landmark => landmark.Name));
+    Assert.All(_world.Landmarks, landmark => Assert.Equal(0, landmark.HeightM));
+
+    // The hall's L1 is world (-10.6, -71.6), the first of the blocks the simulator stands there.
+    var l1 = hall.Single(landmark => landmark.Name.StartsWith("L1"));
+    Assert.Equal(38.9929432, l1.Lat, 7);
+    Assert.Equal(-76.9379225, l1.Lon, 7);
+  }
+
+  [Fact]
+  public void EveryCalibrationNamesALandmarkAndACameraTheWorldHas()
+  {
+    var landmarks = _world.Landmarks.Select(landmark => landmark.Key).ToHashSet(StringComparer.Ordinal);
+    var cameras = _world.Placements.Select(placement => placement.CameraId).ToHashSet(StringComparer.Ordinal);
+
+    Assert.All(_world.GroundMarks, mark =>
+    {
+      Assert.Contains(mark.LandmarkKey, landmarks);
+      Assert.Contains(mark.CameraKey, cameras);
+      // A mark is a point inside the picture.
+      Assert.InRange(mark.X, 0, 1);
+      Assert.InRange(mark.Y, 0, 1);
+    });
+    Assert.All(_world.PtzObservations, observation =>
+    {
+      Assert.Contains(observation.LandmarkKey, landmarks);
+      Assert.Contains(observation.CameraKey, cameras);
+      Assert.InRange(observation.Pan, -1, 1);
+      Assert.InRange(observation.Tilt, -1, 1);
+      if (observation.Zoom is { } zoom) Assert.InRange(zoom, 0, 1);
+    });
+
+    // Every landmark is marked on its master and observed by its slave: one set per pair.
+    Assert.Equal(_world.Landmarks.Count, _world.GroundMarks.Count);
+    Assert.Equal(_world.Landmarks.Count, _world.PtzObservations.Count);
+
+    // The hall's slave frames a person at each landmark; the yard's keeps the wide lens.
+    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == "sim-ptz"),
+      observation => Assert.NotNull(observation.Zoom));
+    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == "sim-ptz2"),
+      observation => Assert.Null(observation.Zoom));
+  }
+
+  [Fact]
   public void TheCameraPanelIsATemplateForOneModel()
   {
     // A device's diagram: the model it is for, and the part each socket stands for, found by the

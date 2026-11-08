@@ -78,7 +78,11 @@ public class DemoSeederTests
   private const string Key = "umd-datacenter";
 
   private static DemoWorld World(
-    IReadOnlyList<DemoNode>? nodes = null, IReadOnlyList<DemoPlacement>? placements = null) => new(
+    IReadOnlyList<DemoNode>? nodes = null,
+    IReadOnlyList<DemoPlacement>? placements = null,
+    IReadOnlyList<DemoLandmark>? landmarks = null,
+    IReadOnlyList<DemoGroundMark>? groundMarks = null,
+    IReadOnlyList<DemoPtzObservation>? ptzObservations = null) => new(
       Key,
       1,
       [],
@@ -99,6 +103,9 @@ public class DemoSeederTests
       nodes ?? DefaultNodes(),
       [new DemoLevel("room", 16, 18)],
       placements ?? [],
+      landmarks ?? [],
+      groundMarks ?? [],
+      ptzObservations ?? [],
       [new DemoState("object/port", "DISCONNECTED")],
       [new DemoRight("space/map", "user", RightActions.View)]);
 
@@ -237,6 +244,74 @@ public class DemoSeederTests
     var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
     Assert.Equal(mapSpace.id, node.parent_id);
     Assert.Empty(report.SkippedCameras);
+  }
+
+  [Fact]
+  public async Task LandmarksAndTheirCalibrationsAreWrittenAndRemovedWithTheWorld()
+  {
+    var s = Create("sim-master", "sim-ptz");
+    var world = World(
+      placements:
+      [
+        new DemoPlacement("sim-master", "space/room", 39.015, -76.985),
+        new DemoPlacement("sim-ptz", "space/room", 39.016, -76.985),
+      ],
+      landmarks:
+      [
+        new DemoLandmark("landmark/l1", "L1 red", "space/room", 39.017, -76.984),
+        new DemoLandmark("landmark/l2", "L2 blue", "space/room", 39.018, -76.983),
+      ],
+      groundMarks:
+      [
+        new DemoGroundMark("sim-master", "landmark/l1", 0.4, 0.7),
+        new DemoGroundMark("sim-master", "landmark/l2", 0.6, 0.7),
+      ],
+      ptzObservations:
+      [
+        new DemoPtzObservation("sim-ptz", "landmark/l1", 0.1, 0.3, 0.2),
+        new DemoPtzObservation("sim-ptz", "landmark/l2", -0.1, 0.4),
+      ]);
+
+    var first = await s.Seeder.InstallAsync(world, CancellationToken.None);
+    Assert.True(first.Created > 0);
+
+    var landmarks = await s.Db.Landmarks.AsNoTracking().OrderBy(l => l.object_id).ToListAsync();
+    Assert.Equal(2, landmarks.Count);
+    Assert.Equal(2, await s.Db.GroundObservations.CountAsync());
+    Assert.Equal(2, await s.Db.PtzGeoObservations.CountAsync());
+
+    // A second install is a no-op on the ids: the registry remembers what the server assigned.
+    var ids = landmarks.Select(l => l.object_id).ToList();
+    var second = await s.Seeder.InstallAsync(world, CancellationToken.None);
+    Assert.Equal(0, second.Created);
+    Assert.Equal(ids, await s.Db.Landmarks.AsNoTracking().OrderBy(l => l.object_id)
+      .Select(l => l.object_id).ToListAsync());
+
+    // The marks belong to the landmarks and go with them.
+    await s.Seeder.RemoveAsync(Key, CancellationToken.None);
+    Assert.Empty(await s.Db.Landmarks.ToListAsync());
+    Assert.Empty(await s.Db.GroundObservations.ToListAsync());
+    Assert.Empty(await s.Db.PtzGeoObservations.ToListAsync());
+  }
+
+  [Fact]
+  public async Task CalibrationIsSkippedForACameraTheDeploymentLacks()
+  {
+    var s = Create("sim-master");
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      landmarks: [new DemoLandmark("landmark/l1", "L1 red", "space/room", 39.017, -76.984)],
+      groundMarks:
+      [
+        new DemoGroundMark("sim-master", "landmark/l1", 0.4, 0.7),
+        new DemoGroundMark("sim-missing", "landmark/l1", 0.5, 0.7),
+      ]);
+
+    var report = await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    Assert.Equal(["sim-missing"], report.SkippedCameras);
+    var mark = Assert.Single(await s.Db.GroundObservations.ToListAsync());
+    Assert.Equal(DemoIds.Camera("sim-master"), mark.camera_id);
   }
 
   private static DemoNode TelemetryReplica() =>
