@@ -110,7 +110,7 @@ namespace VmsMap.Adapter
       {
         // The administrator's choice replaces whatever the template said before; the replicas are
         // rebuilt below against the new rules.
-        row.diagram_type_id = typeId.Value;
+        await SetTypeAsync(row, typeId.Value, ct);
         row.auto_created = false;
       }
 
@@ -131,8 +131,15 @@ namespace VmsMap.Adapter
       var row = await _db.DeviceDiagrams.AsNoTracking().FirstOrDefaultAsync(
         d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot, ct);
 
-      if (row is null || row.diagram_type_id is null)
-        return row is not null; // a diagram nobody maintains is settled; a missing one is not
+      if (row is null)
+        return false;
+
+      // Deleting a type leaves the canvas where it is, and the service stops maintaining it — but
+      // a template for the device coming back is the same null: a demo reinstall deletes the type
+      // and creates it again under a new id. So a diagram without a type is settled only while
+      // nothing fits the device; once something does, the locks are worth taking to adopt it.
+      if (row.diagram_type_id is null)
+        return (await SelectTypeAsync(sourceId, ct)).TypeId is null;
 
       var resolved = await ResolveTypeAsync(row, sourceId, ct);
       if (resolved != row.diagram_type_id)
@@ -214,7 +221,7 @@ namespace VmsMap.Adapter
 
       if (row.diagram_type_id != resolved)
       {
-        row.diagram_type_id = resolved.Value;
+        await SetTypeAsync(row, resolved.Value, ct);
         _logger.LogInformation(
           "Camera {CameraId}: device diagram moved to type {TypeId}", sourceId, resolved);
       }
@@ -327,6 +334,26 @@ namespace VmsMap.Adapter
       }
 
       return parts;
+    }
+
+    /// <summary>
+    /// Points the node at the type's picture as well as the row at the type: the canvas is what is
+    /// drawn, and a row naming a template the canvas does not is blank paper with replicas on it.
+    /// The node keeps its own name, as its id keeps its slot — renaming a device's diagram is not
+    /// what a template change is about.
+    /// </summary>
+    private async Task SetTypeAsync(DBDeviceDiagram row, Guid typeId, CancellationToken ct)
+    {
+      row.diagram_type_id = typeId;
+      await _diagrams.UpdateListAsync([
+        new DiagramDTO
+        {
+          id = Utils.ConvertGuidToObjectId(row.object_id),
+          dgr_type = Utils.ConvertGuidToObjectId(typeId),
+          geometry = null,
+          region_id = null,
+        }
+      ]);
     }
 
     private sealed record ConfiguredPart(string ObjectId, DevicePartRef Ref, string DisplayName);

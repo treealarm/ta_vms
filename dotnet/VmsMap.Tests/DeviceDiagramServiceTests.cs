@@ -371,6 +371,43 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
+  public async Task ATypeDeletedAndMadeAgainIsTakenUpAgain()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedTypeAsync(s, new TypeSpec(),
+      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    await EnsureAsync(s);
+    var nodeId = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
+
+    // Deleting a type leaves the row and the canvas without one (ON DELETE SET NULL) — which is
+    // what a demo reinstall does: its templates are removed with the world and made again under
+    // new ids on the way back in.
+    s.Db.DiagramTypes.Remove(await s.Db.DiagramTypes.SingleAsync());
+    (await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id = null;
+    (await s.Db.Diagrams.SingleAsync(d => d.id == nodeId)).dgr_type = null;
+    await s.Db.SaveChangesAsync();
+
+    // Nothing fits the device: an untethered diagram is settled and stays as it is.
+    await EnsureAsync(s);
+    Assert.Null((await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id);
+
+    // The template comes back under a new id, and is taken up again — on the canvas too, which is
+    // what is drawn: a row naming a template the canvas does not is blank paper.
+    var again = await SeedTypeAsync(s, new TypeSpec(),
+      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await EnsureAsync(s);
+
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(nodeId, row.object_id);
+    Assert.Equal(again, row.diagram_type_id);
+    Assert.Equal(again, (await s.Db.Diagrams.SingleAsync(d => d.id == nodeId)).dgr_type);
+  }
+
+  [Fact]
   public async Task ATieBetweenTemplatesCreatesNothing()
   {
     var s = await CreateAsync();
