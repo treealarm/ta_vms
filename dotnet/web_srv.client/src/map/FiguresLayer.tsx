@@ -30,7 +30,7 @@ type Props = {
 }
 
 /** A small icon from `visual`, turned by its own angle; the picture is base64 in the row. */
-function figureIcon(figure: MapFigure, alarming: boolean): L.DivIcon {
+function figureIcon(figure: MapFigure, alarming: boolean, selected: boolean): L.DivIcon {
   const width = figure.visual?.imageWidth || 28
   const height = figure.visual?.imageHeight || 28
   const rotation = figure.visual?.rotationDeg ?? 0
@@ -38,8 +38,13 @@ function figureIcon(figure: MapFigure, alarming: boolean): L.DivIcon {
   const src = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`
   const caption = figure.visual?.text ? escapeHtml(figure.visual.text) : ''
 
+  // The selected icon is marked like a selected dot: an icon has no radius to grow, so the mark is
+  // a halo around it.
+  const marked = selected
+    ? 'outline:2px dashed #4fc3f7;outline-offset:3px;border-radius:4px;background:rgba(79,195,247,0.18);'
+    : ''
   const html = `
-    <div style="width:${width}px;height:${height}px;transform:rotate(${rotation}deg);transform-origin:center;display:flex;flex-direction:column;align-items:center;">
+    <div style="width:${width}px;height:${height}px;transform:rotate(${rotation}deg);transform-origin:center;display:flex;flex-direction:column;align-items:center;${marked}">
       ${raw ? `<img src="${src}" alt="" style="width:${width}px;height:${height}px;object-fit:contain;pointer-events:none;" />` : ''}
       ${caption
         ? `<span style="font-size:10px;color:#eee;white-space:nowrap;text-shadow:0 1px 2px #000;">${caption}</span>`
@@ -196,7 +201,7 @@ function renderFigure(
       if (figure.visual?.image) {
         return (
           <Fragment key={`${figure.id}:${style.alarming}:${interactive}`}>
-            <Marker position={[lat, lon]} icon={figureIcon(figure, style.alarming)} eventHandlers={handlers}>
+            <Marker position={[lat, lon]} icon={figureIcon(figure, style.alarming, selected)} eventHandlers={handlers}>
               <Tooltip>{figure.name}</Tooltip>
             </Marker>
             {handles}
