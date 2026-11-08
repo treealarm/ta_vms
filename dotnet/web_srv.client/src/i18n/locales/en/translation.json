@@ -1350,7 +1350,8 @@
       "color": "Colour",
       "caption": "Caption",
       "enter": "Enter",
-      "enterHint": "Zoom in to what is inside, or open a space's own canvas"
+      "enterHint": "Zoom in to what is inside, or open a space's own canvas",
+      "locate": "Show on map"
     },
     "tabSpaces": "Spaces",
     "tabDevices": "Devices",

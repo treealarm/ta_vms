@@ -4,6 +4,7 @@ import {
   Alert, Box, Button, Chip, Divider, IconButton, Stack, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
 import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +22,8 @@ type Props = {
   onSelect: (id: string) => void
   /** Enter a node that holds children: the canvas zooms into it, or a space opens its own. */
   onEnter?: (id: string) => void
+  /** Find the node on the canvas that draws it: its space or diagram is opened and it is centred. */
+  onLocate?: (id: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -35,7 +38,7 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, onEnter, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
+  nodeId, onClose, onSelect, onEnter, onLocate, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -87,6 +90,13 @@ export default function ObjectPanel({
             <Button size="small" startIcon={<LoginIcon fontSize="small" />} onClick={() => onEnter(nodeId)}>
               {t('maps.node.enter')}
             </Button>
+          </Tooltip>
+        ) : null}
+        {onLocate ? (
+          <Tooltip title={t('maps.node.locate')}>
+            <IconButton size="small" aria-label={t('maps.node.locate')} onClick={() => onLocate(nodeId)}>
+              <CenterFocusStrongIcon fontSize="small" />
+            </IconButton>
           </Tooltip>
         ) : null}
         <Button

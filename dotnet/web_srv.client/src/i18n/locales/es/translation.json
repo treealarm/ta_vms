@@ -1349,7 +1349,8 @@
       "color": "Color",
       "caption": "Leyenda",
       "enter": "Entrar",
-      "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio"
+      "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio",
+      "locate": "Mostrar en el mapa"
     },
     "tabSpaces": "Espacios",
     "tabDevices": "Dispositivos",

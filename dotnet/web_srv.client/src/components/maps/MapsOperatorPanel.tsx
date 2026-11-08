@@ -316,12 +316,24 @@ export default function MapsOperatorPanel() {
     setSelectedNodeId(marker.id)
 
     // A node that is not a camera is drawn from its own shape, which this canvas may not know yet.
-    if (!marker.cameraId) {
+    // A diagram fits its whole paper in the view, so there is nothing to pan there: the map behind
+    // it keeps the focus it had.
+    if (!marker.cameraId && canvas?.nodeKind !== 'diagram') {
       const loaded = await dispatch(loadNodes([marker.id])).unwrap().catch(() => null)
       const figure = loaded?.figures.find((candidate) => candidate.id === marker.id)
       const centre = pointsCentre(figure?.geometry?.coord ?? [])
       if (centre) setFocus((previous) => ({ ...centre, seq: (previous?.seq ?? 0) + 1 }))
     }
+  }
+
+  /**
+   * Finds the node selected in the tree on the canvas that draws it: the space or diagram it
+   * stands on is opened, the node is selected, and a camera or a figure is brought into view --
+   * the move a search result makes, without a result list to read first.
+   */
+  const locateNode = (id: string) => {
+    const marker = markers[id]
+    if (marker) void revealFromSearch(marker)
   }
 
   /**
@@ -600,6 +612,7 @@ export default function MapsOperatorPanel() {
             onClose={() => setSelectedNodeId(null)}
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             onEnter={enterNode}
+            onLocate={locateNode}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}
