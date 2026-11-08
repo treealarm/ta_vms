@@ -14,7 +14,6 @@ import { SpaceForm, type NewSpace } from './SpaceForm'
 import SpaceEditor from './SpaceEditor'
 import MapsSidebar from './MapsSidebar'
 import MapDictionariesDialog from './MapDictionariesDialog'
-import DemoControl from './DemoControl'
 import RightsModeSwitch from '../objects/RightsModeSwitch'
 import { EditorStateProvider } from './EditorStateProvider'
 import { treeOf } from './spatialUtils'
@@ -77,7 +76,7 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
         onAdd={(e) => setAddMenu(e.currentTarget)}
         addTooltip={t('maps.add')}
         list={<MapsSidebar tree={tree} loaded={loaded} space={isNew ? null : current} onSelectSpace={select} />}
-        // The switch and the dictionaries act on the whole deployment, not on one pane.
+        // The rights switch and the dictionaries act on every space, not on the selected one.
         footer={(
           <Stack direction="row" alignItems="center" spacing={1} sx={{ flexWrap: 'wrap' }}>
             <RightsModeSwitch />
@@ -88,7 +87,6 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
             >
               {t('maps.dictionaries.title')}
             </Button>
-            <DemoControl />
           </Stack>
         )}
       >

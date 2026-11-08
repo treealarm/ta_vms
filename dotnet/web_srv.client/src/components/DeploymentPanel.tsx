@@ -9,6 +9,7 @@ import {
   downloadNodePackage, loadDeployment, loadNodes, removeNode, setEnrollmentOpen,
 } from '../store/deploymentSlice'
 import type { DeploymentNodeDto } from '../dto/dtos'
+import DemoControl from './DemoControl'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -208,12 +209,19 @@ export default function DeploymentPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyH
       onAdd={deployment?.distributed ? selectNew : undefined}
       addTooltip={t('deployment.addNode')}
       list={list}
-      footer={deployment?.distributed ? (
+      // The demo is content of this installation, not of a node, so it is here on every install;
+      // joining and the authority that lets a machine join exist only over several machines.
+      footer={(
         <>
-          <EnrollmentSwitch />
-          {deployment.caFingerprint && <CertificateAuthority fingerprint={deployment.caFingerprint} />}
+          <Box sx={{ px: 1 }}>
+            <DemoControl />
+          </Box>
+          {deployment?.distributed && <EnrollmentSwitch />}
+          {deployment?.distributed && deployment.caFingerprint && (
+            <CertificateAuthority fingerprint={deployment.caFingerprint} />
+          )}
         </>
-      ) : undefined}
+      )}
     >
       <Box key={detailKey} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {isNew ? (

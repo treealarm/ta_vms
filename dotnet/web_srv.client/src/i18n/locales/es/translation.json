@@ -1331,21 +1331,6 @@
       "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
       "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
     },
-    "demo": {
-      "install": "Instalar demo",
-      "remove": "Eliminar demo",
-      "confirmInstall": "¿Instalar el mundo de demostración? Solo añade o reemplaza objetos de la demo; todo lo que usted creó queda intacto.",
-      "confirmRemove": "¿Eliminar el mundo de demostración? Solo se eliminan los objetos de la demo; todo lo que usted creó queda intacto.",
-      "installed": "Mundo de demostración instalado",
-      "removed": "Mundo de demostración eliminado",
-      "summary": "Creados: {{created}} · actualizados: {{updated}} · eliminados: {{removed}}",
-      "wall": "Videowall: {{cameras}}",
-      "noWall": "El videowall aún no tiene cámaras.",
-      "skippedTitle": "Cámaras que la instalación aún no tiene",
-      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo.",
-      "wallErrorTitle": "El videowall no se actualizó",
-      "wallErrorHint": "VmsCfg no respondió, así que su videowall quedó como estaba. Inicie VmsCfg y repita la acción."
-    },
     "node": {
       "kind": {
         "space": "Espacio",
@@ -1561,7 +1546,22 @@
     "enrollmentOpenWarning": "Mientras esté activado, cualquier máquina que llegue a este núcleo puede unirse como servidor y recibe las contraseñas de su base de datos y su broker. Manténgalo activado solo mientras se configura el despliegue.",
     "caFingerprint": "Autoridad de certificación de este despliegue",
     "caFingerprintHelper": "Cada máquina del despliegue presenta un certificado emitido por ella. A una máquina que se une se le da esta huella y comprueba el núcleo con ella; compárela con la que el núcleo mostró al configurarse.",
-    "downloadCa": "Descargar la autoridad de certificación"
+    "downloadCa": "Descargar la autoridad de certificación",
+    "demo": {
+      "install": "Instalar demo",
+      "remove": "Eliminar demo",
+      "confirmInstall": "¿Instalar el mundo de demostración? Solo añade o reemplaza objetos de la demo; todo lo que usted creó queda intacto.",
+      "confirmRemove": "¿Eliminar el mundo de demostración? Solo se eliminan los objetos de la demo; todo lo que usted creó queda intacto.",
+      "installed": "Mundo de demostración instalado",
+      "removed": "Mundo de demostración eliminado",
+      "summary": "Creados: {{created}} · actualizados: {{updated}} · eliminados: {{removed}}",
+      "wall": "Videowall: {{cameras}}",
+      "noWall": "El videowall aún no tiene cámaras.",
+      "skippedTitle": "Cámaras que la instalación aún no tiene",
+      "skippedHint": "El mundo se instala sin ellas. Dé de alta las cámaras y vuelva a instalar la demo.",
+      "wallErrorTitle": "El videowall no se actualizó",
+      "wallErrorHint": "VmsCfg no respondió, así que su videowall quedó como estaba. Inicie VmsCfg y repita la acción."
+    }
   },
   "alarms": {
     "handle": "Atender la alarma",

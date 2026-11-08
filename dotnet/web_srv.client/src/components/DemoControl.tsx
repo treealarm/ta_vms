@@ -6,17 +6,17 @@ import {
 import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep'
 import { useTranslation } from 'react-i18next'
-import { mapApi } from '../../api/mapApi'
-import { errorText } from '../../api/requestJson'
-import type { MapDemoReport } from '../../dto/mapDtos'
-import { useAppDispatch } from '../../store'
-import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
+import { mapApi } from '../api/mapApi'
+import { errorText } from '../api/requestJson'
+import type { MapDemoReport } from '../dto/mapDtos'
+import { useAppDispatch } from '../store'
+import { loadPlacements, loadSpaces } from '../store/spatialSlice'
 
 /**
- * The demo world's switch, in the footer of Admin → Maps because it acts on the whole deployment,
- * not on the selected space. The world is VmsMap's and its video wall is VmsCfg's; the gateway
- * answers one report of both. Installing twice is safe — the seeder owns what it wrote and leaves
- * everything else alone — so the same button reinstalls once the cameras exist.
+ * The demo world's switch, in the footer of Administration → Deployment: the demo is content of the
+ * installation — cameras in VmsCfg, the world, its landmarks and calibrations in VmsMap, and the
+ * video wall — not a property of a map. Installing twice is safe — each side owns what it wrote and
+ * leaves everything else alone — so the same button reinstalls once the cameras exist.
  */
 export default function DemoControl() {
   const { t } = useTranslation()
@@ -35,7 +35,7 @@ export default function DemoControl() {
   }, [])
 
   const run = async (action: 'install' | 'remove') => {
-    const question = action === 'install' ? t('maps.demo.confirmInstall') : t('maps.demo.confirmRemove')
+    const question = action === 'install' ? t('deployment.demo.confirmInstall') : t('deployment.demo.confirmRemove')
     if (!window.confirm(question)) return
 
     setBusy(true)
@@ -70,15 +70,15 @@ export default function DemoControl() {
         color={installed ? 'inherit' : 'primary'}
         onClick={() => void run(installed ? 'remove' : 'install')}
       >
-        {installed ? t('maps.demo.remove') : t('maps.demo.install')}
+        {installed ? t('deployment.demo.remove') : t('deployment.demo.install')}
       </Button>
 
       <Dialog open={!!report} onClose={() => setReport(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{report?.installed ? t('maps.demo.installed') : t('maps.demo.removed')}</DialogTitle>
+        <DialogTitle>{report?.installed ? t('deployment.demo.installed') : t('deployment.demo.removed')}</DialogTitle>
         <DialogContent>
           <Stack spacing={1}>
             <Typography variant="body2">
-              {t('maps.demo.summary', {
+              {t('deployment.demo.summary', {
                 created: report?.created ?? 0,
                 updated: report?.updated ?? 0,
                 removed: report?.removed ?? 0,
@@ -87,22 +87,22 @@ export default function DemoControl() {
 
             <Typography variant="body2">
               {report?.monitorCameras?.length
-                ? t('maps.demo.wall', { cameras: report.monitorCameras.join(', ') })
-                : t('maps.demo.noWall')}
+                ? t('deployment.demo.wall', { cameras: report.monitorCameras.join(', ') })
+                : t('deployment.demo.noWall')}
             </Typography>
 
             {report?.skippedCameras?.length ? (
               <Alert severity="info">
-                <Typography variant="subtitle2">{t('maps.demo.skippedTitle')}</Typography>
+                <Typography variant="subtitle2">{t('deployment.demo.skippedTitle')}</Typography>
                 <Typography variant="body2">{report.skippedCameras.join(', ')}</Typography>
-                <Typography variant="caption" color="text.secondary">{t('maps.demo.skippedHint')}</Typography>
+                <Typography variant="caption" color="text.secondary">{t('deployment.demo.skippedHint')}</Typography>
               </Alert>
             ) : null}
 
             {report?.wallError ? (
               <Alert severity="warning">
-                <Typography variant="subtitle2">{t('maps.demo.wallErrorTitle')}</Typography>
-                <Typography variant="body2">{t('maps.demo.wallErrorHint')}</Typography>
+                <Typography variant="subtitle2">{t('deployment.demo.wallErrorTitle')}</Typography>
+                <Typography variant="body2">{t('deployment.demo.wallErrorHint')}</Typography>
                 <Typography variant="caption" color="text.secondary">{report.wallError}</Typography>
               </Alert>
             ) : null}

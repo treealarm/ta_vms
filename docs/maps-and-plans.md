@@ -280,8 +280,9 @@ longer names; a removal deletes them all, values included. **Rows the demo did n
 named by the registry and are never touched**: a user's own node beside the world survives both an
 install and a removal.
 
-**Installing.** Either `DEMO_CONFIG=umd-datacenter` (VmsMap installs the map, VmsCfg the video wall,
-at startup) or the button at the foot of Admin → Maps (`POST api/map/admin/demo/install` and
+**Installing.** Either `DEMO_CONFIG=umd-datacenter` (VmsMap installs the map, VmsCfg the cameras and
+the video wall, at startup) or the button at the foot of Administration → Deployment (`POST
+api/map/admin/demo/install` and
 `.../remove`, `GET api/map/admin/demo`, administrators only), which calls both services and merges
 their reports. Both paths use the same seeder, so they are interchangeable; installing twice is
 idempotent. The whole install is one transaction under `pg_advisory_xact_lock`, so two replicas
