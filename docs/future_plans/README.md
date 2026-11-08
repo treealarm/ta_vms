@@ -28,5 +28,6 @@ here is deleted or cut down to what is still left.
 | [prism-holes.md](prism-holes.md) | Призма с внутренними кольцами: сейчас контур с двором отвергается, нужна поддержка отверстий |
 | [prism-vertex-editing.md](prism-vertex-editing.md) | Точки контура призмы не тянутся мышью: удалить и нарисовать заново; нужны ручки и пересчёт проёмов |
 | [review-2026-10-27-leftovers.md](review-2026-10-27-leftovers.md) | What the 2026-10-27 review left open: how an edge-import replay ends, two live checks |
+| [shared-device-diagrams.md](shared-device-diagrams.md) | Общий холст «Cam Diagrams»: несколько устройств с контактами на одной диаграмме; сейчас части размещаются только шаблоном устройства |
 | [scale-bench-100k.md](scale-bench-100k.md) | Полный стенд на 100 000 камер — распределённое развёртывание; что проверяется локально и что осталось |
 | [windows-hardware-encoders.md](windows-hardware-encoders.md) | A hardware encoder on Windows without an NVIDIA card: QSV through D3D11 checked, several streams left, AMF, Media Foundation |
