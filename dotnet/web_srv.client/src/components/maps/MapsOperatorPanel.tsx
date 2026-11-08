@@ -163,17 +163,19 @@ export default function MapsOperatorPanel() {
   // its server and is never drawn on a canvas. A reference and a picture differ by the flag, not by
   // the node, so the matching marker is the one with an owner.
   const nodeForPlacement = (p: { cameraId: string }) =>
-    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId)
-      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId)
+    spaceData.markers.find((m) => m.cameraId === p.cameraId && !!m.ownerId && m.nodeKind !== 'diagram')
+      ?? spaceData.markers.find((m) => m.cameraId === p.cameraId && m.nodeKind !== 'diagram')
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
     if (!node) return DEFAULT_NODE_COLOR
     return nodeStyle(figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions).color
   }
 
+  // Only the picture a placement draws: a camera may have another replica in the same space — a
+  // diagram of its readings — and that one is an ordinary figure, not the marker's stand-in.
   const cameraFigureIds = useMemo(
     () => new Set(spaceData.markers
-      .filter((m) => m.cameraId && here.some((p) => p.cameraId === m.cameraId))
+      .filter((m) => m.cameraId && m.nodeKind !== 'diagram' && here.some((p) => p.cameraId === m.cameraId))
       .map((m) => m.id)),
     [spaceData.markers, here],
   )

@@ -650,9 +650,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               levels={levels}
               selectedId={selectedNodeId}
               onSelect={selectOnCanvas}
-              // A camera placed here is drawn by its marker, not by the shape the node carries.
+              // A camera placed here is drawn by its marker, not by the shape the node carries. A
+              // diagram that is a replica of a camera is not that picture: it is a node of its own
+              // on this canvas, and hiding it hid the whole readings panel.
               skipIds={new Set(mapData.markers
-                .filter((marker) => marker.cameraId && here.some((p) => p.cameraId === marker.cameraId))
+                .filter((marker) => marker.cameraId && marker.nodeKind !== 'diagram'
+                  && here.some((p) => p.cameraId === marker.cameraId))
                 .map((marker) => marker.id))}
               editable={mode === 'select'}
               interactive={!picking}
