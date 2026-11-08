@@ -136,8 +136,13 @@ public class DemoWorldTests
 
     Assert.Equal(5, hall.Count);
     Assert.Equal(5, road.Count);
-    Assert.Equal(["L1 red", "L2 yellow", "L3 blue", "L4 white", "L5 purple"],
+    Assert.Equal(["L1 red (hall)", "L2 yellow (hall)", "L3 blue (hall)", "L4 white (hall)", "L5 purple (hall)"],
       hall.Select(landmark => landmark.Name));
+    // The two sets are drawn in one tree, one under the map and one under the plan: a name that
+    // both share reads as two identical rows.
+    Assert.Equal(
+      _world.Landmarks.Count,
+      _world.Landmarks.Select(landmark => landmark.Name).Distinct(StringComparer.Ordinal).Count());
     Assert.All(_world.Landmarks, landmark => Assert.Equal(0, landmark.HeightM));
 
     // The hall's L1 is world (-10.6, -71.6), the first of the blocks the simulator stands there.
@@ -208,7 +213,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(16, _world.Version);
+    Assert.Equal(17, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);

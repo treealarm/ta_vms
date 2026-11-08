@@ -49,7 +49,8 @@ namespace VmsMap.Demo
     //     readings replica is named by what it shows.
     // 16: the camera's device diagram is the camera itself — body, lens, cable and the terminal
     //     block its parts are wired to — rather than a schematic panel of sockets.
-    public const int UmdDataCenterVersion = 16;
+    // 17: the landmarks name the place they stand in, so the tree's two sets are told apart.
+    public const int UmdDataCenterVersion = 17;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -64,19 +65,20 @@ namespace VmsMap.Demo
 
     // The calibration landmarks of the two pairs: the points MarylandWorld marks with coloured
     // blocks, on the floor of the hall and out on the lot. Their names are what an operator reads
-    // in the picture — `L1 red` — and their keys are what the marks and observations name.
+    // — `L1 red` — plus the place they stand in, because the tree shows both sets side by side and
+    // `L1 red` twice says nothing; their keys are what the marks and observations name.
     private static List<DemoLandmark> Landmarks() =>
     [
-      new("landmark/hall/l1", "L1 red", "space/building", 38.9929432, -76.9379225),
-      new("landmark/hall/l2", "L2 yellow", "space/building", 38.9929432, -76.9378740),
-      new("landmark/hall/l3", "L3 blue", "space/building", 38.9929100, -76.9379225),
-      new("landmark/hall/l4", "L4 white", "space/building", 38.9929100, -76.9378740),
-      new("landmark/hall/l5", "L5 purple", "space/building", 38.9929270, -76.9378982),
-      new("landmark/road/l1", "L1 red", "space/umd", 38.9930546, -76.9378925),
-      new("landmark/road/l2", "L2 yellow", "space/umd", 38.9931175, -76.9379271),
-      new("landmark/road/l3", "L3 blue", "space/umd", 38.9931265, -76.9378462),
-      new("landmark/road/l4", "L4 white", "space/umd", 38.9931803, -76.9378925),
-      new("landmark/road/l5", "L5 purple", "space/umd", 38.9931983, -76.9377769),
+      new("landmark/hall/l1", "L1 red (hall)", "space/building", 38.9929432, -76.9379225),
+      new("landmark/hall/l2", "L2 yellow (hall)", "space/building", 38.9929432, -76.9378740),
+      new("landmark/hall/l3", "L3 blue (hall)", "space/building", 38.9929100, -76.9379225),
+      new("landmark/hall/l4", "L4 white (hall)", "space/building", 38.9929100, -76.9378740),
+      new("landmark/hall/l5", "L5 purple (hall)", "space/building", 38.9929270, -76.9378982),
+      new("landmark/road/l1", "L1 red (road)", "space/umd", 38.9930546, -76.9378925),
+      new("landmark/road/l2", "L2 yellow (road)", "space/umd", 38.9931175, -76.9379271),
+      new("landmark/road/l3", "L3 blue (road)", "space/umd", 38.9931265, -76.9378462),
+      new("landmark/road/l4", "L4 white (road)", "space/umd", 38.9931803, -76.9378925),
+      new("landmark/road/l5", "L5 purple (road)", "space/umd", 38.9931983, -76.9377769),
     ];
 
     // The calibration of the four cameras, computed once from the simulator's own world: the feet
