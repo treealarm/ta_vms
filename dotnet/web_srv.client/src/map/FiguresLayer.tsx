@@ -6,6 +6,7 @@ import type {
   MapAlarmState, MapFigure, MapGeometry, MapLevel, MapObjectState, MapStateDescription,
 } from '../dto/mapDtos'
 import { nodeStyle } from './nodeStyle'
+import { visualImageUrl } from './visualImage'
 import { useMapZoom } from '../hooks/useMapZoom'
 import { inLayer, levelRanges } from './zoomLevels'
 import VertexEditor from './vertexEditor'
@@ -35,7 +36,7 @@ function figureIcon(figure: MapFigure, alarming: boolean, selected: boolean): L.
   const height = figure.visual?.imageHeight || 28
   const rotation = figure.visual?.rotationDeg ?? 0
   const raw = figure.visual?.image ?? ''
-  const src = raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`
+  const src = visualImageUrl(raw)
   const caption = figure.visual?.text ? escapeHtml(figure.visual.text) : ''
 
   // The selected icon is marked like a selected dot: an icon has no radius to grow, so the mark is

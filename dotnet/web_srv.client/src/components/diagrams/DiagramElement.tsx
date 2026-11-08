@@ -5,6 +5,7 @@ import type {
 } from '../../dto/mapDtos'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { nodeStyle } from '../../map/nodeStyle'
+import { visualImageUrl } from '../../map/visualImage'
 import { elementRect, regionRect, type Rect } from './diagramGeometry'
 
 const SELECTED_COLOR = '#64b5f6'
@@ -52,9 +53,7 @@ export default function DiagramElement({
 
   const fileId = diagram?.fileId || type?.fileId
   const fileUrl = useMapFileImage(fileId)
-  const icon = visual?.image
-    ? (visual.image.startsWith('data:') ? visual.image : `data:image/png;base64,${visual.image}`)
-    : null
+  const icon = visual?.image ? visualImageUrl(visual.image) : null
   const picture = fileUrl ?? icon
 
   // A replica's states and alarms are its owner's: the map answers them under the replica's id.

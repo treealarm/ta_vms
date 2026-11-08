@@ -12,6 +12,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
 import PropertyValueField from './PropertyValueField'
+import { visualImageUrl } from '../../map/visualImage'
 import {
   PROPERTY_TYPES, PROPERTY_TYPE_LABELS, normalizeType, normalizeValue,
 } from './propertyTypes'
@@ -228,7 +229,7 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, onDele
               <Box
                 component="img"
                 alt=""
-                src={`data:image/png;base64,${draft.image.data}`}
+                src={visualImageUrl(draft.image.data)}
                 sx={{ width: 28, height: 28, objectFit: 'contain', bgcolor: '#000', borderRadius: 0.5 }}
               />
               <Button size="small" onClick={() => set('image', null)}>{t('maps.editor.clearIcon')}</Button>
