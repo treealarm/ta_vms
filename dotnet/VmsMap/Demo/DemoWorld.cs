@@ -16,7 +16,8 @@ namespace VmsMap.Demo
   /// with the code and never depends on a file on the instance's disk.
   public sealed record DemoFile(string Key, byte[] Content, string Mime)
   {
-    /// A picture that is an embedded raster: the plans and the room's icon on the floor.
+    /// A picture that is an embedded raster: the plans, and the two icons that stand on the floor —
+    /// the server room's and the readings panel's.
     public static DemoFile Asset(string key, string asset, string mime) =>
       new(key, DemoAssets.Read(asset), mime);
   }

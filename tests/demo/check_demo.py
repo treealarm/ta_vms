@@ -33,13 +33,13 @@ DEMO_KEY = "umd-datacenter"
 MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "First floor"
 # The diagram standing on that plan: the same room as a schematic, with the racks drawn in it.
-LAYOUT_NAME = "First floor"
+LAYOUT_NAME = "First floor Diagram"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
 DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
 # The replica of the indoor master: a diagram on the floor that shows the camera's own readings.
-TELEMETRY_NAME = "Camera sim-master"
+TELEMETRY_NAME = "Camera sim-master readings"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
 DEMO_SUBSCRIPTION = "053df083-59b0-56b3-a28c-c5701d1fc3cf"
@@ -444,6 +444,26 @@ def check_plans(vms, world):
         lat, lon = W.to_wgs84(x, z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
         check(any(W.ground_gap(lat, lon, flat, flon) <= 0.01 for flat, flon in footprint),
               f"the footprint has the world's corner ({lat:.7f}, {lon:.7f})")
+
+
+def check_diagram_marker(vms, world):
+    """The floor diagram is marked where the simulator's racks stand: the middle of the row along
+    Room 101's west wall. A marker in the building's east wing looks like a diagram of some other
+    room."""
+    layout = world["layout"]
+    figs = figures_of(vms, [layout["id"]])
+    fig = next((candidate for candidate in figs if candidate.get("id") == layout["id"]), None)
+    coord = ((fig or {}).get("geometry") or {}).get("coord") or []
+    if not check(coord, "the floor diagram has a point on the plan"):
+        return
+
+    lat, lon = coord[0].get("lat"), coord[0].get("lon")
+    x = W.MARYLAND_RACK_X
+    z = sum(W.MARYLAND_RACK_Z) / len(W.MARYLAND_RACK_Z)
+    expected = W.to_wgs84(x, z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+    gap = W.ground_gap(lat, lon, *expected[:2])
+    check(gap <= 0.5, f"the diagram stands {gap:.2f} m from the rack row "
+                      f"({expected[0]:.7f}, {expected[1]:.7f})")
 
 
 def check_positions(vms, world):
@@ -1168,6 +1188,7 @@ def main():
 
     print("Plans")
     check_plans(vms, world)
+    check_diagram_marker(vms, world)
 
     print("Regions and canvases")
     check_positions(vms, world)

@@ -44,11 +44,21 @@ namespace VmsMap.Demo
     // 14: the readings the demo shows are the indoor master's: a Device telemetry diagram of
     //     `sim-master` stands on the floor beside it — a camera that does stand still, so a diagram
     //     on a plan means something.
-    public const int UmdDataCenterVersion = 14;
+    // 15: the diagram is named apart from the floor it stands on, and its marker stands on the rack
+    //     row the simulator builds along the room's west wall, not in the building's east wing; the
+    //     readings replica is named by what it shows.
+    public const int UmdDataCenterVersion = 15;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
       string.Equals(key, UmdDataCenterKey, StringComparison.Ordinal) ? UmdDataCenter() : null;
+
+    // Where the racks stand in the world: `rack-1` … `rack-4` of MarylandWorld are boxes along the
+    // west wall of Room 101, at x = -14.6, z = -72.4 … -64.9, and the diagram's marker stands at
+    // the middle of that row — the plan draws no room, so the marker is the only thing that says
+    // where the equipment is. Pinned in WGS84, as the camera poses are; the simulator's constants
+    // and this point are checked against each other by tests/onvifsim.
+    private static readonly DemoPoint Racks = new(38.9929167, -76.9379687);
 
     // The building in WGS84: Biomolecular Sciences' real footprint (OSM way 24303349), the same
     // outline MarylandWorld builds its prism from. Its first floor is a plan nested in the map.
@@ -96,7 +106,8 @@ namespace VmsMap.Demo
         // The plan is drawn from the building's own constants: the first floor over its real
         // footprint, with the doorway the simulator cuts in its north wall.
         new("file/floor-plan", DemoArt.FloorPlan(BuildingOutline, Door, DoorWidthM), "image/svg+xml"),
-        DemoFile.Asset("file/room-icon", "room-icon.png", "image/png"),
+        DemoFile.Asset("file/server-room-icon", "server-room-icon.png", "image/png"),
+        DemoFile.Asset("file/readings-icon", "readings-icon.png", "image/png"),
         // The diagram backgrounds are vector, and their regions are drawn from the same geometry:
         // see DemoArt, where a socket and the region a port takes are one rectangle.
         new("file/floor-layout-background", DemoArt.FloorLayout(), "image/svg+xml"),
@@ -138,18 +149,19 @@ namespace VmsMap.Demo
       // into its regions. Each rack opens on its own canvas, and so does every switch inside it.
       // No layer: like the plan's own footprint, the diagram's marker stands on the floor at every
       // zoom the floor is looked at.
-      nodes.Add(new DemoNode(FloorLayout, "First floor", "space/building", FloorLayoutType,
+      nodes.Add(new DemoNode(FloorLayout, "First floor Diagram", "space/building", FloorLayoutType,
         Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
-        At: new DemoPoint(38.9928210, -76.9376266),
-        VisualKey: "file/room-icon", VisualWidth: 44, VisualHeight: 44));
+        At: Racks,
+        VisualKey: "file/server-room-icon", VisualWidth: 44, VisualHeight: 44));
 
       // The indoor master's own readings, on a replica standing beside it on the floor: its place,
       // how fast it moves (nought — it is bolted to the wall), and the relay and sensor wired around
       // it. `DemoValueFeeder` keeps the values fresh from what the camera reports over ONVIF.
-      nodes.Add(new DemoNode(MasterTelemetry, "Camera sim-master", "space/building",
+      nodes.Add(new DemoNode(MasterTelemetry, "Camera sim-master readings", "space/building",
         DemoTelemetry.TypeKey,
         Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
         At: new DemoPoint(38.9928060, -76.9379290),
+        VisualKey: "file/readings-icon", VisualWidth: 40, VisualHeight: 40,
         OwnerCameraId: "sim-master"));
 
       // The four racks stand in the floor's schematic, filled with switches: every slot takes one,

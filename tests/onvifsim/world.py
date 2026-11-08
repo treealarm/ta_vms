@@ -657,6 +657,12 @@ MARYLAND_ROAD_LANDMARKS = (
     Landmark("L5", 2.0, -100.0, "#8e24aa", "purple"),
 )
 
+# The racks the simulator stands in Room 101: MarylandWorld's `rack-1` … `rack-4`, boxes along the
+# room's west wall. ta_vms's floor diagram is marked at the middle of that row, so the picture on the
+# plan stands where the cabinets do; check_demo compares the marker with these.
+MARYLAND_RACK_X = -14.6
+MARYLAND_RACK_Z = (-72.4, -69.9, -67.4, -64.9)
+
 
 def demo_camera(world, camera_id, base):
     """`base` at the Maryland world's own pose — the demo places its cameras from the same constants.
@@ -827,6 +833,19 @@ def check_maryland(world):
     for x, z in MARYLAND_BUILDING_OUTLINE:
         assert any(math.hypot(x - px, z - pz) <= 0.01 for px, pz in ring), \
             f"the building has no corner at ({x}, {z})"
+
+    # The racks of the demo's floor diagram: boxes along Room 101's west wall, at the points the
+    # map's diagram marker stands in the middle of.
+    objects = {obj.get("id"): obj for obj in world.get("objects", [])}
+    for index, z in enumerate(MARYLAND_RACK_Z, start=1):
+        rack = objects.get(f"rack-{index}")
+        assert rack is not None, f"the world has no 'rack-{index}'"
+        assert rack.get("type") == "box", f"rack-{index} is a '{rack.get('type')}', not a box"
+        position = rack.get("position") or {}
+        assert abs(position.get("x", 0.0) - MARYLAND_RACK_X) <= 0.01, \
+            f"rack-{index} stands at x {position.get('x')}, not {MARYLAND_RACK_X}"
+        assert abs(position.get("z", 0.0) - z) <= 0.01, \
+            f"rack-{index} stands at z {position.get('z')}, not {z}"
 
     # No building of this world stands on a road: the defect this milestone was opened for was a hall
     # laid over two real streets.

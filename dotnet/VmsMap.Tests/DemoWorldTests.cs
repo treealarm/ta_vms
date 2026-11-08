@@ -30,10 +30,14 @@ public class DemoWorldTests
     // The floor is the room: no plan is nested in it, and the hall pair stands on the floor's own
     // plan. What stands in the room is one diagram of the floor — its four racks are regions of it.
     var diagram = Assert.Single(_world.Nodes, node => node.Key == "object/floor-layout");
-    Assert.Equal("First floor", diagram.Name);
+    Assert.Equal("First floor Diagram", diagram.Name);
     Assert.Equal(building.Key, diagram.ParentKey);
     Assert.Equal("type/floor-layout", diagram.TypeKey);
     Assert.NotNull(diagram.At);
+    // The marker stands on the rack row the simulator builds along Room 101's west wall — not in
+    // the east wing of the building, where an earlier world put it.
+    Assert.Equal(38.9929167, diagram.At!.Value.Lat, 7);
+    Assert.Equal(-76.9379687, diagram.At!.Value.Lon, 7);
     Assert.NotNull(diagram.Canvas);
     Assert.NotNull(diagram.VisualKey);
     Assert.DoesNotContain(_world.Spaces, space => space.ParentKey == building.Key);
@@ -149,7 +153,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(14, _world.Version);
+    Assert.Equal(15, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -188,7 +192,13 @@ public class DemoWorldTests
     // A replica: its owner is the camera's canonical node, which the seeder resolves through
     // device_node. It carries the readings' type and stands as a diagram, so it takes no placement.
     var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-master");
+    // A name of its own: the camera's placement replica is already called "Camera sim-master", and
+    // two identical names under one plan are indistinguishable in the tree.
+    Assert.Equal("Camera sim-master readings", node.Name);
     Assert.Equal("sim-master", node.OwnerCameraId);
+    // An icon of its own: without one the node is a plain dot on the plan, which is what made the
+    // second replica look like a stray copy of the first.
+    Assert.Equal("file/readings-icon", node.VisualKey);
     Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
     Assert.Equal("space/building", node.ParentKey);
     Assert.NotNull(node.At);
