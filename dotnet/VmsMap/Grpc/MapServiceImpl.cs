@@ -50,6 +50,7 @@ namespace VmsMap.Grpc
     private readonly DemoSeeder _demoSeeder;
     private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
     private readonly AlarmStore _alarmStore;
+    private readonly IDeviceDiagramService _deviceDiagrams;
 
     public MapServiceImpl(
       VmsMapDbContext db,
@@ -75,7 +76,8 @@ namespace VmsMap.Grpc
       MapWatchPoller watchPoller,
       DemoSeeder demoSeeder,
       VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver,
-      AlarmStore alarmStore)
+      AlarmStore alarmStore,
+      IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
       _mapService = mapService;
@@ -100,6 +102,7 @@ namespace VmsMap.Grpc
       _watchPoller = watchPoller;
       _demoSeeder = demoSeeder;
       _armingResolver = armingResolver;
+      _deviceDiagrams = deviceDiagrams;
       _alarmStore = alarmStore;
     }
 
@@ -609,11 +612,23 @@ namespace VmsMap.Grpc
       id = type.Id,
       name = type.Name,
       file_id = type.FileId,
+      source_kind = string.IsNullOrEmpty(type.SourceKind) ? null : type.SourceKind,
+      device_manufacturer = type.DeviceManufacturer,
+      device_model = type.DeviceModel,
+      auto_attach = type.AutoAttach,
       regions = type.Regions.Select(r => new DiagramTypeRegionDTO
       {
         region_key = r.RegionKey,
         geometry = ToDto(r.Geometry),
-        styles = r.Styles.ToDictionary(kv => kv.Key, kv => kv.Value)
+        styles = r.Styles.ToDictionary(kv => kv.Key, kv => kv.Value),
+        part = r.Part is null
+          ? null
+          : new DiagramTypePartDTO
+          {
+            part_kind = r.Part.PartKind,
+            match_by = r.Part.MatchBy,
+            match_value = r.Part.MatchValue,
+          },
       }).ToList()
     };
 
@@ -622,13 +637,25 @@ namespace VmsMap.Grpc
       Id = dto.id ?? string.Empty,
       Name = dto.name ?? string.Empty,
       FileId = dto.file_id ?? string.Empty,
+      SourceKind = dto.source_kind ?? string.Empty,
+      DeviceManufacturer = dto.device_manufacturer ?? string.Empty,
+      DeviceModel = dto.device_model ?? string.Empty,
+      AutoAttach = dto.auto_attach,
       Regions =
       {
         (dto.regions ?? new List<DiagramTypeRegionDTO>()).Select(r => new MapProto.DiagramTypeRegion
         {
           RegionKey = r.region_key ?? string.Empty,
           Geometry = ToProto(r.geometry) ?? new MapProto.DiagramCoordinate(),
-          Styles = { r.styles ?? new Dictionary<string, string>() }
+          Styles = { r.styles ?? new Dictionary<string, string>() },
+          Part = r.part is null
+            ? null
+            : new MapProto.DiagramTypeRegionPart
+            {
+              PartKind = r.part.part_kind ?? string.Empty,
+              MatchBy = r.part.match_by ?? string.Empty,
+              MatchValue = r.part.match_value ?? string.Empty,
+            },
         })
       }
     };

@@ -508,6 +508,10 @@ service DeviceIoService {
   rpc GetDigitalInputOptions(CameraRequest) returns (GetDigitalInputOptionsResponse);
   rpc SetDigitalInputIdleState(SetDigitalInputIdleStateRequest) returns (DeviceIoResponse);
   rpc GetCameraGeoLocation(CameraRequest) returns (GetCameraGeoLocationResponse);
+  // The live states as the camera reports them, pushed instead of polled. One stream serves every
+  // camera of the node: a monitor wall would otherwise need a connection per tile, and a browser
+  // allows about six.
+  rpc StreamDeviceIoStates(StreamDeviceIoStatesRequest) returns (stream DeviceIoStateUpdate);
 }
 
 message DeviceIoResponse {
@@ -606,6 +610,28 @@ message SetDigitalInputIdleStateRequest {
   string    source_id = 1;
   string    token      = 2;
   IdleState idle_state = 3;
+}
+
+message StreamDeviceIoStatesRequest {
+  // Empty asks for every camera of the node; otherwise only that camera.
+  string source_id = 1;
+}
+
+// One part's live state. The first message for a part is what the camera last said
+// (initialized=true); each transition after that is initialized=false. Nothing is sent for a part
+// the camera has never reported.
+message DeviceIoStateUpdate {
+  string source_id     = 1;  // the camera
+  string part_kind     = 2;  // "relay" or "digital_input", the words device_node uses
+  string token         = 3;
+  // The camera's LogicalState: a relay's coil, or an input's logical value.
+  bool   logical_state = 4;
+  // An input's contact, derived from logical_state and the idle state the camera configured. Unset
+  // when that idle state is unknown; never set for a relay, which has only its coil here.
+  optional string contact = 5;
+  bool   initialized   = 6;
+  // ISO 8601 UTC, the camera's own time when it gave one.
+  string observed_at   = 7;
 }
 
 // ── Profile G: camera-side ("edge") recordings ────────────────────────────────

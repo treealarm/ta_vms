@@ -53,6 +53,7 @@ namespace VmsMap.Db
       var obj = await _dbContext.DiagramTypes
           .Where(d => typeNames.Contains(d.name))
           .Include(d => d.regions)
+          .Include(d => d.parts)
           .ToListAsync();
 
       return ConvertListDB2DTO(obj);
@@ -75,6 +76,7 @@ namespace VmsMap.Db
       var obj = await _dbContext.DiagramTypes
           .Where(d => guidIds.Contains(d.id))
           .Include(d => d.regions)
+          .Include(d => d.parts)
           .ToListAsync();
 
       return ConvertListDB2DTO(obj);
@@ -109,7 +111,7 @@ namespace VmsMap.Db
         ? query.OrderBy(x => x.id)
         : query.OrderByDescending(x => x.id);
 
-      query = query.Take(filterDto.count).Include(x => x.regions);
+      query = query.Take(filterDto.count).Include(x => x.regions).Include(x => x.parts);
 
       var obj = await query.ToListAsync();
 
@@ -136,6 +138,7 @@ namespace VmsMap.Db
 
       var existing = await _dbContext.DiagramTypes
           .Include(d => d.regions)
+          .Include(d => d.parts)
           .Where(d => ids.Contains(d.id))
           .ToListAsync();
 
@@ -151,6 +154,7 @@ namespace VmsMap.Db
         {
           dbObj.name = dto.name ?? string.Empty;
           dbObj.file_id = Utils.ConvertObjectIdToGuid(dto.file_id);
+          ApplyTemplate(dbObj, dto);
 
           var incomingKeys = incomingRegions.Select(r => r.region_key).ToHashSet();
           var toRemove = dbObj.regions
@@ -162,6 +166,12 @@ namespace VmsMap.Db
             dbObj.regions.Remove(r);
             _dbContext.DiagramTypeRegions.Remove(r);
           }
+
+          // A region's binding dies with the region: the row names it by key, so leaving it would
+          // bind a region that no longer exists the moment another one takes that key.
+          var removedKeys = toRemove.Select(r => r.region_key).ToHashSet(StringComparer.Ordinal);
+          foreach (var stale in dbObj.parts.Where(p => removedKeys.Contains(p.region_key)).ToList())
+            _dbContext.DiagramTypeParts.Remove(stale);
 
           foreach (var r in incomingRegions)
           {
@@ -186,6 +196,8 @@ namespace VmsMap.Db
               _dbContext.DiagramTypeRegions.Add(newRegion);
               dbObj.regions.Add(newRegion);
             }
+
+            ApplyPart(dbObj, r);
           }
         }
         else
@@ -204,6 +216,10 @@ namespace VmsMap.Db
             }).ToList()
           };
 
+          ApplyTemplate(newDbObj, dto);
+          foreach (var r in incomingRegions)
+            ApplyPart(newDbObj, r);
+
           toAdd.Add(newDbObj);
         }
 
@@ -220,11 +236,26 @@ namespace VmsMap.Db
     /// A region is addressed by its key — a child names it in `region_id` — so a key has to be
     /// there and to be the only one of its name. The update below matches regions by key; two of
     /// them would be written into the first row twice and the second would silently vanish.
+    ///
+    /// The same pass normalises and refuses what a template must never store: a part kind or a way
+    /// of matching that nothing understands, an empty match value, an index that is not a number,
+    /// and two regions claiming the same part by the same rule. Refusing here is what keeps a
+    /// device from being drawn from a template whose meaning nobody can predict.
     private static void NormalizeKeys(List<DiagramTypeDTO> types)
     {
       foreach (var type in types)
       {
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var claimed = new HashSet<(string Kind, string By, string Value)>();
+
+        type.source_kind = NullIfEmpty(type.source_kind);
+        if (type.source_kind is not null && type.source_kind != DeviceObjectId.CameraSource)
+          throw new DiagramTypeConfigException(
+              $"The diagram type \"{type.name}\" names source kind \"{type.source_kind}\"; " +
+              $"\"{DeviceObjectId.CameraSource}\" is the only one there is.");
+
+        type.device_manufacturer = type.device_manufacturer?.Trim() ?? string.Empty;
+        type.device_model = type.device_model?.Trim() ?? string.Empty;
 
         foreach (var region in type.regions ?? [])
         {
@@ -238,9 +269,96 @@ namespace VmsMap.Db
               $"The diagram type \"{type.name}\" has two regions keyed \"{key}\".");
 
           region.region_key = key;
+
+          if (region.part is not null)
+            NormalizePart(type, region, claimed);
         }
       }
     }
+
+    private static void NormalizePart(
+      DiagramTypeDTO type, DiagramTypeRegionDTO region, HashSet<(string, string, string)> claimed)
+    {
+      var part = region.part!;
+
+      part.part_kind = part.part_kind?.Trim().ToLowerInvariant();
+      if (part.part_kind is not (DeviceObjectId.DigitalInputPart or DeviceObjectId.RelayPart))
+        throw new DiagramTypeConfigException(
+          $"The region \"{region.region_key}\" of \"{type.name}\" names part kind " +
+          $"\"{part.part_kind}\"; only \"{DeviceObjectId.DigitalInputPart}\" and " +
+          $"\"{DeviceObjectId.RelayPart}\" exist.");
+
+      part.match_by = part.match_by?.Trim().ToLowerInvariant();
+      if (!DiagramPartMatch.IsKnown(part.match_by))
+        throw new DiagramTypeConfigException(
+          $"The region \"{region.region_key}\" of \"{type.name}\" matches by " +
+          $"\"{part.match_by}\"; the ways are \"{DiagramPartMatch.Token}\", " +
+          $"\"{DiagramPartMatch.Name}\" and \"{DiagramPartMatch.Index}\".");
+
+      part.match_value = part.match_value?.Trim() ?? string.Empty;
+      if (part.match_value.Length == 0)
+        throw new DiagramTypeConfigException(
+          $"The region \"{region.region_key}\" of \"{type.name}\" binds a part but says nothing " +
+          "to find it by.");
+
+      if (part.match_by == DiagramPartMatch.Index
+          && (!int.TryParse(part.match_value, out var index) || index < 1))
+        throw new DiagramTypeConfigException(
+          $"The region \"{region.region_key}\" of \"{type.name}\" matches by index " +
+          $"\"{part.match_value}\"; an index counts from 1.");
+
+      // Two regions cannot claim the same part of the same kind by the same rule: which one the
+      // part would be drawn in is decided by the order of a list nobody reads as an order.
+      if (!claimed.Add((part.part_kind!, part.match_by!, part.match_value)))
+        throw new DiagramTypeConfigException(
+          $"Two regions of \"{type.name}\" claim the {part.part_kind} found by " +
+          $"\"{part.match_by} = {part.match_value}\".");
+    }
+
+    private static void ApplyTemplate(DBDiagramType dbObj, DiagramTypeDTO dto)
+    {
+      dbObj.source_kind = dto.source_kind;
+      dbObj.device_manufacturer = dto.device_manufacturer ?? string.Empty;
+      dbObj.device_model = dto.device_model ?? string.Empty;
+      dbObj.auto_attach = dto.auto_attach;
+    }
+
+    /// One binding per region: added, replaced, or removed when the region stops naming a part.
+    private void ApplyPart(DBDiagramType dbObj, DiagramTypeRegionDTO region)
+    {
+      var key = region.region_key ?? string.Empty;
+      var existing = dbObj.parts.FirstOrDefault(p => p.region_key == key);
+
+      if (region.part is null)
+      {
+        if (existing is not null)
+        {
+          dbObj.parts.Remove(existing);
+          _dbContext.DiagramTypeParts.Remove(existing);
+        }
+        return;
+      }
+
+      if (existing is null)
+      {
+        dbObj.parts.Add(new DBDiagramTypePart
+        {
+          diagram_type_id = dbObj.id,
+          region_key = key,
+          part_kind = region.part.part_kind!,
+          match_by = region.part.match_by!,
+          match_value = region.part.match_value!,
+        });
+        return;
+      }
+
+      existing.part_kind = region.part.part_kind!;
+      existing.match_by = region.part.match_by!;
+      existing.match_value = region.part.match_value!;
+    }
+
+    private static string? NullIfEmpty(string? value) =>
+      string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     // The rotation is part of the region: Square's update dropped it and a rotated region came
     // back upright after every save.
@@ -275,8 +393,14 @@ namespace VmsMap.Db
           file_id = dbObj.file_id.HasValue
             ? Utils.ConvertGuidToObjectId(dbObj.file_id.Value)
             : null,
+          source_kind = dbObj.source_kind,
+          device_manufacturer = dbObj.device_manufacturer,
+          device_model = dbObj.device_model,
+          auto_attach = dbObj.auto_attach,
           regions = new List<DiagramTypeRegionDTO>()
         };
+
+        var parts = dbObj.parts.ToDictionary(p => p.region_key, StringComparer.Ordinal);
 
         foreach (var item in dbObj.regions)
         {
@@ -293,7 +417,15 @@ namespace VmsMap.Db
             },
             styles = item.styles == null
               ? null
-              : new Dictionary<string, string>(item.styles)
+              : new Dictionary<string, string>(item.styles),
+            part = parts.TryGetValue(item.region_key, out var bound)
+              ? new DiagramTypePartDTO
+              {
+                part_kind = bound.part_kind,
+                match_by = bound.match_by,
+                match_value = bound.match_value,
+              }
+              : null,
           });
         }
 

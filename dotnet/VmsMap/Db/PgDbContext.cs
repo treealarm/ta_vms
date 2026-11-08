@@ -36,6 +36,10 @@ namespace VmsMap.Db
     public DbSet<DBSpacePlan> SpacePlans { get; set; } = null!;
     public DbSet<DBCameraPlacement> CameraPlacements { get; set; } = null!;
     public DbSet<DBDeviceNode> DeviceNodes { get; set; } = null!;
+    public DbSet<DBDeviceInfo> DeviceInfos { get; set; } = null!;
+    public DbSet<DBDiagramTypePart> DiagramTypeParts { get; set; } = null!;
+    public DbSet<DBDeviceDiagram> DeviceDiagrams { get; set; } = null!;
+    public DbSet<DBDeviceDiagramPart> DeviceDiagramParts { get; set; } = null!;
     public DbSet<DBLandmark> Landmarks { get; set; } = null!;
     public DbSet<DBPtzGeoObservation> PtzGeoObservations { get; set; } = null!;
     public DbSet<DBGroundObservation> GroundObservations { get; set; } = null!;
@@ -72,6 +76,7 @@ namespace VmsMap.Db
       ConfigureProperties(modelBuilder);
       ConfigureTrackPoints(modelBuilder);
       ConfigureDiagramTypes(modelBuilder);
+      ConfigureDeviceDiagrams(modelBuilder);
       ConfigureDiagrams(modelBuilder);
       ConfigureGeoObjects(modelBuilder);
       ConfigureVisuals(modelBuilder);
@@ -80,6 +85,7 @@ namespace VmsMap.Db
       ConfigureSpacePlans(modelBuilder);
       ConfigureCameraPlacements(modelBuilder);
       ConfigureDeviceNodes(modelBuilder);
+      ConfigureDeviceInfos(modelBuilder);
       ConfigureLandmarks(modelBuilder);
       ConfigureGeoObservations(modelBuilder);
       ConfigureDemo(modelBuilder);
@@ -205,6 +211,21 @@ namespace VmsMap.Db
       });
     }
 
+    private void ConfigureDeviceInfos(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBDeviceInfo>(entity =>
+      {
+        entity.ToTable("device_info");
+
+        entity.HasKey(e => new { e.source_kind, e.source_id });
+        entity.Property(e => e.source_kind).HasColumnName("source_kind").IsRequired();
+        entity.Property(e => e.source_id).HasColumnName("source_id").HasConversion(UuidText).IsRequired();
+        entity.Property(e => e.manufacturer).HasColumnName("manufacturer").IsRequired();
+        entity.Property(e => e.model).HasColumnName("model").IsRequired();
+        entity.Property(e => e.firmware).HasColumnName("firmware").IsRequired();
+      });
+    }
+
     private void ConfigureLandmarks(ModelBuilder modelBuilder)
     {
       modelBuilder.Entity<DBLandmark>(entity =>
@@ -243,6 +264,38 @@ namespace VmsMap.Db
       });
     }
 
+    private void ConfigureDeviceDiagrams(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBDeviceDiagram>(entity =>
+      {
+        entity.ToTable("device_diagram");
+        entity.HasKey(e => e.object_id);
+
+        entity.Property(e => e.object_id).HasColumnName("object_id").ValueGeneratedNever();
+        entity.Property(e => e.source_kind).HasColumnName("source_kind").IsRequired();
+        entity.Property(e => e.source_id).HasColumnName("source_id").HasConversion(UuidText).IsRequired();
+        entity.Property(e => e.slot).HasColumnName("slot").IsRequired();
+        entity.Property(e => e.diagram_type_id).HasColumnName("diagram_type_id");
+        entity.Property(e => e.auto_created).HasColumnName("auto_created");
+
+        entity.HasIndex(e => new { e.source_kind, e.source_id, e.slot }).IsUnique();
+      });
+
+      modelBuilder.Entity<DBDeviceDiagramPart>(entity =>
+      {
+        entity.ToTable("device_diagram_parts");
+        entity.HasKey(e => new { e.diagram_object_id, e.region_key });
+
+        entity.Property(e => e.diagram_object_id).HasColumnName("diagram_object_id");
+        entity.Property(e => e.region_key).HasColumnName("region_key").IsRequired();
+        entity.Property(e => e.part_object_id).HasColumnName("part_object_id");
+        entity.Property(e => e.replica_object_id).HasColumnName("replica_object_id");
+
+        entity.HasIndex(e => new { e.diagram_object_id, e.part_object_id }).IsUnique();
+        entity.HasIndex(e => e.replica_object_id).IsUnique();
+      });
+    }
+
     private void ConfigureDiagrams(ModelBuilder modelBuilder)
     {
       modelBuilder.Entity<DBDiagram>(entity =>
@@ -276,9 +329,39 @@ namespace VmsMap.Db
         entity.Property(e => e.name).HasColumnName("name").IsRequired();
         entity.Property(e => e.file_id).HasColumnName("file_id");
 
+        entity.Property(e => e.source_kind).HasColumnName("source_kind");
+        entity.Property(e => e.device_manufacturer).HasColumnName("device_manufacturer").IsRequired();
+        entity.Property(e => e.device_model).HasColumnName("device_model").IsRequired();
+        entity.Property(e => e.auto_attach).HasColumnName("auto_attach");
+
         entity.HasMany(d => d.regions)
               .WithOne(r => r.diagram_type)
               .HasForeignKey(r => r.diagram_type_id)
+              .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasMany(d => d.parts)
+              .WithOne()
+              .HasForeignKey(p => p.diagram_type_id)
+              .OnDelete(DeleteBehavior.Cascade);
+      });
+
+      modelBuilder.Entity<DBDiagramTypePart>(entity =>
+      {
+        entity.ToTable("diagram_type_parts");
+        entity.HasKey(e => new { e.diagram_type_id, e.region_key });
+
+        entity.Property(e => e.diagram_type_id).HasColumnName("diagram_type_id");
+        entity.Property(e => e.region_key).HasColumnName("region_key").IsRequired();
+        entity.Property(e => e.part_kind).HasColumnName("part_kind").IsRequired();
+        entity.Property(e => e.match_by).HasColumnName("match_by").IsRequired();
+        entity.Property(e => e.match_value).HasColumnName("match_value").IsRequired();
+
+        // The binding names its region by key, and the foreign key says so in the schema. Without
+        // the relationship here EF does not know the order: a new type's bindings would be
+        // inserted before the regions they point at.
+        entity.HasOne<DBDiagramTypeRegion>()
+              .WithMany()
+              .HasForeignKey(e => new { e.diagram_type_id, e.region_key })
               .OnDelete(DeleteBehavior.Cascade);
       });
 

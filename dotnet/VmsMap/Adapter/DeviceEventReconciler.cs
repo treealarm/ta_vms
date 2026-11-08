@@ -74,6 +74,12 @@ namespace VmsMap.Adapter
         return;
       }
 
+      // The model is stored before the parts and the diagram: both read it from here rather than
+      // from the message, so a late or repeated snapshot cannot match a template by a model the
+      // device has already stopped being.
+      if (message.Device is not null)
+        await SaveDeviceInfoAsync(cameraId, message.Device, ct);
+
       var partRefs = message.Parts
         .Where(p => !string.IsNullOrWhiteSpace(p.Kind) && !string.IsNullOrWhiteSpace(p.Token))
         .Where(p => DevicePayload.IsDigitalInput(p.Kind) || DevicePayload.IsRelay(p.Kind))
@@ -224,6 +230,42 @@ namespace VmsMap.Adapter
       foreach (var part in toReconcile)
         await _sensorAlarms.ReconcileAsync(
           part.ObjectId, cameraId, part.Kind, part.Token, part.Contact, part.Contact, ct);
+    }
+
+    /// <summary>
+    /// Stores what the device said about itself. Called only for a snapshot that carries an
+    /// answer: a sweep that could not ask leaves the row alone, and a row that would not change
+    /// is not rewritten — the sweep runs for every camera every minute.
+    /// </summary>
+    private async Task SaveDeviceInfoAsync(
+      string cameraId, DeviceInfoMessage device, CancellationToken ct)
+    {
+      var manufacturer = device.Manufacturer ?? string.Empty;
+      var model = device.Model ?? string.Empty;
+      var firmware = device.Firmware ?? string.Empty;
+
+      var row = await _db.DeviceInfos.FirstOrDefaultAsync(
+        d => d.source_kind == DeviceObjectId.CameraSource && d.source_id == cameraId, ct);
+
+      if (row is null)
+      {
+        _db.DeviceInfos.Add(new DBDeviceInfo
+        {
+          source_kind = DeviceObjectId.CameraSource,
+          source_id = cameraId,
+          manufacturer = manufacturer,
+          model = model,
+          firmware = firmware,
+        });
+        return;
+      }
+
+      if (row.manufacturer == manufacturer && row.model == model && row.firmware == firmware)
+        return;
+
+      row.manufacturer = manufacturer;
+      row.model = model;
+      row.firmware = firmware;
     }
   }
 }

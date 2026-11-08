@@ -169,6 +169,18 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   }
 
   /// <summary>
+  /// Every part this process has a state for, for a stream that starts now. A part the camera has
+  /// not reported yet is absent: the subscription's Initialized replay follows and fills it in.
+  /// </summary>
+  public IEnumerable<(string CameraId, DeviceIoSnapshot Snapshot)> Snapshots()
+  {
+    foreach (var (cameraId, presence) in _presence)
+      foreach (var (kind, descriptor) in presence.All())
+        if (TryGetSnapshot(cameraId, kind, descriptor.Token) is { } snapshot)
+          yield return (cameraId, snapshot);
+  }
+
+  /// <summary>
   /// Records what one of the camera's I/O lists just looked like and brings its subscription in
   /// line: opened when the camera has any device, closed once both lists are empty. A changed idle
   /// state recomputes the contact at once, without waiting for the next heartbeat. Never throws —

@@ -42,11 +42,22 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoPoint>? Footprint = null,
     DemoPlan? Plan = null);
 
-  public sealed record DemoRegion(string Key, DemoRect Geometry, IReadOnlyDictionary<string, string>? Styles = null);
+  /// The device part a region of a template stands for: its kind, the way it is found, and what to
+  /// look for.
+  public sealed record DemoRegionPart(string PartKind, string MatchBy, string MatchValue);
+
+  public sealed record DemoRegion(string Key, DemoRect Geometry,
+    IReadOnlyDictionary<string, string>? Styles = null, DemoRegionPart? Part = null);
 
   /// A diagram type: the picture behind a diagram of it and the regions its children may take.
+  /// The last four make it a template for one model of a real device as well; the demo uses them
+  /// for a camera's rear panel, which is how a device's diagram appears on its own.
   public sealed record DemoDiagramType(string Key, string Name, string? BackgroundKey,
-    IReadOnlyList<DemoRegion> Regions);
+    IReadOnlyList<DemoRegion> Regions,
+    string? SourceKind = null,
+    string DeviceManufacturer = "",
+    string DeviceModel = "",
+    bool AutoAttach = false);
 
   /// A node of the tree. Under a space it carries a point (`At`) drawn on that space; under a
   /// diagram it takes a region (`RegionKey`) or a rectangle of its own. Every node that is a

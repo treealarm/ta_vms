@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Divider, IconButton, List, ListItemButton, ListItemText, MenuItem,
-  Stack, TextField, Tooltip, Typography,
+  Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, Divider, IconButton, List,
+  ListItemButton, ListItemText, MenuItem, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import AddLocationAltIcon from '@mui/icons-material/AddLocationAlt'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
@@ -14,12 +14,13 @@ import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
 import type { CameraPlacementDto, SpaceDto } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
-import { loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
+import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
 import { loadSpaces, upsertPlacement } from '../../store/spatialSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
+import DiagramViewer from '../diagrams/DiagramViewer'
 
 /**
  * Admin → Nodes: the whole logical tree — server → camera → parts — loaded a level at a time and
@@ -44,6 +45,8 @@ export default function NodesAdminPanel() {
   const [spaceId, setSpaceId] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // The diagram open in a read-only viewer over the tree, and which one it is.
+  const [viewer, setViewer] = useState<{ id: string; name: string } | null>(null)
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
@@ -123,6 +126,29 @@ export default function NodesAdminPanel() {
     setSelectedId(marker.id)
   }
 
+  /**
+   * The diagram a camera carries is a child of its canonical node, so opening it from the camera
+   * means reading that node's children first. A diagram node opens as itself.
+   */
+  const openDiagram = async (marker: MapMarker) => {
+    if (marker.nodeKind === 'diagram') {
+      setViewer({ id: marker.id, name: marker.name || marker.id })
+      return
+    }
+    const parentId = marker.ownerId ?? marker.id
+    try {
+      const page = pages[parentId]?.loaded
+        ? null
+        : await dispatch(loadChildren({ parentId })).unwrap()
+      const children = page?.children ?? childrenOf(markers, pages, parentId)
+      const diagram = children.find((child) => child.nodeKind === 'diagram')
+      if (diagram) setViewer({ id: diagram.id, name: diagram.name || diagram.id })
+      else setError(t('diagramEditor.noDeviceDiagram'))
+    } catch (e) {
+      setError(errorText(e))
+    }
+  }
+
   const selected = selectedId ? markers[selectedId] : null
 
   const placeOnMap = async () => {
@@ -159,6 +185,7 @@ export default function NodesAdminPanel() {
   const isPart = selected?.nodeKind === 'part'
 
   return (
+    <>
     <MasterDetailLayout
       listTitle={t('nodes.title')}
       listWidth={300}
@@ -249,9 +276,19 @@ export default function NodesAdminPanel() {
             dirty={false}
             hideApply
             extra={(
-              <Button size="small" onClick={() => void openInTree(selected)}>
-                {t('nodes.openInTree')}
-              </Button>
+              <>
+                {(selected.nodeKind === 'diagram'
+                  || (selected.nodeKind === 'camera' && selected.cameraId)) && (
+                  <Button size="small" onClick={() => void openDiagram(selected)}>
+                    {selected.nodeKind === 'diagram'
+                      ? t('nodes.openDiagram')
+                      : t('diagramEditor.openDeviceDiagram')}
+                  </Button>
+                )}
+                <Button size="small" onClick={() => void openInTree(selected)}>
+                  {t('nodes.openInTree')}
+                </Button>
+              </>
             )}
           />
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>
@@ -320,5 +357,23 @@ export default function NodesAdminPanel() {
         </Box>
       )}
     </MasterDetailLayout>
+    <Dialog open={viewer !== null} onClose={() => setViewer(null)} maxWidth="lg" fullWidth>
+      <DialogTitle>{viewer?.name}</DialogTitle>
+      <DialogContent sx={{ height: '70vh', display: 'flex', flexDirection: 'column', pt: 1 }}>
+        {viewer && (
+          <DiagramViewer
+            diagramId={viewer.id}
+            selectedId={null}
+            onPick={() => undefined}
+            onOpen={(marker) => {
+              if (marker.nodeKind === 'diagram')
+                setViewer({ id: marker.id, name: marker.name || marker.id })
+            }}
+            editing={false}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

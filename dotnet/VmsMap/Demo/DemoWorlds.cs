@@ -22,7 +22,16 @@ namespace VmsMap.Demo
     // 6: the port no longer alarms — the demo has no synthetic state, so its map starts calm.
     // 7: the second master/slave pair moved out to the road: master2 watches the ring road from the
     //    building's north wall, ptz2 turns after the car.
-    public const int UmdDataCenterVersion = 7;
+    // 8: a device's diagram — the camera's rear panel, drawn from its model, its regions the parts
+    //    the demo configured.
+    // 9: the person walks out of a doorway in the building's north wall; the road pair moved west to
+    //    see both the road and the ground outside the door, and follows the person as well as the car.
+    // 10: both masters turned to face the person's line rather than a room or a road: the hall master
+    //     stands south of Room 101 on the line out to the doorway, and the yard pair's slave hangs over
+    //     that doorway while its master watches the line from between the door and the ring road.
+    // 11: the yard slave moved off the doorway onto a pole of its own between the door and the master,
+    //     and the person turns right in the yard to walk a stretch along the ring road.
+    public const int UmdDataCenterVersion = 11;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -43,6 +52,7 @@ namespace VmsMap.Demo
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
     private const string RoomLayoutType = "type/room-layout";
+    private const string CameraPanelType = "type/camera-rear-panel";
 
     // A replica of the camera on the vehicle, showing the readings the camera itself reports. Its
     // owner is the camera's canonical node, so values written there appear here.
@@ -62,6 +72,7 @@ namespace VmsMap.Demo
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
         new("file/device-telemetry-background", DemoArt.Telemetry(), "image/svg+xml"),
+        new("file/camera-panel-background", DemoArt.CameraRearPanel(), "image/svg+xml"),
       };
 
       var types = new List<DemoDiagramType>
@@ -71,6 +82,7 @@ namespace VmsMap.Demo
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
         DeviceTelemetryTypeDefinition(),
+        CameraPanelTypeDefinition(),
       };
 
       var spaces = new List<DemoSpace>
@@ -153,14 +165,17 @@ namespace VmsMap.Demo
 
       var placements = new List<DemoPlacement>
       {
-        // The pair works as one: the master's boxes drive the slave's aim, so both stand in Room 101,
-        // facing each other across it, with a person walking between them in the simulator's world.
-        new("sim-master", Room101, 38.99240, -76.93852, HeightM: 2.8, HeadingDeg: 55, HfovDeg: 70, RangeM: 12),
+        // The pair works as one: the master's boxes drive the slave's aim. The master stands south of
+        // Room 101, on the line the person walks out by, and one lens holds the room and the doorway at
+        // the far end of the hall; the slave is the room's north-east corner, looking back at the room.
+        new("sim-master", "space/building", 38.9923000, -76.9383779, HeightM: 2.8, HeadingDeg: 342.3, HfovDeg: 45, RangeM: 60),
         new("sim-ptz", Room101, 38.992484, -76.938372, HeightM: 2.8, HeadingDeg: 235, HfovDeg: 65, RangeM: 15),
-        // The second pair works as one on the road north of the building: master2 watches the ring
-        // road, its vehicle boxes drive ptz2, which looks south-east along the same stretch.
-        new("sim-master2", "space/umd", 38.992884, -76.937858, HeightM: 6, HeadingDeg: 0, HfovDeg: 60, RangeM: 60),
-        new("sim-ptz2", "space/umd", 38.993333, -76.938320, HeightM: 6, HeadingDeg: 113, HfovDeg: 60, RangeM: 150),
+        // The second pair works as one out in the yard: master2 stands on a pole between the doorway
+        // and the ring road, looking back along the line the person walks — its boxes are what aim the
+        // slave; ptz2 hangs on a pole of its own between that doorway and the master, nearer the
+        // master, so it holds the doorway at one side of its picture and the yard at the other.
+        new("sim-master2", "space/umd", 38.9929468, -76.9388171, HeightM: 6, HeadingDeg: 88.8, HfovDeg: 55, RangeM: 60),
+        new("sim-ptz2", "space/umd", 38.9928749, -76.9385397, HeightM: 5.5, HeadingDeg: 0, HfovDeg: 60, RangeM: 100),
         // On a vehicle: this is only where it starts. The camera is flagged geo_from_device, so the
         // map follows the position it reports from then on.
         new("sim-vehicle", "space/umd", 38.99200, -76.93930, HeightM: 2, HeadingDeg: 45, HfovDeg: 60, RangeM: 40),
@@ -215,6 +230,32 @@ namespace VmsMap.Demo
         new DemoRegion("rack-2", DemoArt.RoomRack(2),
           new Dictionary<string, string> { ["color"] = "#4fc3f7", ["fontSize"] = "12px" }),
       ]);
+
+    /// A camera as a switch is drawn: the model's rear panel, one region per terminal. The parts
+    /// are found by their tokens — `sim-master` declares exactly these four — and the type attaches
+    /// itself to any device that reports being this model. `sim-vehicle` is the same model and has
+    /// nothing configured, so it gets no diagram.
+    private static DemoDiagramType CameraPanelTypeDefinition() => new(
+      CameraPanelType,
+      "Camera rear panel",
+      "file/camera-panel-background",
+      [
+        new DemoRegion("input", DemoArt.CameraPanelSocket("input"),
+          PanelStyle, new DemoRegionPart("digital_input", "token", "input")),
+        new DemoRegion("lamp", DemoArt.CameraPanelSocket("lamp"),
+          PanelStyle, new DemoRegionPart("relay", "token", "lamp")),
+        new DemoRegion("peer", DemoArt.CameraPanelSocket("peer"),
+          PanelStyle, new DemoRegionPart("relay", "token", "peer")),
+        new DemoRegion("loop", DemoArt.CameraPanelSocket("loop"),
+          PanelStyle, new DemoRegionPart("relay", "token", "loop")),
+      ],
+      SourceKind: "camera",
+      DeviceManufacturer: "OnvifSim",
+      DeviceModel: "Simulated fixed camera",
+      AutoAttach: true);
+
+    private static readonly Dictionary<string, string> PanelStyle =
+      new() { ["color"] = "#4fc3f7", ["fontSize"] = "12px" };
 
     /// A rack cabinet with six equipment slots. The synthetic readings the demo used to keep here
     /// are gone: the world now shows the camera's own, on its Device telemetry diagram.

@@ -30,6 +30,7 @@ const round = (value: number) => Math.round(value * 1000) / 1000
 function problemsOf(type: MapDiagramType, t: (key: string, options?: Record<string, unknown>) => string): string[] {
   const problems: string[] = []
   const keys = new Set<string>()
+  const claimed = new Set<string>()
 
   for (const region of type.regions ?? []) {
     const key = region.regionKey?.trim() ?? ''
@@ -39,6 +40,24 @@ function problemsOf(type: MapDiagramType, t: (key: string, options?: Record<stri
     }
     if (keys.has(key)) problems.push(t('diagramEditor.problemDuplicateKey', { name: type.name, key }))
     keys.add(key)
+
+    // A region that names a part is a binding, and the server refuses the same things: an empty
+    // way of finding it, a position that is not one, and two regions on one part.
+    if (region.part) {
+      const value = (region.part.matchValue ?? '').trim()
+      if (value === '') {
+        problems.push(t('diagramEditor.problemBindingNoValue', { name: type.name, key }))
+      } else if (region.part.matchBy === 'index'
+        && !(Number.isInteger(Number(value)) && Number(value) >= 1)) {
+        problems.push(t('diagramEditor.problemBindingIndex', { name: type.name, key }))
+      } else {
+        const claimedKey = `${region.part.partKind ?? ''}|${region.part.matchBy ?? ''}|${value}`
+        if (claimed.has(claimedKey)) {
+          problems.push(t('diagramEditor.problemBindingDuplicate', { name: type.name }))
+        }
+        claimed.add(claimedKey)
+      }
+    }
 
     const geometry = region.geometry
     if (!geometry) {
@@ -194,33 +213,88 @@ function TypeRow({ type, onChange }: { type: MapDiagramType; onChange: (patch: P
     }
   }
 
+  const isTemplate = Boolean(type.sourceKind)
+
   return (
-    <Stack direction="row" spacing={1} alignItems="center">
-      <TextField
-        size="small"
-        label={t('maps.editor.name')}
-        value={type.name ?? ''}
-        onChange={(event) => onChange({ name: event.target.value })}
-        sx={{ flex: 1 }}
-      />
-      <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
-        {t('diagramEditor.background')}
-      </Button>
-      {preview ? (
-        <Box component="img" src={preview} alt="" sx={{ height: 36, maxWidth: 90, objectFit: 'contain', bgcolor: '#000' }} />
+    <Stack spacing={1}>
+      <Stack direction="row" spacing={1} alignItems="center">
+        <TextField
+          size="small"
+          label={t('maps.editor.name')}
+          value={type.name ?? ''}
+          onChange={(event) => onChange({ name: event.target.value })}
+          sx={{ flex: 1 }}
+        />
+        <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {t('diagramEditor.background')}
+        </Button>
+        {preview ? (
+          <Box component="img" src={preview} alt="" sx={{ height: 36, maxWidth: 90, objectFit: 'contain', bgcolor: '#000' }} />
+        ) : null}
+        {error ? <Typography variant="caption" color="error">{error}</Typography> : null}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void upload(file)
+          }}
+        />
+      </Stack>
+
+      {/* A type is an ordinary mnemoscheme until it names a device type; the model fields only
+          mean something then. */}
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+        <TextField
+          size="small"
+          select
+          SelectProps={{ native: true }}
+          label={t('diagramEditor.sourceKind')}
+          value={type.sourceKind ?? ''}
+          onChange={(event) => onChange({
+            sourceKind: event.target.value || undefined,
+            ...(event.target.value ? {} : { autoAttach: false }),
+          })}
+          sx={{ width: 200 }}
+        >
+          <option value="">{t('diagramEditor.sourceKindNone')}</option>
+          <option value="camera">{t('diagramEditor.sourceKindCamera')}</option>
+        </TextField>
+
+        <TextField
+          size="small"
+          label={t('diagramEditor.deviceManufacturer')}
+          disabled={!isTemplate}
+          value={type.deviceManufacturer ?? ''}
+          onChange={(event) => onChange({ deviceManufacturer: event.target.value })}
+          sx={{ width: 200 }}
+        />
+        <TextField
+          size="small"
+          label={t('diagramEditor.deviceModel')}
+          disabled={!isTemplate}
+          value={type.deviceModel ?? ''}
+          onChange={(event) => onChange({ deviceModel: event.target.value })}
+          sx={{ width: 240 }}
+        />
+        <label>
+          <input
+            type="checkbox"
+            disabled={!isTemplate}
+            checked={Boolean(type.autoAttach)}
+            onChange={(event) => onChange({ autoAttach: event.target.checked })}
+          />
+          {' '}{t('diagramEditor.autoAttach')}
+        </label>
+      </Stack>
+      {isTemplate ? (
+        <Typography variant="caption" color="text.secondary">
+          {t('diagramEditor.templateHint')}
+        </Typography>
       ) : null}
-      {error ? <Typography variant="caption" color="error">{error}</Typography> : null}
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(event) => {
-          const file = event.target.files?.[0]
-          event.target.value = ''
-          if (file) void upload(file)
-        }}
-      />
     </Stack>
   )
 }

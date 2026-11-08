@@ -191,7 +191,7 @@ public class DeviceEventWriterTests
 
     await s.Reconciler.ApplyAsync(
       new DeviceSnapshotMessage(
-        "camera", CameraId, Reachable: true, now.AddSeconds(1), second,
+        "camera", CameraId, Reachable: true, now.AddSeconds(1), second, Device: null,
         [new DeviceSnapshotPartMessage(
           DeviceObjectId.DigitalInputPart, Token, IdleState: null,
           System.Text.Json.JsonSerializer.SerializeToElement("closed"), Active: null,
@@ -205,6 +205,59 @@ public class DeviceEventWriterTests
     await s.Writer.ApplyAsync(s.ObjectId, Input("open", second, 1, now.AddSeconds(2)), default);
 
     Assert.Contains(DeviceEventTranslator.SensorOpen, await States(s.Db, s.ObjectId));
+  }
+
+  private static DeviceSnapshotMessage Snapshot(
+    DeviceInfoMessage? device, DateTimeOffset? at = null) =>
+    new("camera", CameraId, Reachable: true, at ?? DateTimeOffset.UtcNow,
+        Guid.NewGuid().ToString(), device, []);
+
+  [Fact]
+  public async Task ASnapshotStoresWhatTheDeviceSaysAboutItself()
+  {
+    var s = await CreateAsync();
+
+    await s.Reconciler.ApplyAsync(
+      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
+
+    // Stored, not remembered from the message: a diagram template must still match after the
+    // process that heard the camera has restarted.
+    var info = await s.Db.DeviceInfos.SingleAsync();
+    Assert.Equal(DeviceObjectId.CameraSource, info.source_kind);
+    Assert.Equal(CameraId, info.source_id);
+    Assert.Equal("OnvifSim", info.manufacturer);
+    Assert.Equal("Simulated fixed camera", info.model);
+    Assert.Equal("0.1.0", info.firmware);
+  }
+
+  [Fact]
+  public async Task ASweepThatCouldNotAskLeavesTheStoredModelAlone()
+  {
+    var s = await CreateAsync();
+
+    await s.Reconciler.ApplyAsync(
+      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
+
+    // A timeout is "not asked", not "says nothing": the network dropping for a minute must not
+    // lose the model the diagram was matched by.
+    await s.Reconciler.ApplyAsync(Snapshot(device: null), default);
+
+    var info = await s.Db.DeviceInfos.SingleAsync();
+    Assert.Equal("Simulated fixed camera", info.model);
+  }
+
+  [Fact]
+  public async Task AnAnswerThatSaysNothingReplacesTheModel()
+  {
+    var s = await CreateAsync();
+
+    await s.Reconciler.ApplyAsync(
+      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
+    await s.Reconciler.ApplyAsync(Snapshot(new DeviceInfoMessage("", "", "")), default);
+
+    // The camera answered. That is the fact the stored row follows, even when the answer is empty.
+    var info = await s.Db.DeviceInfos.SingleAsync();
+    Assert.Equal(string.Empty, info.model);
   }
 
   [Fact]

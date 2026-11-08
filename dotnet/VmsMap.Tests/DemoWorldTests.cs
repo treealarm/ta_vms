@@ -133,27 +133,57 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheSecondPairStandsOnTheRoadWithItsBackToTheBuilding()
+  public void TheCameraPanelIsATemplateForOneModel()
   {
-    // The hall pair works in Room 101; the second one moved out to the map, where the ring road
-    // and the car it watches are: both cameras stand in space/umd, master2 looking north over the
-    // road and ptz2 looking south-east along it.
-    Assert.Equal(7, _world.Version);
+    // A device's diagram: the model it is for, and the part each socket stands for, found by the
+    // token the camera itself reports.
+    var panel = _world.Types.Single(type => type.Name == "Camera rear panel");
+
+    Assert.Equal("camera", panel.SourceKind);
+    Assert.Equal("OnvifSim", panel.DeviceManufacturer);
+    Assert.Equal("Simulated fixed camera", panel.DeviceModel);
+    Assert.True(panel.AutoAttach);
+
+    var bindings = panel.Regions.ToDictionary(region => region.Key, region => region.Part);
+    Assert.Equal(4, bindings.Count);
+    Assert.All(bindings.Values, part => Assert.Equal("token", part!.MatchBy));
+    Assert.Equal("digital_input", bindings["input"]!.PartKind);
+    Assert.Equal("relay", bindings["lamp"]!.PartKind);
+    Assert.Equal("relay", bindings["peer"]!.PartKind);
+    Assert.Equal("relay", bindings["loop"]!.PartKind);
+  }
+
+  [Fact]
+  public void TheSecondPairStandsInTheYard_ItsSlaveBetweenTheDoorwayAndTheMaster()
+  {
+    // The hall pair's master watches the line out of Room 101 to the doorway; the second pair works
+    // in the yard beyond it: master2 stands between that doorway and the ring road, looking back
+    // along the line the person walks, and ptz2 on a pole of its own between the two, nearer the
+    // master, so it holds the doorway at one side and the yard at the other.
+    Assert.Equal(11, _world.Version);
+
+    var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
+    Assert.Equal("space/building", hall.SpaceKey);
+    Assert.Equal(38.9923000, hall.Lat, 6);
+    Assert.Equal(-76.9383779, hall.Lon, 6);
+    Assert.Equal(2.8, hall.HeightM);
+    Assert.Equal(342.3, hall.HeadingDeg);
+    Assert.Equal(45, hall.HfovDeg);
 
     var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
     Assert.Equal("space/umd", master.SpaceKey);
-    Assert.Equal(38.992884, master.Lat, 6);
-    Assert.Equal(-76.937858, master.Lon, 6);
+    Assert.Equal(38.9929468, master.Lat, 6);
+    Assert.Equal(-76.9388171, master.Lon, 6);
     Assert.Equal(6, master.HeightM);
-    Assert.Equal(0, master.HeadingDeg);
-    Assert.Equal(60, master.HfovDeg);
+    Assert.Equal(88.8, master.HeadingDeg);
+    Assert.Equal(55, master.HfovDeg);
 
     var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
     Assert.Equal("space/umd", ptz.SpaceKey);
-    Assert.Equal(38.993333, ptz.Lat, 6);
-    Assert.Equal(-76.938320, ptz.Lon, 6);
-    Assert.Equal(6, ptz.HeightM);
-    Assert.Equal(113, ptz.HeadingDeg);
+    Assert.Equal(38.9928749, ptz.Lat, 6);
+    Assert.Equal(-76.9385397, ptz.Lon, 6);
+    Assert.Equal(5.5, ptz.HeightM);
+    Assert.Equal(0, ptz.HeadingDeg);
     Assert.Equal(60, ptz.HfovDeg);
   }
 

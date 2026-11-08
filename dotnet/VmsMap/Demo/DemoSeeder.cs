@@ -157,11 +157,23 @@ namespace VmsMap.Demo
           id = id.ToString(),
           name = type.Name,
           file_id = type.BackgroundKey is null ? null : IdOf(type.BackgroundKey).ToString(),
+          source_kind = type.SourceKind,
+          device_manufacturer = type.DeviceManufacturer,
+          device_model = type.DeviceModel,
+          auto_attach = type.AutoAttach,
           regions = type.Regions.Select(region => new DiagramTypeRegionDTO
           {
             region_key = region.Key,
             geometry = ToCoord(region.Geometry),
             styles = region.Styles?.ToDictionary(pair => pair.Key, pair => pair.Value),
+            part = region.Part is null
+              ? null
+              : new DiagramTypePartDTO
+              {
+                part_kind = region.Part.PartKind,
+                match_by = region.Part.MatchBy,
+                match_value = region.Part.MatchValue,
+              },
           }).ToList(),
         };
 

@@ -103,7 +103,7 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
       .ToList();
 
     EnqueueSnapshot(new DeviceSnapshotPayload(
-      "camera", forgotten.CameraId, Reachable: true, DateTimeOffset.UtcNow, parts));
+      "camera", forgotten.CameraId, Reachable: true, DateTimeOffset.UtcNow, Device: null, parts));
   }
 
   private void EnqueueSnapshot(DeviceSnapshotPayload snapshot)
@@ -179,6 +179,7 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
             snapshot.Reachable,
             snapshot.ObservedAt,
             _epoch,
+            snapshot.Device,
             snapshot.Parts);
 
           await _dapr.PublishEventAsync(
@@ -217,6 +218,7 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
     bool Reachable,
     DateTimeOffset ObservedAt,
     string Epoch,
+    DeviceInfoPayload? Device,
     IReadOnlyList<DeviceSnapshotPart> Parts);
 
   private sealed record DeviceEventPayload(

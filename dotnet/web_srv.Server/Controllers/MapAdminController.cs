@@ -192,6 +192,16 @@ public class MapAdminController(
     return MapApi.Json(await map.DeleteDiagramTypesAsync(request, MapApi.Options(ct)));
   }
 
+  /// Draws a device from a template the administrator picked, for a model no template attaches
+  /// itself to. The diagram it creates is maintained exactly like an automatic one.
+  [HttpPost("device-diagram")]
+  public async Task<IActionResult> AttachDeviceDiagram(
+    [FromBody] JsonElement body, CancellationToken ct)
+  {
+    var request = MapApi.Parse<MapProto.AttachDeviceDiagramRequest>(body);
+    return MapApi.Json(await map.AttachDeviceDiagramAsync(request, MapApi.Options(ct)));
+  }
+
   // ── Demo world ──────────────────────────────────────────────────────────────────────────────
 
   [HttpGet("demo")]

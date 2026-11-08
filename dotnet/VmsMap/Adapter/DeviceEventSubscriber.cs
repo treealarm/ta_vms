@@ -109,6 +109,20 @@ namespace VmsMap.Adapter
         using var scope = _scopes.CreateScope();
         var reconciler = scope.ServiceProvider.GetRequiredService<DeviceEventReconciler>();
         await reconciler.ApplyAsync(snapshot, ct);
+
+        // After the device, in the same order the plan fixes: the model was stored, the parts were
+        // brought into the tree, and only then is a diagram drawn from them. An unreachable camera
+        // published no parts, so there is nothing to draw from.
+        if (snapshot.Reachable)
+        {
+          var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
+          await diagrams.EnsureAsync(
+            snapshot.SourceKind ?? DeviceObjectId.CameraSource,
+            snapshot.SourceId!,
+            IDeviceDiagramService.DefaultSlot,
+            ct);
+        }
+
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -145,6 +159,14 @@ namespace VmsMap.Adapter
         // now, not at the next heartbeat: the operator just put this input on guard.
         var sensorAlarms = scope.ServiceProvider.GetRequiredService<SensorAlarmService>();
         await sensorAlarms.ReconcileCameraAsync(evt.CameraId!, ct);
+
+        // A part that has just been configured gets its replica now, and one whose settings were
+        // removed loses it now: the next snapshot is minutes away, and the administrator is
+        // looking at the diagram.
+        var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
+        await diagrams.EnsureAsync(
+          DeviceObjectId.CameraSource, evt.CameraId!, IDeviceDiagramService.DefaultSlot, ct);
+
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)

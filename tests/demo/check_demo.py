@@ -37,7 +37,7 @@ ROOM_DIAGRAM_NAME = "Room 102"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
-DEMO_CAMERAS = ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"]
+DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
 TELEMETRY_NAME = "Camera sim-vehicle"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
@@ -454,6 +454,53 @@ def check_positions(vms, world):
     check(port.get("regionId") == "port-3", "Port 3 sits in the switch's port-3 region")
 
 
+def check_device_diagram(vms):
+    """The camera drawn from its model: the panel under it, its sockets holding the parts that
+    were configured — and a socket that lights up with its relay, because a replica shows its
+    owner's state rather than keeping one of its own."""
+    camera_node, parts = device_nodes(vms, "sim-master")
+    if not check(camera_node is not None, "sim-master has a canonical node"):
+        return
+
+    # Drawn when the parts are configured — a settings change, not the next sweep minutes away.
+    # `nodeKind` is what the node list carries; the diagram's own row is only in its content.
+    diagram = wait_until(
+        lambda: next((kid for kid in children(vms, camera_node["id"])
+                      if kid.get("nodeKind") == "diagram"), None),
+        60)
+    if not check(diagram is not None, "the camera's rear panel is drawn under it"):
+        return
+
+    check((diagram.get("name") or "").endswith("Camera rear panel"),
+          f"the diagram is named after its type (has {diagram.get('name')!r})")
+
+    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
+    placements = {row.get("id"): row for row in content.get("content") or []}
+    replicas = [row for row in content.get("children") or [] if row.get("id") in placements]
+
+    regions = {placements[row["id"]].get("regionId") for row in replicas}
+    check(regions == {"input", "lamp", "peer", "loop"},
+          f"the panel's four sockets hold a replica each (has {sorted(regions)})")
+
+    peer = next((part for part in parts if part.get("name") == "Peer"), None)
+    replica = next((row for row in replicas if row.get("ownerId") == (peer or {}).get("id")), None)
+    if not check(replica is not None, "the peer socket shows the peer relay"):
+        return
+
+    check(states_of(vms, [replica["id"]]).get(replica["id"]) is not None,
+          "the replica's states are readable through its owner")
+
+    set_relay(vms, camera_id("sim-master"), "peer", True)
+    lit = wait_until(
+        lambda: "RELAY_ACTIVE" in (states_of(vms, [replica["id"]]).get(replica["id"]) or []), 40)
+    set_relay(vms, camera_id("sim-master"), "peer", False)
+    check(lit, "closing `peer` lights its socket on the panel")
+
+    dark = wait_until(
+        lambda: "RELAY_INACTIVE" in (states_of(vms, [replica["id"]]).get(replica["id"]) or []), 40)
+    check(dark, "opening it again puts the socket out")
+
+
 def check_types(vms):
     types = {t.get("name"): t for t in diagram_types(vms)}
 
@@ -475,6 +522,16 @@ def check_types(vms):
 
     check("RJ45 Port" in types, "the port type is in the dictionary")
 
+    panel = types.get("Camera rear panel", {})
+    panel_regions = {r.get("regionKey") for r in panel.get("regions") or []}
+    check({"input", "lamp", "peer", "loop"} == panel_regions,
+          f"Camera rear panel offers its four sockets (has {sorted(panel_regions)})")
+    check(panel.get("sourceKind") == "camera" and panel.get("autoAttach") is True,
+          "the panel is a template that attaches itself to its model")
+    bindings = {r.get("regionKey"): (r.get("part") or {}) for r in panel.get("regions") or []}
+    check(bindings.get("peer", {}).get("matchValue") == "peer",
+          "the peer socket finds its part by token")
+
 
 def check_cameras(vms, world, allow_missing):
     configured = {camera.get("cameraId") for camera in vms.cameras()}
@@ -489,10 +546,11 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Each pair works as one: the hall pair in Room 101, the road pair out on the map where the
-    # road and the car the master watches are.
+    # Each pair works as one: the hall slave in Room 101 with its master on the floor plan, since
+    # that master looks along the line out of the room to the doorway; the yard pair out on the map
+    # beyond the building, and the camera on the car there too.
     expected = {
-        camera_id("sim-master"): world["room"]["id"],
+        camera_id("sim-master"): world["building"]["id"],
         camera_id("sim-ptz"): world["room"]["id"],
         camera_id("sim-master2"): world["map"]["id"],
         camera_id("sim-ptz2"): world["map"]["id"],
@@ -578,8 +636,16 @@ def check_monitor(vms, allow_missing):
     if not check(wall is not None, "the 'UMD DC' video wall is in VmsCfg"):
         return
 
-    check(wall.get("layout") == "1+5", "the wall is a 1+5 grid: one feature cell and five small ones")
+    check(wall.get("layout") == "3x3", "the wall is a 3x3 grid: a row per pair, the car camera last")
     cameras = wall.get("cameraIds") or []
+    # The cells, not just the pool: a pair is on a row of its own only if the cells are named.
+    cells = {slot.get("slotIndex"): slot.get("cameraId") for slot in wall.get("slots") or []}
+    for slot, name in ((0, "sim-master"), (1, "sim-ptz"), (3, "sim-master2"),
+                       (4, "sim-ptz2"), (6, "sim-vehicle")):
+        cam_id = camera_id(name)
+        if allow_missing and cam_id not in cameras:
+            continue
+        check(cells.get(slot) == cam_id, f"the wall's cell {slot + 1} shows {name}")
     expected = [camera_id(name) for name in DEMO_CAMERAS]
     if allow_missing:
         # A world installed before the simulator's cameras are provisioned: what exists is shown,
@@ -657,7 +723,8 @@ def check_wired_devices(vms, sim, world, telemetry):
         # tick. Polling for the reading rather than sleeping a fixed time keeps a slower source
         # from turning into a false failure.
         want_relay = "on" if active else "off"
-        want_sensor = "off" if active else "on"
+        # The input's idle state is open, so the closed circuit the relay makes is its active state.
+        want_sensor = "on" if active else "off"
         wait_until(lambda: values_by_name(vms, telemetry["id"]).get("relay") == want_relay, 40)
         wait_until(lambda: values_by_name(vms, telemetry["id"]).get("sensor") == want_sensor, 20)
 
@@ -665,16 +732,16 @@ def check_wired_devices(vms, sim, world, telemetry):
     values = values_by_name(vms, telemetry["id"])
     check(values.get("relay") == "on",
           f"the diagram reports the relay on (has {values.get('relay')!r})")
-    check(values.get("sensor") == "off",
-          f"the wired sensor reads 0 while the relay is closed (has {values.get('sensor')!r})")
+    check(values.get("sensor") == "on",
+          f"the wired sensor reads 1 (active) while the relay is closed (has {values.get('sensor')!r})")
     check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
 
     switch(False)
     values = values_by_name(vms, telemetry["id"])
     check(values.get("relay") == "off",
           f"the diagram reports the relay off again (has {values.get('relay')!r})")
-    check(values.get("sensor") == "on",
-          f"the sensor returns to 1 (has {values.get('sensor')!r})")
+    check(values.get("sensor") == "off",
+          f"the sensor returns to 0 (idle) (has {values.get('sensor')!r})")
     check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
 
 
@@ -714,7 +781,7 @@ def check_provisioning(vms):
     sensor = wait_until(lambda: sensor_settings(vms), 20)
     if check(sensor is not None, "the demo configured sim-ptz/input"):
         check(sensor.get("armMode") == "armed", f"the input is armed (has {sensor.get('armMode')!r})")
-        check(sensor.get("alarmEnabled") is True and sensor.get("triggerOn") == "open",
+        check(sensor.get("alarmEnabled") is True and sensor.get("triggerOn") == "closed",
               f"the input alarms on the contact the wire produces (has {sensor.get('triggerOn')!r})")
 
     rule = next((row for row in subscriptions(vms) if row.get("id") == DEMO_SUBSCRIPTION), None)
@@ -750,8 +817,8 @@ def check_sensor_alarm(vms, sensor):
     part = sensor["part"]
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
-    check(event is not None, "the peer relay closing writes one `sensor` event with contact=open")
+    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    check(event is not None, "the peer relay closing writes one `sensor` event with contact=closed")
 
     # An earlier front (the wired-relay check above) may have left the same alarm open and
     # returned; the rule reactivates that row, and ALARM follows it in its own transaction.
@@ -807,8 +874,8 @@ def check_return_to_normal(vms, sensor, alarm):
     part = sensor["part"]
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
-    check(event is not None, "the contact returning writes a `sensor` event with contact=closed")
+    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+    check(event is not None, "the contact returning writes a `sensor` event with contact=open")
 
     row = wait_until(
         lambda: next((r for r in (alarms(vms).get("closed") or {}).get("alarms") or []
@@ -870,7 +937,7 @@ def check_repeat_front(vms, sensor, group, since):
               for episode in (group or {}).get("episodes") or []}
 
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "open")) >= 2, 45)),
+    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "closed")) >= 2, 45)),
           "a second front writes a second `sensor` event")
 
     extended = wait_until(lambda: demo_group(vms, since), 30)
@@ -896,7 +963,7 @@ def check_emit_loop(vms, sensor):
     # Back to normal first: the emitted event must be a real transition. The rule is created only
     # now, so the window in which it can fire does not have to cover two device round trips.
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
-    wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
 
     vms.call("PUT", "/api/map/admin/event-subscriptions", {"subscription": {
         "id": loop_id,
@@ -904,7 +971,7 @@ def check_emit_loop(vms, sensor):
         "enabled": True,
         "eventName": "sensor",
         "sourceFilter": json.dumps({"object_ids": [part["id"]],
-                                    "props": {"contact": "open"}}),
+                                    "props": {"contact": "closed"}}),
         "armedCondition": "any",
         "cooldownMs": 0,
         "actions": [{
@@ -913,16 +980,16 @@ def check_emit_loop(vms, sensor):
             "params": json.dumps({
                 "object_id": "source",
                 "event_name": "sensor",
-                "param0": "open",
+                "param0": "closed",
                 "param1": "",
-                "props": {"contact": "open"},
+                "props": {"contact": "closed"},
             }),
         }],
     }})
 
     try:
         set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-        wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+        wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
 
         # 75 s: the router's own cache is good for a minute if the change signal is lost.
         suppressed = wait_until(
@@ -1093,6 +1160,8 @@ def main():
     if sim_up:
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
+        print("The device's own diagram")
+        check_device_diagram(vms)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
             since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()

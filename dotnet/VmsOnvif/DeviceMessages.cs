@@ -11,7 +11,17 @@ public interface IDeviceIoReader
 {
   Task<List<OnvifRelayOutput>> GetRelayOutputsAsync(string cameraId, CancellationToken ct);
   Task<List<OnvifDigitalInput>> GetDigitalInputsAsync(string cameraId, CancellationToken ct);
+  // What the device says about itself: the map matches a diagram template by manufacturer and
+  // model, so the sweep carries them with the parts it already reads from the same camera.
+  Task<OnvifDeviceInfo?> GetDeviceInfoAsync(string cameraId, CancellationToken ct);
 }
+
+/// <summary>
+/// What the device says about itself, as the map stores it. Null on a snapshot whose
+/// device-information call went unanswered: that is "not asked", not "says nothing", and the map
+/// must not overwrite a model it already knows with a network timeout.
+/// </summary>
+public sealed record DeviceInfoPayload(string Manufacturer, string Model, string Firmware);
 
 /// <summary>One part of a device snapshot. <c>contact</c> is an input's, <c>active</c> a relay's.</summary>
 public sealed record DeviceSnapshotPart(
@@ -33,6 +43,7 @@ public sealed record DeviceSnapshotPayload(
   string SourceId,
   bool Reachable,
   DateTimeOffset ObservedAt,
+  DeviceInfoPayload? Device,
   IReadOnlyList<DeviceSnapshotPart> Parts);
 
 /// <summary>Publishes a device snapshot. Discovery owns the content; the publisher owns the wire.</summary>

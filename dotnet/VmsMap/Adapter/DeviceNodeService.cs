@@ -122,8 +122,16 @@ namespace VmsMap.Adapter
         .Select(m => m.id)
         .ToListAsync(ct);
 
+      // A device's diagrams hang under its node without a foreign key to lean on — `parent_id`
+      // has none — so they are collected here and deleted with it.
+      var diagramIds = await _db.DeviceDiagrams
+        .Where(d => d.source_kind == DeviceObjectId.CameraSource && d.source_id == cameraId)
+        .Select(d => d.object_id)
+        .ToListAsync(ct);
+
       var nodes = replicaIds
         .Select(id => Utils.ConvertGuidToObjectId(id))
+        .Concat(diagramIds.Select(id => Utils.ConvertGuidToObjectId((Guid?)id)))
         .Append(canonicalId)
         .ToList();
 
@@ -144,6 +152,13 @@ namespace VmsMap.Adapter
         await _db.DeviceNodes
           .Where(n => n.source_kind == DeviceObjectId.CameraSource && n.source_id == cameraId)
           .ToListAsync(ct));
+
+      // The diagram's registry goes with it, and so do the replicas it says it made: the node
+      // delete below takes the nodes, these rows are what would otherwise point at them.
+      _db.DeviceDiagramParts.RemoveRange(
+        await _db.DeviceDiagramParts.Where(p => diagramIds.Contains(p.diagram_object_id)).ToListAsync(ct));
+      _db.DeviceDiagrams.RemoveRange(
+        await _db.DeviceDiagrams.Where(d => diagramIds.Contains(d.object_id)).ToListAsync(ct));
 
       await _db.SaveChangesAsync(ct);
 

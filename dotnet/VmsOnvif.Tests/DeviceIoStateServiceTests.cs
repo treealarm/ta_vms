@@ -131,6 +131,25 @@ public class DeviceIoStateServiceTests
   }
 
   [Fact]
+  public async Task Snapshots_CarryEveryKnownPartAndItsContact()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true, "Initialized"));
+    factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Initialized"));
+
+    var snapshots = service.Snapshots().ToList();
+
+    var relay = snapshots.Single(s => s.Snapshot.Kind == DeviceIoKind.Relay);
+    Assert.Equal((CameraId, "relay1", true), (relay.CameraId, relay.Snapshot.Token, relay.Snapshot.LogicalState));
+    var input = snapshots.Single(s => s.Snapshot.Kind == DeviceIoKind.DigitalInput);
+    // Idle state open: the open circuit is the idle one.
+    Assert.Equal("open", input.Snapshot.Contact);
+  }
+
+  [Fact]
   public async Task ADeviceTheCameraHasNotMentionedHasNoState()
   {
     var factory = new FakeFactory();

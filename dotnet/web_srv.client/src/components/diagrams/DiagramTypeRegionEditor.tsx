@@ -404,6 +404,70 @@ export default function DiagramTypeRegionEditor({ type, onChange }: Props) {
             </IconButton>
           </Stack>
 
+          {/* A region may stand for a part of a real device — and only for a part that is
+              configured on it. One way of finding it per region; the token is the one that
+              survives a firmware update. */}
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            {chosen.part ? (
+              <>
+                <TextField
+                  size="small"
+                  select
+                  SelectProps={{ native: true }}
+                  label={t('diagramEditor.partKind')}
+                  value={chosen.part.partKind ?? 'relay'}
+                  onChange={(event) => changeRegion(selected!, {
+                    part: { ...chosen.part, partKind: event.target.value },
+                  })}
+                  sx={{ width: 150 }}
+                >
+                  <option value="digital_input">{t('diagramEditor.partKindInput')}</option>
+                  <option value="relay">{t('diagramEditor.partKindRelay')}</option>
+                </TextField>
+                <TextField
+                  size="small"
+                  select
+                  SelectProps={{ native: true }}
+                  label={t('diagramEditor.matchBy')}
+                  value={chosen.part.matchBy ?? 'token'}
+                  onChange={(event) => changeRegion(selected!, {
+                    part: { ...chosen.part, matchBy: event.target.value },
+                  })}
+                  sx={{ width: 130 }}
+                >
+                  <option value="token">{t('diagramEditor.matchByToken')}</option>
+                  <option value="name">{t('diagramEditor.matchByName')}</option>
+                  <option value="index">{t('diagramEditor.matchByIndex')}</option>
+                </TextField>
+                <TextField
+                  size="small"
+                  label={t('diagramEditor.matchValue')}
+                  value={chosen.part.matchValue ?? ''}
+                  onChange={(event) => changeRegion(selected!, {
+                    part: { ...chosen.part, matchValue: event.target.value },
+                  })}
+                  sx={{ width: 160 }}
+                />
+                <Button
+                  size="small"
+                  onClick={() => changeRegion(selected!, { part: undefined })}
+                >
+                  {t('diagramEditor.clearBinding')}
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={() => changeRegion(selected!, {
+                  part: { partKind: 'relay', matchBy: 'token', matchValue: '' },
+                })}
+              >
+                {t('diagramEditor.bindPart')}
+              </Button>
+            )}
+          </Stack>
+
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
             {(['left', 'top', 'width', 'height', 'rotation'] as const).map((field) => (
               <TextField

@@ -157,10 +157,18 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
   {
     var relayRead = ReadAsync(t => _reader.GetRelayOutputsAsync(cameraId, t), ct);
     var inputRead = ReadAsync(t => _reader.GetDigitalInputsAsync(cameraId, t), ct);
-    await Task.WhenAll(relayRead, inputRead);
+    var deviceRead = ReadAsync(t => _reader.GetDeviceInfoAsync(cameraId, t), ct);
+    await Task.WhenAll(relayRead, inputRead, deviceRead);
 
     var (relaysOk, relays) = await relayRead;
     var (inputsOk, inputs) = await inputRead;
+
+    // The model is not part of the manifest, so its failure is not a failed sweep: the parts are
+    // still known, and a template match simply waits for the next one.
+    var (deviceOk, device) = await deviceRead;
+    var deviceInfo = deviceOk && device is not null
+      ? new DeviceInfoPayload(device.Manufacturer, device.Model, device.FirmwareVersion)
+      : null;
 
     if (relaysOk)
       await _state.ReportDevicesAsync(cameraId, DeviceIoKind.Relay, Descriptors(relays));
@@ -182,13 +190,14 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
     }
 
     _failures.TryRemove(cameraId, out _);
-    await PublishSnapshotAsync(cameraId, relays, inputs, ct);
+    await PublishSnapshotAsync(cameraId, relays, inputs, deviceInfo, ct);
   }
 
   private async Task PublishSnapshotAsync(
     string cameraId,
     IReadOnlyList<OnvifRelayOutput> relays,
     IReadOnlyList<OnvifDigitalInput> inputs,
+    DeviceInfoPayload? device,
     CancellationToken ct)
   {
     var parts = new List<DeviceSnapshotPart>(relays.Count + inputs.Count);
@@ -218,7 +227,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
     }
 
     await _snapshots.PublishAsync(new DeviceSnapshotPayload(
-      "camera", cameraId, Reachable: true, DateTimeOffset.UtcNow, parts));
+      "camera", cameraId, Reachable: true, DateTimeOffset.UtcNow, device, parts));
 
     _logger.LogDebug(
       "Camera {CameraId}: device snapshot with {Count} part(s) published", cameraId, parts.Count);
@@ -228,9 +237,9 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
   {
     // Reachable is the only thing this message changes. The parts list is empty on purpose: an
     // unreachable camera has no list to compare against, and only a successful answer may say a
-    // part is absent.
+    // part is absent. The device block is null for the same reason.
     return _snapshots.PublishAsync(new DeviceSnapshotPayload(
-      "camera", cameraId, Reachable: false, DateTimeOffset.UtcNow, []));
+      "camera", cameraId, Reachable: false, DateTimeOffset.UtcNow, Device: null, []));
   }
 
   private static List<DeviceDescriptor> Descriptors(IReadOnlyList<OnvifRelayOutput> relays) =>

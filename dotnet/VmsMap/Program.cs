@@ -123,6 +123,10 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 // events into ALARM and the journal, and the sweep that takes a finished alarm away.
 builder.Services.AddScoped<DeviceNodeService>();
 builder.Services.AddScoped<IDeviceNodeService>(sp => sp.GetRequiredService<DeviceNodeService>());
+// A device's diagram, drawn from a template for its model: one transaction and one advisory lock
+// per device, because a snapshot and a configuration change reconcile it independently.
+builder.Services.AddScoped<DeviceDiagramService>();
+builder.Services.AddScoped<IDeviceDiagramService>(sp => sp.GetRequiredService<DeviceDiagramService>());
 // Device settings are cached per camera, and the pub/sub signal reaches one replica only: the
 // shared version key is the truth, the event only makes the cache notice sooner.
 builder.Services.AddSingleton(sp => new DeviceSettingsCache(
