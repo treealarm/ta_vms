@@ -499,31 +499,46 @@ def check_positions(vms, world):
     check(port.get("regionId") == "port-3", "Port 3 sits in the switch's port-3 region")
 
 
-def check_device_diagram(vms):
-    """The camera drawn from its model: the panel under it, its sockets holding the parts that
-    were configured — and a socket that lights up with its relay, because a replica shows its
-    owner's state rather than keeping one of its own."""
+def check_device_diagram(vms, world):
+    """The camera drawn from its model: an object of the map on the plan beside it, not a child of
+    the device in the logical tree. Its sockets hold the parts that were configured — and a socket
+    lights up with its relay, because a replica shows its owner's state rather than keeping one of
+    its own."""
     camera_node, parts = device_nodes(vms, "sim-master")
     if not check(camera_node is not None, "sim-master has a canonical node"):
         return
 
-    # Drawn when the parts are configured — a settings change, not the next sweep minutes away.
-    # `nodeKind` is what the node list carries; the diagram's own row is only in its content.
+    camera_name = camera_node.get("name") or ""
+    # The demo ships it with the world; a diagram an administrator places appears through the
+    # node's own action, so this waits only for the world's own.
     diagram = wait_until(
-        lambda: next((kid for kid in children(vms, camera_node["id"])
-                      if kid.get("nodeKind") == "diagram"), None),
+        lambda: next((kid for kid in children(vms, world["building"]["id"])
+                      if kid.get("nodeKind") == "diagram"
+                      and (kid.get("name") or "").startswith(f"{camera_name} /")), None),
         60)
-    if not check(diagram is not None, "the camera's rear panel is drawn under it"):
+    if not check(diagram is not None, "the camera's rear panel is drawn on the plan beside it"):
         return
 
     check((diagram.get("name") or "").endswith("Camera rear panel"),
           f"the diagram is named after its type (has {diagram.get('name')!r})")
 
-    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
-    placements = {row.get("id"): row for row in content.get("content") or []}
-    replicas = [row for row in content.get("children") or [] if row.get("id") in placements]
+    # Beside the camera, not in the middle of the plan: the demo places it at a point of its own.
+    placement = next((row for row in placements(vms)
+                      if row.get("cameraId") == camera_node.get("cameraId")
+                      and row.get("isReference")), None)
+    figure = next((candidate for candidate in figures_of(vms, [diagram["id"]])
+                   if candidate.get("id") == diagram["id"]), None)
+    coord = ((figure or {}).get("geometry") or {}).get("coord") or []
+    if check(placement is not None and coord, "the panel has its own point on the plan"):
+        gap = W.ground_gap(coord[0]["lat"], coord[0]["lon"],
+                           placement["lat"], placement["lon"])
+        check(gap <= 10, f"the panel stands {gap:.1f} m from the camera")
 
-    regions = {placements[row["id"]].get("regionId") for row in replicas}
+    content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
+    rows = {row.get("id"): row for row in content.get("content") or []}
+    replicas = [row for row in content.get("children") or [] if row.get("id") in rows]
+
+    regions = {rows[row["id"]].get("regionId") for row in replicas}
     check(regions == {"input", "lamp", "peer", "loop"},
           f"the panel's four sockets hold a replica each (has {sorted(regions)})")
 
@@ -793,9 +808,16 @@ def check_monitor(vms, allow_missing):
 
 
 def check_levels(vms):
+    """The dictionary is the map's own names for scales, not a row for every range of zooms."""
     names = {level.get("zoomLevel") for level in levels(vms)}
-    check({"Campus", "Building", "Rack"} <= names,
-          "the Campus, Building and Rack layers are in the dictionary")
+    expected = {"World", "Continent", "Country", "Region", "City",
+                "District", "Street", "Building", "Room"}
+    check(expected <= names,
+          f"the nine map scales are in the dictionary (missing {sorted(expected - names)})")
+    check(not {"Campus", "Rack"} & names,
+          f"the old demo layers are gone (has {sorted({'Campus', 'Rack'} & names)})")
+    ranges = sorted(name for name in names if name and name[0].isdigit())
+    check(not ranges, f"the rows for single zoom ranges are gone (has {ranges[:3]})")
 
 
 def check_port_not_alarmed(vms, world):
@@ -1321,7 +1343,7 @@ def main():
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
         print("The device's own diagram")
-        check_device_diagram(vms)
+        check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
             since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
