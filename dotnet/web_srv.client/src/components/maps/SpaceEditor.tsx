@@ -742,11 +742,16 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       </Box>
 
       <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {/* Four labels in a 300px column: the tabs share the width and keep their own letter size,
+            so the last one is never the one that falls off the edge. */}
         <Tabs
           value={sideTab}
           onChange={(_, v: SideTab) => setSideTab(v)}
           variant="fullWidth"
-          sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40, '& .MuiTab-root': { minHeight: 40 } }}
+          sx={{
+            borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40,
+            '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
+          }}
         >
           <Tab value="space" label={t('maps.tabSpace')} />
           <Tab value="selection" label={t('maps.tabSelection')} />
