@@ -502,14 +502,20 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
               {/* A device's own actions on its own row: draw it from a template, or open the
-                  diagram it already has. */}
+                  diagram it already has. Both act on the device, so a picture of it offers them
+                  too — the dialog names the device, not the picture. */}
               {marker.nodeKind === 'camera' && marker.cameraId ? (
                 <>
                   <Tooltip title={t('diagramEditor.attachDeviceDiagram')}>
                     <IconButton
                       size="small"
                       aria-label={t('diagramEditor.attachDeviceDiagram')}
-                      onClick={(event) => { event.stopPropagation(); setAttachDevice(marker) }}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        // The template draws the device; the owner's name says which one it is.
+                        const owner = marker.ownerId ? known[marker.ownerId] : undefined
+                        setAttachDevice(owner ? { ...marker, name: owner.name } : marker)
+                      }}
                     >
                       <DashboardCustomizeIcon fontSize="small" />
                     </IconButton>

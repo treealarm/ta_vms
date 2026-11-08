@@ -333,6 +333,42 @@ namespace VmsMap.Grpc
       return Ok();
     }
 
+    /// <summary>
+    /// Draws a device from a template the administrator picked — the path for a model no template
+    /// attaches itself to. The diagram it creates hangs under the camera's canonical node and is
+    /// maintained exactly like an automatic one.
+    /// </summary>
+    public override async Task<MapProto.Marker> AttachDeviceDiagram(
+      MapProto.AttachDeviceDiagramRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      if (string.IsNullOrWhiteSpace(request.SourceId) || string.IsNullOrWhiteSpace(request.DiagramTypeId))
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, "A device and a template are required"));
+
+      var sourceKind = string.IsNullOrWhiteSpace(request.SourceKind)
+        ? DeviceObjectId.CameraSource
+        : request.SourceKind;
+      var slot = string.IsNullOrWhiteSpace(request.Slot)
+        ? IDeviceDiagramService.DefaultSlot
+        : request.Slot;
+
+      await _deviceDiagrams.AttachAsync(sourceKind, request.SourceId, request.DiagramTypeId, slot, ct);
+
+      var row = await _db.DeviceDiagrams.AsNoTracking().FirstOrDefaultAsync(
+        d => d.source_kind == sourceKind && d.source_id == request.SourceId && d.slot == slot, ct);
+      if (row is null)
+        throw new RpcException(new Status(StatusCode.FailedPrecondition,
+          "The diagram could not be drawn: the camera has no configured parts, or the template is unknown"));
+
+      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
+      var marker = (await _mapService.GetAsync([objectId])).GetValueOrDefault(objectId);
+      if (marker is null)
+        throw new RpcException(new Status(StatusCode.Internal, "The diagram node is missing"));
+
+      return ToMarker(marker, false, null, NodeKind.Diagram);
+    }
+
     // ── Demo world ────────────────────────────────────────────────────────────────────────────
 
     public override async Task<MapProto.DemoReport> InstallDemo(
