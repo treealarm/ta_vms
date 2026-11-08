@@ -7,12 +7,13 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
+import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
 import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
@@ -32,11 +33,16 @@ import DiagramViewer from '../diagrams/DiagramViewer'
 export default function NodesAdminPanel() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  // `?node=` is a way in from the map: the same link the camera's placement panel offers.
+  const [searchParams] = useSearchParams()
+  const linkedNode = searchParams.get('node')
   const dispatch = useAppDispatch()
   const markers = useAppSelector((s) => s.objects.markers)
   const pages = useAppSelector((s) => s.objects.childrenByParent)
   const roots = useAppSelector((s) => s.objects.roots)
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const placements = useAppSelector((s) => s.spatial.placements)
+  const spaces = useAppSelector((s) => s.spatial.spaces)
   const states = useAppSelector((s) => s.states.states)
   const alarms = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
@@ -123,6 +129,18 @@ export default function NodesAdminPanel() {
     setSelectedId(marker.id)
   }
 
+  // A link from the map names a node the page has not read yet: read it, then unfold the path.
+  // Re-running on every marker change would fight the reader's own navigation.
+  useEffect(() => {
+    if (!linkedNode) return
+    void (async () => {
+      const loaded = await dispatch(loadNodes([linkedNode])).unwrap().catch(() => null)
+      const marker = loaded?.markers.find((candidate) => candidate.id === linkedNode)
+      if (marker) await openInTree(marker)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedNode, dispatch])
+
   /**
    * The diagram a camera carries is a child of its canonical node, so opening it from the camera
    * means reading that node's children first. A diagram node opens as itself.
@@ -152,6 +170,8 @@ export default function NodesAdminPanel() {
   // and its states are the device's own, not the tree's.
   useEffect(() => {
     if (Object.keys(camerasById).length === 0) void dispatch(loadCameras())
+    void dispatch(loadPlacements())
+    void dispatch(loadSpaces())
   }, [camerasById, dispatch])
 
   useEffect(() => {
@@ -159,6 +179,10 @@ export default function NodesAdminPanel() {
   }, [selectedId, dispatch])
 
   const selectedCamera = selected?.cameraId ? camerasById[selected.cameraId] : undefined
+  const reference = selected?.cameraId
+    ? placements.find((placement) => placement.cameraId === selected.cameraId && placement.isReference)
+    : undefined
+  const referenceSpace = spaces.find((space) => space.id === reference?.spaceId)
 
   // A part is its own node kind now: the server resolves it from device_node, not from a guess
   // about the parent.
@@ -298,6 +322,24 @@ export default function NodesAdminPanel() {
                     <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
                   )}
                 </Box>
+              ) : null}
+
+              {selected?.cameraId ? (
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }} useFlexGap>
+                  <Typography variant="body2" color="text.secondary">
+                    {reference
+                      ? t('nodes.standsIn', { name: referenceSpace?.name ?? reference.spaceId })
+                      : t('nodes.standsNowhere')}
+                  </Typography>
+                  {reference ? (
+                    <Button
+                      size="small"
+                      onClick={() => navigate(`/admin/maps?camera=${encodeURIComponent(selected.cameraId!)}`)}
+                    >
+                      {t('nodes.showOnMap')}
+                    </Button>
+                  ) : null}
+                </Stack>
               ) : null}
 
               {selectedCamera ? (

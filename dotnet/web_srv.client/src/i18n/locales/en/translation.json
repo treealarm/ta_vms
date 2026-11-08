@@ -33,7 +33,10 @@
     "replica": "view of another node",
     "part": "Part of a device",
     "partHint": "A part is a node of its own and is not placed on a map in M2.4 — its states and events are read here, under the camera it belongs to.",
-    "statesEvents": "States / Events"
+    "statesEvents": "States / Events",
+    "standsIn": "Stands in {{name}}",
+    "standsNowhere": "Not placed on any map yet",
+    "showOnMap": "Show on map"
   },
   "eventRouting": {
     "title": "Subscriptions",
@@ -1304,7 +1307,8 @@
       "moveToTitle": "Move “{{name}}” into",
       "moveToHint": "A space, or a container on this canvas. A node's place in the tree is what makes it a child, never where it lies.",
       "moveToFind": "Find a space or container",
-      "moveToNothing": "Nothing matches"
+      "moveToNothing": "Nothing matches",
+      "nodeInTree": "Node in the tree"
     },
     "dictionaries": {
       "title": "Dictionaries",

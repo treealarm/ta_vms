@@ -3,6 +3,7 @@ import { Box, Button, Collapse, Divider, FormControlLabel, Stack, Switch, TextFi
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import NumberField from './NumberField'
 import ZoomLevelField from './ZoomLevelField'
@@ -15,6 +16,8 @@ type CameraProps = {
   nodeId?: string
   /** Whether the canvas this stands on is a map; a plan is looked at at one scale and has no layers. */
   showLayer?: boolean
+  /** The canonical node of the device this picture shows — where its parts and diagram hang. */
+  ownerNodeId?: string
   /** Where the camera really stands, when that is another space; null when it stands nowhere. */
   referenceSpace: SpaceDto | null
   onChange: (placement: CameraPlacementDto) => void
@@ -26,9 +29,11 @@ type CameraProps = {
 
 /** The selected camera's placement in this space. Each field saves when left; drags on the map save on release. */
 export function CameraPlacementPanel({
-  camera, placement, nodeId, showLayer, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
+  camera, placement, nodeId, showLayer, ownerNodeId,
+  referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   // The sector is drawing only -- aiming never reads it -- so it stays folded until asked for.
   const [sectorOpen, setSectorOpen] = useState(false)
   const set = <K extends keyof CameraPlacementDto>(key: K) => (value: CameraPlacementDto[K]) =>
@@ -39,6 +44,19 @@ export function CameraPlacementPanel({
       <Box>
         <Typography variant="subtitle2" noWrap>{camera?.name || placement.cameraId}</Typography>
         <Typography variant="caption" color="text.secondary">{formatLatLon(placement.lat, placement.lon)}</Typography>
+        {/* This picture is a replica: the device's own node — its parts, its diagram — is elsewhere
+            in the tree, and that is what the button opens. */}
+        {ownerNodeId ? (
+          <Box>
+            <Button
+              size="small"
+              sx={{ px: 0 }}
+              onClick={() => navigate(`/admin/nodes?node=${encodeURIComponent(ownerNodeId)}`)}
+            >
+              {t('maps.editor.nodeInTree')}
+            </Button>
+          </Box>
+        ) : null}
       </Box>
       <Box>
         <FormControlLabel

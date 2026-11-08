@@ -431,6 +431,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         nodeId={nodeForPlacement(selectedPlacement)?.id}
         // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
         showLayer={space.kind === 'map'}
+        ownerNodeId={nodeForPlacement(selectedPlacement)?.ownerId}
         referenceSpace={referenceSpace}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {

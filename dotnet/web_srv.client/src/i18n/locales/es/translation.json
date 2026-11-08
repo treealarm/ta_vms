@@ -33,7 +33,10 @@
     "replica": "vista de otro nodo",
     "part": "Parte de un dispositivo",
     "partHint": "Una parte es un nodo propio y en M2.4 no se coloca en el mapa: sus estados y eventos se leen aquí, bajo la cámara a la que pertenece.",
-    "statesEvents": "Estados / Eventos"
+    "statesEvents": "Estados / Eventos",
+    "standsIn": "Está en {{name}}",
+    "standsNowhere": "Todavía no está en ningún mapa",
+    "showOnMap": "Mostrar en el mapa"
   },
   "eventRouting": {
     "title": "Suscripciones",
@@ -1304,7 +1307,8 @@
       "moveToTitle": "Mover «{{name}}» a",
       "moveToHint": "Un espacio, o un contenedor de este lienzo. Lo que hace hijo a un nodo es su lugar en el árbol, nunca dónde está.",
       "moveToFind": "Buscar un espacio o contenedor",
-      "moveToNothing": "Nada coincide"
+      "moveToNothing": "Nada coincide",
+      "nodeInTree": "Nodo en el árbol"
     },
     "dictionaries": {
       "title": "Diccionarios",
