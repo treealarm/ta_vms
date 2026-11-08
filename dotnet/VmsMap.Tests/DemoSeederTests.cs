@@ -101,7 +101,6 @@ public class DemoSeederTests
           ]),
       ],
       nodes ?? DefaultNodes(),
-      [new DemoLevel("room", 16, 18)],
       placements ?? [],
       landmarks ?? [],
       groundMarks ?? [],

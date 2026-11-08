@@ -53,7 +53,9 @@ namespace VmsMap.Demo
     // 18: the indoor master's device diagram stands on the floor beside it, as an object of the
     //     plan rather than a child of the camera in the iron tree: a diagram is a logical object,
     //     and what hangs under the server is hardware.
-    public const int UmdDataCenterVersion = 18;
+    // 19: the world no longer brings zoom layers of its own: the dictionary names the map's scales
+    //     (`World` … `Room`) and nothing in the demo used the three it wrote.
+    public const int UmdDataCenterVersion = 19;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -288,11 +290,6 @@ namespace VmsMap.Demo
         types,
         spaces,
         nodes,
-        [
-          new DemoLevel("Campus", 9, 12),
-          new DemoLevel("Building", 13, 15),
-          new DemoLevel("Rack", 18, 22),
-        ],
         placements,
         Landmarks(),
         GroundMarks,

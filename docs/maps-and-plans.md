@@ -63,12 +63,17 @@ Conventions that hold everywhere:
   selected, and an existing one is moved with *Move to…*. A move under the node's own descendant is
   refused. A camera's or a landmark's place on a canvas is read from `geo_objects.canvas_id`, not
   from its parent — which is what lets it hang under a container and still be placed on the space.
-- **A scale layer (`levels`) belongs to any node with a shape.** A node on a layer is drawn while
-  the map's zoom is inside the layer's range; a node without one is always drawn, and so is one
-  whose layer has been removed from the dictionary. *Enter* on a container raises the zoom to the
-  lowest layer among its children and centres on it — on its own shape, or on its children when it
-  has none — rather than fitting its polygon, which may be a circle, an icon or nothing. A space or
-  a mnemoscheme is entered by opening its own canvas.
+- **A scale layer (`levels`) belongs to any node with a shape.** The dictionary names the map's
+  scales the way OSM cuts its tiles — `World` 0–3, `Continent` 4–5, `Country` 6–7, `Region` 8–9,
+  `City` 10–12, `District` 13–14, `Street` 15–16, `Building` 17–18, `Room` 19–22 — and two layers
+  may share a zoom: a gate lies on its street and in the building it is set in, and a node is given
+  one layer of its own. A node on a layer is drawn while the canvas's zoom is inside the layer's
+  range; a node without one is always drawn, and so is one whose layer has been removed from the
+  dictionary. Layers are a map's tool — the map editor offers the field on maps only, since a plan
+  is looked at at one scale. *Enter* on a container raises the zoom to the lowest layer among its
+  children and centres on it — on its own shape, or on its children when it has none — rather than
+  fitting its polygon, which may be a circle, an icon or nothing. A space or a mnemoscheme is
+  entered by opening its own canvas.
 - **Real or made-up coordinates.** A map, and any plan marked real, is in WGS84. A plan in made-up
   coordinates still stores WGS84, made up around (0, 0), so one code path serves every space — but
   its numbers mean nothing anywhere else.

@@ -83,9 +83,6 @@ namespace VmsMap.Demo
     // camera_placement — a diagram's canvas is not a space.
     string? OwnerCameraId = null);
 
-  /// A scale layer: zoom levels at which the nodes that name it are drawn.
-  public sealed record DemoLevel(string Name, int Min, int Max);
-
   /// A camera from the installation, placed where the world wants it. A camera the deployment
   /// does not have yet is skipped and reported; the world without cameras is still valid.
   public sealed record DemoPlacement(
@@ -149,7 +146,6 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoDiagramType> Types,
     IReadOnlyList<DemoSpace> Spaces,
     IReadOnlyList<DemoNode> Nodes,
-    IReadOnlyList<DemoLevel> Levels,
     IReadOnlyList<DemoPlacement> Placements,
     IReadOnlyList<DemoLandmark> Landmarks,
     IReadOnlyList<DemoGroundMark> GroundMarks,

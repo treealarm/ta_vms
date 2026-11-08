@@ -30,7 +30,6 @@ namespace VmsMap.Demo
     private readonly IMapUpdateService _updates;
     private readonly IDiagramServiceInternal _diagrams;
     private readonly IDiagramTypeService _types;
-    private readonly ILevelService _levels;
     private readonly IStatesUpdateService _states;
     private readonly IRightServiceInternal _rights;
     private readonly IGeoService _geo;
@@ -40,6 +39,8 @@ namespace VmsMap.Demo
     private readonly ICameraCatalog _cameras;
     private readonly IDeviceNodeService _cameraNodes;
     private readonly IDeviceDiagramService _deviceDiagrams;
+    // Only to remove the layers an older world wrote: the dictionary is the map's own now.
+    private readonly ILevelService _levels;
 
     public DemoSeeder(
       VmsMapDbContext db,
@@ -61,7 +62,6 @@ namespace VmsMap.Demo
       _updates = updates;
       _diagrams = diagrams;
       _types = types;
-      _levels = levels;
       _states = states;
       _rights = rights;
       _geo = geo;
@@ -71,6 +71,7 @@ namespace VmsMap.Demo
       _cameras = cameras;
       _cameraNodes = cameraNodes;
       _deviceDiagrams = deviceDiagrams;
+      _levels = levels;
     }
 
     public async Task<DemoStatus> GetStatusAsync(string key, CancellationToken ct)
@@ -441,23 +442,6 @@ namespace VmsMap.Demo
           observations.Observations.Add(row);
         }
         await _spatial.SetObservationsAsync(observations, ct);
-      }
-
-      // ── Levels: the zoom ranges the demo's names are drawn at ──────────────────────────────
-      foreach (var level in world.Levels)
-      {
-        var key = $"level/{level.Name}";
-        var id = IdOf(key);
-        await _levels.UpdateAsync([new LevelDTO
-        {
-          id = id.ToString(),
-          zoom_level = level.Name,
-          zoom_min = level.Min,
-          zoom_max = level.Max,
-        }]);
-        ids[key] = id;
-        keep.Add(key);
-        Written(key);
       }
 
       // ── States and rights: rows of the nodes above, they go with them ──────────────────────

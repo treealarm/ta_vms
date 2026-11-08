@@ -213,7 +213,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(18, _world.Version);
+    Assert.Equal(19, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -282,11 +282,6 @@ public class DemoWorldTests
     // replaces the DISCONNECTED an earlier world left behind.
     var port = Assert.Single(_world.States, state => state.NodeKey == "object/port-rack-a-01-1-03");
     Assert.Equal(["CONNECTED"], port.States);
-
-    Assert.Equal(
-      ["Campus", "Building", "Rack"],
-      _world.Levels.Select(level => level.Name));
-    Assert.All(_world.Levels, level => Assert.True(level.Min <= level.Max));
 
     Assert.Contains(_world.Rights, right =>
       right.NodeKey == "space/umd" && right.Subject == "user" && right.Action == RightActions.View);
