@@ -64,6 +64,12 @@ export default function DiagramElement({
   const selected = marker.id === selectedId
   const ownValues = values[marker.id] ?? []
 
+  // The picture is small and its states are what an operator reads first: the tooltip says them
+  // in the dictionary's own words, not in the codes the device reports.
+  const describesStates = (state?.states ?? [])
+    .map((name) => descriptions[name]?.stateDescr || name)
+    .filter(Boolean)
+
   const children = useMemo(
     () => (depth > 0 ? (content.children ?? []).filter((child) => child.parentId === marker.id) : []),
     [content.children, marker.id, depth],
@@ -73,7 +79,7 @@ export default function DiagramElement({
     <Box
       onClick={(event) => { event.stopPropagation(); onPick(marker) }}
       onPointerDown={onMove && movable ? (event) => onMove(marker, shown, event) : undefined}
-      title={[marker.name, ...(state?.states ?? [])].filter(Boolean).join(' · ')}
+      title={[marker.name, ...describesStates].filter(Boolean).join(' · ')}
       sx={{
         position: 'absolute',
         left: shown.left,

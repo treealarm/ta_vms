@@ -13,6 +13,7 @@ import { loadDiagramTypes } from '../../store/diagramsSlice'
 import { deleteNode, saveDiagramPlacement } from '../../store/mapEditsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import DetailToolbar from '../settings/DetailToolbar'
+import NodeStateChips from '../objects/NodeStateChips'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
 type Props = {
@@ -61,6 +62,11 @@ export default function DiagramElementEditor({
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const types = useAppSelector((s) => s.diagrams.types)
+  // The element is the device's own node or a replica of it: its states come from the device, and
+  // are read here rather than painted into the region, which is the template's picture.
+  const state = useAppSelector((s) => s.states.states[marker.id])
+  const alarm = useAppSelector((s) => s.states.alarms[marker.id])
+  const descriptions = useAppSelector((s) => s.states.descriptions)
   const initial = draftOf(marker, element)
   const [draft, setDraft] = useState<Draft>(initial)
   const [busy, setBusy] = useState(false)
@@ -139,6 +145,17 @@ export default function DiagramElementEditor({
             .catch((e) => setError(errorText(e)))
         }}
       />
+
+      <Stack direction="row" spacing={0.5} useFlexGap alignItems="center" sx={{ px: 1.5, pt: 1, flexWrap: 'wrap' }}>
+        <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+          {t('maps.node.states')}
+        </Typography>
+        {alarm?.alarm || (state?.states?.length ?? 0) > 0 ? (
+          <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} />
+        ) : (
+          <Typography variant="caption" color="text.secondary">{t('maps.node.noStates')}</Typography>
+        )}
+      </Stack>
 
       <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5, overflowY: 'auto' }}>
         {error ? <Typography color="error" variant="body2">{error}</Typography> : null}

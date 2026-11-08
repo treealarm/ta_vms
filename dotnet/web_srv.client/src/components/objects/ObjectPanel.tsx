@@ -15,7 +15,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
-import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
+import NodeStateChips from './NodeStateChips'
 
 type Props = {
   nodeId: string
@@ -70,8 +70,7 @@ export default function ObjectPanel({
 
   const kind = marker?.nodeKind ?? 'object'
   const childrenAlarms = alarm?.childrenAlarms ?? 0
-  // The alarm chip already says "Alarm"; the ALARM state chip would repeat it.
-  const states = (state?.states ?? []).filter((name) => !(alarm?.alarm && name === ALARM_STATE))
+  const states = state?.states ?? []
 
   return (
     <Stack sx={{ width: 420, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
@@ -167,13 +166,6 @@ export default function ObjectPanel({
 
         <Section title={t('maps.node.states')}>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-            {alarm?.alarm ? (
-              <Chip
-                size="small"
-                label={t('maps.node.alarm')}
-                sx={{ bgcolor: ALARM_COLOR, color: '#fff' }}
-              />
-            ) : null}
             {childrenAlarms > 0 ? (
               <Chip
                 size="small"
@@ -182,29 +174,7 @@ export default function ObjectPanel({
                 label={t('maps.node.childAlarms', { count: childrenAlarms })}
               />
             ) : null}
-            {states.map((name) => {
-              const description = descriptions[name]
-              return (
-                <Chip
-                  key={name}
-                  size="small"
-                  variant="outlined"
-                  label={description?.stateDescr || name}
-                  icon={(
-                    <Box
-                      component="span"
-                      sx={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: '50%',
-                        bgcolor: description?.stateColor || 'text.disabled',
-                      }}
-                    />
-                  )}
-                  sx={{ borderColor: description?.stateColor }}
-                />
-              )
-            })}
+            <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} />
             {!alarm?.alarm && childrenAlarms === 0 && states.length === 0 ? (
               <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
             ) : null}
