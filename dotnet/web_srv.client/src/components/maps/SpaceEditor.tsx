@@ -429,6 +429,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         camera={camerasById[selectedPlacement.cameraId]}
         placement={selectedPlacement}
         nodeId={nodeForPlacement(selectedPlacement)?.id}
+        // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
+        showLayer={space.kind === 'map'}
         referenceSpace={referenceSpace}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
@@ -444,6 +446,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     <LandmarkPanel
       key={selectedLandmark.id}
       landmark={selectedLandmark}
+      showLayer={space.kind === 'map'}
       onChange={(m) => void run(() => dispatch(upsertLandmark(m)).unwrap())}
       onRemove={() => {
         if (!window.confirm(t('maps.confirmRemoveLandmark', { name: selectedLandmark.name }))) return
@@ -458,6 +461,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     <FootprintPanel
       key={selectedNested.id}
       space={selectedNested}
+      showLayer={space.kind === 'map'}
       onOpen={() => selectedNested.id && onOpenSpace(selectedNested.id)}
       onRemoveFootprint={() => {
         void saveFootprint(selectedNested, [])

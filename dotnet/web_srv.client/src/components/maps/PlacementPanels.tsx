@@ -13,6 +13,8 @@ type CameraProps = {
   placement: CameraPlacementDto
   /** The node that carries this placement: its shape carries the scale layer. */
   nodeId?: string
+  /** Whether the canvas this stands on is a map; a plan is looked at at one scale and has no layers. */
+  showLayer?: boolean
   /** Where the camera really stands, when that is another space; null when it stands nowhere. */
   referenceSpace: SpaceDto | null
   onChange: (placement: CameraPlacementDto) => void
@@ -24,7 +26,7 @@ type CameraProps = {
 
 /** The selected camera's placement in this space. Each field saves when left; drags on the map save on release. */
 export function CameraPlacementPanel({
-  camera, placement, nodeId, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
+  camera, placement, nodeId, showLayer, referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
   // The sector is drawing only -- aiming never reads it -- so it stays folded until asked for.
@@ -83,8 +85,12 @@ export function CameraPlacementPanel({
           <Button variant="outlined" size="small" onClick={onCalibrate}>{t('ptzGeo.open')}</Button>
         </>
       )}
-      <Divider />
-      <ZoomLevelField nodeId={nodeId} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={nodeId} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('maps.removeFromSpace')}</Button>
@@ -96,13 +102,14 @@ export function CameraPlacementPanel({
 
 type LandmarkProps = {
   landmark: LandmarkDto
+  showLayer?: boolean
   onChange: (landmark: LandmarkDto) => void
   onRemove: () => void
   onClose: () => void
 }
 
 /** A landmark's name and height. Its position is changed by dragging it. */
-export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: LandmarkProps) {
+export function LandmarkPanel({ landmark, showLayer, onChange, onRemove, onClose }: LandmarkProps) {
   const { t } = useTranslation()
   const [name, setName] = useState(landmark.name)
 
@@ -127,8 +134,12 @@ export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: Landmar
         helperText={t('maps.landmarkHeightHint')}
       />
       <Typography variant="caption" color="text.secondary">{t('maps.landmarkHint')}</Typography>
-      <Divider />
-      <ZoomLevelField nodeId={landmark.id} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={landmark.id} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemove}>{t('common.delete')}</Button>
@@ -140,13 +151,14 @@ export function LandmarkPanel({ landmark, onChange, onRemove, onClose }: Landmar
 
 type FootprintProps = {
   space: SpaceDto
+  showLayer?: boolean
   onOpen: () => void
   onRemoveFootprint: () => void
   onClose: () => void
 }
 
 /** A nested space selected by its footprint on this one: open it, or reshape the outline on the map. */
-export function FootprintPanel({ space, onOpen, onRemoveFootprint, onClose }: FootprintProps) {
+export function FootprintPanel({ space, showLayer, onOpen, onRemoveFootprint, onClose }: FootprintProps) {
   const { t } = useTranslation()
   return (
     <Stack spacing={1.5} sx={{ p: 1.5 }}>
@@ -156,8 +168,12 @@ export function FootprintPanel({ space, onOpen, onRemoveFootprint, onClose }: Fo
       </Box>
       <Button variant="contained" size="small" onClick={onOpen}>{t('maps.openSpace')}</Button>
       <Typography variant="caption" color="text.secondary">{t('maps.footprintHint')}</Typography>
-      <Divider />
-      <ZoomLevelField nodeId={space.id} />
+      {showLayer ? (
+        <>
+          <Divider />
+          <ZoomLevelField nodeId={space.id} />
+        </>
+      ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
         <Button color="error" size="small" onClick={onRemoveFootprint}>{t('maps.removeFootprint')}</Button>

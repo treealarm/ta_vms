@@ -12,11 +12,15 @@ import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
+import { loadCameras } from '../../store/liveSlice'
 import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
+import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
+import CameraUnifiedCard from '../CameraUnifiedCard'
+import NodeStateChips from '../objects/NodeStateChips'
 import DiagramViewer from '../diagrams/DiagramViewer'
 
 /**
@@ -32,6 +36,10 @@ export default function NodesAdminPanel() {
   const markers = useAppSelector((s) => s.objects.markers)
   const pages = useAppSelector((s) => s.objects.childrenByParent)
   const roots = useAppSelector((s) => s.objects.roots)
+  const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const states = useAppSelector((s) => s.states.states)
+  const alarms = useAppSelector((s) => s.states.alarms)
+  const descriptions = useAppSelector((s) => s.states.descriptions)
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -139,6 +147,18 @@ export default function NodesAdminPanel() {
   }
 
   const selected = selectedId ? markers[selectedId] : null
+
+  // The row is a device like any other: the camera behind it is shown here as the map shows it,
+  // and its states are the device's own, not the tree's.
+  useEffect(() => {
+    if (Object.keys(camerasById).length === 0) void dispatch(loadCameras())
+  }, [camerasById, dispatch])
+
+  useEffect(() => {
+    if (selectedId) void dispatch(loadVisualStates([selectedId]))
+  }, [selectedId, dispatch])
+
+  const selectedCamera = selected?.cameraId ? camerasById[selected.cameraId] : undefined
 
   // A part is its own node kind now: the server resolves it from device_node, not from a guess
   // about the parent.
@@ -264,6 +284,27 @@ export default function NodesAdminPanel() {
                   <Chip size="small" variant="outlined" color="info" label={t('nodes.replica')} />
                 )}
               </Stack>
+
+              {selected.nodeKind === 'part' || selectedCamera ? (
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('maps.node.states')}</Typography>
+                  {alarms[selected.id]?.alarm || (states[selected.id]?.states?.length ?? 0) > 0 ? (
+                    <NodeStateChips
+                      state={states[selected.id]}
+                      alarm={alarms[selected.id]}
+                      descriptions={descriptions}
+                    />
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
+                  )}
+                </Box>
+              ) : null}
+
+              {selectedCamera ? (
+                <Box sx={{ height: 340, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
+                  <CameraUnifiedCard camera={selectedCamera} slotKey={`nodes:${selectedCamera.cameraId}`} />
+                </Box>
+              ) : null}
 
               {isPart && (
                 <Box>
