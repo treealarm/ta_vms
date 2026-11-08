@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-  Radio, RadioGroup, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
+  Radio, RadioGroup, Snackbar, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import { useSearchParams } from 'react-router-dom'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
@@ -18,7 +18,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { loadNodes, resolveCameraNode, revealNode } from '../../store/objectsSlice'
+import { loadNodes, resolveCameraNode, revealNode, childrenOf, loadChildren } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
 import type { CameraPlacementDto } from '../../dto/dtos'
@@ -81,6 +81,7 @@ export default function MapsOperatorPanel() {
   const loaded = useAppSelector((s) => s.spatial.loaded)
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
   const markers = useAppSelector((s) => s.objects.markers)
+  const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const statesById = useAppSelector((s) => s.states.states)
   const alarmsById = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
@@ -105,6 +106,7 @@ export default function MapsOperatorPanel() {
   const [aimError, setAimError] = useState<string | null>(null)
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
+  const [notice, setNotice] = useState<string | null>(null)
   // The row an operator picked and the action they picked for it; confirmed in one dialog.
   const [alarmDialog, setAlarmDialog] = useState<AlarmDialogState | null>(null)
   const [alarmComment, setAlarmComment] = useState('')
@@ -334,6 +336,25 @@ export default function MapsOperatorPanel() {
   const locateNode = (id: string) => {
     const marker = markers[id]
     if (marker) void revealFromSearch(marker)
+  }
+
+  /**
+   * The diagram a camera's template draws hangs under the canonical node, not under the picture of
+   * it standing on a canvas: the owner's children are where to look.
+   */
+  const openDeviceDiagram = async (id: string) => {
+    const marker = markers[id]
+    const parentId = marker?.ownerId ?? id
+    const page = await dispatch(loadChildren({ parentId })).unwrap().catch(() => null)
+    const children = page?.children ?? childrenOf(markers, childrenByParent, parentId)
+    const diagram = children.find((child) => child.nodeKind === 'diagram')
+    if (!diagram) {
+      setNotice(t('diagramEditor.noDeviceDiagram'))
+      return
+    }
+
+    setDiagramId(diagram.id)
+    setSelectedNodeId(diagram.id)
   }
 
   /**
@@ -613,6 +634,7 @@ export default function MapsOperatorPanel() {
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             onEnter={enterNode}
             onLocate={locateNode}
+            onOpenDiagram={(id) => void openDeviceDiagram(id)}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}
@@ -628,6 +650,14 @@ export default function MapsOperatorPanel() {
           descriptions={descriptions}
         />
       )}
+
+      <Snackbar
+        open={!!notice}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        message={notice}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
 
       {alarmDialog && (
         <Dialog open onClose={() => setAlarmDialog(null)} maxWidth="xs" fullWidth>

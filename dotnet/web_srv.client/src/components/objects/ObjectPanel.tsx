@@ -6,6 +6,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
 import type { MapExtraProperty } from '../../dto/mapDtos'
@@ -24,6 +25,8 @@ type Props = {
   onEnter?: (id: string) => void
   /** Find the node on the canvas that draws it: its space or diagram is opened and it is centred. */
   onLocate?: (id: string) => void
+  /** The diagram drawn for this camera by its template, if the deployment has one. */
+  onOpenDiagram?: (id: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -38,7 +41,8 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, onEnter, onLocate, aiming, onAimingChange, aimUnavailable, aimResult, aimError,
+  nodeId, onClose, onSelect, onEnter, onLocate, onOpenDiagram,
+  aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -96,6 +100,17 @@ export default function ObjectPanel({
           <Tooltip title={t('maps.node.locate')}>
             <IconButton size="small" aria-label={t('maps.node.locate')} onClick={() => onLocate(nodeId)}>
               <CenterFocusStrongIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+        {onOpenDiagram && kind === 'camera' ? (
+          <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
+            <IconButton
+              size="small"
+              aria-label={t('diagramEditor.openDeviceDiagram')}
+              onClick={() => onOpenDiagram(nodeId)}
+            >
+              <OpenInNewIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         ) : null}
