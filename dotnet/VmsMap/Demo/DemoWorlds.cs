@@ -50,7 +50,10 @@ namespace VmsMap.Demo
     // 16: the camera's device diagram is the camera itself — body, lens, cable and the terminal
     //     block its parts are wired to — rather than a schematic panel of sockets.
     // 17: the landmarks name the place they stand in, so the tree's two sets are told apart.
-    public const int UmdDataCenterVersion = 17;
+    // 18: the indoor master's device diagram stands on the floor beside it, as an object of the
+    //     plan rather than a child of the camera in the iron tree: a diagram is a logical object,
+    //     and what hangs under the server is hardware.
+    public const int UmdDataCenterVersion = 18;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -294,6 +297,20 @@ namespace VmsMap.Demo
         Landmarks(),
         GroundMarks,
         PtzObservations,
+        [
+          // The indoor master, drawn as the camera it is: body, lens, cable and the terminal block
+          // its relay and input parts are wired to. It stands on the floor beside the camera, a
+          // diagram of the device rather than the device's node in the tree.
+          new DemoDeviceDiagram(
+            "object/camera-panel-sim-master",
+            "sim-master",
+            CameraPanelType,
+            "space/building",
+            new DemoPoint(38.9927950, -76.9379400),
+            "file/camera-panel-background",
+            VisualWidth: 44,
+            VisualHeight: 28),
+        ],
         states,
         [new DemoRight("space/umd", "user", RightActions.View)]);
     }

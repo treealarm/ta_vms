@@ -39,6 +39,7 @@ namespace VmsMap.Demo
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
     private readonly IDeviceNodeService _cameraNodes;
+    private readonly IDeviceDiagramService _deviceDiagrams;
 
     public DemoSeeder(
       VmsMapDbContext db,
@@ -53,7 +54,8 @@ namespace VmsMap.Demo
       VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras,
-      IDeviceNodeService cameraNodes)
+      IDeviceNodeService cameraNodes,
+      IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
       _updates = updates;
@@ -68,6 +70,7 @@ namespace VmsMap.Demo
       _spatial = spatial;
       _cameras = cameras;
       _cameraNodes = cameraNodes;
+      _deviceDiagrams = deviceDiagrams;
     }
 
     public async Task<DemoStatus> GetStatusAsync(string key, CancellationToken ct)
@@ -334,6 +337,42 @@ namespace VmsMap.Demo
         keep.Add(key);
         placedCameras.Add(placement.CameraId);
         Written(key);
+      }
+
+      // ── A device's own diagram: an object of a canvas, made by the service that owns it ────
+      foreach (var diagram in world.DeviceDiagrams)
+      {
+        if (!placedCameras.Contains(diagram.CameraKey))
+        {
+          // The device is not in this deployment: the diagram would draw nothing and say nothing.
+          if (!report.SkippedCameras.Contains(diagram.CameraKey))
+            report.SkippedCameras.Add(diagram.CameraKey);
+          continue;
+        }
+
+        var diagramId = await _deviceDiagrams.AttachAsync(
+          DeviceObjectId.CameraSource, DemoIds.Camera(diagram.CameraKey),
+          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot,
+          new DiagramSite(Required(diagram.SpaceKey).ToString(), diagram.At.Lat, diagram.At.Lon), ct);
+        if (diagramId is null)
+          continue;
+
+        // The diagram's own marker on the map is a thumbnail of the device it draws: the paper it
+        // opens on is the same picture, so the point reads as "the panel".
+        var picture = world.Files.Single(file => file.Key == diagram.VisualKey);
+        await _visuals.UpdateListAsync([new VisualDTO
+        {
+          object_id = diagramId,
+          image = picture.Content,
+          image_width = diagram.VisualWidth,
+          image_height = diagram.VisualHeight,
+        }]);
+
+        // Registered like every other object of the world, so a removal takes it: the node's delete
+        // is what also takes its replicas and the service's row for it.
+        ids[diagram.Key] = Guid.Parse(diagramId);
+        keep.Add(diagram.Key);
+        Written(diagram.Key);
       }
 
       // ── Landmarks: the points the cameras are calibrated against ───────────────────────────

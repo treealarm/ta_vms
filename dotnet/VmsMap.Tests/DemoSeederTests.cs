@@ -70,7 +70,7 @@ public class DemoSeederTests
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
       new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
-      TestWiring.DeviceNodes(db, map, updates));
+      TestWiring.DeviceNodes(db, map, updates), TestWiring.DeviceDiagrams(db, map, updates, geo));
 
     return new Services(db, map, seeder, catalog);
   }
@@ -106,6 +106,7 @@ public class DemoSeederTests
       landmarks ?? [],
       groundMarks ?? [],
       ptzObservations ?? [],
+      [],
       [new DemoState("object/port", "DISCONNECTED")],
       [new DemoRight("space/map", "user", RightActions.View)]);
 

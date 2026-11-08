@@ -123,6 +123,20 @@ namespace VmsMap.Demo
   /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
 
+  /// A device's own diagram, drawn on a canvas of the world: the registry key it is remembered
+  /// under, the device, the template its model names, and where it stands. It is made by the
+  /// device-diagram service, not written as a node — the service owns the diagram and binds the
+  /// device's parts to its regions.
+  public sealed record DemoDeviceDiagram(
+    string Key,
+    string CameraKey,
+    string TypeKey,
+    string SpaceKey,
+    DemoPoint At,
+    string VisualKey,
+    int VisualWidth,
+    int VisualHeight);
+
   /// A right on a node. The world grants `view` to the deployment's `user` role at its root.
   public sealed record DemoRight(string NodeKey, string Subject, string Action);
 
@@ -140,6 +154,7 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoLandmark> Landmarks,
     IReadOnlyList<DemoGroundMark> GroundMarks,
     IReadOnlyList<DemoPtzObservation> PtzObservations,
+    IReadOnlyList<DemoDeviceDiagram> DeviceDiagrams,
     IReadOnlyList<DemoState> States,
     IReadOnlyList<DemoRight> Rights);
 }

@@ -105,7 +105,7 @@ public class DemoValueFeederTests
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
       new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
-      cameraNodes);
+      cameraNodes, TestWiring.DeviceDiagrams(db, map, updates, geo));
 
     var geoSource = new TestGeo();
     var ioSource = new TestIo();
