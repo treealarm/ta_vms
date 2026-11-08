@@ -126,6 +126,27 @@ public class DemoValueFeederTests
 
   private static Guid ReplicaId() => Guid.Parse(DemoIds.Id("object/telemetry-sim-vehicle"));
 
+  // The demo world with a telemetry replica, which the shipped world no longer has: a camera that
+  // drives the ring road has no business standing still on a floor. The feeder finds the cameras it
+  // reads through exactly such a replica, so the tests put one back — what the feeder writes is
+  // decided by the diagram's parts, not by the installed demo.
+  private static DemoWorld WithTelemetryReplica()
+  {
+    var world = DemoWorlds.UmdDataCenter();
+    return world with
+    {
+      Nodes =
+      [
+        .. world.Nodes,
+        new DemoNode("object/telemetry-sim-vehicle", "Camera sim-vehicle", "space/building",
+          DemoTelemetry.TypeKey,
+          Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
+          At: new DemoPoint(38.9927941, -76.9377075),
+          OwnerCameraId: "sim-vehicle"),
+      ],
+    };
+  }
+
   private static async Task<Guid> OwnerOfReplicaAsync(VmsMapDbContext db) =>
     (await db.Markers.AsNoTracking().SingleAsync(m => m.id == ReplicaId())).owner_id
       ?? throw new InvalidOperationException("The telemetry diagram is not a replica");
@@ -134,7 +155,7 @@ public class DemoValueFeederTests
   public async Task TheReplicaShowsTheOwnersReadings()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
 
     var written = await s.Feeder.RunOnceAsync(CancellationToken.None);
@@ -155,7 +176,7 @@ public class DemoValueFeederTests
   public async Task TheSpeedComesFromTwoPlacesAndTheTimeBetweenThem()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
 
     s.Time.Now = DateTimeOffset.UnixEpoch;
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
@@ -174,7 +195,7 @@ public class DemoValueFeederTests
   public async Task TheRelayAndTheSensorComeFromWhicheverCameraHasThem()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     // The wires of the demo: sim-master's relay closes sim-ptz's input, so it reads 0.
     s.Io.Relays[Master] = true;
@@ -191,7 +212,7 @@ public class DemoValueFeederTests
   public async Task ADeviceWithoutAReportedStateIsNotWritten()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     s.Io.Relays[Master] = null; // subscribed, nothing announced yet
 
@@ -205,7 +226,7 @@ public class DemoValueFeederTests
   public async Task ACameraThatReportsNoPlaceWritesNothing()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
 
     Assert.Equal(0, await s.Feeder.RunOnceAsync(CancellationToken.None));
     Assert.Empty(await s.Db.Values.ToListAsync());
@@ -215,7 +236,7 @@ public class DemoValueFeederTests
   public async Task TheFeederLeavesAUsersDiagramAloneEvenWithTheTelemetryType()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
 
     var user = new BaseMarkerDTO { id = Guid.NewGuid().ToString(), name = "The administrator's panel" };
@@ -245,7 +266,7 @@ public class DemoValueFeederTests
   public async Task RemovingTheWorldTakesItsReadingsWithIt()
   {
     var s = Create();
-    await s.Seeder.InstallAsync(DemoWorlds.UmdDataCenter(), CancellationToken.None);
+    await s.Seeder.InstallAsync(WithTelemetryReplica(), CancellationToken.None);
     s.Geo.Points[Vehicle] = new CameraGeoPoint(38.9923, -76.9378);
     await s.Feeder.RunOnceAsync(CancellationToken.None);
     Assert.NotEmpty(await s.Db.Values.ToListAsync());

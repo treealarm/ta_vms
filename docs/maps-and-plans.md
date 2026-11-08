@@ -225,16 +225,18 @@ without a browser — right after an install.
 
 **What it contains.** A map named `UMD Data Center (demo)` over the real campus of the University of
 Maryland; the first floor of **Biomolecular Sciences** as a plan — named `First floor`, its footprint
-the building's own 19-corner outline, the one OnvifSim builds its prism from — and two rooms: Room
-101 as a plan of its own and Room 102 as a room diagram standing on the floor (a schematic with its
-two racks in regions of its type, each opening on its own canvas) — six racks between them, a switch
-in each rack's first slot and eight ports on every switch. The third port of the first rack is `CONNECTED`: the demo writes no
+the building's own 19-corner outline, the one OnvifSim builds its prism from, with the doorway cut in
+its north wall. The floor is the room: no plan of a room is nested in it, and the hall pair stands on
+its plan directly. What stands in the room is one diagram, also named `First floor` — a schematic of
+the floor with its four racks in regions of its type, each opening on its own canvas — four racks,
+every slot of every rack filled with a switch and every switch carrying its eight ports. The third
+port of the first switch of the first rack is `CONNECTED`: the demo writes no
 synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
 where the world wants them; a camera the deployment does not have yet is skipped and reported, and
 reinstalling once it is provisioned places it. They form two master/slave pairs, both on the same
-walking person: `sim-master` → `sim-ptz`, whose master stands south of Room 101 on the line the
-person walks out by and holds the room and the doorway in one lens; and `sim-master2` → `sim-ptz2`
+walking person: `sim-master` → `sim-ptz`, whose master stands south of the hall on the line the
+person walks out by and holds the hall and the doorway in one lens; and `sim-master2` → `sim-ptz2`
 out in the parking lot, whose master, on a pole north-west of the doorway, looks back along the line
 and reports the person's boxes, and whose slave stands on a pole of its own between that doorway and
 the master: it holds the doorway at one side of its picture and the lot the person turns into at the
@@ -243,32 +245,34 @@ neither master is close enough to it to detect it. `sim-vehicle` is flagged `geo
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
-**The camera's own readings.** The `Device telemetry` type carries five regions — `lat`, `lon`,
-`speed`, `relay`, `sensor` — and a replica of the `sim-vehicle` camera stands on the floor plan
-showing them. The replica has `objects.owner_id` set to the camera's canonical node and no
-`camera_placement`: a diagram's canvas is not a space. `DemoValueFeeder` writes the values to that
-owner every five seconds — the position from the camera's own `GetGeoLocation` (six decimals of a
-degree), the speed from two fixes and the wall clock (km/h, one decimal), and the relay and sensor
-states from whichever demo camera has the device (`sim-master`'s relay is wired to `sim-ptz`'s
-input in the simulator's world), as `on`/`off`. A camera the map does not know yet, or one that
-reports no place, writes nothing. The map answers a replica with its owner's values, so the diagram
-shows the camera's readings while owning none of them; a removal takes them away with the world.
+**The camera's own readings.** The `Device telemetry` type stays in the demo's dictionary — five
+regions, `lat`, `lon`, `speed`, `relay`, `sensor`, with the picture's labels drawn from the same
+geometry — but the world stations no replica of it: a diagram stands where it is put, and the only
+camera whose readings are of interest drives the ring road, so its place is the car on the map, which
+follows it. An administrator can build such a diagram on a demo node; `DemoValueFeeder` then writes
+the values to the diagram's owner every five seconds — the position from the camera's own
+`GetGeoLocation` (six decimals of a degree), the speed from two fixes and the wall clock (km/h, one
+decimal), and the relay and sensor states from whichever demo camera has the device (`sim-master`'s
+relay is wired to `sim-ptz`'s input in the simulator's world), as `on`/`off`. A camera the map does
+not know yet, or one that reports no place, writes nothing. The map answers a replica with its
+owner's values, so the diagram shows the camera's readings while owning none of them; a removal takes
+them away with the world.
 
 **The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
 `DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera
 placements, states, rights) and `DemoSeeder.cs` applies it through the ordinary services. The
 pictures ship with the code, so an install never depends on a file on the instance's disk: the floor
-and the Room 101 plan are PNGs under `Demo/Assets/`, while the diagram backgrounds — the switch, the
-rack, the room layout, the telemetry panel and the port's icon — are SVG drawn by `Demo/DemoArt.cs`
-from the same
+plan, the diagram backgrounds — the switch, the rack, the floor layout, the telemetry panel — and
+the port's icon are SVG drawn by `Demo/DemoArt.cs` from the same
 functions that lay the type's regions out. A socket and the region a port fills are therefore one
 rectangle by construction, and a region keeps the aspect of the diagram it holds: the switch drawn in
-a rack slot and the rack drawn in the room diagram are not stretched. There is no import/export
+a rack slot and the rack drawn in the floor diagram are not stretched. There is no import/export
 format for maps, and the demo does not add one.
 
 **The registry.** `demo_config` and `demo_object` (`Grpc/migrations/0006_demo_seed.sql`) record the
-logical key of every row the world created — `space/room-101`, `object/rack-a-01`, `type/rack`,
-`file/rack-background`, `level/room`, `camera/sim-master` — and the id it was created with. A
+logical key of every row the world created — `space/building`, `object/floor-layout`,
+`object/rack-a-01`, `type/rack`, `file/rack-background`, `level/rack`, `camera/sim-master` — and the
+id it was created with. A
 space's id is assigned by the server, so the registry is the only way to find it again. An install
 upserts everything the world names under the recorded id and deletes the recorded rows the world no
 longer names; a removal deletes them all, values included. **Rows the demo did not write are never
@@ -284,7 +288,7 @@ starting with the flag cannot each write half a world.
 
 A diagram that stands on a plan is an ordinary point figure, not geometry of its own: in Admin →
 Maps, selecting it shows a draggable handle, and "+ diagram" in the node list places a new one at the
-centre of the current view. A room diagram is such a node; its icon on the floor is its
+centre of the current view. The floor's diagram is such a node; its icon on the floor is its
 `visual.image`.
 
 **The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout `3x3`, showing the five demo

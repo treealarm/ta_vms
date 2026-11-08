@@ -64,17 +64,17 @@ own data directory on first start; `world.py --check-maryland` never needs it, a
 without it.
 
 Its cameras are `master`, `ptz`, `master2` and `ptz2`, standing on the demo's placements — the
-hall pair around Room 101, the yard pair out by the doorway and the ground between it and the ring
+hall pair on the first floor, the yard pair out by the doorway and the ground between it and the ring
 road — and the fifth, `vehicle`, rides the car. The building's north wall has a doorway on the
-walker's way out: the person circles Room 101, walks through the hall and out of the doorway, out
+walker's way out: the person circles the hall, walks through it and out of the doorway, out
 into the yard toward the ring road — where the slave hanging over the doorway follows them — and
 comes back through the same doorway. ta_vms knows them as
 `sim-master`, `sim-ptz`, `sim-master2`, `sim-ptz2` and `sim-vehicle`, at ONVIF ports 8101–8105. The
 car carries no device — a wire to it would move with it. `master` has three relays showing every
 kind of link: `lamp` lights the world's `alert` lamp, `peer` drives `ptz`'s `input` sensor, and
-`loop` drives a sensor of the master itself. The demo's own map is in `tests/demo`, not here; its
-`Device telemetry` diagram shows the vehicle camera's position and speed plus the relay and sensor
-states, and the demo's `geo_from_device` flag makes the map follow that camera.
+`loop` drives a sensor of the master itself. The demo's own map is in `tests/demo`, not here: the
+floor plan shows the room and the hall pair, and a diagram of the same name shows its four racks
+filled with switches; the `geo_from_device` flag makes the map follow the camera on the car.
 
 Load it into the bench's simulator:
 
@@ -91,8 +91,8 @@ bench are kept from drifting apart.
 ### Aiming in the demo world
 
 The demo world has two pairs, and both follow the same walking person. The **hall pair** is
-`sim-master` and `sim-ptz`: the master stands south of Room 101, on the line the person walks out
-by, and one lens holds the room and the doorway at the far end of the hall; the slave is the room's
+`sim-master` and `sim-ptz`: the master stands south of the hall, on the line the person walks out
+by, and one lens holds the hall and the doorway at the far end; the slave is the hall's
 south-east corner, looking across it. The **yard pair** is `sim-master2` and `sim-ptz2`, on the map beyond the
 building: the slave hangs over the doorway the person walks out of, and the master — on a pole
 between that doorway and the ring road — looks back along the line, reporting the person's boxes
@@ -101,7 +101,10 @@ masters now stand it is too small in their pictures to be detected, so neither p
 Each pair has its own five landmarks — `world.py`'s `MARYLAND_HALL_LANDMARKS` and
 `MARYLAND_ROAD_LANDMARKS` — held by its master's picture with a person's box big enough to mark the
 ground on, and reachable by its slave. Both sets are spread over depth as well as across: five marks
-on one line would not fit a ground homography.
+on one line would not fit a ground homography. The world marks each of the ten on the ground, as a
+half-metre block of the landmark's own colour (`lm-hall-l1` … `lm-road-l5`): a landmark on the map
+and what a camera's picture shows are one point, which is what an operator aims and calibrates by.
+`world.py --check-maryland` holds the blocks to the landmarks' places and colours.
 
 The demo world must be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench
 adds no placements there and refuses to invent a space. It takes the cameras' true poses from the
@@ -119,10 +122,10 @@ tests/onvifsim/onvifsim_lab.py run --world maryland --seconds 60
 ```
 
 Both pairs work on the same walking person, each from its own side. The hall master stands south
-of Room 101 on the line the person walks out by, with a lens narrow enough to hold the room and the
+of the hall on the line the person walks out by, with a lens narrow enough to hold the hall and the
 doorway 56 m away; the yard pair's slave hangs over that doorway and its master, on a pole between
 the doorway and the ring road, looks back along the line. Each pair is measured on the half of the
-route it works on: the bench cuts the walker's route to the room for the hall pair and to the
+route it works on: the bench cuts the walker's route to the hall for the hall pair and to the
 ground outside for the yard pair, and for either pair it also puts a person on one of its landmarks
 while it waits for the first boxes — the world's own walker is out of that pair's picture part of
 the time.

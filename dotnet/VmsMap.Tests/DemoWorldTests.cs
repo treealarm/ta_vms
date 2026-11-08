@@ -7,13 +7,14 @@ using Xunit;
 namespace VmsMap.Tests;
 
 // The shape of the installed world, checked without a database: the depth the demo promises —
-// map, building, room, rack, switch, port — and the things an administrator would look for.
+// map, building, the floor's diagram, rack, switch, port — and the things an administrator would
+// look for.
 public class DemoWorldTests
 {
   private readonly DemoWorld _world = DemoWorlds.UmdDataCenter();
 
   [Fact]
-  public void TheBuildingHoldsAPlanRoomAndADiagramRoom()
+  public void TheFloorIsTheRoomAndItsDiagramShowsTheRacks()
   {
     var map = Assert.Single(_world.Spaces, space => space.ParentKey is null);
     Assert.Equal("space/umd", map.Key);
@@ -26,72 +27,57 @@ public class DemoWorldTests
     Assert.Equal(19, building.Footprint?.Count);
     Assert.NotNull(building.Plan);
 
-    // Room 101 is a plan of its own: a space nested in the building.
-    var room = Assert.Single(_world.Spaces, space => space.ParentKey == building.Key);
-    Assert.Equal("space/room-101", room.Key);
-    Assert.NotNull(room.Footprint);
-    Assert.NotNull(room.Plan);
-
-    // Room 102 is a diagram standing on the floor plan: one more node between the building and
-    // its racks, with a schematic of its own and an icon where the floor shows it.
-    var roomDiagram = Assert.Single(_world.Nodes, node => node.Key == "object/room-102-layout");
-    Assert.Equal(building.Key, roomDiagram.ParentKey);
-    Assert.Equal("type/room-layout", roomDiagram.TypeKey);
-    Assert.NotNull(roomDiagram.At);
-    Assert.NotNull(roomDiagram.Canvas);
-    Assert.NotNull(roomDiagram.VisualKey);
+    // The floor is the room: no plan is nested in it, and the hall pair stands on the floor's own
+    // plan. What stands in the room is one diagram of the floor — its four racks are regions of it.
+    var diagram = Assert.Single(_world.Nodes, node => node.Key == "object/floor-layout");
+    Assert.Equal("First floor", diagram.Name);
+    Assert.Equal(building.Key, diagram.ParentKey);
+    Assert.Equal("type/floor-layout", diagram.TypeKey);
+    Assert.NotNull(diagram.At);
+    Assert.NotNull(diagram.Canvas);
+    Assert.NotNull(diagram.VisualKey);
+    Assert.DoesNotContain(_world.Spaces, space => space.ParentKey == building.Key);
   }
 
   [Fact]
-  public void RacksStandInThePlanAndInTheRoomDiagram()
+  public void EveryRackIsAFilledCabinetOfTheFloorsDiagram()
   {
     var racks = _world.Nodes.Where(node => node.TypeKey == "type/rack").ToList();
-    Assert.Equal(6, racks.Count);
+    Assert.Equal(DemoArt.RackCount, racks.Count);
 
-    // On the plan, top-down: each rack is a point in the room's own coordinates.
-    var onThePlan = racks.Where(rack => rack.ParentKey == "space/room-101").ToList();
-    Assert.Equal(4, onThePlan.Count);
-    Assert.All(onThePlan, rack =>
+    // All four stand in the floor's schematic, each in a region of its type: a rack has no point of
+    // its own on the plan.
+    Assert.All(racks, rack =>
     {
-      Assert.NotNull(rack.At);
-      Assert.Null(rack.RegionKey);
+      Assert.Equal("object/floor-layout", rack.ParentKey);
+      Assert.Null(rack.At);
+      Assert.Matches("^rack-[1-4]$", rack.RegionKey);
       Assert.Equal("Rack", rack.ZoomLevel);
       Assert.Equal(240, rack.Canvas?.Width);
       Assert.Equal(720, rack.Canvas?.Height);
     });
 
-    // In the room diagram, schematically: each rack takes a region of the layout's type and
-    // stands nowhere on a map of its own.
-    var inTheLayout = racks.Where(rack => rack.ParentKey == "object/room-102-layout").ToList();
-    Assert.Equal(2, inTheLayout.Count);
-    Assert.All(inTheLayout, rack =>
-    {
-      Assert.Null(rack.At);
-      Assert.Matches("^rack-[12]$", rack.RegionKey);
-      Assert.Equal(240, rack.Canvas?.Width);
-      Assert.Equal(720, rack.Canvas?.Height);
-    });
-
+    // Every slot of every rack holds a switch, and every switch its eight ports.
     var switches = _world.Nodes.Where(node => node.TypeKey == "type/switch").ToList();
-    Assert.Equal(racks.Count, switches.Count);
+    Assert.Equal(racks.Count * DemoArt.RackSlots, switches.Count);
     Assert.All(switches, computer =>
     {
       Assert.Contains(computer.ParentKey, racks.Select(rack => rack.Key));
-      Assert.Equal("slot-1", computer.RegionKey);
+      Assert.Matches("^slot-[1-6]$", computer.RegionKey);
     });
 
     var ports = _world.Nodes.Where(node => node.TypeKey == "type/port").ToList();
-    Assert.Equal(switches.Count * 8, ports.Count);
+    Assert.Equal(switches.Count * DemoArt.PortsPerSwitch, ports.Count);
     Assert.All(ports, port =>
     {
       Assert.Contains(port.ParentKey, switches.Select(computer => computer.Key));
       Assert.Matches("^port-[1-8]$", port.RegionKey);
     });
 
-    var thirdPortOfTheFirstSwitch = ports.Single(port => port.Key == "object/port-rack-a-01-03");
+    var thirdPortOfTheFirstSwitch = ports.Single(port => port.Key == "object/port-rack-a-01-1-03");
     Assert.Equal("Port 3", thirdPortOfTheFirstSwitch.Name);
     Assert.Equal("port-3", thirdPortOfTheFirstSwitch.RegionKey);
-    Assert.Equal("object/switch-rack-a-01", thirdPortOfTheFirstSwitch.ParentKey);
+    Assert.Equal("object/switch-rack-a-01-1", thirdPortOfTheFirstSwitch.ParentKey);
   }
 
   [Fact]
@@ -99,7 +85,7 @@ public class DemoWorldTests
   {
     var rackType = _world.Types.Single(type => type.Key == "type/rack");
     Assert.Equal("Rack 42U", rackType.Name);
-    Assert.Equal(6, rackType.Regions.Count);
+    Assert.Equal(DemoArt.RackSlots, rackType.Regions.Count);
     Assert.Contains(rackType.Regions, region => region.Key == "slot-1");
 
     // The camera's own readings, not the synthetic temperature and humidity the racks used to hold.
@@ -107,11 +93,11 @@ public class DemoWorldTests
     Assert.Equal(DemoTelemetry.Readings, telemetry.Regions.Select(region => region.Key));
 
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
-    Assert.Equal(8, switchType.Regions.Count);
+    Assert.Equal(DemoArt.PortsPerSwitch, switchType.Regions.Count);
     Assert.Contains(switchType.Regions, region => region.Key == "port-8");
 
-    var roomLayout = _world.Types.Single(type => type.Key == "type/room-layout");
-    Assert.Equal(["rack-1", "rack-2"], roomLayout.Regions.Select(region => region.Key));
+    var floorLayout = _world.Types.Single(type => type.Key == "type/floor-layout");
+    Assert.Equal(["rack-1", "rack-2", "rack-3", "rack-4"], floorLayout.Regions.Select(region => region.Key));
 
     // Every region lies on its picture: a child in a region outside it would be drawn in nothing.
     foreach (var region in _world.Types.SelectMany(type => type.Regions))
@@ -159,11 +145,11 @@ public class DemoWorldTests
   [Fact]
   public void TheSecondPairStandsInTheParkingLot_ItsSlaveBetweenTheDoorwayAndTheMaster()
   {
-    // The hall pair's master watches the line out of Room 101 to the doorway; the second pair works
+    // The hall pair's master watches the line out of the hall to the doorway; the second pair works
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(12, _world.Version);
+    Assert.Equal(13, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -174,7 +160,7 @@ public class DemoWorldTests
     Assert.Equal(45, hall.HfovDeg);
 
     var hallSlave = _world.Placements.Single(placement => placement.CameraId == "sim-ptz");
-    Assert.Equal("space/room-101", hallSlave.SpaceKey);
+    Assert.Equal("space/building", hallSlave.SpaceKey);
     Assert.Equal(38.9928722, hallSlave.Lat, 6);
     Assert.Equal(-76.9378196, hallSlave.Lon, 6);
     Assert.Equal(310, hallSlave.HeadingDeg);
@@ -197,17 +183,12 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheCameraOnTheVehicleShowsItsReadingsOnAReplica()
+  public void TheCameraOnTheCarKeepsNoReplica()
   {
-    var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-vehicle");
-
-    // A replica: its owner is the camera's canonical node, which the seeder resolves through
-    // device_node. It carries the readings' type and stands as a diagram, so it takes no placement.
-    Assert.Equal("sim-vehicle", node.OwnerCameraId);
-    Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
-    Assert.NotNull(node.Canvas);
-    Assert.NotNull(node.At);
-    Assert.Null(node.RegionKey);
+    // A diagram stands where it is put, and this camera drives the ring road: its place is the car
+    // on the map, which follows what the camera reports (geo_from_device). Nothing of the demo's
+    // tree copies it, and nothing indoors shows its readings.
+    Assert.DoesNotContain(_world.Nodes, node => node.OwnerCameraId == "sim-vehicle");
   }
 
   [Fact]
@@ -215,11 +196,11 @@ public class DemoWorldTests
   {
     // The demo owns no device, so it writes no alarm. The port's row is CONNECTED, which also
     // replaces the DISCONNECTED an earlier world left behind.
-    var port = Assert.Single(_world.States, state => state.NodeKey == "object/port-rack-a-01-03");
+    var port = Assert.Single(_world.States, state => state.NodeKey == "object/port-rack-a-01-1-03");
     Assert.Equal(["CONNECTED"], port.States);
 
     Assert.Equal(
-      ["Campus", "Building", "Room", "Rack"],
+      ["Campus", "Building", "Rack"],
       _world.Levels.Select(level => level.Name));
     Assert.All(_world.Levels, level => Assert.True(level.Min <= level.Max));
 
@@ -252,9 +233,12 @@ public class DemoWorldTests
       Assert.Equal(DemoArt.SwitchPort(port), switchType.Regions.Single(region => region.Key == $"port-{port}").Geometry);
     }
 
-    var roomType = _world.Types.Single(type => type.Key == "type/room-layout");
-    Assert.Equal(DemoArt.RoomRack(1), roomType.Regions.Single(region => region.Key == "rack-1").Geometry);
-    Assert.Equal(DemoArt.RoomRack(2), roomType.Regions.Single(region => region.Key == "rack-2").Geometry);
+    var floorType = _world.Types.Single(type => type.Key == "type/floor-layout");
+    for (var rack = 1; rack <= DemoArt.RackCount; rack += 1)
+    {
+      Assert.Equal(DemoArt.RackRegion(rack),
+        floorType.Regions.Single(region => region.Key == $"rack-{rack}").Geometry);
+    }
   }
 
   [Fact]
@@ -265,8 +249,8 @@ public class DemoWorldTests
     // drawn the same way — from the building's own constants — so they are vector too.
     foreach (var key in new[]
     {
-      "file/room-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
-      "file/device-telemetry-background", "file/floor-plan", "file/room-101-plan",
+      "file/floor-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
+      "file/device-telemetry-background", "file/floor-plan",
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);
@@ -279,22 +263,19 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheFloorPlanDrawsTheRoomAndAGapInTheWall()
+  public void TheFloorPlanIsTheSilhouetteWithTheDoorway()
   {
-    // The plan is the building's silhouette, not a picture of a room: the room lies in it at the
-    // world's own 14 × 10 m, and the doorway is the world's 1.8 m cut out of the north wall. A
-    // rectangle with a negative width is an SVG error and draws nothing at all, so a plan can look
-    // like a silhouette with a floating "101" and still pass a check that only reads its header.
+    // The plan is the building's silhouette, and the doorway is the world's 1.8 m cut out of the
+    // north wall. The floor is the room, so nothing is drawn inside it: a plan with no room in it is
+    // the honest picture of one room.
     var file = _world.Files.Single(candidate => candidate.Key == "file/floor-plan");
     var text = System.Text.Encoding.UTF8.GetString(file.Content);
 
     var building = _world.Spaces.Single(space => space.Key == "space/building");
-    var room = _world.Spaces.Single(space => space.Key == "space/room-101");
     var perPixelX = (building.East - building.West) / DemoArt.FloorPlanWidth;
     var perPixelY = (building.North - building.South) / DemoArt.FloorPlanHeight;
     const double EarthRadiusM = 6378137.0;
     var metresPerDegreeLon = EarthRadiusM * Math.Cos(building.South * Math.PI / 180) * Math.PI / 180;
-    var metresPerDegreeLat = EarthRadiusM * Math.PI / 180;
 
     // The outline is the whole picture: its own corners land on the canvas's.
     var polygon = System.Text.RegularExpressions.Regex.Match(text, "<polygon points=\"([^\"]+)\"");
@@ -308,17 +289,7 @@ public class DemoWorldTests
     Assert.InRange(corners.Min(corner => corner[1]), 0, 1);
     Assert.InRange(corners.Max(corner => corner[1]), DemoArt.FloorPlanHeight - 1, DemoArt.FloorPlanHeight);
 
-    // Room 101: the world's room, at the world's place in the floor.
-    var rect = System.Text.RegularExpressions.Regex.Match(text,
-      "<rect x=\"([-0-9.]+)\" y=\"([-0-9.]+)\" width=\"([-0-9.]+)\" height=\"([-0-9.]+)\"");
-    Assert.True(rect.Success, "the plan draws no room");
-    double Number(int group) => double.Parse(rect.Groups[group].Value, System.Globalization.CultureInfo.InvariantCulture);
-    Assert.InRange(Number(3) * perPixelX * metresPerDegreeLon, 13.9, 14.1);
-    Assert.InRange(Number(4) * perPixelY * metresPerDegreeLat, 9.9, 10.1);
-    var roomX = (room.West - building.West) / perPixelX;
-    var roomY = (building.North - room.North) / perPixelY;
-    Assert.InRange(Number(1), roomX - 1, roomX + 1);
-    Assert.InRange(Number(2), roomY - 1, roomY + 1);
+    Assert.DoesNotContain("<rect", text);
 
     // The doorway is a gap in the north wall, as wide as the world's door.
     var line = System.Text.RegularExpressions.Regex.Match(text, "<line x1=\"([-0-9.]+)\" y1=\"([-0-9.]+)\" x2=\"([-0-9.]+)\" y2=\"([-0-9.]+)\"");

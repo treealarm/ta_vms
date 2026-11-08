@@ -2,9 +2,9 @@
 """End-to-end check of the demo world through the gateway.
 
 The world is installed through the same API the administrator's button uses, then walked the way
-an operator walks it: map -> building -> room -> rack -> switch -> port, with the types and their
-regions, the camera placements, the video wall, the readings the cameras report about themselves
-(position, speed, relay, sensor) and the port that no longer alarms. It then proves what the registry
+an operator walks it: map -> building (the floor is the room) -> rack -> switch -> port, with the
+types and their regions, the camera placements, the video wall, the lamp the camera's relay lights
+and the port that no longer alarms. It then proves what the registry
 is for — a second install changes no id, the administrator's own node survives both an install and
 a removal, and a removal takes only the demo.
 
@@ -32,13 +32,12 @@ from vmsapi import Vms  # noqa: E402
 DEMO_KEY = "umd-datacenter"
 MAP_NAME = "UMD Data Center (demo)"
 BUILDING_NAME = "First floor"
-ROOM_PLAN_NAME = "Room 101"
-ROOM_DIAGRAM_NAME = "Room 102"
+# The diagram standing on that plan: the same room as a schematic, with the racks drawn in it.
+LAYOUT_NAME = "First floor"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
 DEMO_CAMERAS = ["sim-master", "sim-ptz", "sim-master2", "sim-ptz2", "sim-vehicle"]
-TELEMETRY_NAME = "Camera sim-vehicle"
 # The reaction the demo installs: a fixed id, so a reinstall updates the same rule and the script
 # can name it (DemoRouting.SubscriptionId).
 DEMO_SUBSCRIPTION = "053df083-59b0-56b3-a28c-c5701d1fc3cf"
@@ -111,25 +110,6 @@ def alarmed(vms):
 def states_of(vms, ids):
     rows = (vms.call("POST", "/api/map/states", ids) or {}).get("states") or []
     return {row.get("id"): row.get("states") or [] for row in rows}
-
-
-def values_of(vms, owner_id):
-    return (vms.call("POST", "/api/map/values/by-owners", [owner_id]) or {}).get("values") or []
-
-
-def value_text(value):
-    carried = value.get("value") or {}
-    if "stringValue" in carried:
-        return carried["stringValue"]
-    if "doubleValue" in carried:
-        return str(carried["doubleValue"])
-    if "intValue" in carried:
-        return str(carried["intValue"])
-    return ""
-
-
-def values_by_name(vms, owner_id):
-    return {value.get("name"): value_text(value) for value in values_of(vms, owner_id)}
 
 
 def set_relay(vms, camera_id, token, active):
@@ -377,43 +357,44 @@ def walk_the_world(vms):
                  f"the map holds '{BUILDING_NAME}' as a plan"):
         return None
 
-    rooms = children(vms, building["id"])
+    floor = children(vms, building["id"])
 
-    # A room is either a plan of its own or a diagram standing on the floor.
-    room = by_name(vms, rooms, ROOM_PLAN_NAME)
-    if not check(room is not None and room.get("nodeKind") == "space",
-                 f"the building holds {ROOM_PLAN_NAME} as a plan"):
+    # The floor is the room: no plan is nested in it, so the hall pair and the person's walk are on
+    # this one plan. What stands in the room is one diagram of the floor.
+    check(not any(node.get("nodeKind") == "space" for node in floor),
+          "the floor holds no plan of a room of its own")
+
+    layout = by_name(vms, floor, LAYOUT_NAME)
+    if not check(layout is not None and layout.get("nodeKind") == "diagram",
+                 f"the floor holds the '{LAYOUT_NAME}' diagram"):
         return None
 
-    room_diagram = by_name(vms, rooms, ROOM_DIAGRAM_NAME)
-    if not check(room_diagram is not None and room_diagram.get("nodeKind") == "diagram",
-                 f"the building holds {ROOM_DIAGRAM_NAME} as a room diagram"):
-        return None
+    # The four racks are regions of the floor's schematic, and every rack is filled with switches.
+    layout_racks = children(vms, layout["id"])
+    expected_racks = {f"Rack A-{index:02}" for index in range(1, 5)}
+    check({r.get("name") for r in layout_racks} == expected_racks,
+          f"the floor diagram shows Rack A-01 … A-04 (got {sorted(r.get('name') for r in layout_racks)})")
 
-    # The intermediate diagram: several racks on one schematic, each a canvas of its own.
-    layout_racks = children(vms, room_diagram["id"])
-    check(len(layout_racks) == 2 and {r.get("name") for r in layout_racks} == {"Rack B-01", "Rack B-02"},
-          f"{ROOM_DIAGRAM_NAME} shows Rack B-01 and Rack B-02 on one diagram")
-
-    racks = children(vms, room["id"])
-    rack = by_name(vms, racks, "Rack A-01")
+    rack = by_name(vms, layout_racks, "Rack A-01")
     if not check(rack is not None and rack.get("nodeKind") == "diagram",
-                 "Room 101 holds Rack A-01 as a mnemoscheme"):
+                 "the floor diagram holds Rack A-01 as a mnemoscheme"):
         return None
 
-    computers = children(vms, rack["id"])
-    computer = by_name(vms, computers, "Switch A-01")
+    switches = children(vms, rack["id"])
+    check(len(switches) == 6, f"Rack A-01 takes a switch in each of its six slots (got {len(switches)})")
+
+    computer = by_name(vms, switches, "Switch A-01 U1")
     if not check(computer is not None and computer.get("nodeKind") == "diagram",
-                 "Rack A-01 holds Switch A-01"):
+                 "Rack A-01 holds Switch A-01 U1"):
         return None
 
     ports = children(vms, computer["id"])
-    check(len(ports) == 8, f"Switch A-01 holds 8 ports (got {len(ports)})")
+    check(len(ports) == 8, f"Switch A-01 U1 holds 8 ports (got {len(ports)})")
     port = by_name(vms, ports, "Port 3")
     check(port is not None, "Port 3 is among them")
 
     return {
-        "map": demo_map, "building": building, "room": room, "room102": room_diagram,
+        "map": demo_map, "building": building, "layout": layout,
         "layout_racks": layout_racks, "rack": rack,
         "switch": computer, "port": port, "ports": ports,
     }
@@ -427,10 +408,12 @@ def check_plans(vms, world):
     A node listing carries neither a plan nor a footprint — those are the space's, from
     `api/spatial/spaces`, which the map itself is served by."""
     spaces_by_id = {space.get("id"): space for space in spaces(vms)}
-    for key, label in (("building", BUILDING_NAME), ("room", ROOM_PLAN_NAME)):
-        space = spaces_by_id.get(world[key].get("id")) or {}
-        mime = ((space.get("plan") or {}).get("mime") or "")
-        check(mime == "image/svg+xml", f"the plan of {label} is a drawing, not a picture ({mime or 'none'})")
+    space = spaces_by_id.get(world["building"].get("id")) or {}
+    mime = ((space.get("plan") or {}).get("mime") or "")
+    check(mime == "image/svg+xml",
+          f"the plan of {BUILDING_NAME} is a drawing, not a picture ({mime or 'none'})")
+    check(not any(child.get("parentId") == world["building"].get("id") for child in spaces(vms)),
+          "no plan of a room is nested in the floor")
 
     floor = spaces_by_id.get(world["building"].get("id")) or {}
     footprint = [(point.get("lat"), point.get("lon")) for point in floor.get("footprint") or []]
@@ -444,29 +427,24 @@ def check_plans(vms, world):
 
 def check_positions(vms, world):
     """Regions give the place; the geometry stays the diagram's own canvas (M2.2 step 1)."""
-    ids = [world[key]["id"] for key in ("rack", "switch", "port", "room102")]
+    ids = [world[key]["id"] for key in ("rack", "switch", "port", "layout")]
     ids += [rack["id"] for rack in world["layout_racks"]]
     diagrams = {d["id"]: d for d in diagrams_by_ids(vms, ids)}
 
-    room = diagrams.get(world["room102"]["id"], {})
-    check(room.get("geometry", {}).get("width") == 800 and room.get("geometry", {}).get("height") == 600,
-          "the room diagram opens on its own 800x600 canvas")
-    check(not room.get("regionId"), "the room diagram stands by its own rectangle on the floor")
+    layout = diagrams.get(world["layout"]["id"], {})
+    check(layout.get("geometry", {}).get("width") == 800 and layout.get("geometry", {}).get("height") == 600,
+          "the floor diagram opens on its own 800x600 canvas")
+    check(not layout.get("regionId"), "the floor diagram stands by its own rectangle on the floor")
 
-    # The children come back unordered; the rack's own name says which slot it fills.
-    slots = {"Rack B-01": "rack-1", "Rack B-02": "rack-2"}
+    # Every rack fills a region of the floor's schematic, and keeps a canvas of its own inside it.
+    # The children come back unordered; the rack's own name says which region it fills.
     for rack in world["layout_racks"]:
-        region = slots[rack["name"]]
+        index = int(rack["name"].rsplit("-", 1)[1])
         placed = diagrams.get(rack["id"], {})
-        check(placed.get("regionId") == region,
-              f"{rack['name']} fills the room diagram's {region} region")
+        check(placed.get("regionId") == f"rack-{index}",
+              f"{rack['name']} fills the floor diagram's rack-{index} region")
         check(placed.get("geometry", {}).get("width") == 240,
               f"{rack['name']} keeps its own 240-wide canvas beside the region")
-
-    rack = diagrams.get(world["rack"]["id"], {})
-    check(rack.get("geometry", {}).get("width") == 240 and rack.get("geometry", {}).get("height") == 720,
-          "the plan rack opens on its own 240x720 canvas")
-    check(not rack.get("regionId"), "the plan rack stands by its own rectangle in the room")
 
     computer = diagrams.get(world["switch"]["id"], {})
     check(computer.get("regionId") == "slot-1", "the switch sits in the rack's slot-1 region")
@@ -538,6 +516,11 @@ def check_types(vms):
     check({"lat", "lon", "speed", "relay", "sensor"} <= telemetry_regions,
           f"Device telemetry offers lat, lon, speed, relay and sensor (has {sorted(telemetry_regions)})")
 
+    layout = types.get("Floor layout", {})
+    layout_regions = {r.get("regionKey") for r in layout.get("regions") or []}
+    check(layout_regions == {"rack-1", "rack-2", "rack-3", "rack-4"},
+          f"Floor layout offers its four rack regions (has {sorted(layout_regions)})")
+
     computer = types.get("Cisco Catalyst 9300", {})
     computer_regions = {r.get("regionKey") for r in computer.get("regions") or []}
     check(len(computer_regions) == 8 and "port-8" in computer_regions,
@@ -569,12 +552,12 @@ def check_cameras(vms, world, allow_missing):
         return
 
     placed = {p.get("cameraId"): p for p in placements(vms)}
-    # Each pair works as one: the hall slave in Room 101 with its master on the floor plan, since
-    # that master looks along the line out of the room to the doorway; the yard pair out on the map
+    # Each pair works as one: the hall pair stands on the floor plan — the floor is the room, and
+    # the master looks along the line out of the hall to the doorway; the yard pair out on the map
     # beyond the building, and the camera on the car there too.
     expected = {
         camera_id("sim-master"): world["building"]["id"],
-        camera_id("sim-ptz"): world["room"]["id"],
+        camera_id("sim-ptz"): world["building"]["id"],
         camera_id("sim-master2"): world["map"]["id"],
         camera_id("sim-ptz2"): world["map"]["id"],
         # Only its starting point: the camera is flagged geo_from_device and follows its own ONVIF
@@ -684,8 +667,8 @@ def check_monitor(vms, allow_missing):
 
 def check_levels(vms):
     names = {level.get("zoomLevel") for level in levels(vms)}
-    check({"Campus", "Building", "Room", "Rack"} <= names,
-          "the Campus, Building, Room and Rack layers are in the dictionary")
+    check({"Campus", "Building", "Rack"} <= names,
+          "the Campus, Building and Rack layers are in the dictionary")
 
 
 def check_port_not_alarmed(vms, world):
@@ -704,68 +687,37 @@ def check_port_not_alarmed(vms, world):
     check(port_id not in alarmed_ids, "Port 3 is not among the alarmed nodes")
 
 
-def check_feeder(vms, world):
-    """The camera's own ONVIF readings, rewritten every five seconds into the replica's regions."""
-    # Its kind reads "camera", not "diagram": it is a replica, and the map answers a replica with
-    # the camera id of what it shows.
-    telemetry = by_name(vms, children(vms, world["building"]["id"]), TELEMETRY_NAME)
-    if not check(telemetry is not None,
-                 "the building shows the camera's Device telemetry diagram"):
-        return
+def check_no_camera_replica(vms):
+    """The demo no longer shows a camera's readings on a diagram.
 
-    print("  ..    waiting for the value feeder")
-    time.sleep(8)
-    values = values_by_name(vms, telemetry["id"])
-    check({"lat", "lon"} <= set(values),
-          f"the diagram shows the camera's position (has {sorted(values)})")
-    check("speed" in values,
-          f"the diagram shows a speed once two positions are known (has {sorted(values)})")
-    check(values.get("relay") in ("on", "off"),
-          f"the diagram shows the relay (has {values.get('relay')!r})")
-    check(values.get("sensor") in ("on", "off"),
-          f"the diagram shows the sensor (has {values.get('sensor')!r})")
-    return telemetry
-
-
-def check_wired_devices(vms, sim, world, telemetry):
-    """`sim-master`'s relays: one drives `sim-ptz`'s sensor, one lights the hall's lamp.
-
-    Switching them changes what the demo's diagram reads, and the simulator's own lamp — which is
-    not a device with a state, so its rule (any wired relay closed) is applied to its world.
+    A diagram stands where it is put, and `sim-vehicle` drives the ring road: its place is the car
+    on the map, which follows what the camera reports (geo_from_device). The telemetry *type* stays
+    in the demo's dictionary — an administrator can build such a diagram — but the world installs no
+    replica indoors, so the camera is one node and nothing copies it.
     """
-    initial = values_by_name(vms, telemetry["id"])
-    if not check(initial.get("relay") in ("on", "off") and initial.get("sensor") in ("on", "off"),
-                 f"the demo starts with a relay and a sensor reading (has {initial.get('relay')!r}/"
-                 f"{initial.get('sensor')!r})"):
+    found = map_search(vms, camera_id("sim-vehicle"))
+    if not found:
+        warn("the camera on the car has no node yet: its replica is not checked")
         return
+    check(len(found) == 1, f"nothing copies the camera on the car ({len(found)} nodes)")
 
-    def switch(active):
-        set_relay(vms, camera_id("sim-master"), "peer", active)
-        set_relay(vms, camera_id("sim-master"), "lamp", active)
-        # The camera's event (its pull point is polled), VmsOnvif's cache, then the feeder's next
-        # tick. Polling for the reading rather than sleeping a fixed time keeps a slower source
-        # from turning into a false failure.
-        want_relay = "on" if active else "off"
-        # The input's idle state is open, so the closed circuit the relay makes is its active state.
-        want_sensor = "on" if active else "off"
-        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("relay") == want_relay, 40)
-        wait_until(lambda: values_by_name(vms, telemetry["id"]).get("sensor") == want_sensor, 20)
 
-    switch(True)
-    values = values_by_name(vms, telemetry["id"])
-    check(values.get("relay") == "on",
-          f"the diagram reports the relay on (has {values.get('relay')!r})")
-    check(values.get("sensor") == "on",
-          f"the wired sensor reads 1 (active) while the relay is closed (has {values.get('sensor')!r})")
-    check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
+def check_wired_devices(vms, sim):
+    """`sim-master`'s lamp relay, end to end: ta_vms closes it over ONVIF, the simulator's wire
+    lights the hall's lamp, and the lamp goes dark again as the relay opens.
 
-    switch(False)
-    values = values_by_name(vms, telemetry["id"])
-    check(values.get("relay") == "off",
-          f"the diagram reports the relay off again (has {values.get('relay')!r})")
-    check(values.get("sensor") == "off",
-          f"the sensor returns to 0 (idle) (has {values.get('sensor')!r})")
-    check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
+    The relay and the sensor it drives are read back from their own nodes' events in the M2.4
+    scenario below; the demo no longer carries a diagram that shows them as readings.
+    """
+    set_relay(vms, camera_id("sim-master"), "lamp", False)
+    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is False, 20) is False,
+          "the lamp is dark with the relay open")
+    set_relay(vms, camera_id("sim-master"), "lamp", True)
+    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is True, 40) is True,
+          "the lamp in the simulator lights up when ta_vms closes the relay")
+    set_relay(vms, camera_id("sim-master"), "lamp", False)
+    check(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is False, 40) is False,
+          "the lamp goes dark again when the relay opens")
 
 
 def check_vehicle_picture(sim):
@@ -1049,8 +1001,8 @@ def check_camera_removal_cascade(vms, sensor):
 
 
 def ids_of(vms, world):
-    ids = {key: world[key]["id"] for key in ("map", "building", "room", "room102", "rack", "switch", "port")}
-    ids["layout"] = [rack["id"] for rack in world["layout_racks"]]
+    ids = {key: world[key]["id"] for key in ("map", "building", "layout", "rack", "switch", "port")}
+    ids["layout_racks"] = [rack["id"] for rack in world["layout_racks"]]
     return ids
 
 
@@ -1166,17 +1118,17 @@ def main():
     check_events(vms)
     check_marker_follows_the_camera(vms)
 
-    print("Layers, readings and the calm port")
+    print("Layers, the calm port and the camera that rides")
     check_levels(vms)
-    telemetry = check_feeder(vms, world)
+    check_no_camera_replica(vms)
     check_port_not_alarmed(vms, world)
 
     sim_up = sim.ready()
     if not sim_up:
         warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
-    if telemetry is not None and sim_up:
+    if sim_up:
         print("Wired relays and the lamp")
-        check_wired_devices(vms, sim, world, telemetry)
+        check_wired_devices(vms, sim)
         print("The moving camera")
         check_vehicle_picture(sim)
 

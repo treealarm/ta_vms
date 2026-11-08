@@ -557,11 +557,11 @@ def build_world(onvif_base_port, pairs=None, with_walker=True):
 # OpenStreetMap puts it. OnvifSim builds that world from the same constants and ships it as
 # data/worlds/maryland.json (World/MarylandWorld.cs); the bench loads that file rather than keeping a
 # second copy of the geometry, and checks the cameras and the building in it against the constants
-# below. Those mirror DemoWorlds.cs — the building's footprint, Room 101, the doorway and the four
-# camera poses — so keep the two in step. The demo has two pairs, both working on the same walking
-# person: the hall's master watches the line from its slave out to the doorway, and the yard pair
-# works the parking lot outside it. Every master detects the person; every slave reports its head in
-# the metadata track.
+# below. Those mirror DemoWorlds.cs — the building's footprint, the doorway and the four camera
+# poses — so keep the two in step. The demo has two pairs, both working on the same walking person:
+# the hall's master watches the line from its slave out to the doorway, and the yard pair works the
+# parking lot outside it. Every master detects the person; every slave reports its head in the
+# metadata track.
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -569,8 +569,9 @@ MARYLAND_LAT0 = 38.9923  # the demo world's anchor
 MARYLAND_LON0 = -76.9378
 MARYLAND_POSITION_TOLERANCE_M = 0.5
 MARYLAND_ANGLE_TOLERANCE_DEG = 0.5
-# Room 101 of the demo's first floor. The master and its PTZ slave work as one pair, so both stand in
-# this room, and the person they work on walks inside it (mirrors DemoWorlds.cs's Room101*).
+# The hall of the demo's first floor — Room 101 of the building, though the demo's map has no plan of
+# a room nested in the floor. The master and its PTZ slave work as one pair, so both stand in this
+# hall, and the person they work on walks inside it.
 ROOM101_SOUTH, ROOM101_WEST, ROOM101_NORTH, ROOM101_EAST = 38.9928704, -76.9379791, 38.9929603, -76.9378173
 # The building's footprint in world metres (X east, Z south), in the direction the simulator stores
 # it: Biomolecular Sciences as OpenStreetMap draws it, one corner per line. The demo's plan space must
@@ -623,10 +624,16 @@ MARK_BOX_HEIGHT = 1.5 * MIN_BOX_HEIGHT
 
 MARYLAND_HALL_PAIR = "hall"
 MARYLAND_ROAD_PAIR = "road"
+# How big the world marks a landmark: a block of the landmark's own colour, standing on its point.
+# MarylandWorld.LandmarkSize, and half a metre — the yard's own size — so a person walking over one
+# is still a person.
+MARYLAND_LANDMARK_SIZE = 0.5
 
 # The landmarks in the hall, in world metres (X east, Z south): in Room 101, around the square the
 # person walks, where the master at (-8, -57) and the slave at (-1.7, -63.7) both see them, and spread
 # across the master's picture so the ground fit is not extrapolated from one corner of it.
+# The world marks each of them (MarylandWorld.Landmarks, `lm-hall-L1` …) — a landmark on the map
+# and what a camera's picture shows are one point, which is what makes it findable while aiming.
 MARYLAND_HALL_LANDMARKS = (
     Landmark("L1", -10.6, -71.6, "#e53935", "red"),
     Landmark("L2", -6.4, -71.6, "#fdd835", "yellow"),
@@ -678,7 +685,7 @@ def demo_limits(world, camera_id):
 
 
 def demo_pairs(world):
-    """The demo's two pairs: the hall by Room 101 and the yard outside its doorway.
+    """The demo's two pairs: the hall pair indoors and the yard pair outside its doorway.
 
     Both masters drive their slave with boxes of the walking person — the hall's indoors, the
     yard's once they are out on the ground — which is why both follow the `person` kind."""
@@ -849,7 +856,7 @@ def check_maryland(world):
     # lens has to hold both the room and the doorway at the far end of the hall.
     ptz = next(placement for placement in DEMO_PLACEMENTS if placement.id == "ptz")
     assert ROOM101_SOUTH <= ptz.lat <= ROOM101_NORTH and ROOM101_WEST <= ptz.lon <= ROOM101_EAST, \
-        "ptz does not stand in Room 101 with the person it works on"
+        "ptz does not stand in the hall with the person it works on"
     # The person walks the hall and Room 101, where the hall pair sees them, and out of the doorway
     # in the north wall, where the yard pair takes over: both halves of the demo have someone to
     # follow. The doorway is the only way between them, so every crossing of the wall line has to
@@ -933,6 +940,27 @@ def check_maryland(world):
     for name in ("ptz", "ptz2"):
         assert not (cameras[name].get("metadata") or {}).get("analytics"), \
             f"{name} boxes for itself; its master's boxes are what aims it"
+
+    # The markers the world stands on the landmarks: one block per point, of the landmark's own
+    # colour, on the ground the calibration aims at. Without them a landmark on the demo's map has
+    # nothing to find in a camera's picture — the demo is a laboratory, and the operator aiming or
+    # calibrating a camera has to see what they are aiming at.
+    objects = {obj.get("id"): obj for obj in world.get("objects", [])}
+    for pair in demo_pairs(world):
+        for lm in pair.landmarks:
+            marker_id = f"lm-{pair.name}-{lm.name.lower()}"
+            marker = objects.get(marker_id)
+            assert marker is not None, f"the world has no '{marker_id}' marker for {lm.label}"
+            assert marker.get("type") == "box", f"{marker_id} is a '{marker.get('type')}', not a box"
+            position = marker.get("position") or {}
+            scale = marker.get("scale") or {}
+            assert math.hypot(position.get("x", 0) - lm.x, position.get("z", 0) - lm.z) <= 0.01, \
+                f"{marker_id} stands at ({position.get('x')}, {position.get('z')}), not at ({lm.x}, {lm.z})"
+            assert abs(position.get("y", 0)) <= 0.01, f"{marker_id} does not stand on the ground"
+            assert (marker.get("color") or "").lower() == lm.color.lower(), \
+                f"{marker_id} is {marker.get('color')}, not {lm.color}"
+            assert all(abs(scale.get(axis, 0) - MARYLAND_LANDMARK_SIZE) <= 0.01 for axis in "xyz"), \
+                f"{marker_id} is {scale}, not a {MARYLAND_LANDMARK_SIZE} m block"
 
     # The car still drives the ring road and still carries its own camera; it is ambience now, not
     # what either pair follows.
