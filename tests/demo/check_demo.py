@@ -321,7 +321,10 @@ def monitors(vms):
 
 
 def provision_cameras(vms, sim_host, server_id):
-    """The four OnvifSim cameras, added the way the bench's provision step adds them."""
+    """The five OnvifSim cameras, added the way the bench's provision step adds them.
+
+    The demo installs them itself now (VmsCfg, from DEMO_ONVIFSIM_HOST); this remains for a
+    deployment installed before that, and finds the cameras already there otherwise."""
     existing = {camera.get("cameraId") for camera in vms.cameras()}
     # `geo_from_device` only for the camera on the vehicle: its place on the map is the camera's
     # own ONVIF position, which the map follows. The others are placed by hand.
@@ -1252,7 +1255,6 @@ def main():
     if args.provision_cameras:
         print("Provisioning the demo cameras")
         provision_cameras(vms, args.sim_host, args.server_id)
-        subscribe_events(vms)
 
     # Installing is idempotent, so it is always called first: on a fresh database it writes the
     # world, on an older one it brings it to the current version.
@@ -1262,6 +1264,10 @@ def main():
           f"removed {report.get('removed')}, wall {report.get('monitorCameras')}")
     if report.get("skippedCameras"):
         print(f"  ..    cameras not provisioned yet: {report.get('skippedCameras')}")
+
+    # The demo installs the cameras and their calibration; the optional ONVIF event subscription
+    # is not its business, so turning it on stays a step of the check.
+    subscribe_events(vms)
 
     print("Walking the world")
     world = walk_the_world(vms)

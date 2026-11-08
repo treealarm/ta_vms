@@ -67,6 +67,8 @@ public class DemoInstallerTests
       plan.Select(camera => camera.Name));
     Assert.Equal([8101, 8102, 8103, 8104, 8105], plan.Select(camera => camera.OnvifPort));
     Assert.Equal([false, true, false, true, false], plan.Select(camera => camera.HasTelemetry));
+    // The car's camera takes its place from the device; the rest are bolted where the world puts them.
+    Assert.Equal([false, false, false, false, true], plan.Select(camera => camera.GeoFromDevice));
     Assert.Equal(DemoCameraIds.For("sim-master"), plan[0].CameraId);
   }
 
@@ -84,6 +86,7 @@ public class DemoInstallerTests
     Assert.Equal("admin", camera.Cred.User);
     Assert.Equal("admin", camera.Cred.Pass);
     Assert.True(camera.HasTelemetry);
+    Assert.False(camera.GeoFromDevice);
 
     var stream = Assert.Single(camera.Streams);
     Assert.Equal("main", stream.StreamName);

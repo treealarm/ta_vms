@@ -7,7 +7,8 @@ namespace VmsCfg.Demo;
 /// One of the demo world's cameras as OnvifSim publishes it: the world's name for it, the name the
 /// web shows, its ONVIF port and whether it has a PTZ head.
 /// </summary>
-public sealed record DemoCameraSetup(string Name, string Title, int OnvifPort, bool HasTelemetry)
+public sealed record DemoCameraSetup(
+  string Name, string Title, int OnvifPort, bool HasTelemetry, bool GeoFromDevice)
 {
   public string CameraId => DemoCameraIds.For(Name);
 
@@ -30,6 +31,9 @@ public sealed record DemoCameraSetup(string Name, string Title, int OnvifPort, b
       },
       Cred = new Credentials { User = "admin", Pass = "admin" },
       HasTelemetry = HasTelemetry,
+      // The one that rides the car: its place on the map is what it reports over ONVIF, not what
+      // an administrator placed. Everything else is bolted where the world puts it.
+      GeoFromDevice = GeoFromDevice,
     };
     camera.Streams.Add(new CameraStream
     {
@@ -66,21 +70,23 @@ public sealed class DemoCameras(CameraConfigService config, ILogger<DemoCameras>
   public const string ProfileToken = "Profile_2";
 
   // The world's cameras, in MarylandWorld's order — the ONVIF port is the base plus that index.
-  // The titles are the models' names, so the web shows what the simulator calls them.
-  private static readonly (string Name, string Title, bool Ptz)[] World =
+  // The titles are the models' names, so the web shows what the simulator calls them. The last
+  // column marks the camera on the car, which takes its place from the device.
+  private static readonly (string Name, string Title, bool Ptz, bool GeoFromDevice)[] World =
   [
-    ("sim-master", "Main room master", false),
-    ("sim-ptz", "Main room slave (PTZ)", true),
-    ("sim-master2", "Building master 2", false),
-    ("sim-ptz2", "Campus slave 2 (PTZ)", true),
-    ("sim-vehicle", "Vehicle camera", false),
+    ("sim-master", "Main room master", false, false),
+    ("sim-ptz", "Main room slave (PTZ)", true, false),
+    ("sim-master2", "Building master 2", false, false),
+    ("sim-ptz2", "Campus slave 2 (PTZ)", true, false),
+    ("sim-vehicle", "Vehicle camera", false, true),
   ];
 
   /// <summary>What an install writes, without touching the database.</summary>
   public static IReadOnlyList<DemoCameraSetup> Plan() =>
   [
     .. World.Select((camera, index) =>
-      new DemoCameraSetup(camera.Name, camera.Title, FirstOnvifPort + index, camera.Ptz)),
+      new DemoCameraSetup(camera.Name, camera.Title, FirstOnvifPort + index, camera.Ptz,
+        camera.GeoFromDevice)),
   ];
 
   /// <summary>The cameras written, and the ones left for the administrator.</summary>
