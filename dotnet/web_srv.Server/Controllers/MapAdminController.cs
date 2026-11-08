@@ -213,16 +213,19 @@ public class MapAdminController(
     return Ok(new { installed = status.Installed, version = status.Version, entities = status.Entities });
   }
 
-  /// The map world first, its wall second: the wall only knows about cameras, and a failure of
-  /// the world should not leave a wall behind pointing at absent racks.
+  /// VmsCfg first, the map world second: the world places the demo's cameras and calibrates them
+  /// against its landmarks, so they have to exist before it is written. VmsCfg failing does not
+  /// stop the world — it installs without placements and calibration and says so, exactly as it
+  /// does when the simulator is not there — so the order costs nothing when the two are apart.
   [HttpPost("demo/install")]
   public async Task<IActionResult> InstallDemo(CancellationToken ct)
   {
-    var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
-    var world = await map.InstallDemoAsync(request, DemoOptions(ct));
     var (wall, wallError) = await TryWall(
       async () => await cfg.InstallDemoAsync(
         new CfgProto.InstallDemoRequest { DemoKey = DemoKey }, WallOptions(ct)), ct);
+
+    var request = new MapProto.InstallDemoRequest { DemoKey = DemoKey };
+    var world = await map.InstallDemoAsync(request, DemoOptions(ct));
 
     var skippedCameras = new List<string>(world.SkippedCameras);
     var monitorCameras = new List<string>();
@@ -231,6 +234,8 @@ public class MapAdminController(
       skippedCameras.AddRange(wall.SkippedCameras);
       monitorCameras.AddRange(wall.PlacedCameras);
     }
+    // Both halves say the same names when the simulator is missing; the report names each once.
+    skippedCameras = [.. skippedCameras.Distinct(StringComparer.Ordinal)];
 
     return Ok(new DemoInstallResult(
       Installed: true,

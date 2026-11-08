@@ -31,8 +31,11 @@ namespace VmsMap.Demo
 
         // A placement is checked against VmsCfg, which starts beside this service and may not be
         // answering yet. The install rolls back on that failure, so awaiting it a few times is
-        // waiting for a neighbour, not retrying a half-written world.
-        for (var attempt = 1; ; attempt += 1)
+        // waiting for a neighbour, not retrying a half-written world. The same neighbour is what
+        // provisions the demo's cameras, so a world installed before they exist has no placements
+        // and no calibration: keep trying for a minute rather than leaving the demo half-built.
+        const int attempts = 12;
+        for (var attempt = 1; attempt <= attempts; attempt += 1)
         {
           try
           {
@@ -41,6 +44,17 @@ namespace VmsMap.Demo
             log.LogInformation(
               "Demo world '{Key}' installed: {Created} created, {Updated} updated, {Removed} removed",
               report.Key, report.Created, report.Updated, report.Removed);
+
+            if (report.SkippedCameras.Count > 0 && attempt < attempts
+                && !stoppingToken.IsCancellationRequested)
+            {
+              log.LogInformation(
+                "The demo world has no placement yet for {Count} camera(s): {Cameras}; waiting for " +
+                "VmsCfg to provision them",
+                report.SkippedCameras.Count, string.Join(", ", report.SkippedCameras));
+              await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+              continue;
+            }
 
             if (report.SkippedCameras.Count > 0)
             {
