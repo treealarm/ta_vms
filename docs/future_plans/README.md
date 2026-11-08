@@ -11,6 +11,7 @@ here is deleted or cut down to what is still left.
 |---|---|
 | [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` is polled from VmsFs outages; a transition event from video_srv and the producer's `recording_expected` are still open |
 | [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; демо — проверка этого; состояния и значения — данные владельцев |
+| [demo-install-deadlock.md](demo-install-deadlock.md) | The demo install can deadlock (PostgreSQL `40P01`) against device-event writes: one transaction over many map rows |
 | [dev-stack-port-collision.md](dev-stack-port-collision.md) | A fresh `dev-up` can collide with a sidecar left by an earlier run: only app ports are checked, and a failed start leaves its `daprd` behind |
 | [devices-and-nodes.md](devices-and-nodes.md) | Канонический узел устройства под сервером, эталон и вид — у реплики; части устройства; что показывать в списке Nodes |
 | [device-integrations.md](device-integrations.md) | Камера — единственный тип устройства; радар и другие типы должны интегрироваться «по аналогии», плагинный адаптер — после второго типа |
@@ -23,7 +24,6 @@ here is deleted or cut down to what is still left.
 | [ground-map-provider.md](ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна |
 | [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
 | [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the camera read behind a tile's device list, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
-| [onvif-pull-point-leak.md](onvif-pull-point-leak.md) | Pull points are extended by every `PullMessages`; disposal does not wait for the receive loop or unsubscribe, so a busy bench exhausts a camera's `MaxPullPoints` |
 | [person-as-object.md](person-as-object.md) | Человек и любое движущееся — как объект с треком: идентичность, история, поиск по времени и зоне (в Square были треки); сейчас на карте только проекция бокса |
 | [plan-or-diagram.md](plan-or-diagram.md) | План и диаграмма: настоящая ось — географическая рамка, а не тип сущности; свободные объекты на диаграммах, затем необязательная рамка |
 | [prism-holes.md](prism-holes.md) | Призма с внутренними кольцами: сейчас контур с двором отвергается, нужна поддержка отверстий |
