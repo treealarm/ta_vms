@@ -597,11 +597,19 @@ namespace VmsMap.Db
       // The observations on the landmark describe nothing once it is gone; in PostgreSQL the
       // foreign keys cascade, and they are removed here explicitly as well so that the same code
       // runs wherever the context points.
+      //
+      // Saved in three steps, in the order the foreign keys demand: EF does not model these
+      // relationships, so a single batch may delete the object before the landmark it cascades to,
+      // and then the landmark's own delete affects no row and throws a concurrency error.
       _db.PtzGeoObservations.RemoveRange(
         await _db.PtzGeoObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
       _db.GroundObservations.RemoveRange(
         await _db.GroundObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
+      await _db.SaveChangesAsync(ct);
+
       _db.Landmarks.Remove(row);
+      await _db.SaveChangesAsync(ct);
+
       _db.GeoObjects.RemoveRange(
         await _db.GeoObjects.Where(g => g.id == landmarkId).ToListAsync(ct));
       _db.Markers.RemoveRange(
