@@ -115,12 +115,21 @@ export default function DiagramElement({
             border: '1px dashed',
             borderColor: 'divider',
             display: 'flex',
+            flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
           }}
         >
           <Typography variant="caption" color="text.secondary" noWrap>{marker.name}</Typography>
+          {/* An element without a picture of its own — a region of a device's template holding one
+              of its parts — writes its state where the template left room for it, in the state's
+              colour, as the readings panel writes a value into its region. */}
+          {describesStates.length > 0 ? (
+            <Typography variant="caption" noWrap sx={{ color: style.color }}>
+              {describesStates.join(' · ')}
+            </Typography>
+          ) : null}
         </Box>
       )}
 
