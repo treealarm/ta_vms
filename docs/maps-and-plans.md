@@ -236,7 +236,7 @@ without a browser — right after an install.
 Maryland; the first floor of **Biomolecular Sciences** as a plan — named `First floor`, its footprint
 the building's own 19-corner outline, the one OnvifSim builds its prism from, with the doorway cut in
 its north wall. The floor is the room: no plan of a room is nested in it, and the hall pair stands on
-its plan directly. What stands in the room is one diagram, also named `First floor` — a schematic of
+its plan directly. What stands in the room is one diagram, `First floor Diagram` — a schematic of
 the floor with its four racks in regions of its type, each opening on its own canvas — four racks,
 every slot of every rack filled with a switch and every switch carrying its eight ports. The third
 port of the first switch of the first rack is `CONNECTED`: the demo writes no
