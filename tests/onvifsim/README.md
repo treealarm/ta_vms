@@ -107,17 +107,17 @@ half-metre block of the landmark's own colour (`lm-hall-l1` … `lm-road-l5`): a
 and what a camera's picture shows are one point, which is what an operator aims and calibrates by.
 `world.py --check-maryland` holds the blocks to the landmarks' places and colours.
 
-The demo world must be installed first (`tests/demo/check_demo.py --provision-cameras`): the bench
-adds no placements there and refuses to invent a space. It takes the cameras' true poses from the
-Maryland world file, marks the master's ground and the slave's landmark observations the same way
-as in the yard, and binds each slave to its master by `geo`:
+The demo world must be installed first (`tests/demo/check_demo.py`), and since M2.8 the install is
+enough: it writes the cameras, their placements, the ten landmarks and the calibration, and binds
+each slave to its master by `geo` — the world arrives ready to aim, without the bench. The bench is
+a check then: `provision` finds the cameras and landmarks already there, `calibrate` measures the
+live boxes and pan/tilt against the installed marks, and `bind` re-states what the world set. Run
+`calibrate`/`bind` only when something has parted ways with its calibration.
 
 ```
-tests/demo/check_demo.py --provision-cameras     # the demo world, its cameras and its placements
+tests/demo/check_demo.py                         # the demo world, its cameras, calibration and pairs
 tests/onvifsim/onvifsim_lab.py up --world maryland
 tests/onvifsim/onvifsim_lab.py provision --world maryland
-tests/onvifsim/onvifsim_lab.py calibrate --world maryland
-tests/onvifsim/onvifsim_lab.py bind --world maryland
 tests/onvifsim/onvifsim_lab.py aim-check --world maryland --seconds 30
 tests/onvifsim/onvifsim_lab.py run --world maryland --seconds 60
 ```
@@ -218,7 +218,8 @@ when the sim is shared.
   Its first run found that video_srv filed every slice of a picture as a frame of its own; the
   timing check, that it stamped a whole import late by up to a GOP.
 
-- **provision** adds the cameras with an ONVIF connection and the `Profile_2` token. The stream
+- **provision** checks the cameras the demo installed (an ONVIF connection and the `Profile_2`
+  token) and adds any the deployment lacks. The stream
   URI therefore comes from `GetStreamUri` through VmsOnvif. It creates the plan and uploads its
   picture the first time, or again with `--reset`. The step passes only when a person box from
   each master has come back through video_srv, VmsOnvif and the analytics service to

@@ -229,6 +229,10 @@ services:
       - .env
     environment:
       APP_ID: vmsptztrackingsingleton
+    # The demo's cameras are configured at host.docker.internal, where OnvifSim listens on the
+    # host; a service that drives or streams them has to resolve that name.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Exactly one instance: a camera must have exactly one control loop, or two of them send the
     # motor opposing commands. See CLAUDE.md.
     volumes: *data-volume
@@ -312,6 +316,10 @@ services:
     environment:
       POSTGRES_HOST: postgres
       APP_ID: vmscfg
+      # The node the demo's cameras are pinned to, and where a container reaches OnvifSim on the
+      # host: 127.0.0.1 in .env is the host-debugged value, and here it would name the container.
+      OWN_SERVER_ID: vms
+      DEMO_ONVIFSIM_HOST: host.docker.internal
     volumes: *data-volume
     # Waits for db-init to finish, not just for postgres to be up: without the database this
     # service now fails fast with a clear message instead of retrying, so starting it early
@@ -587,6 +595,8 @@ services:
       - .env
     environment:
       APP_ID: vms
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - vmscfg
       - vmsonvif

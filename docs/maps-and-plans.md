@@ -288,6 +288,16 @@ their reports. Both paths use the same seeder, so they are interchangeable; inst
 idempotent. The whole install is one transaction under `pg_advisory_xact_lock`, so two replicas
 starting with the flag cannot each write half a world.
 
+**The demo ships calibrated.** An install also writes what the bench used to prepare: the five
+OnvifSim cameras (VmsCfg, at `DEMO_ONVIFSIM_HOST`, pinned to `OWN_SERVER_ID`), the ten landmarks of
+the two pairs on the floor and on the map (VmsMap), each master's ground marks and each slave's PTZ
+observations — projected once from the simulator's own world and pinned with it — and the two
+`method = geo` bindings with their `person` policies (VmsCfg). Without `DEMO_ONVIFSIM_HOST` the
+cameras, and with them the calibration, are skipped and the report names them; the world itself
+still installs. The bench (`tests/onvifsim`) is therefore a check rather than a preparation:
+`provision`, `calibrate` and `bind` remain for a world of the bench's own, and `check_demo.py`
+compares what is installed with the world's projection.
+
 A diagram that stands on a plan is an ordinary point figure, not geometry of its own: in Admin →
 Maps, selecting it shows a draggable handle, and "+ diagram" in the node list places a new one at the
 centre of the current view. The floor's diagram is such a node; its icon on the floor is its

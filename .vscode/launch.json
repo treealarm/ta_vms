@@ -65,7 +65,9 @@
                 "MEDIA_SERVER_PAIRS": "vms:vmsfs:vmsonvif:vmslogger:roitrc,vms-2:vmsfs-2:vmsonvif-2:vmslogger-2",
                 "DAPR_STATE_STORE_NAME": "statestore",
                 "APP_ID": "vmscfg",
+                "OWN_SERVER_ID": "vms",
                 "DEMO_CONFIG": "",
+                "DEMO_ONVIFSIM_HOST": "127.0.0.1",
                 "VMS_LOG_PATH": "${workspaceFolder}/../logs"
             }
         },

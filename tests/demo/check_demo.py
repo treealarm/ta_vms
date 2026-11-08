@@ -612,6 +612,89 @@ def check_cameras(vms, world, allow_missing):
               f"{cam_id} stands in its space")
 
 
+def check_calibration(vms, world, allow_missing):
+    """The demo arrives calibrated: every landmark is the simulator's own block, and each camera's
+    marks are the projection of those blocks from its pose. The expected numbers are world.py's,
+    computed from the world and checked against it (``world.py --check-maryland``), so a drift here
+    means the map, the world and the pinned constants have parted ways."""
+    pairs = (
+        ("hall", W.MARYLAND_HALL_LANDMARKS, world["building"]["id"],
+         "sim-master", "sim-ptz", W.MARYLAND_HALL_GROUND, W.MARYLAND_HALL_PTZ, True),
+        ("road", W.MARYLAND_ROAD_LANDMARKS, world["map"]["id"],
+         "sim-master2", "sim-ptz2", W.MARYLAND_ROAD_GROUND, W.MARYLAND_ROAD_PTZ, False),
+    )
+    configured = {camera.get("cameraId") for camera in vms.cameras()}
+
+    for name, landmarks, space_id, master_name, slave_name, ground_pins, ptz_pins, with_zoom in pairs:
+        master, slave = camera_id(master_name), camera_id(slave_name)
+        if master not in configured or slave not in configured:
+            if allow_missing:
+                warn(f"the {name} pair is not configured: its calibration is not checked")
+            else:
+                check(False, f"the {name} pair is configured, so its calibration can be checked")
+            continue
+
+        placed = {landmark["name"].split()[0]: landmark
+                  for landmark in vms.landmarks(space_id) if landmark.get("name")}
+        for landmark in landmarks:
+            found = placed.get(landmark.name)
+            if not check(found is not None, f"the {name} space holds the {landmark.label} landmark"):
+                continue
+            lat, lon = W.to_wgs84(landmark.x, landmark.z, W.MARYLAND_LAT0, W.MARYLAND_LON0)
+            gap = W.ground_gap(found["lat"], found["lon"], lat, lon)
+            check(gap <= 0.5, f"{landmark.label} stands {gap:.2f} m from the world's block")
+            check(abs(found.get("heightM") or 0) <= 0.01, f"{landmark.label} stands on the ground")
+
+        short_name = {landmark["id"]: name.split()[0] for name, landmark in placed.items()}
+
+        ground = vms.get_ground_geo(master) or {}
+        marks = {short_name.get(mark.get("landmarkId")): mark
+                 for mark in ground.get("observations") or []}
+        check(len(marks) == len(landmarks),
+              f"{master_name} marks all {len(landmarks)} landmarks (has {len(marks)})")
+        check(ground.get("fitted") is True,
+              f"{master_name}'s ground fit is made ({ground.get('error')})")
+        for landmark in landmarks:
+            mark = marks.get(landmark.name)
+            if not check(mark is not None, f"{master_name} marks {landmark.label}"):
+                continue
+            ex, ey = ground_pins[landmark.name]
+            check(abs(mark["x"] - ex) <= 1e-3 and abs(mark["y"] - ey) <= 1e-3,
+                  f"{master_name}'s mark at {landmark.label} is "
+                  f"({mark['x']:.6f}, {mark['y']:.6f}); the world projects ({ex}, {ey})")
+
+        ptz = vms.get_ptz_geo(slave) or {}
+        observations = {short_name.get(row.get("landmarkId")): row
+                        for row in ptz.get("observations") or []}
+        check(len(observations) == len(landmarks),
+              f"{slave_name} observes all {len(landmarks)} landmarks (has {len(observations)})")
+        check(ptz.get("fitted") is True, f"{slave_name}'s PTZ fit is made ({ptz.get('error')})")
+        for landmark in landmarks:
+            row = observations.get(landmark.name)
+            if not check(row is not None, f"{slave_name} observes {landmark.label}"):
+                continue
+            ex, ey, *rest = ptz_pins[landmark.name]
+            check(abs(row["pan"] - ex) <= 1e-3 and abs(row["tilt"] - ey) <= 1e-3,
+                  f"{slave_name}'s observation of {landmark.label} is "
+                  f"({row['pan']:.6f}, {row['tilt']:.6f}); the world projects ({ex}, {ey})")
+            if with_zoom:
+                check(row.get("zoom") is not None and abs(row["zoom"] - rest[0]) <= 1e-3,
+                      f"{slave_name}'s zoom at {landmark.label} is the framing zoom ({rest[0]})")
+            else:
+                check(row.get("zoom") is None, f"{slave_name} keeps the wide lens")
+
+        binding = vms.get_binding(slave) or {}
+        check(binding.get("masterCameraId") == master,
+              f"{slave_name} is bound to {master_name} (got {binding.get('masterCameraId')})")
+        check(binding.get("method") == "geo", f"{slave_name} is aimed through the map")
+        check(not binding.get("unusable"), f"{slave_name}'s binding can aim ({binding.get('unusable')})")
+
+        policy = vms.call("GET", f"/api/ptz-tracking-policy/{slave}") or {}
+        check(policy.get("enabled") is True, f"{slave_name} follows its master")
+        check("person" in (policy.get("kinds") or []), f"{slave_name} follows people")
+        check("onvif" in (policy.get("sources") or []), f"{slave_name} follows the master's own boxes")
+
+
 def check_camera_poses(vms, allow_missing):
     """The four placed cameras stand exactly where the demo world puts them.
 
@@ -1200,6 +1283,9 @@ def main():
     check_cameras(vms, world, args.allow_missing_cameras)
     check_camera_poses(vms, args.allow_missing_cameras)
     check_monitor(vms, args.allow_missing_cameras)
+
+    print("Calibration and the master/slave pairs")
+    check_calibration(vms, world, args.allow_missing_cameras)
 
     print("ONVIF position, events and the marker")
     check_geo_flag(vms)
