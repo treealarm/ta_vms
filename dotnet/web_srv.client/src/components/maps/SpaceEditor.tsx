@@ -161,7 +161,20 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     figureAtPlacement(mapData.figures, p) ?? mapData.markers.find((m) => m.cameraId === p.cameraId)
   const referenceOf = (cameraId: string) => placements.find((p) => p.cameraId === cameraId && p.isReference)
   const spaceById = (id: string | undefined) => spaces.find((s) => s.id === id)
-  const selectedPlacement = selection?.kind === 'camera' ? placementHere(selection.id) : undefined
+  // The camera behind the selection: a picture clicked on the canvas names it, a row picked in the
+  // tree names its node. Only the node a placement draws is that placement — another picture of the
+  // same camera (its readings, say) is a node of its own and has no placement here.
+  const selectedCameraId = selection?.kind === 'camera'
+    ? selection.id
+    : selection?.kind === 'node'
+      ? (() => {
+          const cameraId = markersById[selection.id]?.cameraId
+          if (!cameraId) return undefined
+          const placement = placementHere(cameraId)
+          return placement && nodeForPlacement(placement)?.id === selection.id ? cameraId : undefined
+        })()
+      : undefined
+  const selectedPlacement = selectedCameraId ? placementHere(selectedCameraId) : undefined
   const selectedLandmark = selection?.kind === 'landmark' ? landmarks.find((m) => m.id === selection.id) : undefined
   const selectedNested = selection?.kind === 'footprint' ? nested.find((s) => s.id === selection.id) : undefined
   // The node the selection stands for, whichever panel shows it: the one to move and to put a
@@ -712,12 +725,19 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   placement={p}
                   label={camera?.name || p.cameraId}
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
-                  selected={selection?.kind === 'camera' && selection.id === p.cameraId}
+                  // A marker is the picture the placement draws: the one node, not every picture
+                  // of that camera.
+                  selected={selection?.kind === 'camera'
+                    ? selection.id === p.cameraId
+                    : nodeForPlacement(p)?.id === selectedNodeId}
                   editable={mode === 'select'}
                   interactive={!picking}
                   levels={levels}
                   zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
-                  onSelect={() => setSelection({ kind: 'camera', id: p.cameraId })}
+                  onSelect={() => {
+                    const node = nodeForPlacement(p)
+                    setSelection(node ? { kind: 'node', id: node.id } : { kind: 'camera', id: p.cameraId })
+                  }}
                   onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
                 />
               )

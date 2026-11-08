@@ -348,9 +348,8 @@ function NodesTree({ markers, space, onOpenSpace }: {
 }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const { selection, setSelection, openDiagram, select } = useEditorState()
+  const { selection, setSelection, openDiagram } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
-  const placements = useAppSelector((s) => s.spatial.placements)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -478,32 +477,16 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
                 event.dataTransfer.effectAllowed = 'copy'
               }}
-              selected={selection?.kind === 'camera'
-                ? !!marker.cameraId && selection.id === marker.cameraId
-                : selection?.kind === 'node' && selection.id === marker.id}
+              selected={selection?.kind === 'node' && selection.id === marker.id}
               onClick={() => {
                 // A space is a world of its own, not a shape on this canvas: open it.
                 if (marker.nodeKind === 'space') {
                   onOpenSpace(marker.id)
                   return
                 }
-
-                // The row of a camera and its circle on the canvas are one device: picking either
-                // shows the same — the camera — with the placement beside the device, and marks
-                // the marker where it stands.
-                if (marker.cameraId) {
-                  const placement = placements.find(
-                    (candidate) => candidate.cameraId === marker.cameraId && candidate.spaceId === space.id,
-                  ) ?? placements.find(
-                    (candidate) => candidate.cameraId === marker.cameraId && candidate.isReference,
-                  )
-                  if (placement) {
-                    openDiagram(null)
-                    select('camera', marker.cameraId, placement)
-                    return
-                  }
-                }
-
+                // The row is one node: of two pictures of one camera — the one the placement
+                // draws, and its readings — only the row picked is selected, and the canvas marks
+                // that one. What the camera is, the panel beside shows from the node itself.
                 setSelection({ kind: 'node', id: marker.id })
                 // A diagram is its own canvas: picking it opens it in place of the map.
                 openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
