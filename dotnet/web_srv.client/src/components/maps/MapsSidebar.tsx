@@ -7,7 +7,6 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
 import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../../api/apiFetch'
 import { enc } from '../../api/requestJson'
@@ -15,14 +14,13 @@ import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren } from '../../store/objectsSlice'
-import { createDiagramNode } from '../../store/mapEditsSlice'
+import { attachDeviceDiagram, createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
 import { treeRows } from '../../map/nodeTree'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
-import AttachDeviceDiagramDialog from '../diagrams/AttachDeviceDiagramDialog'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
 
@@ -355,8 +353,6 @@ function NodesTree({ markers, space, onOpenSpace }: {
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  // The device whose diagram the administrator is about to attach a template to.
-  const [attachDevice, setAttachDevice] = useState<MapMarker | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
@@ -412,10 +408,13 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * Opens the device diagram drawn under the camera. The diagram hangs off the camera's canonical
-   * node, not off this picture of it, so the lookup starts at the replica's owner when there is one.
+   * The device's diagram on this canvas: drawn if it is not there yet, opened if it is. A diagram
+   * is a map object of its own — placed beside the camera — so the lookup starts at the replica's
+   * owner, where the device's nodes hang, and a missing one is created here rather than reported.
    */
-  const openDeviceDiagram = async (marker: MapMarker) => {
+  const showDeviceDiagram = async (marker: MapMarker) => {
+    if (!space.id || !marker.cameraId) return
+
     const parentId = marker.ownerId ?? marker.id
     setBusy(true)
     setNotice(null)
@@ -424,11 +423,15 @@ function NodesTree({ markers, space, onOpenSpace }: {
         ? null
         : await dispatch(loadChildren({ parentId })).unwrap()
       const children = page?.children ?? childrenOf(known, childrenByParent, parentId)
-      const diagram = children.find((child) => child.nodeKind === 'diagram')
-      if (diagram) openDiagram(diagram.id)
-      else setNotice(t('diagramEditor.noDeviceDiagram'))
+      const existing = children.find((child) => child.nodeKind === 'diagram')
+
+      const diagram = existing
+        ?? await dispatch(attachDeviceDiagram({ cameraId: marker.cameraId, spaceId: space.id })).unwrap()
+
+      setSelection({ kind: 'node', id: diagram.id })
+      openDiagram(diagram.id)
     } catch {
-      // The store carries the message.
+      setNotice(t('diagramEditor.diagramNotCreated'))
     } finally {
       setBusy(false)
     }
@@ -512,32 +515,16 @@ function NodesTree({ markers, space, onOpenSpace }: {
                   diagram it already has. Both act on the device, so a picture of it offers them
                   too — the dialog names the device, not the picture. */}
               {marker.nodeKind === 'camera' && marker.cameraId ? (
-                <>
-                  <Tooltip title={t('diagramEditor.attachDeviceDiagram')}>
-                    <IconButton
-                      size="small"
-                      aria-label={t('diagramEditor.attachDeviceDiagram')}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        // The template draws the device; the owner's name says which one it is.
-                        const owner = marker.ownerId ? known[marker.ownerId] : undefined
-                        setAttachDevice(owner ? { ...marker, name: owner.name } : marker)
-                      }}
-                    >
-                      <DashboardCustomizeIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
-                    <IconButton
-                      size="small"
-                      aria-label={t('diagramEditor.openDeviceDiagram')}
-                      disabled={busy}
-                      onClick={(event) => { event.stopPropagation(); void openDeviceDiagram(marker) }}
-                    >
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </>
+                <Tooltip title={t('diagramEditor.deviceDiagram')}>
+                  <IconButton
+                    size="small"
+                    aria-label={t('diagramEditor.deviceDiagram')}
+                    disabled={busy}
+                    onClick={(event) => { event.stopPropagation(); void showDeviceDiagram(marker) }}
+                  >
+                    <DashboardCustomizeIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               ) : null}
             </ListItemButton>
           )
@@ -546,13 +533,6 @@ function NodesTree({ markers, space, onOpenSpace }: {
           <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>{t('maps.editor.noNodes')}</Typography>
         )}
       </List>
-      <AttachDeviceDiagramDialog
-        device={attachDevice}
-        onClose={() => setAttachDevice(null)}
-        onAttached={() => {
-          if (attachDevice) void dispatch(loadChildren({ parentId: attachDevice.id }))
-        }}
-      />
     </>
   )
 }

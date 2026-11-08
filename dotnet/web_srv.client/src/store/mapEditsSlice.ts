@@ -3,7 +3,7 @@ import { mapApi } from '../api/mapApi'
 import type {
   MapDiagramCoordinate, MapExtraProperty, MapFigure, MapObject, MapVisual,
 } from '../dto/mapDtos'
-import { canvasAdd, dropNodes, loadCanvas, loadNodes, loadObjProps } from './objectsSlice'
+import { canvasAdd, dropNodes, loadCanvas, loadChildren, loadNodes, loadObjProps } from './objectsSlice'
 
 export type MapEditsState = {
   busy: number
@@ -230,6 +230,28 @@ export const createDiagramNode = createAsyncThunk(
 
     await api.dispatch(loadNodes([id]))
     return { id, name }
+  },
+)
+
+/**
+ * Draws a device on a canvas: the map makes the diagram node beside the camera's placement, from
+ * the template the device's model names, and binds the device's configured parts to its regions.
+ * One diagram per device — asking again returns the one it already has.
+ */
+export const attachDeviceDiagram = createAsyncThunk(
+  'mapEdits/attachDeviceDiagram',
+  async ({ cameraId, spaceId }: { cameraId: string; spaceId: string }, api) => {
+    const marker = await mapApi.attachDeviceDiagram({
+      sourceKind: 'camera',
+      sourceId: cameraId,
+      spaceId,
+    })
+
+    // The new node is a child of the canvas and a figure on it: both reads are out of date.
+    await api.dispatch(loadChildren({ parentId: spaceId }))
+    await api.dispatch(loadCanvas(spaceId))
+    if (marker.id) await api.dispatch(loadNodes([marker.id]))
+    return marker
   },
 )
 

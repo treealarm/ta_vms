@@ -19,17 +19,25 @@ export function ownRect(diagram: MapDiagram | undefined): Rect {
   }
 }
 
+/** A plain sheet for a diagram whose picture has nothing to measure — an empty one. */
+const FALLBACK_PAPER: Rect = { left: 0, top: 0, width: 800, height: 600, rotation: 0 }
+
 /**
  * A diagram's own canvas: always its geometry, never where it stands in its parent — a diagram
- * packed into a region of a rack still opens on the paper it was drawn on. Rows written before
- * the two meanings were separated may carry no geometry at all, and they get a plain sheet
- * rather than a zero-sized one they could never be opened on.
+ * packed into a region of a rack still opens on the paper it was drawn on. A diagram placed on a
+ * map is not sized by the map: it takes the size of its type's picture, measured in the browser —
+ * the size the template was drawn on — so regions, stored in shares, land where the picture draws
+ * them. With no picture at all a plain sheet, rather than a zero-sized one it could never open on.
  */
-export const FALLBACK_PAPER: Rect = { left: 0, top: 0, width: 800, height: 600, rotation: 0 }
-
-export function diagramPaper(diagram: MapDiagram | undefined): Rect {
+export function diagramPaper(
+  diagram: MapDiagram | undefined,
+  picture?: { width: number; height: number } | null,
+): Rect {
   const rect = ownRect(diagram)
   if (rect.width > 0 && rect.height > 0) return { ...rect, left: 0, top: 0 }
+  if (picture && picture.width > 0 && picture.height > 0) {
+    return { left: 0, top: 0, width: picture.width, height: picture.height, rotation: 0 }
+  }
   return { ...FALLBACK_PAPER }
 }
 

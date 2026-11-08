@@ -1194,12 +1194,10 @@
     "problemBindingNoValue": "The region \"{{key}}\" of \"{{name}}\" stands for a part but says nothing to find it by.",
     "problemBindingIndex": "The region \"{{key}}\" of \"{{name}}\" finds its part by position, which counts from 1.",
     "problemBindingDuplicate": "Two regions of \"{{name}}\" claim the same part.",
-    "attachDeviceDiagram": "Add device diagram",
-    "attachDeviceDiagramHint": "Draw {{name}} from a template for its model. Only parts configured for the device get a replica.",
-    "noTemplates": "No device templates yet: make a type a template in Types.",
-    "attach": "Attach",
     "openDeviceDiagram": "Open device diagram",
-    "noDeviceDiagram": "This device has no diagram yet. Add one from a template, or open it from Admin → Maps."
+    "noDeviceDiagram": "This device has no diagram yet. Draw one from the camera's row under Admin → Maps.",
+    "deviceDiagram": "Device diagram",
+    "diagramNotCreated": "The diagram could not be drawn"
   },
   "rights": {
     "tab": "Rights",
