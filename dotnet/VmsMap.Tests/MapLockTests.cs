@@ -53,4 +53,33 @@ public class MapLockTests
 
     Assert.Empty(offenders);
   }
+
+  [Fact]
+  public void TheDemoSeederTakesTheMapLocksBeforeItWrites()
+  {
+    // The install writes the same object, state and alarm rows as the device path, and that path
+    // takes both locks before its own writes. The seeder used to take them only when it reached
+    // DeviceDiagramService.AttachAsync, by which time its transaction already held rows — the
+    // reverse order, which deadlocked a bench install against the connectivity poller.
+    var file = Sources().Single(f => Path.GetFileName(f) == "DemoSeeder.cs");
+    var text = File.ReadAllText(file);
+
+    // The helper itself must take the map's locks, not only the demo one: the install writes
+    // object rows, so a demo lock alone leaves the reverse order in place.
+    var helper = text.IndexOf("private async Task LockAsync", StringComparison.Ordinal);
+    Assert.True(helper >= 0, "DemoSeeder.LockAsync not found");
+    Assert.Contains("AcquireAllAsync", text[helper..], StringComparison.Ordinal);
+
+    // And within the install, the call must come before the first map row is written.
+    var start = text.IndexOf("public async Task<DemoReport> InstallAsync", StringComparison.Ordinal);
+    var end = text.IndexOf("public async Task<DemoReport> RemoveAsync", StringComparison.Ordinal);
+    Assert.True(start >= 0 && end > start, "DemoSeeder.InstallAsync not found");
+
+    var install = text[start..end];
+    var locks = install.IndexOf("LockAsync", StringComparison.Ordinal);
+    var firstWrite = install.IndexOf("UpsertSpaceAsync", StringComparison.Ordinal);
+    Assert.True(firstWrite >= 0, "DemoSeeder no longer writes spaces; update this test");
+    Assert.True(locks >= 0 && locks < firstWrite,
+      "DemoSeeder must take the map's locks before writing map rows");
+  }
 }
