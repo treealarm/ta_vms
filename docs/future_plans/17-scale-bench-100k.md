@@ -33,7 +33,7 @@
 - Поток детекций аналитики на сотнях камер одновременно: сообщения `analytics-event` в брокере,
   запись журнала при включённой подписке, backpressure публикатора (`map_event_at`).
 - Рост `ta_map.events` и `map_outbox` за сутки: политика хранения/партиционирования
-  (см. [event-routing-followups.md](event-routing-followups.md)).
+  (см. [12-event-routing-followups.md](12-event-routing-followups.md)).
 - Startup resync и восстановление после рестарта VmsMap при полном дереве.
 - Распределённый сценарий: камеры на нескольких узлах, VmsCfg на core, `retain_recording` через
   node-local VmsFs — задержки между машинами и таймауты Dapr.

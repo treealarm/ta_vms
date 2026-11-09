@@ -4,7 +4,7 @@
 [`docs/plans/square-merge/m2.4-devices-alarms-automation.md`](../plans/square-merge/m2.4-devices-alarms-automation.md).
 
 Отдельно — дефект, из-за которого правка подписки иногда не доходит до роутера:
-[event-subscription-signal.md](event-subscription-signal.md).
+[01-event-subscription-signal.md](01-event-subscription-signal.md).
 
 ## Панельная логика охраны (SIA CP-01)
 

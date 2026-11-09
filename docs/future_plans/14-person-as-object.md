@@ -12,7 +12,7 @@
   объект: ни идентичности, ни истории, ни запроса. Пропал бокс — пропала точка; камеры не видят —
   нет точки вовсе. Слой включается галочкой «Detections» в операторской карте.
 - Аналитика (`video_a`) выдаёт детекции по кадру: класс, бокс, уверенность. Сквозной идентичности
-  между кадрами и камерами нет (re-id — в [distributed-analytics.md](distributed-analytics.md), но
+  между кадрами и камерами нет (re-id — в [15-distributed-analytics.md](15-distributed-analytics.md), но
   это про архивный поиск, а не про живой трек).
 - **Хранилище треков уже перенесено из Square и работает.** `ta_map.track_points`
   (`object_id`, `timestamp`, `figure geometry(4326)`, `radius`, `zoom_level`, `extra_props`), запись
@@ -39,7 +39,7 @@
 - **Производитель треков**: тот, кто превращает детекции в точки `track_points` — в
   `VmsAnalyticsSingleton` (где уже есть потоки детекций и дебаунс) или в `video_a`. Нужен отбор
   (только отслеживаемые классы/зоны) и партиционирование по времени: 100 000 камер — писать треки
-  всех детекций несоразмерно ([scale-bench-100k.md](scale-bench-100k.md)).
+  всех детекций несоразмерно ([17-scale-bench-100k.md](17-scale-bench-100k.md)).
 - **Идентичность**: `object_id` точки должен указывать на узел трека; для этого нужен вид владельца
   (узел трека) и правило его создания/закрытия.
 - **Права**: трек виден там, где виден узел, на котором он нарисован (пространство), — как камеры;
@@ -57,6 +57,6 @@
 - Где сшивать: в аналитике (video_a) или в ta_vms (`VmsAnalyticsSingleton`)? Сшивка — про кадры,
   а `VmsAnalyticsSingleton` уже держит потоки детекций и дебаунс.
 
-Связано: [distributed-analytics.md](distributed-analytics.md) (re-id и архивный поиск),
-[scale-bench-100k.md](scale-bench-100k.md) (объём), [`docs/maps-and-plans.md`](../maps-and-plans.md)
+Связано: [15-distributed-analytics.md](15-distributed-analytics.md) (re-id и архивный поиск),
+[17-scale-bench-100k.md](17-scale-bench-100k.md) (объём), [`docs/maps-and-plans.md`](../maps-and-plans.md)
 (дерево, состояния, права).

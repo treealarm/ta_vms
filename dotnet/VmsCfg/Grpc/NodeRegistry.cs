@@ -258,7 +258,7 @@ public sealed class NodeRegistry(
   /// <summary>
   /// Takes a node out of the deployment, with its MediaMTX. Refused while cameras are on it: they
   /// would be left recording nowhere. Its credentials stay valid; revoking them needs a signing key
-  /// per node (docs/future_plans/distributed-hardening.md).
+  /// per node (docs/future_plans/16-distributed-hardening.md).
   /// </summary>
   public async Task RemoveAsync(string serverId, CancellationToken ct)
   {

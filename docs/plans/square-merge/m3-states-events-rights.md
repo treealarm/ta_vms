@@ -276,7 +276,7 @@ M3 закрывает эту дыру:
     «Maps & plans» — `GetEffectiveRights`, `rights-version`, адаптер и `Watch`; «Debug
     entity state» не трогаем. `docs/maps-and-plans.md` — владелец прав и поток тревог.
     `docs/future_plans/` — событие «поток пропал/появился» от `video_srv` вместо опроса
-    VmsUtils (файл `camera-connection-state.md` уже заведён в README §7 — проверить и обновить).
+    VmsUtils (файл `07-camera-connection-state.md` уже заведён в README §7 — проверить и обновить).
     В этом файле — «Ход работы» после исполнения.
     Проверка: `grep -rn cam-perm-version` — только история планов; `grep -rn
     BumpCameraPermissionsVersion` пусто; `grep -rn "Vms\.Cfg\..*Permission"` пусто.
@@ -343,7 +343,7 @@ SSE работают; существующие проверки web_srv не и�
 | `9470bde` | `retention-event-created` в snake_case (иначе VmsMap молча дропал) |
 | `b25cae1` | `Watch`, связь из открытых аварий VmsFs |
 | `7dd721d` | `api/map/*`, SSE, `Rights*`, совместимость `api/permissions`, демонтаж прав VmsCfg |
-| текущий | `CLAUDE.md`, `docs/maps-and-plans.md`, `camera-connection-state.md`, план |
+| текущий | `CLAUDE.md`, `docs/maps-and-plans.md`, `07-camera-connection-state.md`, план |
 
 **Решения по ходу, которых не было в плане:**
 - `camera_node` — миграция `0004_camera_nodes.sql`: id узла камеры не разворачивается обратно,
@@ -380,7 +380,7 @@ SSE работают; существующие проверки web_srv не и�
 - Связь: открытая строка `source_outages` для `sim-master` → `DISCONNECTED`, закрытие →
   `CONNECTED`, `NORM` сохраняется. Настоящий обрыв сети OnvifSim открытой аварии не создал —
   `SourceLivenessTracker` требует `recording_expected`, это вынесено в
-  `docs/future_plans/camera-connection-state.md`.
+  `docs/future_plans/07-camera-connection-state.md`.
 - Стенд `tests/onvifsim`: `up`/`provision`/`calibrate`/`aim-check`/`bind`/`run` проходят;
   `run` — сессия `active`, человек в кадре 111/111, arrival p95 0.458°, tracking p95 2.43°.
 - Dev-Keycloak: `default-roles-myrealm` включает `admin` и `power_user`, поэтому любой новый
