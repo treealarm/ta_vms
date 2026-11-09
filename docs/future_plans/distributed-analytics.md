@@ -1,77 +1,81 @@
-# Analytics in a deployment over several machines
+# Аналитика в развёртывании на нескольких машинах
 
-Raised 2026-10-23, while building the core/node split (CLAUDE.md, "Distributed layout").
+Поставлено 2026-10-23 при постройке разделения core/node (CLAUDE.md, «Distributed layout»).
 
-**Direction (user, 2026-10-23):** cameras of different nodes do see the same people minutes apart,
-and recognising them across cameras — where the function is switched on — must rest on the
-database, not on a process's memory. Searching the archive for a person or an object matters even
-more. With identity in the database, nothing is left that needs `VmsAnalyticsSingleton` to be one
-for the whole system, so analytics can follow the nodes. Not decided yet: the order of the work
-and whether the per-node split happens at all before the database part (below).
+**Направление (пользователь, 2026-10-23):** камеры разных узлов действительно видят одних и тех же
+людей с разницей в минуты, и распознавание между камерами — там, где функция включена, — должно
+опираться на базу данных, а не на память процесса. Поиск по архиву человека или объекта важен ещё
+больше. С идентичностью в базе `VmsAnalyticsSingleton` незачем быть одним на всю систему, и
+аналитика может следовать за узлами. Не решено: порядок работ и нужен ли переход на экземпляр на
+узел до появления части с базой (ниже).
 
-## What there is
+## Что есть
 
-- **`analytics-worker`** (video_a): decoding and OpenVINO inference. Several may run, listed in
-  `DAPR_ANALYTICS_WORKER_APP_IDS`.
-- **`VmsAnalyticsSingleton`**, one per deployment:
-  - assigns cameras to workers (rendezvous hash over every worker, the camera's node playing no
-    part) and holds a `StreamDetections` per worker;
-  - debounces, persists detections and their crops (on the camera's storage, i.e. the node's disk)
-    and the archive geometry;
-  - takes ONVIF detections and events from VmsOnvif; streams live boxes and events to web_srv and
-    to VmsPtzTrackingSingleton;
-  - **live re-identification in memory** (`EphemeralReidGallery`, a time window, empty after a
-    restart) and the event grouping that follows from it (`ObjectSessionService`);
-  - **archive search** (`SearchSimilarDetections`) over the `detection_embeddings` table — by
-    loading every vector of the requested period and computing cosines in C#.
+- **`analytics-worker`** (video_a): декодирование и инференс OpenVINO. Их может быть несколько,
+  они перечислены в `DAPR_ANALYTICS_WORKER_APP_IDS`.
+- **`VmsAnalyticsSingleton`**, один на развёртывание:
+  - назначает камеры воркерам (rendezvous hash по всем воркерам, узел камеры не учитывается) и
+    держит `StreamDetections` на каждого воркера;
+  - дебаунсит, сохраняет детекции и их кропы (на хранилище камеры, то есть на диске узла) и
+    геометрию архива;
+  - принимает ONVIF-детекции и события из VmsOnvif; отдаёт живые боксы и события в web_srv и
+    `VmsPtzTrackingSingleton`;
+  - **живое re-id в памяти** (`EphemeralReidGallery`, временнóе окно, пусто после рестарта) и
+    следующая из него группировка событий (`ObjectSessionService`);
+  - **поиск по архиву** (`SearchSimilarDetections`) по таблице `detection_embeddings` — грузит
+    все векторы запрошенного периода и считает косинусы в C#.
 
-Problems:
-1. A camera on node B can be watched by a worker on node A, and its video then crosses the network.
-2. Every detection of every node goes through one process.
-3. Archive search is a full scan in the service's memory: it does not scale with months of archive
-   from many cameras, distributed or not.
-4. Identity across cameras lives in one process's memory and is lost on restart.
+Проблемы:
 
-## The direction
+1. Камеру на узле B может смотреть воркер на узле A, и её видео тогда идёт по сети.
+2. Каждая детекция каждого узла проходит через один процесс.
+3. Поиск по архиву — полный скан в памяти сервиса: он не масштабируется на месяцы архива со
+   многих камер, распределённый или нет.
+4. Идентичность между камерами живёт в памяти одного процесса и теряется при рестарте.
 
-**Identity and search in PostgreSQL, with pgvector.** One store of embeddings (the existing
-`detection_embeddings`, as a `vector` column with an HNSW index) answers both questions with the
-same nearest-neighbour query and a different time window:
-- live: is this the object seen on any camera in the last minutes (then reuse its `object_id`)?
-- archive: where else was this object over the period the operator asks for?
+## Направление
 
-Only fresh embeddings query (track start and every `ANALYTICS_REID_EMBED_INTERVAL_SEC`), not every
-frame. Re-identification stays a function to switch on, per camera or per deployment.
+**Идентичность и поиск в PostgreSQL, с pgvector.** Одно хранилище векторов (существующая
+`detection_embeddings` как колонка `vector` с HNSW-индексом) отвечает на оба вопроса одним
+запросом ближайших соседей с разным временны́м окном:
 
-**Then analytics per node**, sharded like VmsOnvif: `VmsAnalytics` with `OWN_SERVER_ID`, app id
-`vmsanalytics-<node>`, next to the node's workers.
-- A camera goes only to the workers of its own node; its video never leaves the node.
-- Crops and archive geometry are written to the node's own disk, by a process on that node.
-- Load splits by node; there is no single process every detection passes through.
-- All of them share the database on the core, so identity and search stay deployment-wide.
+- живое: видел ли этот объект кто-нибудь на любой камере за последние минуты (тогда переиспользовать
+  его `object_id`);
+- архив: где ещё был этот объект за период, который спросил оператор.
 
-## Costs and open questions
+Только свежие векторы идут в запрос (начало трека и каждые `ANALYTICS_REID_EMBED_INTERVAL_SEC`),
+не каждый кадр. Re-id остаётся функцией, которую включают — на камеру или на развёртывание.
 
-- **pgvector in every PostgreSQL**: the Docker images move to one with the extension
-  (`pgvector/pgvector`), and the Windows installer has to ship the extension for its pinned
+**Затем аналитика на узел**, шардированная как VmsOnvif: `VmsAnalytics` с `OWN_SERVER_ID`, app id
+`vmsanalytics-<node>`, рядом с воркерами узла.
+
+- Камера идёт только воркерам своего узла; её видео не покидает узел.
+- Кропы и геометрия архива пишутся на диск узла процессом на этом узле.
+- Нагрузка делится по узлам; нет одного процесса, через который проходит каждая детекция.
+- Все они делят базу на core, поэтому идентичность и поиск остаются общими на развёртывание.
+
+## Цена и открытые вопросы
+
+- **pgvector в каждом PostgreSQL**: docker-образы переходят на образ с расширением
+  (`pgvector/pgvector`), а установщику Windows нужно поставлять расширение для закреплённого
   PostgreSQL (`../ta_install/windows/versions.json`).
-- **The rename**: no longer a singleton, so `VmsAnalyticsSingleton` becomes `VmsAnalytics` and its
-  app id changes — a migration for every installation (CLAUDE.md, "Source names and runtime names
-  differ on purpose"): env, compose, `services.json`, and the old app id's RabbitMQ queues to
-  delete. The database `ta_analytics` stays.
-- **Callers route by the camera's node**: web_srv (live boxes and events, search),
-  VmsPtzTrackingSingleton (live detections), VmsOnvif (pushes to its own node's instance).
-- **Two nodes seeing one person at the same moment** may each mint an `object_id`; a rule to merge
-  them later is needed.
-- **Event grouping** (`ObjectSessionService`) is keyed by `object_id`; with identity in the
-  database it can be decided per node, by whichever instance sees the object.
-- `docker-compose.distributed.yml` (ta_install) runs no analytics yet; the node profile gets a
-  worker and its `VmsAnalytics` once this is in place.
+- **Переименование**: сервис больше не singleton, поэтому `VmsAnalyticsSingleton` становится
+  `VmsAnalytics` и его app id меняется — миграция для каждой установки (CLAUDE.md, «Source names
+  and runtime names differ on purpose»): env, compose, `services.json`, плюс удалить очереди
+  RabbitMQ старого app id. База `ta_analytics` остаётся.
+- **Вызывающие маршрутизируют по узлу камеры**: web_srv (живые боксы и события, поиск),
+  `VmsPtzTrackingSingleton` (живые детекции), VmsOnvif (пуши в экземпляр своего узла).
+- **Два узла, видящие одного человека одновременно**, могут завести каждый свой `object_id`;
+  нужно правило слияния постфактум.
+- **Группировка событий** (`ObjectSessionService`) ключуется по `object_id`; с идентичностью в
+  базе её может решать любой экземпляр, который видит объект.
+- `docker-compose.distributed.yml` (ta_install) пока не запускает аналитику; в node-профиль
+  воркер и его `VmsAnalytics` попадут, когда это появится.
 
-## Message size, for when it is measured
+## Размер сообщений, когда до него дойдёт
 
-Each `DetectionEvent` (video_a `analytics.proto`) carries the embedding (256 floats, about 1 KB)
-on every frame of a live track, although it changes only when `embedding_is_fresh`, and a crop JPEG
-on every frame for faces and licence plates. Sending the embedding only when fresh and crops only
-for frames that can become events would cut the stream from worker to analytics several times over,
-whichever machine analytics runs on.
+Каждый `DetectionEvent` (video_a `analytics.proto`) несёт вектор (256 float, около 1 КБ) на каждом
+кадре живого трека, хотя он меняется только при `embedding_is_fresh`, и JPEG-кроп на каждом кадре
+для лиц и номеров. Отправлять вектор только когда он свежий, а кропы — только для кадров, которые
+могут стать событием, сократило бы поток от воркера к аналитике в несколько раз, на какой бы
+машине аналитика ни работала.

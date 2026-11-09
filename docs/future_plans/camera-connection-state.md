@@ -1,24 +1,25 @@
-# Camera connection state: an event instead of a poll
+# Состояние связи камеры: событие вместо опроса
 
-The map shows `CONNECTED`/`DISCONNECTED` on a camera node. It gets them by polling each node's
-VmsFs (`ListSourceOutages`, one call per node every five seconds) and treating an outage without
-an `ended_ts` as `DISCONNECTED`. That works, but it is a poll of state that video_srv already knows
-at the moment it changes.
+Карта показывает `CONNECTED`/`DISCONNECTED` на узле камеры. Она получает их, опрашивая VmsFs
+каждого узла (`ConnectionStatePoller` в VmsMap раз в пять секунд вызывает
+`VmsFsCameraConnectionSource`, по одному `ListSourceOutages` на узел) и считая обрыв без
+`ended_ts` признаком `DISCONNECTED`. Работает, но это опрос состояния, которое video_srv уже
+знает в момент его изменения.
 
-**Why not MediaMTX paths.** The first implementation asked VmsUtils for
-`GetMediaMtxPathsInfo`. `video_srv`'s `mediamtx_monitor` stops a WebRTC path after 30 seconds with
-no viewers, so an absent path means "nobody is watching", not "the camera is gone". On the bench it
-marked all four cameras `DISCONNECTED`, and `DISCONNECTED` is seeded as an alarm state. The path is
-a viewer-demand signal, not a source-liveness one.
+**Почему не пути MediaMTX.** Первая реализация спрашивала у VmsUtils `GetMediaMtxPathsInfo`.
+`mediamtx_monitor` в video_srv останавливает WebRTC-путь через 30 секунд без зрителей, поэтому
+отсутствующий путь означает «никто не смотрит», а не «камера пропала». На стенде это пометило
+все четыре камеры `DISCONNECTED`, а `DISCONNECTED` засеян как состояние тревоги. Путь — сигнал
+спроса зрителя, а не живости источника.
 
-**What is still open.**
+**Что осталось.**
 
-- video_srv already computes `source_alive` per stream and reports it to VmsFs every 15 seconds.
-  Publishing a `camera-connection-changed` topic (camera id, stream, alive) at the transition would
-  let the map react at once and drop the poll.
-- VmsFs's `SourceLivenessTracker` also opens an outage only when `recording_expected` is true. On
-  the OnvifSim bench a camera that was recording did not produce an open row after its network was
-  cut, so the map stayed `CONNECTED`; the adapter consumes rows correctly (tested by inserting one),
-  but the producer's expectation flag needs a look.
-- The event should be addressing only, like `retention-event-created`; the map re-reads what it
-  needs. Do not put the state in the event as authoritative data.
+- video_srv уже считает `source_alive` по каждому потоку и раз в 15 секунд отдаёт его в VmsFs.
+  Публикация топика `camera-connection-changed` (id камеры, поток, alive) на переходе дала бы
+  карте реагировать сразу и позволила бы убрать опрос.
+- `SourceLivenessTracker` в VmsFs открывает обрыв только при `recording_expected == true`. На
+  стенде OnvifSim камера, которая писала, не дала открытой строки после обрыва сети, и карта
+  осталась `CONNECTED`; адаптер строки читает правильно (проверено вставкой), но флаг ожидания у
+  производителя надо разобрать.
+- Событие должно быть только адресующим, как `retention-event-created`: карта сама перечитывает
+  то, что ей нужно. Не класть состояние в событие как авторитетные данные.

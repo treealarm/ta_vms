@@ -1,27 +1,27 @@
-# What is left of the log volume after the 2026-10-25 fix
+# Что осталось от объёма логов после исправления 2026-10-25
 
-Measured on a fresh Windows install (Windows 10, Russian locale) with the OnvifSim lab cameras,
-then with the simulator stopped. The fix took the services off the host's default log providers,
-gave OnvifLib a category of its own held at Information (no SOAP envelopes), quietened
-IHttpClientFactory, wrote the redirected console in UTF-8, and made OnvifLib log an unreachable
-camera without its stack (OnvifLib `OnvifErrors.Describe`). Ten PTZ status calls to a camera that is
-off went from 316 KB of log to 20 KB; an idle install with no cameras from 288 KB per five minutes
-to nothing. These are what it left.
+Измерено на чистой установке Windows (Windows 10, русская локаль) с лабораторными камерами
+OnvifSim, затем с остановленным симулятором. Исправление сняло сервисы с провайдеров логов хоста,
+дало OnvifLib собственную категорию на Information (без SOAP-конвертов), утихомирило
+IHttpClientFactory, записало перенаправленную консоль в UTF-8 и заставило OnvifLib писать
+недоступную камеру без стека (`OnvifErrors.Describe`). Десять PTZ-запросов к выключенной камере
+ушли с 316 КБ лога до 20 КБ; простой установки без камер — с 288 КБ за пять минут до нуля. Вот что
+осталось.
 
-- **A camera that is off is looked up from scratch on every call.** `CameraActor` evicts its
-  `Camera` when service resolution fails, so the next call resolves again: about four
-  `GetServices` attempts and three seconds per PTZ status call, each attempt an Error line. A
-  short negative cache (the camera stays "unreachable" for some seconds) would answer at once and
-  log once. Who calls it that often matters too: on the first test box something polled PTZ
-  status every second or so.
-- **video_srv logs every reconnect attempt at Error**, one line per stream every ~5 s while a
-  camera is off: 69 KB per five minutes for four cameras, about 20 MB a day. Honest, but a
-  doubling backoff in the log (not in the reconnect) would keep the first failures and drop the
-  repeats.
-- **web_srv does not use `AddVmsLogging`.** It logs through the host's console logger only, so it
-  has no file under `VMS_LOG_PATH` and nothing of it reaches the Logs tab (VmsLogger). Its console
-  is moderate (`Microsoft.AspNetCore` at Warning in appsettings.json), so this is about visibility,
-  not volume.
-- **The services still log at Debug** into their files and consoles; nothing measured on the
-  bench was large at Debug once the SOAP dumps were gone, but it is the next thing to look at if a
-  log fills again.
+- **Выключенная камера ищется с нуля на каждом вызове.** `CameraActor` сбрасывает закэшированный
+  `Camera`, когда разрешение сервисов не удалось, поэтому следующий вызов резолвит заново: около
+  четырёх попыток `GetServices` и три секунды на запрос PTZ-статуса, каждая попытка — строка
+  Error. Короткий отрицательный кэш (камера остаётся «недоступной» несколько секунд) ответил бы
+  сразу и залогировал один раз. Важно и то, кто спрашивает так часто: на первой тестовой машине
+  что-то опрашивало PTZ-статус примерно раз в секунду.
+- **video_srv пишет каждую неудачную попытку открыть RTSP как Error** (`Failed to open RTSP`), одна
+  строка на поток примерно раз в 5 с, пока камера выключена: 69 КБ за пять минут на четыре камеры,
+  около 20 МБ в сутки. Честно, но удвоение интервала в логе (не в переподключении) сохранило бы
+  первые сбои и убрало повторы.
+- **web_srv не использует `AddVmsLogging`.** Он логирует только консольным провайдером хоста,
+  поэтому у него нет файла под `VMS_LOG_PATH` и ничего из него не попадает во вкладку Logs
+  (VmsLogger). Консоль умеренная (`Microsoft.AspNetCore` на Warning в `appsettings.json`), так что
+  это про видимость, а не про объём.
+- **Сервисы по-прежнему пишут Debug в свои файлы и консоли**; на стенде после удаления SOAP-дампов
+  ничего измеренного не было большим на Debug, но это следующее, на что смотреть, если лог опять
+  начнёт заполняться.

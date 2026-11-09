@@ -1,38 +1,47 @@
-# A subscription edit does not always reach the router
+# Правка подписки иногда не доходила до роутера
 
-Found 2026-11-06 while accepting M2.6, on the demo bench.
+Найдено 2026-11-06 при приёмке M2.6, на демо-стенде. **Причина найдена и исправлена 2026-11-09** в
+ветке `fix/event-subscription-signal` (коммит `03ce448`), ещё не влитой в `master`; при вливании
+этот файл удаляется.
 
-`check_emit_loop` in `tests/demo/check_demo.py` creates an event subscription, closes
-`sim-master/peer` once, and waits up to 75 s for the router to report the emitted event stopped by
-the causation chain (`event_routing_suppressed` in the entity-state registry). It failed twice in
-three runs.
+## Как проявлялось
 
-What the logs show for a failing run:
+`check_emit_loop` в `tests/demo/check_demo.py` создаёт подписку на событие, один раз замыкает
+`sim-master/peer` и ждёт до 75 с, пока роутер сообщит, что испущенное событие остановлено цепочкой
+причин (`event_routing_suppressed` в реестре entity-state). Падало дважды из трёх прогонов.
 
-- `VmsCfg` at 20:56:44 — `Event subscription '…' (check-emit-loop) saved as version 1`.
-- `VmsSingleton` — the last reload before that was 20:56:38 (`Loaded 1 enabled event
-  subscription(s)`), and the next was 20:58:00, by which time the check had already removed the
-  subscription. In the 82 s between them nothing reloaded, although the version is read at most
-  every 30 s.
-- The single `sensor` event that would have been routed was processed at 20:58:17 with one enabled
-  subscription — the demo rule only.
+В падающем прогоне логи показывали: `VmsCfg` в 20:56:44 сохранил подписку как версию 1;
+`VmsSingleton` последний раз перечитывал подписки в 20:56:38, а следующий раз — в 20:58:00, когда
+проверка уже удалила подписку. За 82 секунды между ними не перечиталось ничего, хотя версия
+читается не реже раза в 30 с. Единственное `sensor`-событие, которое должно было пройти, было
+обработано в 20:58:17 с одной включённой подпиской — только демо-правилом. В прошедшем прогоне
+роутер загрузил две подписки в ту же секунду, что и сохранение.
 
-In the run that passed (20:48:34) the router loaded two subscriptions the same second the save
-happened, so both the pub/sub signal and the version key worked there.
+То есть запись до VmsCfg доходила, а ни сигнал `event-subscriptions-changed`, ни чтение ключа
+`event-subscriptions-version` не заставляли роутер это увидеть. Оператор, создавший подписку и
+один раз замкнувший контакт, мог заключить, что правило не работает.
 
-So the write reached VmsCfg, and neither the `event-subscriptions-changed` signal nor the
-`event-subscriptions-version` read made the router see it. It is a race, not a missing wire: the
-signal does arrive most of the time.
+## В чём была причина
 
-Why this matters beyond a flaky check: an operator who creates a subscription and closes a contact
-once may conclude the rule does not work. The 30-second version read is meant to be the backstop.
+Кэш подписок роутера (`SubscriptionCache` в `VmsSingleton`) жил **только на сообщении**
+`event-subscriptions-changed` с ленивым TTL в минуту. Ключ версии `subscriptions-version` читал
+VmsMap (`AlarmDefinitionsCache`, `AnalyticsSubscriptionGate`), но не сам роутер. Потерянное
+сообщение поэтому скрывало сохранённое правило до истечения TTL — а правило часто проверяют
+единственным событием сразу после сохранения.
 
-What to look at next:
+## Что сделано в ветке
 
-- whether VmsCfg writes `event-subscriptions-version` on every save, and whether the write is in the
-  same transaction as the row (a save that commits and a version write that does not would look
-  exactly like this);
-- whether VmsSingleton's 30-second gate is ever skipped — e.g. the timer reset by an unrelated
-  setting change, or the state-store read failing silently and being retried only on the next tick;
-- the `event-subscriptions-changed` delivery when the router is busy: a lost message must not be the
-  only fast path.
+- Роутер сравнивает общий ключ `subscriptions-version` **на каждом маршрутизируемом событии** и
+  перечитывает подписки, когда ключ сдвинулся. Чтение — один GET в state store через sidecar с
+  ограничением в две секунды; отсутствующий ключ считается базой, а не поводом пропустить
+  следующее сравнение. TTL остаётся запасным путём на случай, когда state store недоступен вовсе,
+  а сообщение по-прежнему заставляет перечитать сразу.
+- VmsCfg пишет ключ и публикует сообщение в независимых `try`-блоках: сбой записи не подавляет
+  сообщение, и наоборот.
+- `check_emit_loop` ждёт перехода, который сам вызвал, а не любого события этого вида, и ждёт
+  подавления по тику debug-state, а не по TTL кэша.
+
+Проверено: 38 юнит-тестов в `VmsSingleton.Tests` (шесть новых), сценарий emit-loop три раза подряд
+на демо-стенде и полный `check_demo.py --provision-cameras` — 292 проверки зелёные.
+
+**Осталось:** влить ветку в `master` и удалить этот файл.

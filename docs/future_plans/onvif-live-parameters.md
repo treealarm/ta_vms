@@ -1,57 +1,59 @@
-# ONVIF live parameters: what is left
+# Живые параметры ONVIF: что осталось
 
-Found while doing M2.3 (`docs/plans/square-merge/m2.3-onvif-live-parameters.md`). The milestone
-itself is closed; these are the parts its scope deliberately left for later.
+Найдено при работе над M2.3 (`docs/plans/square-merge/m2.3-onvif-live-parameters.md`). Сам
+майлстоун закрыт; здесь то, что его рамки сознательно отложили.
 
-## Several devices per camera, inversion and fan-out
+## Несколько устройств на камеру, инверсия и разветвление
 
-ta_vms shows a camera's relay and input state one device at a time:
+ta_vms показывает состояние реле и входов камеры по одному устройству за раз:
 
-- `DeviceIoStateService` caches every `(kind, token)` the camera reports, which is right.
-- The demo feeder (`DemoValueFeeder`) names the cameras (`DemoTelemetry.RelayCameraId` is
-  `sim-master`, `SensorCameraId` is `sim-ptz`) but takes **their first device**. A camera with
-  several relays of different meaning needs to name the device too: which relay feeds the "relay"
-  reading, which input the "sensor" one.
-- The web lists all of them, so this is a demo limitation only, not a UI one.
+- `DeviceIoStateService` кэширует каждую пару `(kind, token)`, которую сообщает камера, — это
+  правильно.
+- Демо-фидер (`DemoValueFeeder`) называет камеры (`DemoTelemetry.RelayCameraId` — `sim-master`,
+  `SensorCameraId` — `sim-ptz`), но на каждой берёт **первое устройство**
+  (`GetRelayAsync`/`GetInputAsync` в `VmsOnvifCameraSource` делают `FirstOrDefault`). Камере с
+  несколькими реле разного смысла нужно называть и устройство: какое реле питает показание
+  «relay», какой вход — «sensor».
+- Веб перечисляет их все, так что это ограничение демо, а не UI.
 
-The wiring itself — one relay to several sinks, one input to several relays, the input reading the
-inversion of its pull-up — is OnvifSim's model and is not carried into ta_vms. If a real ONVIF
-camera ever needs that, it would have to become camera configuration here (a sink is a device of
-another camera, and there is no cross-camera relation today).
+Сама проводка — одно реле в несколько приёмников, один вход в несколько реле, чтение инверсии
+подтяжки входом — это модель OnvifSim и в ta_vms не переносится. Если реальной ONVIF-камере это
+понадобится, это станет конфигурацией камеры здесь (приёмник — устройство другой камеры, а
+межкамерного отношения сегодня нет).
 
-## The list read behind the device I/O overlay
+## Чтение списка за оверлеем устройства
 
-`useDeviceIoLive` used to poll VmsOnvif's cache every five seconds (`DEVICE_IO_POLL_INTERVAL_MS`),
-and each round went web_srv → VmsOnvif → the camera's `GetRelayOutputs`/`GetDigitalInputs` for the
-*configuration* before enriching `liveActive` from the event cache. A wall of N tiles made 2N ONVIF
-requests per five seconds, and the value on screen was still up to five seconds old.
+`useDeviceIoLive` раньше опрашивал кэш VmsOnvif каждые пять секунд
+(`DEVICE_IO_POLL_INTERVAL_MS`), и каждый раунд шёл web_srv → VmsOnvif → камера за
+`GetRelayOutputs`/`GetDigitalInputs` для *конфигурации*, прежде чем обогатить `liveActive` из кэша
+событий. Стена из N плиток делала 2N ONVIF-запросов за пять секунд, а значение на экране всё равно
+было до пяти секунд старым.
 
-Since 2026-11-06 the states are pushed: `DeviceIoService.StreamDeviceIoStates` (VmsOnvif) sends the
-current state of every part and every transition, web_srv merges one stream per node into
-`/api/DeviceIo/live` (SSE), and the browser keeps one connection for the whole monitor
-(`deviceIoLiveClient`). web_srv does not subscribe to `device-event` itself: replicas of one app id
-share a consumer group, so each event reaches one replica and the browsers on the others would
-never see it. A server stream from every node, by contrast, is delivered to every web_srv replica in
-full.
+С 2026-11-06 состояния передаются пушем: `DeviceIoService.StreamDeviceIoStates` (VmsOnvif) шлёт
+текущее состояние каждой части и каждый переход, web_srv сливает один поток на узел в
+`/api/DeviceIo/live` (SSE), а браузер держит одно соединение на весь монитор
+(`deviceIoLiveClient`). web_srv не подписывается на `device-event` сам: реплики одного app id делят
+consumer group, поэтому событие доходит до одной реплики, и браузеры на остальных его не увидели
+бы. Серверный поток от каждого узла, наоборот, доставляется каждой реплике web_srv целиком.
 
-What is left is the **list** read: `useDeviceIoLive` still asks for relays and inputs (mode, delay,
-idle state) when a tile mounts, and each call reads the camera. That is once per tile, not per five
-seconds, and it also opens the camera's watcher. Serving it from VmsOnvif's cached presence —
-`DevicePresence` from the discovery sweep — would remove the camera round trip from mounting a
-monitor wall; that is the remaining part of this topic.
+Осталось **чтение списка**: `useDeviceIoLive` по-прежнему спрашивает реле и входы (режим, задержку,
+idle state), когда плитка монтируется, и каждый вызов читает камеру. Это один раз на плитку, а не
+раз в пять секунд, и оно же открывает watcher камеры. Отдавать его из кэшированного присутствия
+VmsOnvif (`DevicePresence` из sweep обнаружения) убрало бы поход в камеру при открытии стены
+мониторов; это оставшаяся часть темы.
 
-## The demo world and `Maryland` match only in camera poses
+## Демо-мир и `Maryland` совпадают только позами камер
 
-The simulator world and the demo map are built from the same constants for the building envelope and
-the camera poses, and `tests/onvifsim/world.py --check-maryland` checks those within half a metre
-and half a degree. The rest does not match: the rooms, the racks and the scenery are drawn
-separately, and the demo's indoor plan is not the simulator's render of it. A fuller match would let
-the bench check what the demo draws against what the camera sees, without a browser.
+Мир симулятора и демо-карта построены из одних констант для оболочки здания и поз камер, и
+`tests/onvifsim/world.py --check-maryland` проверяет их с точностью до полуметра и полградуса.
+Остальное не совпадает: комнаты, стойки и декорации нарисованы отдельно, а крытый план демо — не
+рендер симулятора того же плана. Более полное совпадение позволило бы стенду проверять, что рисует
+демо, против того, что видит камера, без браузера.
 
-## The follower's first write after a restart
+## Первая запись follower'а после рестарта
 
-`CameraGeoFollower` keeps the last point it wrote in memory, so a still camera costs no tree writes.
-After a restart that memory is empty and the camera's first answer is written once, even if it is
-the point already stored — which is also what puts the map right after a downtime. On a deployment
-with many flagged cameras that is one write and one `map-config-changed` per camera per restart;
-reading the stored point to compare against would remove it, at the cost of one query per camera.
+`CameraGeoFollower` держит последнюю записанную точку в памяти, поэтому неподвижная камера не
+стоит записей в дерево. После рестарта эта память пуста, и первый ответ камеры пишется один раз,
+даже если это уже сохранённая точка — это же и приводит карту в порядок после простоя. На
+развёртывании с многими помеченными камерами это одна запись и один `map-config-changed` на камеру
+за рестарт; чтение сохранённой точки для сравнения убрало бы её ценой одного запроса на камеру.

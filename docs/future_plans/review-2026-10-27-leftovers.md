@@ -1,39 +1,39 @@
-# What the 2026-10-27 review left open
+# Что оставило открытым ревью 2026-10-27
 
-The review of the week before 2026-10-27 (`afb2294..3cb1086`) found nothing that brings a service
-down. Its enrollment, package, password-change and shutdown findings were fixed the same day
-(`e4e3314..c3aadf3`); the RabbitMQ consumers after an hour of 15-minute subscription renewals, and
-`vmsonvif`'s sidecar starting both subscriptions at once, were checked on the Windows core
-192.168.1.82 and are fine (one consumer per queue, the connection count flat, 1.2 s of CPU in 43
-minutes). What is left:
+Ревью недели перед 2026-10-27 (`afb2294..3cb1086`) не нашло ничего, что роняло бы сервис. Его
+находки по enrollment, пакету, смене пароля и остановке были исправлены в тот же день
+(`e4e3314..c3aadf3`); потребители RabbitMQ после часа 15-минутных продлений подписок и sidecar
+`vmsonvif`, стартующий обе подписки сразу, проверены на Windows core 192.168.1.82 и в порядке
+(один consumer на очередь, число соединений ровное, 1.2 с CPU за 43 минуты). Вот что осталось.
 
-## Edge import: how a replay ends
+## Edge import: чем заканчивается повтор
 
-- `video_srv/edge_import/onvif_replay_rtsp.cpp`, the silence check in the interleaved read: idle
-  after media counts as the end of the range (`AVERROR_EOF`) only once `m_have_base_ts` is set, and
-  that is set in `take_picture`, when the first finished picture is handed out, no longer at the
-  first VCL NAL. A camera without the RTP marker bit that sends one picture and goes silent ends
-  the import with `EIO` instead of `EOF`. A flag for "media seen", set where video RTP arrives,
-  would say what the check means.
-- The same file, `m_end_rc` in the read loop: one broken interleaved frame (length 0, or more than
-  65535) ends the stream for good with `AVERROR_INVALIDDATA`. It did before as well; not a
-  regression, but a camera that sends one such frame loses the rest of the range.
+- `video_srv/edge_import/onvif_replay_rtsp.cpp`, проверка тишины в интерливинг-чтении: простой
+  после медиа считается концом диапазона (`AVERROR_EOF`) только когда выставлен `m_have_base_ts`,
+  а он выставляется при сборке первой **готовой картинки** (`take_picture` для H.264,
+  `handle_jpeg_payload` для MJPEG), а не на первом VCL NAL. Камера без бита маркера RTP, которая
+  присылает одну картинку и замолкает, заканчивает импорт с `EIO` вместо `EOF`. Флаг «медиа
+  видно», выставляемый там, где приходит видео-RTP, сказал бы, что именно значит проверка.
+- Тот же файл, `m_end_rc` в цикле чтения: один битый интерливинг-кадр (длина 0 или больше 65535)
+  окончательно завершает поток с `AVERROR_INVALIDDATA`. Так было и раньше; не регрессия, но камера,
+  приславшая один такой кадр, теряет остаток диапазона.
 
-Neither was tried against a camera; both need one with an archive (or OnvifSim's replay).
+Ни то, ни другое не проверялось на камере; обоим нужна камера с архивом (или replay в OnvifSim).
 
-## To check on a live stack
+## Проверить на живом стенде
 
-- `camera_manager::stop_all` (`video_srv/camera_manager.cpp`) shuts every `cam_device` down at once,
-  each in a `jthread`. The devices are independent, but stop vms once with ten cameras or so and
-  look for a race in what they share (`fs_client`, `onvif_metadata_client`, the logger).
-- ta_install does not set `WEB_VMS_TLS_CERT`/`WEB_VMS_TLS_KEY` yet (step 4 of the core's TLS).
-  `TlsEndpoint` itself has run on Windows now (2026-10-28, a second web_srv of the installation
-  beside the first, on the machine's address with a throwaway CA): plain HTTP on the loopback,
-  TLS 1.3 only on the LAN address, the leaf alone in the handshake, `ca.crt`, login and the API
-  over HTTPS — the PKCS#12 re-import for SChannel works.
+- `camera_manager::stop_all` (`video_srv/camera_manager.cpp`) гасит все `cam_device` сразу, каждый
+  в своём `jthread`. Устройства независимы, но остановите vms один раз с десятком камер и
+  поищите гонку в том, что они делят (`fs_client`, `onvif_metadata_client`, логгер).
+- ta_install всё ещё не задаёт `WEB_VMS_TLS_CERT`/`WEB_VMS_TLS_KEY` (шаг 4 TLS для core).
+  Сам `TlsEndpoint` уже работал на Windows (2026-10-28, второй web_srv установки рядом с первым, на
+  адресе машины с одноразовым CA): обычный HTTP на loopback, только TLS 1.3 на адресе LAN, в
+  рукопожатии только leaf, `ca.crt`, вход и API по HTTPS — переимпорт PKCS#12 для SChannel
+  работает.
 
-## Small
+## Мелкое
 
-- `FrontendConfigController.UserAdminPort`: a bad `MT_ADMIN_PORT` throws from the static
-  initializer. With Keycloak, `Program.cs` touches the class at startup and the process stops;
-  without it, the first `GET /api/config/frontend` is a 500 instead.
+- `FrontendConfigController.UserAdminPort`: плохой `MT_ADMIN_PORT` бросает исключение из
+  статического инициализатора. С Keycloak `Program.cs` трогает класс при старте, и процесс
+  останавливается; без него первый `GET /api/config/frontend` — это 500. Надёжнее проверять
+  значение не в статическом инициализаторе, а там, где оно читается, и отвечать внятной ошибкой.

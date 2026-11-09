@@ -1,19 +1,22 @@
-# A ground map provider of our own
+# Свой поставщик карты под миром
 
-**Found** while building M2.9 (`docs/plans/square-merge/m2.9-real-campus-world.md`), 2026-11-07.
+Найдено при постройке M2.9 (`docs/plans/square-merge/m2.9-real-campus-world.md`), 2026-11-07.
 
-OnvifSim can draw a raster map under a world (`terrain.map`). The picture is fetched once per
-installation from whatever `ONVIFSIM_MAP_TILE_URL` names; the default is the standard OpenStreetMap
-tile service, whose usage policy forbids bulk downloading and offline maps. We do not redistribute
-pixels — each installation fetches a few dozen tiles for its own world — but a product deployment
-that wants to ship a map, or to work offline, cannot lean on that service.
+OnvifSim умеет рисовать растровую карту под миром (`terrain.map`). Картинка скачивается один раз на
+установку с того, что названо в `ONVIFSIM_MAP_TILE_URL`; по умолчанию это стандартный тайловый
+сервис OpenStreetMap, чья политика использования запрещает массовую загрузку и офлайн-карты. Мы не
+распространяем пиксели — каждая установка скачивает несколько десятков тайлов для своего мира, — но
+продуктовое развёртывание, которое хочет поставлять карту или работать офлайн, на этот сервис
+опереться не может.
 
-**To do:** pick one of
-- a self-hosted tile server (e.g. a vector-tile pipeline over an OSM extract) run beside the product;
-- a commercial provider whose licence allows caching and redistribution;
-- our own renderer of the OSM *data* (the vector import in `OsmService` already reads it) into the
-  ground's vertex colours or a picture — the most work, and the only one that removes the dependency
-  entirely.
+**Сделать:** выбрать одно из
 
-The attribution line (`terrain.mapAttribution`) has to stay either way, and a provider change must
-re-bake every cached map.
+- собственный тайловый сервер (например, конвейер векторных тайлов по экстракту OSM) рядом с
+  продуктом;
+- коммерческий поставщик, чья лицензия разрешает кэширование и распространение;
+- собственный рендерер *данных* OSM (векторный импорт в `OsmService` их уже читает) в вершинные
+  цвета земли или в картинку — больше всего работы, зато единственный вариант, полностью
+  убирающий зависимость.
+
+Строка атрибуции (`terrain.mapAttribution`) должна остаться в любом случае, а смена поставщика
+требует пере-запекания каждой закэшированной карты.

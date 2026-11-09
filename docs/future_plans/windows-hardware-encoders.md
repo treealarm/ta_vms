@@ -1,65 +1,68 @@
-# Hardware encoding on Windows without an NVIDIA card
+# Аппаратное кодирование на Windows без карты NVIDIA
 
-Found 2026-10-26, while moving NVENC on Windows from CUDA to Direct3D 11 (roi_transcode,
-`Engine::Nvenc` and `DecodeEngine::D3d11va`). The decode half of a vendor-neutral Windows path is
-there: D3D11VA, in the Windows FFmpeg already (vcpkg builds it with `--enable-d3d11va`), on any
-vendor's GPU. Without a hardware encoder every HEVC stream goes to `video_transcode_processor`,
-decode included — 121–135% of a core per 1080p25 stream on the i5-750
+Найдено 2026-10-26 при переносе NVENC на Windows с CUDA на Direct3D 11 (roi_transcode,
+`Engine::Nvenc` и `DecodeEngine::D3d11va`). Половина декодирования у нейтрального к вендору
+Windows-пути уже есть: D3D11VA, в Windows-сборке FFmpeg (vcpkg собирает её с `--enable-d3d11va`),
+на GPU любого вендора. Без аппаратного кодировщика каждый HEVC-поток уходит в
+`video_transcode_processor`, включая декодирование — 121–135 % ядра на поток 1080p25 на i5-750
 (`../ta_install/windows/FINDINGS.md`).
 
-**QSV through D3D11, for Intel, is in** (2026-10-26): `ffmpeg[qsv]` in the Windows vcpkg ports,
-the QSV backend on a D3D11 device on the Intel adapter with the decoder handed that device, and
-`IntelOneVpl` after `Nvenc` in `video_srv`'s default order. What is left of it:
+**QSV через D3D11, для Intel, уже есть** (2026-10-26): `ffmpeg[qsv]` в Windows-портах vcpkg,
+QSV-бэкенд на D3D11-устройстве на адаптере Intel с переданным ему декодером, и `IntelOneVpl` после
+`Nvenc` в порядке по умолчанию в `video_srv` (`hw_transcode_processor.cpp`,
+`encoder_choice_from_env`). Что осталось:
 
-- **Checking it on Windows.** The same code is checked on Linux, where QSV runs on VA-API: on the
-  i7-12700's UHD 770 a Transcoder session decodes on the GPU, uploads nothing and puts every
-  picture in its place (roi_transcode `transcode_device_test`). On Windows only the device type
-  differs — D3D11 on the adapter with vendor id `0x8086`.
+- **Проверка на Windows.** Тот же код проверен на Linux, где QSV работает через VA-API: на UHD 770
+  i7-12700 сессия `Transcoder` декодирует на GPU, ничего не загружает и ставит каждую картинку на
+  место (`transcode_device_test` в roi_transcode). На Windows отличается только тип устройства —
+  D3D11 на адаптере с vendor id `0x8086`.
 
-  **Checked so far** (2026-10-26, i7-12700 / UHD 770, Windows 11 26200, Intel graphics driver
-  30.0.101.1371 of February 2022 — not updated, on purpose), on the `windows-build` asset of
+  **Проверено к настоящему моменту** (2026-10-26, i7-12700 / UHD 770, Windows 11 26200, драйвер
+  Intel 30.0.101.1371 от февраля 2022 — намеренно не обновлялся), на ассете `windows-build` из
   `d596529`:
-  - `vms.exe` started as CI starts it: every DLL loads, it logs the order
-    `vaapi -> nvenc -> qsv` and stops at `DAPR_GRPC_PORT`.
-  - `h264_qsv` through the shipped FFmpeg (9.0.1) and `libvpl.dll`, with
-    `scripts/win/qsv-probe.py`: D3D11VA and QSV devices open on `8086:4680`, the driver's oneVPL
-    runtime reports implementation 2.6, and the encoder reports *"Initialized an internal MFX
-    session using hardware accelerated implementation"*. 300 frames of 1080p NV12 from system
-    memory, H.264 High at 4 Mbit/s: 300 packets in 1.5 s, about 200 fps. So a 2022 driver is
-    new enough; nothing has to be updated for QSV on Alder Lake.
+  - `vms.exe` запускается, как запускает CI: все DLL загружаются, в логе порядок
+    `vaapi -> nvenc -> qsv`, и процесс останавливается на `DAPR_GRPC_PORT`.
+  - `h264_qsv` через поставляемый FFmpeg (9.0.1) и `libvpl.dll`, скриптом
+    `scripts/win/qsv-probe.py`: устройства D3D11VA и QSV открываются на `8086:4680`, runtime
+    oneVPL драйвера сообщает реализацию 2.6, а кодировщик — *"Initialized an internal MFX session
+    using hardware accelerated implementation"*. 300 кадров 1080p NV12 из системной памяти,
+    H.264 High на 4 Мбит/с: 300 пакетов за 1.5 с, около 200 fps. Драйвера 2022 года достаточно;
+    для QSV на Alder Lake обновлять ничего не нужно.
 
-  **vms itself, checked** (2026-10-27, same machine, the installer of ta_install 229935a, no
+  **Сам vms, проверено** (2026-10-27, та же машина, установщик ta_install `229935a`, без
   `VMS_VIDEO_ENCODER`, 1080p25 HEVC Main): `decoding on d3d11va, encoding on 'h264_qsv (Intel VPL
-  mfxExtEncoderROI)'`, 9.5 % of a core per viewed stream against 74 % on
-  `video_transcode_processor`. Details in `../ta_install/windows/FINDINGS.md`.
+  mfxExtEncoderROI)'`, 9.5 % ядра на просматриваемый поток против 74 % на
+  `video_transcode_processor`. Подробности — `../ta_install/windows/FINDINGS.md`.
 
-  **An Ivy Bridge, checked** (2026-10-27, 192.168.1.82, HD 2500, the v0.1.8 candidate, 1080p25
-  HEVC): QSV declines at once, `no QSV runtime on the Intel d3d11va device`, and the stream goes to
-  `video_transcode_processor` at 88 % of a core, as on v0.1.7 (89 %). Its Quick Sync encodes H.264
-  only through the legacy Media SDK runtime, and the dispatcher found no runtime there that it
-  would load; nothing breaks and nothing is gained. Why exactly (the driver's runtime, or the
-  dispatcher's view of it) was not looked into: not worth it for a 2012 iGPU unless a customer
-  has one.
+  **Ivy Bridge, проверено** (2026-10-27, 192.168.1.82, HD 2500, кандидат v0.1.8, 1080p25 HEVC):
+  QSV сразу отказывается, `no QSV runtime on the Intel d3d11va device`, и поток уходит в
+  `video_transcode_processor` на 88 % ядра, как на v0.1.7 (89 %). Его Quick Sync кодирует H.264
+  только через legacy Media SDK runtime, и диспетчер не нашёл там runtime, который стал бы
+  загружать; ничего не ломается и ничего не выигрывается. Почему именно (runtime драйвера или
+  представление диспетчера о нём) — не разбирались: не стоит того для iGPU 2012 года, если у
+  заказчика такого нет.
 
-  **Several streams, checked** (2026-10-28, same machine, ta_vms 7da89af): eight cameras on one
-  1080p25 HEVC source, each push kept up by an RTSP reader. All eight opened `h264_qsv` on
-  D3D11VA, none declined or fell back; vms at 25 % of a core with four, 38 % with eight, the GPU's
-  video engine at 28 % and 49 % — about 5 % of a core and 6 % of the engine per stream, so the
-  iGPU, not a session limit, would end it, somewhere near sixteen. More than eight was not tried.
+  **Несколько потоков, проверено** (2026-10-28, та же машина, ta_vms `7da89af`): восемь камер на
+  одном источнике 1080p25 HEVC, каждый push поддерживается RTSP-читателем. Все восемь открыли
+  `h264_qsv` на D3D11VA, ни один не отказался и не откатился; vms на 25 % ядра с четырьмя, 38 % с
+  восемью, видеодвижок GPU на 28 % и 49 % — около 5 % ядра и 6 % движка на поток, так что конец
+  положит iGPU, а не лимит сессий, где-то около шестнадцати. Больше восьми не пробовали.
 
-  **Still open:** `transcode_device_test` has not been run on Windows. 192.168.1.100 is an
-  i5-750 without Quick Sync.
-- **HEVC on QSV** opened and encoded nothing on that machine on Linux (`qsv: opened but encodes
-  nothing`, before this change too). vms encodes H.264 only, so it is not on vms's path.
+  **Осталось:** `transcode_device_test` на Windows не запускался. 192.168.1.100 — i5-750 без
+  Quick Sync.
+- **HEVC на QSV** на той машине открылся и ничего не закодировал на Linux (`qsv: opened but
+  encodes nothing`, так было и до изменения). vms кодирует только H.264, так что на его пути это
+  не стоит.
 
-The other vendors:
+Другие вендоры:
 
-- **AMF, for AMD.** `h264_amf` takes D3D11 frames as NVENC does; vcpkg's ffmpeg has an `amf`
-  feature. No AMD hardware to check on at all.
-- **Media Foundation (`h264_mf`) as a catch-all.** In the Windows FFmpeg already
-  (`--enable-mediafoundation`); it reaches whichever vendor's encoder MFT is installed, through
-  one API. Considered and left out for now: its latency and rate control on live video are
-  unmeasured, and it would need a measurement against NVENC on the NVIDIA box first.
+- **AMF, для AMD.** `h264_amf` принимает кадры D3D11, как NVENC; в ffmpeg vcpkg есть фича `amf`.
+  AMD-железа для проверки нет вовсе.
+- **Media Foundation (`h264_mf`) как универсальный.** Уже в Windows-сборке FFmpeg
+  (`--enable-mediafoundation`); он доходит до кодировщика MFT любого установленного вендора через
+  один API. Рассмотрен и пока отложен: его задержка и rate control на живом видео не измерены, и
+  сначала нужно сравнение с NVENC на машине NVIDIA.
 
-Each one is a backend in roi_transcode and an entry after `IntelOneVpl` in `video_srv`'s default
-order (`hw_transcode_processor.cpp`, `encoder_choice_from_env`), and `is_hardware` there learns it.
+Каждый из них — бэкенд в roi_transcode и запись после `IntelOneVpl` в порядке по умолчанию в
+`video_srv` (`hw_transcode_processor.cpp`, `encoder_choice_from_env`), и `is_hardware` там должен
+его узнать.

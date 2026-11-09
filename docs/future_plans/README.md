@@ -1,32 +1,32 @@
-# Future plans
+# Будущие планы
 
-Findings that need doing, but not next: each file is one topic, written when it was found, with
-what was established at the time and what is still open. They are not commitments and not a
-backlog in order; they keep what was learnt from being lost between sessions.
+Найденное, что нужно сделать, но не следующим шагом: один файл — одна тема, записанная тогда,
+когда её нашли, с тем, что было установлено, и с тем, что осталось. Это не обязательства и не
+бэклог в порядке приоритета: файлы сохраняют знание между сессиями.
 
-When work on a topic starts, its plan moves into the work itself (a plan file, a PR) and the file
-here is deleted or cut down to what is still left.
+Когда работа по теме начинается, план переезжает в саму работу (файл плана, PR), а файл здесь
+удаляется или сокращается до того, что осталось.
 
-| File | Topic |
-|---|---|
-| [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` is polled from VmsFs outages; a transition event from video_srv and the producer's `recording_expected` are still open |
-| [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; демо — проверка этого; состояния и значения — данные владельцев |
-| [devices-and-nodes.md](devices-and-nodes.md) | Канонический узел устройства под сервером, эталон и вид — у реплики; части устройства; что показывать в списке Nodes |
-| [device-integrations.md](device-integrations.md) | Камера — единственный тип устройства; радар и другие типы должны интегрироваться «по аналогии», плагинный адаптер — после второго типа |
-| [distributed-analytics.md](distributed-analytics.md) | Re-identification and archive search in the database (pgvector), then analytics per node |
-| [distributed-hardening.md](distributed-hardening.md) | What a multi-machine deployment still leaves open on the network |
-| [event-subscription-signal.md](event-subscription-signal.md) | Правка подписки иногда не доходит до роутера: ни сигнал, ни ключ версии не сработали за 82 с (найдено 2026-11-06) |
-| [event-routing-followups.md](event-routing-followups.md) | Что осталось за M2.4: панельная логика охраны, ISA-18.2 сверх ack/close, окна и выдержки подписок, уведомления, корреляция по re-id |
-| [fire-alarm-integration.md](fire-alarm-integration.md) | Пожарная сигнализация — не ещё один цифровой вход: всегда на охране, защёлка/reset, зоны и неисправности, cause-and-effect на панели; класс устройства и адаптер панели — после M2.4 |
-| [generic-device-placement.md](generic-device-placement.md) | Общая `device_placement` вместо камеро-специфичной `camera_placement`: общие поля типизированы, специфические — в `props jsonb` |
-| [ground-map-provider.md](ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна |
-| [log-volume-leftovers.md](log-volume-leftovers.md) | What still fills the logs after the 2026-10-25 fix: a dead camera re-resolved per call, reconnect errors, web_srv outside VmsLog |
-| [onvif-live-parameters.md](onvif-live-parameters.md) | Several devices per camera and cross-camera wiring, the camera read behind a tile's device list, a fuller match between the demo world and OnvifSim's `Maryland`, the follower's first write after a restart |
-| [person-as-object.md](person-as-object.md) | Человек и любое движущееся — как объект с треком: идентичность, история, поиск по времени и зоне (в Square были треки); сейчас на карте только проекция бокса |
-| [plan-or-diagram.md](plan-or-diagram.md) | План и диаграмма: настоящая ось — географическая рамка, а не тип сущности; свободные объекты на диаграммах, затем необязательная рамка |
-| [prism-holes.md](prism-holes.md) | Призма с внутренними кольцами: сейчас контур с двором отвергается, нужна поддержка отверстий |
-| [prism-vertex-editing.md](prism-vertex-editing.md) | Точки контура призмы не тянутся мышью: удалить и нарисовать заново; нужны ручки и пересчёт проёмов |
-| [review-2026-10-27-leftovers.md](review-2026-10-27-leftovers.md) | What the 2026-10-27 review left open: how an edge-import replay ends, two live checks |
-| [shared-device-diagrams.md](shared-device-diagrams.md) | Общий холст «Cam Diagrams»: несколько устройств с контактами на одной диаграмме; сейчас части размещаются только шаблоном устройства |
-| [scale-bench-100k.md](scale-bench-100k.md) | Полный стенд на 100 000 камер — распределённое развёртывание; что проверяется локально и что осталось |
-| [windows-hardware-encoders.md](windows-hardware-encoders.md) | A hardware encoder on Windows without an NVIDIA card: QSV through D3D11 checked, several streams left, AMF, Media Foundation |
+**Порядок в таблице — по предполагаемой простоте, а не по важности.** № 1 — то, с чего дешевле
+всего начать; последний — то, что требует нескольких машин, железа или внешних решений. Порядок
+приблизительный: темы пересекаются, и зависимости названы в самих файлах.
+
+| № | Файл | Тема | Объём |
+|---|---|---|---|
+| 1 | [event-subscription-signal.md](event-subscription-signal.md) | Правка подписки иногда не доходила до роутера; причина найдена, исправление готово в ветке `fix/event-subscription-signal`, осталось влить | мелкий |
+| 2 | [review-2026-10-27-leftovers.md](review-2026-10-27-leftovers.md) | Что оставило открытым ревью 2026-10-27: конец replay при edge import, два живых прогона, `MT_ADMIN_PORT` | мелкий |
+| 3 | [log-volume-leftovers.md](log-volume-leftovers.md) | Что ещё заполняет логи: выключенная камера резолвится заново, переподключения на Error, web_srv без VmsLog | мелкий |
+| 4 | [prism-footprints.md](prism-footprints.md) | Призмы в OnvifSim: контур с двором отвергается, точки контура не тянутся мышью | средний, локальный |
+| 5 | [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; осталось: Playwright-прогон, текст и картинки на планах | средний |
+| 6 | [onvif-live-parameters.md](onvif-live-parameters.md) | Хвосты M2.3: несколько устройств на камеру, чтение списка за оверлеем, совпадение демо и `Maryland`, первая запись follower'а | средний |
+| 7 | [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` опрашивается у VmsFs; нужно событие от video_srv и разбор `recording_expected` | средний |
+| 8 | [ground-map-provider.md](ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна | средний, внешняя зависимость |
+| 9 | [shared-device-diagrams.md](shared-device-diagrams.md) | Общий холст «Cam Diagrams»: несколько устройств с контактами на одной диаграмме | средне-крупный |
+| 10 | [windows-hardware-encoders.md](windows-hardware-encoders.md) | Аппаратный кодировщик на Windows без NVIDIA: QSV проверен, остались AMF, Media Foundation и проверки на железе | средне-крупный, нужен стенд |
+| 11 | [devices.md](devices.md) | Модель устройств: второй тип «по аналогии», общее `device_placement`, открытые вопросы по терминологии и тестам | крупный |
+| 12 | [event-routing-followups.md](event-routing-followups.md) | Что осталось за M2.4: панельная логика охраны, ISA-18.2, окна подписок, уведомления, масштаб журнала | крупный |
+| 13 | [fire-alarm-integration.md](fire-alarm-integration.md) | Пожарная сигнализация — не ещё один цифровой вход: защёлка, зоны, неисправности, адаптер панели | крупный |
+| 14 | [person-as-object.md](person-as-object.md) | Человек и любое движущееся — как объект с треком: идентичность, история, поиск; хранилище уже есть, нужен производитель | крупный |
+| 15 | [distributed-analytics.md](distributed-analytics.md) | Re-id и поиск по архиву в базе (pgvector), затем аналитика на узел | крупный |
+| 16 | [distributed-hardening.md](distributed-hardening.md) | Что многомашинное развёртывание оставляет открытым в сети: TLS, ACL, отзыв токенов | крупный |
+| 17 | [scale-bench-100k.md](scale-bench-100k.md) | Полный стенд на 100 000 камер — распределённое развёртывание; что проверено локально и что осталось | очень крупный, несколько машин |
