@@ -15,7 +15,7 @@
 | Файл | Тема | Объём |
 |---|---|---|
 | [01-event-subscription-signal.md](01-event-subscription-signal.md) | Правка подписки иногда не доходила до роутера; причина найдена, исправление готово в ветке `fix/event-subscription-signal`, осталось влить | мелкий |
-| [02-review-2026-10-27-leftovers.md](02-review-2026-10-27-leftovers.md) | Хвост ревью 2026-10-27: концовки replay ждут камеры с архивом, TLS-переменные не прогонялись на Windows; остальное закрыто | мелкий |
+| [02-review-2026-10-27-leftovers.md](02-review-2026-10-27-leftovers.md) | Хвост ревью 2026-10-27: концовки replay ждут камеры с архивом; TLS на Windows проверен живьём, остальное закрыто | мелкий |
 | [03-log-volume-leftovers.md](03-log-volume-leftovers.md) | Что ещё заполняет логи: выключенная камера резолвится заново, переподключения на Error, web_srv без VmsLog | мелкий |
 | [04-prism-footprints.md](04-prism-footprints.md) | Призмы в OnvifSim: контур с двором отвергается, точки контура не тянутся мышью | средний, локальный |
 | [05-demo-gui-parity.md](05-demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; осталось: Playwright-прогон, текст и картинки на планах | средний |
