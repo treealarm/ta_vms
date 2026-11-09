@@ -18,7 +18,9 @@ namespace VmsMap.Demo
   /// it and never touched.
   ///
   /// The whole install is one transaction under an advisory lock: two replicas starting with
-  /// `DEMO_CONFIG` set must not each create half a world.
+  /// `DEMO_CONFIG` set must not each create half a world. It is also a writer of the map's object,
+  /// state and alarm rows, so it takes the map's locks up front, in the order every other writer
+  /// uses (see `LockAsync`).
   public sealed class DemoSeeder
   {
     // hashed into the lock by PostgreSQL; any stable number does, as long as it is ours alone.
@@ -645,8 +647,18 @@ namespace VmsMap.Demo
 
     /// Two replicas starting with the demo enabled wait for each other here; the lock is released
     /// with the transaction.
-    private Task LockAsync(CancellationToken ct) =>
-      MapLocks.AcquireDemoInstallAsync(_db, ct);
+    /// <para>
+    /// The map's own locks are taken in the same call, before this transaction writes its first
+    /// row, and not at the first state write further down. The install writes the same object,
+    /// state and alarm rows as the device path, which takes these locks before its writes; taking
+    /// them late — once this long transaction already holds row locks — is the reverse order and
+    /// deadlocked a bench install against the connectivity poller.
+    /// </para>
+    private async Task LockAsync(CancellationToken ct)
+    {
+      await MapLocks.AcquireDemoInstallAsync(_db, ct);
+      await MapLocks.AcquireAllAsync(_db, ct);
+    }
 
     /// Parents before their children, so a child always finds its parent written. A parent outside
     /// the set (a node's parent can be a space) counts as written already.

@@ -11,7 +11,6 @@ here is deleted or cut down to what is still left.
 |---|---|
 | [camera-connection-state.md](camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` is polled from VmsFs outages; a transition event from video_srv and the producer's `recording_expected` are still open |
 | [demo-gui-parity.md](demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; демо — проверка этого; состояния и значения — данные владельцев |
-| [demo-install-deadlock.md](demo-install-deadlock.md) | The demo install can deadlock (PostgreSQL `40P01`) against device-event writes: one transaction over many map rows |
 | [dev-stack-port-collision.md](dev-stack-port-collision.md) | A fresh `dev-up` can collide with a sidecar left by an earlier run: only app ports are checked, and a failed start leaves its `daprd` behind |
 | [devices-and-nodes.md](devices-and-nodes.md) | Канонический узел устройства под сервером, эталон и вид — у реплики; части устройства; что показывать в списке Nodes |
 | [device-integrations.md](device-integrations.md) | Камера — единственный тип устройства; радар и другие типы должны интегрироваться «по аналогии», плагинный адаптер — после второго типа |
