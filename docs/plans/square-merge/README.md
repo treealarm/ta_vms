@@ -426,8 +426,8 @@ M2.2 — после M2.1 и дерева узлов в админке, M2.3 — 
 - `map-routing-and-zones.md` — маршруты (Valhalla), триггеры по зонам и счётчики треков
   (`LogicMicroService`), «объекты в зоне» через PostGIS.
 - `map-tracks-sources.md` — источники треков и значений в ta_vms: треки из детекций аналитики
-  (связь с `distributed-analytics.md`), телеметрия камер.
-- `camera-connection-state.md` — событие «поток пропал/появился» от `video_srv` вместо опроса
+  (связь с `15-distributed-analytics.md`), телеметрия камер.
+- `07-camera-connection-state.md` — событие «поток пропал/появился» от `video_srv` вместо опроса
   VmsUtils адаптером карты.
 - `plan-regions.md` — регионы со значениями на планах (если понадобится помимо мнемосхем).
 - `dev-keycloak.md` — свой Keycloak в dev compose вместо multitenant_admin.

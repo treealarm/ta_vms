@@ -135,7 +135,7 @@ That pool has to be a dynamic one — a fixed pool refuses surfaces it did not a
 mapping goes through a pool derived from the decoder's, the only kind QSV can unmap. NVENC comes
 first, so a machine with both uses the card. vms decodes on the encoder's device or not at all, so
 a Windows machine with neither — AMD — has no hardware engine, and the stream goes to
-`video_transcode_processor`, decode included (`docs/future_plans/windows-hardware-encoders.md`).
+`video_transcode_processor`, decode included (`docs/future_plans/10-windows-hardware-encoders.md`).
 Do not build Windows `vms.exe` without the library — the engines arrive through it.
 The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
 only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
@@ -376,7 +376,7 @@ new address it then moves to) needs them even while enrollment is open: an added
 list, but a second package would let anyone become one unseen. Without Keycloak the join endpoint
 takes nobody for an administrator. Enrollment starts open only on a new database; one VmsCfg ran on
 before the switch existed starts closed. The administrator removes a node there as well; removal
-does not yet revoke its tokens (`docs/future_plans/distributed-hardening.md`). `MEDIA_SERVER_PAIRS`
+does not yet revoke its tokens (`docs/future_plans/16-distributed-hardening.md`). `MEDIA_SERVER_PAIRS`
 names only what this machine's own configuration fixes — the core's own node, and nodes joined with
 a package before the registry existed — and VmsCfg writes those rows at every start, marked
 configured: they cannot be removed in the web, since they would be back on the next start.
