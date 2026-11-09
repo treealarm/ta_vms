@@ -63,6 +63,16 @@ ORDER = [
     "web-vms",
 ]
 
+# Every port a dapr.yaml entry gives one service, and what it is for. `start()` insists they are
+# all free before spawning a sidecar, and `stop-strays` sweeps them.
+PORT_FIELDS = (
+    ("appPort", "app"),
+    ("daprHTTPPort", "sidecar http"),
+    ("daprGRPCPort", "sidecar grpc"),
+    ("metricsPort", "sidecar metrics"),
+    ("daprInternalGRPCPort", "sidecar internal"),
+)
+
 # The second node (its own video_srv, VmsFs, VmsOnvif and actor host, pinned to server id
 # "vms-2") used to be startable with --two-nodes. Its launch configurations were removed from
 # .vscode/launch.json, so there is nothing left to start; bringing it back means adding those
@@ -170,6 +180,7 @@ def _services() -> dict[str, dict]:
             command = ["dotnet", _expand(cfg["program"])]
 
         key = app["appID"]
+        ports = {role: int(app[field]) for field, role in PORT_FIELDS if field in app}
         services[key] = {
             "key": key,
             "name": cfg["name"],
@@ -177,7 +188,8 @@ def _services() -> dict[str, dict]:
             "cwd": _expand(cfg["cwd"]),
             "env": env,
             "dapr": _daprd_args(app, resources),
-            "app_port": int(app["appPort"]),
+            "ports": ports,
+            "app_port": ports["app"],
             "dotnet": cfg["type"] != "cppdbg",
         }
     return services
@@ -250,6 +262,14 @@ def _daprd_bin() -> str:
     sys.exit("daprd not found in PATH or ~/.dapr/bin")
 
 
+def _stop_pair(service: dict) -> bool:
+    """Stops the application and the sidecar named by their pid files; True if either was alive."""
+    key = service["key"]
+    stopped = _stop_pid_file(PID_DIR / f"{key}.app.pid")
+    stopped |= _stop_pid_file(PID_DIR / f"{key}.pid")
+    return stopped
+
+
 def start(service: dict, wait: float = 90.0) -> None:
     key = service["key"]
     PID_DIR.mkdir(parents=True, exist_ok=True)
@@ -259,10 +279,23 @@ def start(service: dict, wait: float = 90.0) -> None:
     if _pid(app_pid_file) and _pid(dapr_pid_file):
         print(f"  {key:16} already running")
         return
-    if _listening(service["app_port"]):
-        sys.exit(f"port {service['app_port']} is taken but {key} is not ours — stop it first")
 
-    if not _pid(dapr_pid_file):
+    # A sidecar of an earlier run keeps its ports until it is really gone, and a second daprd on
+    # the same ports dies at once with "could not listen on any endpoint" -- whose only visible
+    # symptom here is some *other* service failing to reach this one 90 seconds later. So every
+    # port this start is going to take must be free, and the holder named. A live sidecar of our
+    # own is the one allowed to hold them: it is what we are about to reuse.
+    dapr_pid = _pid(dapr_pid_file)
+    ports = service["ports"] if dapr_pid is None else {"app": service["app_port"]}
+    if busy := _busy_ports(ports):
+        lines = []
+        for role, port, pids in busy:
+            who = "; ".join(f"pid {pid}: {_cmdline(pid)[:90]}" for pid in pids)
+            lines.append(f"  {port} ({role}) -- {who or 'not visible to this user'}")
+        sys.exit(f"{key}: these ports are already taken:\n" + "\n".join(lines)
+                 + "\n  run 'scripts/dev_stack.py stop-strays' to free the ones that are ours")
+
+    if dapr_pid is None:
         _stop_pid_file(dapr_pid_file)
         with (PID_DIR / f"{key}.log").open("wb") as log:
             proc = subprocess.Popen(
@@ -284,16 +317,19 @@ def start(service: dict, wait: float = 90.0) -> None:
             return
         if _pid_dead(proc.pid):
             tail = (PID_DIR / f"{key}.app.log").read_text().splitlines()[-15:]
+            # The sidecar is left running otherwise, and the next start reuses it over ports that
+            # a fresh one would have needed -- the failure then reappears as another service's
+            # timeout, with nothing pointing back here.
+            _stop_pair(service)
             sys.exit(f"{key} died on startup:\n  " + "\n  ".join(tail))
         time.sleep(0.3)
+    _stop_pair(service)
     sys.exit(f"{key} did not open port {service['app_port']} within {wait:.0f}s")
 
 
 def stop(service: dict) -> None:
     key = service["key"]
-    stopped = _stop_pid_file(PID_DIR / f"{key}.app.pid")
-    stopped |= _stop_pid_file(PID_DIR / f"{key}.pid")
-    print(f"  {key:16} {'stopped' if stopped else 'was not running'}")
+    print(f"  {key:16} {'stopped' if _stop_pair(service) else 'was not running'}")
 
 
 def build(services: list[dict]) -> None:
@@ -405,6 +441,19 @@ def _cmdline(pid: int) -> str:
     return " ".join(part for part in raw.split("\0") if part)
 
 
+def _busy_ports(ports: dict[str, int]) -> list[tuple[str, int, list[int]]]:
+    """Every port in `ports` (role -> number) that is already listened on, with the pids holding it.
+
+    /proc is how the holder gets named; without it the answer is still true, only anonymous.
+    """
+    if not Path("/proc/net/tcp").exists():
+        return [(role, port, []) for role, port in ports.items() if _listening(port)]
+    inodes = _listen_inodes()
+    holders = _pids_by_inode()
+    return [(role, port, sorted(holders.get(inodes[port], ())))
+            for role, port in ports.items() if port in inodes]
+
+
 def _is_ours(pid: int) -> bool:
     """Whether this process belongs to the checkout.
 
@@ -503,9 +552,7 @@ def stop_strays() -> None:
     wanted: dict[int, str] = {}
     for app in apps:
         app_id = app["appID"]
-        for field, role in (("appPort", "app"), ("daprHTTPPort", "sidecar http"),
-                            ("daprGRPCPort", "sidecar grpc"), ("metricsPort", "sidecar metrics"),
-                            ("daprInternalGRPCPort", "sidecar internal")):
+        for field, role in PORT_FIELDS:
             if field in app:
                 wanted[int(app[field])] = f"{app_id} {role}"
     vite = _vite_port()
