@@ -40,7 +40,9 @@ public sealed class OnvifDeviceIoWatcherFactory(
     }
     catch
     {
-      events.Dispose();
+      // The subscription the service created on the way in still has to be released, even though
+      // the watcher never got to take it over.
+      await events.DisposeAsync();
       throw;
     }
   }
@@ -58,10 +60,11 @@ public sealed class OnvifDeviceIoWatcherFactory(
 
     public async ValueTask DisposeAsync()
     {
-      // The watcher first: it unsubscribes on the way out, and the service must still be open for
-      // that. The service is not disposed by the watcher — its owner still has to do it.
+      // The watcher first: stopping it releases its pull point, and the service must still be open
+      // for that. The service is not disposed by the watcher — its owner still has to do it, and
+      // Disposing these two in the other order would close the subscription manager first.
       await watcher.DisposeAsync();
-      events.Dispose();
+      await events.DisposeAsync();
     }
   }
 }
