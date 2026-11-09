@@ -1,4 +1,5 @@
 using Dapr.Client;
+using Dapr.Messaging.PublishSubscribe;
 using Dapr.Messaging.PublishSubscribe.Extensions;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Vms.Cfg;
@@ -49,8 +50,15 @@ builder.Services.AddSingleton<IRunStore>(sp => new DaprEventRunStore(
 builder.Services.AddSingleton<IRoutingDiagnostics, EntityStateRoutingDiagnostics>();
 
 // Registered as itself as well as a hosted service: the router reads it, and the hosted half is
-// the subscriber that invalidates it.
-builder.Services.AddSingleton<SubscriptionCache>();
+// the subscriber that invalidates it. The version source is what keeps a lost message from hiding
+// a change until the TTL (see SubscriptionCache.EnsureFreshAsync).
+builder.Services.AddSingleton<ISubscriptionVersionSource>(sp => new DaprSubscriptionVersionSource(
+  sp.GetRequiredService<DaprClient>(), stateStoreName));
+builder.Services.AddSingleton(sp => new SubscriptionCache(
+  sp.GetRequiredService<CfgService.CfgServiceClient>(),
+  sp.GetRequiredService<DaprPublishSubscribeClient>(),
+  sp.GetRequiredService<ISubscriptionVersionSource>(),
+  sp.GetRequiredService<ILogger<SubscriptionCache>>()));
 // The router reads the same instance through the interface; registering only the concrete type
 // leaves EventRouter unconstructible and the service dead on its first start.
 builder.Services.AddSingleton<ISubscriptionSource>(sp => sp.GetRequiredService<SubscriptionCache>());

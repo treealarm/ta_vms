@@ -1130,20 +1130,32 @@ namespace VmsCfg
 
     private async Task NotifyEventSubscriptionsChangedAsync(CancellationToken ct)
     {
+      // Two independent paths, so one failing does not take the other down with it: the key is what
+      // every reader compares against, the message only makes the reload immediate.
       try
       {
-        // The version key is the truth for replicable readers; the message is the fast signal.
         await daprClient.SaveStateAsync(
           StateStoreName, SubscriptionsVersionKey, Guid.NewGuid().ToString("N"),
           cancellationToken: ct);
+      }
+      catch (Exception ex)
+      {
+        // The row is saved and the message still goes out; without the key its delivery is all a
+        // reader has, and one that misses it waits for its own TTL.
+        logger.LogWarning(ex,
+          "Writing {Key} failed — readers depend on the message alone", SubscriptionsVersionKey);
+      }
+
+      try
+      {
         await daprClient.PublishEventAsync(
           notifier.PubSubName, EventSubscriptionsChangedTopic, string.Empty, ct);
       }
       catch (Exception ex)
       {
-        // The row is saved; a lost signal costs a reader its cache TTL, not the change.
+        // If the key was written, a lost message costs a reader no staleness at all.
         logger.LogWarning(ex,
-          "event-subscriptions-changed publish failed — readers will pick the change up by TTL");
+          "event-subscriptions-changed publish failed — readers fall back to the version key");
       }
     }
 
