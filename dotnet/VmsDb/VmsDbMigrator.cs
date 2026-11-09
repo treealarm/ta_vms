@@ -124,9 +124,26 @@ public sealed class VmsDbMigrator
     {
       // CancellationToken.None: a cancelled migration must still release the lock, or the next
       // replica of this service would wait on it for the life of the connection that took it.
-      await using var unlockCmd = new NpgsqlCommand(
-        $"SELECT pg_advisory_unlock({_advisoryLockExpression});", connection);
-      await unlockCmd.ExecuteNonQueryAsync(CancellationToken.None);
+      //
+      // What is released here is a session-level lock, so a failure to release it costs nothing
+      // but the wait until this connection closes, and that is what the disposal below does. It
+      // must not become the exception the caller sees: a connection that the failure itself broke
+      // answers "Connection is not open" here, and that would replace the one error worth reading
+      // with one that says only that something else went wrong first.
+      if (connection.State == System.Data.ConnectionState.Open)
+      {
+        try
+        {
+          await using var unlockCmd = new NpgsqlCommand(
+            $"SELECT pg_advisory_unlock({_advisoryLockExpression});", connection);
+          await unlockCmd.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+          Console.Error.WriteLine(
+            $"{_serviceName}: could not release the migration lock: {ex.Message}");
+        }
+      }
     }
   }
 
