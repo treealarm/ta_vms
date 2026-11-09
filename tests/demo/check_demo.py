@@ -1131,9 +1131,14 @@ def check_emit_loop(vms, sensor):
     loop_id = str(uuid.uuid4())
 
     # Back to normal first: the emitted event must be a real transition. The rule is created only
-    # now, so the window in which it can fire does not have to cover two device round trips.
+    # now, so the window in which it can fire does not have to cover two device round trips. The
+    # wait is for the transition this command causes — an `open` event left over from an earlier
+    # scenario would let the relay be set back before the release had reached the device.
+    before = {event["id"] for event in sensor_events(vms, part["id"], "open")}
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
-    wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+    wait_until(
+        lambda: [event for event in sensor_events(vms, part["id"], "open")
+                 if event["id"] not in before], 75)
 
     vms.call("PUT", "/api/map/admin/event-subscriptions", {"subscription": {
         "id": loop_id,
@@ -1158,14 +1163,23 @@ def check_emit_loop(vms, sensor):
     }})
 
     try:
+        # Only a transition that happens after the rule is saved can be routed by it. A `closed`
+        # event left over from the scenarios above must not make this wait return at once: the
+        # device's own delivery is the slow part here, and it is what the 75 s covers.
+        before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
         set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-        wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+        closed = wait_until(
+            lambda: [event for event in sensor_events(vms, part["id"], "closed")
+                     if event["id"] not in before], 75)
+        check(bool(closed), "closing the contact writes a new `sensor` event")
 
-        # 75 s: the router's own cache is good for a minute if the change signal is lost.
+        # 30 s after that: the router compares the shared version key on every event, so a lost
+        # change signal no longer hides the rule until its cache expires. What is left is the
+        # debug-state publication, which ticks every VMS_DEBUG_ENTITY_STATE_SECONDS.
         suppressed = wait_until(
             lambda: next((state for state in entity_states(vms)
                           if state.get("entityType") == "event_routing_suppressed"
-                          and loop_id in (state.get("stateJson") or "")), None), 75)
+                          and loop_id in (state.get("stateJson") or "")), None), 30)
         check(suppressed is not None,
               "the loop is stopped by the chain and reported in the debug registry")
     finally:
