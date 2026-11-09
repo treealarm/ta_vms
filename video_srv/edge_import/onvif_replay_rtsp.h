@@ -207,6 +207,11 @@ private:
   uint8_t m_fu_nal_header = 0;
   uint16_t m_fu_hevc_nal_hdr = 0;
   int64_t m_fu_rtp_ts = 0;
+  /// Whether the camera has sent one video RTP packet at all. What silence after that means: the
+  /// range is over, not that we never heard from it. Not the same as m_have_base_ts, which the
+  /// first *complete* picture sets: a camera that sets no marker bit can send one picture, go
+  /// silent, and leave no base timestamp behind while its media has plainly been here.
+  bool m_have_media = false;
   bool m_have_base_ts = false;
   int64_t m_base_rtp_ts = 0;
 

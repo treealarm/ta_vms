@@ -443,6 +443,21 @@ void onvif_replay_rtsp::close()
   m_param_vps.clear();
   m_param_sps.clear();
   m_codec = video_codec::unknown;
+  // Everything a session accumulated goes back to its start, so that an object opened again -- open()
+  // closes first -- does not begin with the previous session's timestamps, end of stream or pictures.
+  m_next_interleaved = 0;
+  m_have_media = false;
+  m_have_base_ts = false;
+  m_base_rtp_ts = 0;
+  m_have_audio_base_ts = false;
+  m_audio_base_rtp_ts = 0;
+  m_end_rc = 0;
+  m_pictures.clear();
+  m_picture.clear();
+  m_picture_rtp_ts = 0;
+  m_picture_key = false;
+  m_picture_recorded_at.reset();
+  m_packet_recorded_at.reset();
 }
 
 std::string onvif_replay_rtsp::format_clock(std::chrono::system_clock::time_point tp)
@@ -1605,7 +1620,10 @@ int onvif_replay_rtsp::read_interleaved_rtp(std::vector<uint8_t>& rtp, int& chan
         // After PLAY + Rate-Control: no the camera often goes silent when the
         // clock range is exhausted. Treat idle-after-media as EOF, not hard I/O
         // failure (otherwise a successful import ends as "Input/output error").
-        return m_have_base_ts ? AVERROR_EOF : AVERROR(EIO);
+        // What counts as media is the arrival of video RTP, not a finished picture: a camera that
+        // sets no marker bit can send one picture and fall silent without ever setting a base
+        // timestamp, and its range has still ended normally.
+        return m_have_media ? AVERROR_EOF : AVERROR(EIO);
       }
       const int n = m_sock.recv_some(dst + got, need - got);
       if (n <= 0)
@@ -1642,9 +1660,12 @@ int onvif_replay_rtsp::read_interleaved_rtp(std::vector<uint8_t>& rtp, int& chan
     }
     channel = hdr[1];
     const int len = (hdr[2] << 8) | hdr[3];
-    if (len <= 0 || len > 65535)
+    if (len == 0)
     {
-      return AVERROR_INVALIDDATA;
+      // An empty interleaved frame carries nothing, and the next header starts right here. One of
+      // them used to end the whole replay with AVERROR_INVALIDDATA, losing the rest of the range.
+      // The length is a 16-bit field, so it cannot legitimately exceed 65535 either.
+      continue;
     }
     rtp.resize(static_cast<size_t>(len));
     const int br = read_exact(rtp.data(), static_cast<size_t>(len));
@@ -2336,6 +2357,8 @@ int onvif_replay_rtsp::read_frame(AVPacket* packet)
     int hr = AVERROR(EAGAIN);
     if (channel == video_ch)
     {
+      // From here on, silence means the range ended (read_interleaved_rtp's timeout).
+      m_have_media = true;
       hr = handle_video_rtp(rtp.data(), static_cast<int>(rtp.size()), packet);
     }
     else if (audio_ch >= 0 && channel == audio_ch && m_audio_stream_index >= 0)

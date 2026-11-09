@@ -43,16 +43,15 @@ public class FrontendConfigController : ControllerBase
   public static readonly bool LiveTestPlayerEnabled = string.Equals(
     Environment.GetEnvironmentVariable("VMS_LIVE_TEST_PLAYER"), "true", StringComparison.OrdinalIgnoreCase);
 
-  // Optional: only the standalone installs set it (see FrontendConfigDto.UserAdminPort). Set but not
-  // a port is a misconfiguration, refused rather than hidden.
-  private static readonly int? UserAdminPort =
-    Environment.GetEnvironmentVariable("MT_ADMIN_PORT") is { Length: > 0 } port
-      ? int.TryParse(port, out var value) ? value : throw new InvalidOperationException($"MT_ADMIN_PORT='{port}' is not a port number")
-      : null;
-
   [HttpGet("frontend")]
   public ActionResult<FrontendConfigDto> GetConfig()
   {
+    // Read here rather than in a static initialiser: MT_ADMIN_PORT is optional and only this answer
+    // uses it, so a bad value must fail this request, not the process (and every service sharing it)
+    // at start. Refused rather than hidden, all the same.
+    if (!TryUserAdminPort(out var userAdminPort, out var error))
+      return Problem(detail: error, statusCode: StatusCodes.Status500InternalServerError);
+
     return Ok(new FrontendConfigDto
     {
       LiveTestPlayer = LiveTestPlayerEnabled,
@@ -60,7 +59,26 @@ public class FrontendConfigController : ControllerBase
       // Optional, shown under the map as given. Empty with tiles on is a misconfiguration for most
       // providers (OpenStreetMap requires the credit), but not one this service can judge.
       MapTileAttribution = Environment.GetEnvironmentVariable("VMS_MAP_TILE_ATTRIBUTION"),
-      UserAdminPort = UserAdminPort,
+      UserAdminPort = userAdminPort,
     });
+  }
+
+  /// <summary>
+  /// Optional: only the standalone installs set it (see <see cref="FrontendConfigDto.UserAdminPort"/>).
+  /// False, with the reason, when it is set to something that is not a port number.
+  /// </summary>
+  private static bool TryUserAdminPort(out int? port, out string? error)
+  {
+    port = null;
+    error = null;
+    if (Environment.GetEnvironmentVariable("MT_ADMIN_PORT") is not { Length: > 0 } text)
+      return true;
+    if (!int.TryParse(text, out var value))
+    {
+      error = $"MT_ADMIN_PORT='{text}' is not a port number";
+      return false;
+    }
+    port = value;
+    return true;
   }
 }
