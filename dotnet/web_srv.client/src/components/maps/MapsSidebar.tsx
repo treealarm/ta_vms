@@ -411,6 +411,14 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   const rows = treeRows(roots, childrenByParent, known, expanded)
   const rootsLoaded = !space.id || !!childrenByParent[space.id]?.loaded
 
+  // What the panel beside the map is about, as a node of this tree. A camera picked by its
+  // placement names the camera; the row is the picture of it drawn here.
+  const selectedNodeId = selection?.kind === 'node' || selection?.kind === 'landmark'
+    ? selection.id
+    : selection?.kind === 'camera'
+      ? markers.find((marker) => marker.cameraId === selection.id)?.id
+      : undefined
+
   // The row that ask is about, and whether its scroll is still owed: the rows arrive with the
   // pages read above, so the scroll waits for the render that has the row in it.
   const revealedRow = useRef<HTMLDivElement | null>(null)
@@ -522,10 +530,7 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
                 event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
                 event.dataTransfer.effectAllowed = 'copy'
               }}
-              // The row the panel asked for is the node the panel is about, even when the
-              // selection there is a camera's placement rather than the picture's node.
-              selected={(selection?.kind === 'node' && selection.id === marker.id)
-                || revealed?.id === marker.id}
+              selected={selectedNodeId === marker.id}
               onClick={() => {
                 // A space is a world of its own, not a shape on this canvas: open it.
                 if (marker.nodeKind === 'space') {
