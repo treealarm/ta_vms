@@ -116,17 +116,15 @@ namespace VmsMap.Demo
   /// port, replacing the `DISCONNECTED` earlier worlds installed.
   public sealed record DemoState(string NodeKey, params string[] States);
 
-  /// A device's own diagram, drawn on a canvas of the world: the registry key it is remembered
-  /// under, the device, the template its model names, and where its point stands on the canvas
-  /// beside the camera's picture. It is made by the device-diagram service, not written as a node —
-  /// the service owns the diagram, hangs it under the camera's picture and binds the device's parts
-  /// to its regions.
+  /// A device's own diagram, kept with the camera but not drawn: the registry key it is remembered
+  /// under, the device, the template its model names, and the thumbnail the map shows when the
+  /// camera is selected and offers a link into it. It is made by the device-diagram service, not
+  /// written as a node — the service owns the diagram, hangs it under the camera's picture and
+  /// binds the device's parts to its regions.
   public sealed record DemoDeviceDiagram(
     string Key,
     string CameraKey,
     string TypeKey,
-    string SpaceKey,
-    DemoPoint At,
     string VisualKey,
     int VisualWidth,
     int VisualHeight);

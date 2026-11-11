@@ -152,14 +152,15 @@ export const mapApi = {
 
   /** Draws a device from a template an administrator picked. */
   /**
-   * Draws a device on a canvas: the diagram hangs under the camera's placement there, drawn beside
-   * it. Without a template the one the device's model names is taken, and a blank sheet when none
-   * does.
+   * Draws a device's diagram on a canvas, under the camera's placement there. Without a canvas the
+   * diagram is only kept with the camera — under its picture and not drawn — which is how a reader
+   * opens it from the camera without a second card standing on the plan. Without a template the one
+   * the device's model names is taken, and a blank sheet when none does.
    */
   attachDeviceDiagram: (body: {
     sourceKind: string
     sourceId: string
-    spaceId: string
+    spaceId?: string
     diagramTypeId?: string
   }) => post<MapMarker>(`${ADMIN}/device-diagram`, body),
 

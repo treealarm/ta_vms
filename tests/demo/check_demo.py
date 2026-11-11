@@ -500,9 +500,10 @@ def check_positions(vms, world):
 
 def check_device_diagram(vms, world):
     """The camera drawn from its model: a node under the camera's picture on the plan, not beside
-    it at the plan's root and not under the device in the logical tree. Its sockets hold the parts
-    that were configured — and a socket lights up with its relay, because a replica shows its
-    owner's state rather than keeping one of its own."""
+    it at the plan's root and not under the device in the logical tree — and not drawn there, since
+    the map offers a link into it beside the selected camera instead of a card that always stands
+    on the plan. Its sockets hold the parts that were configured — and a socket lights up with its
+    relay, because a replica shows its owner's state rather than keeping one of its own."""
     camera_node, parts = device_nodes(vms, "sim-master")
     if not check(camera_node is not None, "sim-master has a canonical node"):
         return
@@ -529,17 +530,11 @@ def check_device_diagram(vms, world):
     check((diagram.get("name") or "").endswith("Camera rear panel"),
           f"the diagram is named after its type (has {diagram.get('name')!r})")
 
-    # Beside the camera, not in the middle of the plan: the demo places it at a point of its own.
-    placement = next((row for row in placements(vms)
-                      if row.get("cameraId") == camera_node.get("cameraId")
-                      and row.get("isReference")), None)
+    # Not drawn: the floor carries one point per camera, and the diagram is reached by the link
+    # the map offers beside the selected camera. A picture beside it is an administrator's choice.
     figure = next((candidate for candidate in figures_of(vms, [diagram["id"]])
                    if candidate.get("id") == diagram["id"]), None)
-    coord = ((figure or {}).get("geometry") or {}).get("coord") or []
-    if check(placement is not None and coord, "the panel has its own point on the plan"):
-        gap = W.ground_gap(coord[0]["lat"], coord[0]["lon"],
-                           placement["lat"], placement["lon"])
-        check(gap <= 10, f"the panel stands {gap:.1f} m from the camera")
+    check(figure is None, "the diagram is not drawn on the plan")
 
     content = vms.call("GET", f"/api/map/diagrams/{diagram['id']}/content?depth=1") or {}
     rows = {row.get("id"): row for row in content.get("content") or []}

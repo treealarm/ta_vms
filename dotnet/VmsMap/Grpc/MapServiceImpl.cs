@@ -336,15 +336,15 @@ namespace VmsMap.Grpc
     /// <summary>
     /// Draws a device on the map — the administrator's path: the diagram is an object of the named
     /// canvas, drawn from the template that matches the device's model (or a blank sheet when none
-    /// does), with the device's configured parts bound to its regions.
+    /// does), with the device's configured parts bound to its regions. No canvas named keeps it with
+    /// the camera: the node hangs under the camera's picture and nothing is drawn beside it.
     /// </summary>
     public override async Task<MapProto.Marker> AttachDeviceDiagram(
       MapProto.AttachDeviceDiagramRequest request, ServerCallContext context)
     {
       var ct = context.CancellationToken;
-      if (string.IsNullOrWhiteSpace(request.SourceId) || string.IsNullOrWhiteSpace(request.SpaceId))
-        throw new RpcException(new Status(
-          StatusCode.InvalidArgument, "A device and the canvas it is drawn on are required"));
+      if (string.IsNullOrWhiteSpace(request.SourceId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "A device is required"));
 
       var sourceKind = string.IsNullOrWhiteSpace(request.SourceKind)
         ? DeviceObjectId.CameraSource
@@ -353,12 +353,15 @@ namespace VmsMap.Grpc
         ? IDeviceDiagramService.DefaultSlot
         : request.Slot;
 
-      var site = new DiagramSite(request.SpaceId, request.At?.Lat, request.At?.Lon);
+      var site = string.IsNullOrWhiteSpace(request.SpaceId)
+        ? null
+        : new DiagramSite(request.SpaceId, request.At?.Lat, request.At?.Lon);
       var objectId = await _deviceDiagrams.AttachAsync(
         sourceKind, request.SourceId, request.DiagramTypeId, slot, site, ct);
       if (objectId is null)
         throw new RpcException(new Status(StatusCode.FailedPrecondition,
-          "The diagram could not be drawn: the space does not exist, or the template is gone"));
+          "The diagram could not be created: the space does not exist, the camera is not placed, " +
+          "or the template is gone"));
 
       var marker = (await _mapService.GetAsync([objectId])).GetValueOrDefault(objectId);
       if (marker is null)

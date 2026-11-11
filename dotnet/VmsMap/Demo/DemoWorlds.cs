@@ -59,7 +59,10 @@ namespace VmsMap.Demo
     //     child of the plan; the readings replica is gone — it repeated the picture of the camera,
     //     only drawn as an icon — with the Device telemetry type and the feeder behind it, and the
     //     cameras are drawn from a picture instead of the map's dot.
-    public const int UmdDataCenterVersion = 20;
+    // 21: the diagram is no longer drawn on the floor: it is kept under the camera's picture and
+    //     reached by the link the plan offers next to the selected camera, so the floor shows one
+    //     point per camera rather than a second card beside the master.
+    public const int UmdDataCenterVersion = 21;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -285,14 +288,13 @@ namespace VmsMap.Demo
         PtzObservations,
         [
           // The indoor master, drawn as the camera it is: body, lens, cable and the terminal block
-          // its relay and input parts are wired to. It stands on the floor beside the camera, a
-          // diagram of the device rather than the device's node in the tree.
+          // its relay and input parts are wired to. It is kept under the camera's picture on the
+          // floor and not drawn: selecting the camera offers a link into it, and the plan stays as
+          // many camera points as the world has cameras.
           new DemoDeviceDiagram(
             "object/camera-panel-sim-master",
             "sim-master",
             CameraPanelType,
-            "space/building",
-            new DemoPoint(38.9927950, -76.9379400),
             "file/camera-panel-background",
             VisualWidth: 44,
             VisualHeight: 28),

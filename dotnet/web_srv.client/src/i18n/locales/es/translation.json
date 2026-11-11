@@ -1200,7 +1200,8 @@
     "openDeviceDiagram": "Abrir diagrama del dispositivo",
     "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Dibuje uno desde la fila de la cámara en Administración → Mapas.",
     "deviceDiagram": "Diagrama del dispositivo",
-    "diagramNotCreated": "No se pudo dibujar el diagrama"
+    "diagramNotCreated": "No se pudo dibujar el diagrama",
+    "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo"
   },
   "rights": {
     "tab": "Derechos",

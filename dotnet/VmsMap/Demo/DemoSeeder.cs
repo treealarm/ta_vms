@@ -345,15 +345,19 @@ namespace VmsMap.Demo
           continue;
         }
 
+        // No canvas named: the diagram hangs under the camera's picture and is not drawn on it. The
+        // world does not want a second card beside the camera — the map offers a link into it when
+        // the camera is selected — and drops the picture an earlier world put there.
         var diagramId = await _deviceDiagrams.AttachAsync(
           DeviceObjectId.CameraSource, DemoIds.Camera(diagram.CameraKey),
-          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot,
-          new DiagramSite(Required(diagram.SpaceKey).ToString(), diagram.At.Lat, diagram.At.Lon), ct);
+          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot, site: null, ct);
         if (diagramId is null)
           continue;
 
-        // The diagram's own marker on the map is a thumbnail of the device it draws: the paper it
-        // opens on is the same picture, so the point reads as "the panel".
+        await _geo.RemoveAsync([diagramId]);
+
+        // The thumbnail the map draws when it offers a link into the diagram: the paper it opens on
+        // is the same picture.
         var picture = world.Files.Single(file => file.Key == diagram.VisualKey);
         await _visuals.UpdateListAsync([new VisualDTO
         {

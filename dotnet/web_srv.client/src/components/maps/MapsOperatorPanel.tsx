@@ -42,6 +42,7 @@ import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList, { type MapObjectItem } from './MapObjectList'
 import { rootsOf, sharesGeometry } from './spatialUtils'
+import { useDeviceDiagramLink } from './useDeviceDiagram'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -138,6 +139,9 @@ export default function MapsOperatorPanel() {
   const selectedMarker = selectedNodeId ? markers[selectedNodeId] : undefined
   const selectedCameraId = selectedMarker?.cameraId ?? null
   const selectedPlacement = here.find((p) => p.cameraId === selectedCameraId)
+  // The diagram of the picked camera, offered as a link beside it instead of a card that always
+  // stands on the plan.
+  const deviceDiagram = useDeviceDiagramLink(selectedMarker)
   const figureById = useMemo(
     () => new Map(spaceData.figures.map((figure) => [figure.id, figure])),
     [spaceData.figures],
@@ -615,6 +619,16 @@ export default function MapsOperatorPanel() {
                     levels={levels}
                     visual={node ? figureById.get(node.id)?.visual : undefined}
                     zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
+                    diagramLink={deviceDiagram && node?.id === selectedNodeId
+                      ? {
+                          label: t('diagramEditor.openDeviceDiagram'),
+                          visual: deviceDiagram.visual,
+                          onOpen: () => {
+                            setDiagramId(deviceDiagram.diagram.id)
+                            setSelectedNodeId(deviceDiagram.diagram.id)
+                          },
+                        }
+                      : undefined}
                     onSelect={() => void selectCamera(p.cameraId)}
                   />
                 )

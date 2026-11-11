@@ -352,7 +352,7 @@ function NodesTree({ markers, space, onOpenSpace }: {
   const { selection, setSelection, openDiagram } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
-  const { showDeviceDiagram: openDeviceDiagram, busy: diagramBusy } = useDeviceDiagram(space.id)
+  const { placeDeviceDiagram, busy: diagramBusy } = useDeviceDiagram(space.id)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -410,14 +410,15 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * The device's diagram on this canvas: drawn if it is not there yet, opened if it is. It hangs
-   * under the camera's picture here, and asking again is safe — the server keeps one per device.
+   * Puts the device's diagram on this canvas: a picture beside the camera, drawn from its template
+   * and opened. A diagram is otherwise only kept with the camera — the map offers a link into it
+   * when the camera is selected — so this is the administrator asking for a permanent card.
    */
   const showDeviceDiagram = async (marker: MapMarker) => {
     if (!marker.cameraId) return
 
     setNotice(null)
-    const shown = await openDeviceDiagram(marker.cameraId)
+    const shown = await placeDeviceDiagram(marker.cameraId)
     if (!shown) setNotice(t('diagramEditor.diagramNotCreated'))
   }
 
@@ -498,14 +499,13 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
-              {/* A device's own actions on its own row: draw it from a template, or open the
-                  diagram it already has. Both act on the device, so a picture of it offers them
-                  too — the dialog names the device, not the picture. */}
+              {/* A device's own action on its own row: put its diagram here, drawing it beside the
+                  camera. A diagram otherwise shows as a link beside the selected camera only. */}
               {marker.nodeKind === 'camera' && marker.cameraId ? (
-                <Tooltip title={t('diagramEditor.deviceDiagram')}>
+                <Tooltip title={t('diagramEditor.placeDeviceDiagram')}>
                   <IconButton
                     size="small"
-                    aria-label={t('diagramEditor.deviceDiagram')}
+                    aria-label={t('diagramEditor.placeDeviceDiagram')}
                     disabled={busy || diagramBusy}
                     onClick={(event) => { event.stopPropagation(); void showDeviceDiagram(marker) }}
                   >

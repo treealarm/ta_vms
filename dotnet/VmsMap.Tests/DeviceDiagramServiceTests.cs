@@ -538,6 +538,43 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
+  public async Task ADiagramWithNoCanvasNamedLivesUnderTheReferencePictureAndIsNotDrawn()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    var picture = await SeedPictureAsync(s);
+
+    var id = await s.Diagrams.AttachAsync(
+      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+
+    Assert.NotNull(id);
+    var node = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(id!));
+    Assert.Equal(picture, node.parent_id);
+    // Nothing is drawn: the diagram is opened from the camera's link, and a picture beside the
+    // camera is a place an administrator asks for.
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == node.id));
+    Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
+  }
+
+  [Fact]
+  public async Task ADeviceNobodyPlacedHasNothingToHangItsDiagramUnder()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedTypeAsync(s, new TypeSpec());
+
+    var id = await s.Diagrams.AttachAsync(
+      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+
+    Assert.Null(id);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
   public async Task ADiagramBesideTheCameraIsNestedUnderItsPictureAndKeepsItsPoint()
   {
     var s = await CreateAsync();

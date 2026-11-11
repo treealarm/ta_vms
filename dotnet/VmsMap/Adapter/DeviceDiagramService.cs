@@ -118,14 +118,14 @@ namespace VmsMap.Adapter
         if (chosen is null && (await SelectTypeAsync(sourceId, ct)).TypeId is { } match)
           chosen = Utils.ConvertObjectIdToGuid(match);
 
-        row = await CreatePlacedAsync(sourceKind, sourceId, slot, chosen, site, ct);
+        row = await CreateAsync(sourceKind, sourceId, slot, chosen, site, ct);
         if (row is null)
           return null;
       }
-      else if (site is not null)
+      else
       {
-        // The attach is "draw it here": a device drawn again on another canvas moves with it, and a
-        // diagram made before diagrams hung under the camera's picture is nested under it now.
+        // "Draw it here" when a canvas is named, "keep it with the camera" when none is: either way
+        // the node is nested under the camera's picture, and only a named canvas gives it a point.
         await PlaceAsync(row, site, ct);
       }
 
@@ -370,24 +370,42 @@ namespace VmsMap.Adapter
     private sealed record ConfiguredPart(string ObjectId, DevicePartRef Ref, string DisplayName);
 
     /// <summary>
-    /// Creates the diagram on the given canvas: a node under the picture of the camera it draws (the
-    /// space itself where the camera is not drawn), a point of its own, and the paper its template
-    /// draws. The parts are bound afterwards by reconciliation, because the device may not have
-    /// declared them yet — a demo installs before OnvifSim says what it has.
+    /// Creates the diagram under the camera's picture and, on a named canvas, draws it: a point of
+    /// its own and the paper its template draws. Without a canvas the node is kept with the camera
+    /// and nothing is drawn — a diagram is opened from the camera's own link, and a permanent
+    /// picture beside it is a place an administrator asked for. The parts are bound afterwards by
+    /// reconciliation, because the device may not have declared them yet — a demo installs before
+    /// OnvifSim says what it has.
     /// </summary>
-    private async Task<DBDeviceDiagram?> CreatePlacedAsync(
+    private async Task<DBDeviceDiagram?> CreateAsync(
       string sourceKind, string sourceId, string slot, Guid? typeId, DiagramSite? site,
       CancellationToken ct)
     {
-      // A diagram is a map object: without a space there is nowhere to draw it.
-      var spaceGuid = site is null ? null : Utils.ConvertObjectIdToGuid(site.SpaceId);
-      if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
-        return null;
+      Guid? parentGuid;
+      (double Lat, double Lon)? point = null;
 
-      var parent = await ParentOnCanvasAsync(sourceId, spaceGuid.Value, ct);
-      var point = site!.Lat is { } lat && site.Lon is { } lon
-        ? (Lat: lat, Lon: lon)
-        : await BesideCameraAsync(sourceId, spaceGuid.Value, ct);
+      if (site is null)
+      {
+        // No canvas named: under the picture the camera really stands on. A device that is not
+        // placed anywhere has no such node, and nothing would be its parent.
+        parentGuid = await ReferencePictureAsync(sourceId, ct);
+        if (parentGuid is null)
+          return null;
+      }
+      else
+      {
+        var spaceGuid = Utils.ConvertObjectIdToGuid(site.SpaceId);
+        if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
+          return null;
+
+        parentGuid = Utils.ConvertObjectIdToGuid(
+          await ParentOnCanvasAsync(sourceId, spaceGuid.Value, ct));
+        point = site.Lat is { } lat && site.Lon is { } lon
+          ? (Lat: lat, Lon: lon)
+          : await BesideCameraAsync(sourceId, spaceGuid.Value, ct);
+      }
+
+      var parent = Utils.ConvertGuidToObjectId(parentGuid);
 
       var type = typeId is { } id
         ? await _db.DiagramTypes.AsNoTracking().FirstOrDefaultAsync(t => t.id == id, ct)
@@ -413,15 +431,18 @@ namespace VmsMap.Adapter
         }
       ]);
 
-      await _geo.CreateGeo([
-        new FigureGeoDTO
-        {
-          id = objectId,
-          parent_id = parent,
-          name = name,
-          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
-        }
-      ]);
+      if (point is { } at)
+      {
+        await _geo.CreateGeo([
+          new FigureGeoDTO
+          {
+            id = objectId,
+            parent_id = parent,
+            name = name,
+            geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = at.Lat, Lon = at.Lon }),
+          }
+        ]);
+      }
 
       var row = new DBDeviceDiagram
       {
@@ -439,46 +460,64 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// Puts an existing diagram on a canvas: the node moves under the picture of the camera it draws
-    /// and keeps the point it stands at, unless the site names one — a reinstall must not move what
-    /// was dragged, and the move that nests a diagram under its camera must not either.
+    /// Keeps an existing diagram with its camera: the node moves under the picture of the camera it
+    /// draws. On a named canvas it also stands there, at the point it already stands at unless the
+    /// site names one — a reinstall must not move what was dragged. With no canvas, a figure it
+    /// already has is the administrator's and is left alone: the diagram can be opened from the
+    /// camera without being drawn beside it.
     /// </summary>
-    private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite site, CancellationToken ct)
+    private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite? site, CancellationToken ct)
     {
-      var spaceGuid = Utils.ConvertObjectIdToGuid(site.SpaceId);
-      if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
-        return;
-
       var marker = await _db.Markers.AsNoTracking()
         .FirstOrDefaultAsync(m => m.id == row.object_id, ct);
       if (marker is null)
         return;
 
-      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
-      var parent = await ParentOnCanvasAsync(row.source_id, spaceGuid.Value, ct);
-      var parentGuid = Utils.ConvertObjectIdToGuid(parent);
+      Guid? parentGuid;
+      (double Lat, double Lon)? point = null;
 
-      if (marker.parent_id == parentGuid && await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct))
+      if (site is null)
+      {
+        parentGuid = await ReferencePictureAsync(row.source_id, ct);
+        if (parentGuid is null)
+          return;
+      }
+      else
+      {
+        var spaceGuid = Utils.ConvertObjectIdToGuid(site.SpaceId);
+        if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
+          return;
+
+        parentGuid = Utils.ConvertObjectIdToGuid(
+          await ParentOnCanvasAsync(row.source_id, spaceGuid.Value, ct));
+        point = site.Lat is { } lat && site.Lon is { } lon
+          ? (Lat: lat, Lon: lon)
+          : await CurrentPointAsync(row.object_id, ct)
+            ?? await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+      }
+
+      var drawn = await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct);
+      if (marker.parent_id == parentGuid && (site is null || drawn))
         return;
 
-      var point = site.Lat is { } lat && site.Lon is { } lon
-        ? (Lat: lat, Lon: lon)
-        : await CurrentPointAsync(row.object_id, ct)
-          ?? await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
-
+      var objectId = Utils.ConvertGuidToObjectId(row.object_id);
+      var parent = Utils.ConvertGuidToObjectId(parentGuid);
       await _map.UpdateHierarchyAsync([
         new BaseMarkerDTO { id = objectId, parent_id = parent, name = marker.name }
       ]);
 
-      await _geo.CreateGeo([
-        new FigureGeoDTO
-        {
-          id = objectId,
-          parent_id = parent,
-          name = marker.name,
-          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
-        }
-      ]);
+      if (point is { } at)
+      {
+        await _geo.CreateGeo([
+          new FigureGeoDTO
+          {
+            id = objectId,
+            parent_id = parent,
+            name = marker.name,
+            geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = at.Lat, Lon = at.Lon }),
+          }
+        ]);
+      }
     }
 
     /// <summary>
@@ -497,6 +536,15 @@ namespace VmsMap.Adapter
       (from p in _db.CameraPlacements
        join m in _db.Markers on p.object_id equals m.id
        where p.camera_id == cameraId && m.parent_id == spaceId
+       select (Guid?)p.object_id).FirstOrDefaultAsync(ct);
+
+    /// The picture the camera really stands on: its reference placement. A diagram kept with the
+    /// camera without a canvas of its own hangs under it, and that is the one the reader arrives at
+    /// from anywhere in the deployment.
+    private Task<Guid?> ReferencePictureAsync(string cameraId, CancellationToken ct) =>
+      (from p in _db.CameraPlacements
+       join m in _db.Markers on p.object_id equals m.id
+       where p.camera_id == cameraId && p.is_reference
        select (Guid?)p.object_id).FirstOrDefaultAsync(ct);
 
     /// Where the diagram stands now, when it already has a figure of its own.

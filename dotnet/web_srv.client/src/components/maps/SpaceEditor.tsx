@@ -46,7 +46,7 @@ import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
 import { DRAW_MODES, useEditorState, type Mode, type SideTab } from './editorState'
-import { useDeviceDiagram } from './useDeviceDiagram'
+import { useDeviceDiagram, useDeviceDiagramLink } from './useDeviceDiagram'
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
 const MAX_PLAN_BYTES = 20 * 1024 * 1024
@@ -103,7 +103,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
-  const { showDeviceDiagram } = useDeviceDiagram(spaceId)
+  const { openDeviceDiagram } = useDeviceDiagram(spaceId)
   // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
   // shape being drawn. What the click is for always wins over what it lands on.
   const picking = !!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)
@@ -115,6 +115,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null
   const diagramContent = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
+  // The diagram of the camera picked on the canvas, offered as a link beside it.
+  const deviceDiagram = useDeviceDiagramLink(selectedNodeId ? markersById[selectedNodeId] : undefined)
 
   // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
   // map.
@@ -451,7 +453,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
         showLayer={space.kind === 'map'}
         referenceSpace={referenceSpace}
-        onDeviceDiagram={() => void showDeviceDiagram(selectedPlacement.cameraId)}
+        onDeviceDiagram={() => void openDeviceDiagram(selectedPlacement.cameraId)}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
           await dispatch(removePlacement({ cameraId: selectedPlacement.cameraId, spaceId })).unwrap()
@@ -736,6 +738,15 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   selected={selection?.kind === 'camera'
                     ? selection.id === p.cameraId
                     : nodeForPlacement(p)?.id === selectedNodeId}
+                  // The device's diagram is a link beside the picked camera, not a node of its own:
+                  // clicking it opens the diagram, and the plan stays one point per camera.
+                  diagramLink={deviceDiagram && node?.id === selectedNodeId
+                    ? {
+                        label: t('diagramEditor.openDeviceDiagram'),
+                        visual: deviceDiagram.visual,
+                        onOpen: () => selectNode(deviceDiagram.diagram.id),
+                      }
+                    : undefined}
                   editable={mode === 'select'}
                   interactive={!picking}
                   levels={levels}

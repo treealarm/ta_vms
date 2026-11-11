@@ -5,9 +5,12 @@ namespace VmsMap.Domain
 {
   /// <summary>
   /// Where a device's diagram stands on the map: a space, and the point it is drawn at. Without a
-  /// point the diagram is put beside the camera's own placement in that space.
+  /// point the diagram is put beside the camera's own placement in that space. `<c>null</c>` site
+  /// means "keep it with the camera and draw nothing": the node hangs under the picture the camera
+  /// really stands on, and is opened from the camera's own link.
   /// </summary>
   public sealed record DiagramSite(string SpaceId, double? Lat = null, double? Lon = null);
+
 
   /// <summary>
   /// Keeps a device's diagram in step with the template it was drawn from: one node per
@@ -32,7 +35,10 @@ namespace VmsMap.Domain
     /// template named or the one that matches the device's model — an empty sheet when none does —
     /// and binds the device's configured parts to its regions. A device that already has a diagram
     /// keeps it and keeps the point it stands at; the type it was drawn from is replaced when
-    /// another is named. Returns the diagram's node id.
+    /// another is named. With no site the diagram is only kept: under the picture the camera really
+    /// stands on, with no figure — drawn on a canvas is something an administrator asks for.
+    /// Returns the diagram's node id, or null when there is nowhere to keep it (a device that is
+    /// not placed at all) or the template named is gone.
     /// </summary>
     Task<string?> AttachAsync(
       string sourceKind, string sourceId, string? diagramTypeId, string slot,
