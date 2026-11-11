@@ -92,10 +92,6 @@ public class DemoWorldTests
     Assert.Equal(DemoArt.RackSlots, rackType.Regions.Count);
     Assert.Contains(rackType.Regions, region => region.Key == "slot-1");
 
-    // The camera's own readings, not the synthetic temperature and humidity the racks used to hold.
-    var telemetry = _world.Types.Single(type => type.Key == DemoTelemetry.TypeKey);
-    Assert.Equal(DemoTelemetry.Readings, telemetry.Regions.Select(region => region.Key));
-
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
     Assert.Equal(DemoArt.PortsPerSwitch, switchType.Regions.Count);
     Assert.Contains(switchType.Regions, region => region.Key == "port-8");
@@ -213,7 +209,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(19, _world.Version);
+    Assert.Equal(20, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -247,32 +243,13 @@ public class DemoWorldTests
   }
 
   [Fact]
-  public void TheIndoorMasterShowsItsReadingsOnAReplica()
+  public void NothingInTheWorldCopiesACamera()
   {
-    // A replica: its owner is the camera's canonical node, which the seeder resolves through
-    // device_node. It carries the readings' type and stands as a diagram, so it takes no placement.
-    var node = _world.Nodes.Single(candidate => candidate.Key == "object/telemetry-sim-master");
-    // A name of its own: the camera's placement replica is already called "Camera sim-master", and
-    // two identical names under one plan are indistinguishable in the tree.
-    Assert.Equal("Camera sim-master readings", node.Name);
-    Assert.Equal("sim-master", node.OwnerCameraId);
-    // An icon of its own: without one the node is a plain dot on the plan, which is what made the
-    // second replica look like a stray copy of the first.
-    Assert.Equal("file/readings-icon", node.VisualKey);
-    Assert.Equal(DemoTelemetry.TypeKey, node.TypeKey);
-    Assert.Equal("space/building", node.ParentKey);
-    Assert.NotNull(node.At);
-    Assert.NotNull(node.Canvas);
-    Assert.Null(node.RegionKey);
-  }
-
-  [Fact]
-  public void TheCameraOnTheCarKeepsNoReplica()
-  {
-    // A diagram stands where it is put, and this camera drives the ring road: its place is the car
-    // on the map, which follows what the camera reports (geo_from_device). Nothing of the demo's
-    // tree copies it, and nothing indoors shows its readings.
-    Assert.DoesNotContain(_world.Nodes, node => node.OwnerCameraId == "sim-vehicle");
+    // The readings panel the world used to ship repeated the picture of the indoor master as an
+    // icon; the camera's picture on the plan is the one thing that stands for it, and the device's
+    // diagram hangs under that picture.
+    Assert.DoesNotContain(_world.Nodes, node => node.Key.StartsWith("object/telemetry"));
+    Assert.DoesNotContain(_world.Types, type => type.Name == "Device telemetry");
   }
 
   [Fact]
@@ -298,14 +275,6 @@ public class DemoWorldTests
     {
       Assert.Equal(DemoArt.RackSlot(slot), rackType.Regions.Single(region => region.Key == $"slot-{slot}").Geometry);
     }
-    var telemetry = _world.Types.Single(type => type.Key == DemoTelemetry.TypeKey);
-    foreach (var reading in DemoTelemetry.Readings)
-    {
-      Assert.Equal(
-        DemoArt.TelemetryReading(reading),
-        telemetry.Regions.Single(region => region.Key == reading).Geometry);
-    }
-
     var switchType = _world.Types.Single(type => type.Key == "type/switch");
     for (var port = 1; port <= 8; port += 1)
     {
@@ -329,7 +298,7 @@ public class DemoWorldTests
     foreach (var key in new[]
     {
       "file/floor-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
-      "file/device-telemetry-background", "file/floor-plan",
+      "file/camera-icon", "file/floor-plan",
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);

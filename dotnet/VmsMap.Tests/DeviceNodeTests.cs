@@ -95,7 +95,7 @@ public class DeviceNodeTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
-        new TestCatalog(), nodes, TestWiring.DeviceDiagrams(db, map, updates, geo)),
+        new TestCatalog(), TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db), TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);

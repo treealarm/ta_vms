@@ -142,15 +142,15 @@ export default function NodesAdminPanel() {
   }, [linkedNode, dispatch])
 
   /**
-   * The diagram a camera carries is a child of its canonical node, so opening it from the camera
-   * means reading that node's children first. A diagram node opens as itself.
+   * The diagram of a device hangs under the picture of its camera on the canvas, so opening it from
+   * that row means reading the row's own children first. A diagram node opens as itself.
    */
   const openDiagram = async (marker: MapMarker) => {
     if (marker.nodeKind === 'diagram') {
       setViewer({ id: marker.id, name: marker.name || marker.id })
       return
     }
-    const parentId = marker.ownerId ?? marker.id
+    const parentId = marker.id
     try {
       const page = pages[parentId]?.loaded
         ? null
@@ -376,8 +376,13 @@ export default function NodesAdminPanel() {
             selectedId={null}
             onPick={() => undefined}
             onOpen={(marker) => {
-              if (marker.nodeKind === 'diagram')
+              if (marker.nodeKind === 'diagram') {
                 setViewer({ id: marker.id, name: marker.name || marker.id })
+                return
+              }
+              // Out of the diagram and onto where it hangs: the camera's picture, or the space.
+              setViewer(null)
+              void openInTree(marker)
             }}
             editing={false}
           />

@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using NetTopologySuite.Geometries;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
@@ -12,8 +13,8 @@ using VmsMap.Domain;
 namespace VmsMap.Adapter
 {
   /// <summary>
-  /// Draws a device from its template: one diagram node, and in its regions the replicas of the
-  /// parts the operator actually configured.
+  /// Draws a device from its template: one diagram node under the picture of the camera it draws on
+  /// the canvas, and in its regions the replicas of the parts the operator actually configured.
   ///
   /// The rule that decides what exists lives here and nowhere else. A part that is not configured
   /// has no replica and no state, and the region stays as the template drew it — a template
@@ -123,8 +124,8 @@ namespace VmsMap.Adapter
       }
       else if (site is not null)
       {
-        // A diagram made before diagrams were map objects hangs under the camera, and a device that
-        // is drawn again on another canvas moves with it: the attach is "draw it here".
+        // The attach is "draw it here": a device drawn again on another canvas moves with it, and a
+        // diagram made before diagrams hung under the camera's picture is nested under it now.
         await PlaceAsync(row, site, ct);
       }
 
@@ -369,9 +370,10 @@ namespace VmsMap.Adapter
     private sealed record ConfiguredPart(string ObjectId, DevicePartRef Ref, string DisplayName);
 
     /// <summary>
-    /// Creates the diagram as an object of the given canvas: a node of the space, a point on it, and
-    /// the paper its template draws. The parts are bound afterwards by reconciliation, because the
-    /// device may not have declared them yet — a demo installs before OnvifSim says what it has.
+    /// Creates the diagram on the given canvas: a node under the picture of the camera it draws (the
+    /// space itself where the camera is not drawn), a point of its own, and the paper its template
+    /// draws. The parts are bound afterwards by reconciliation, because the device may not have
+    /// declared them yet — a demo installs before OnvifSim says what it has.
     /// </summary>
     private async Task<DBDeviceDiagram?> CreatePlacedAsync(
       string sourceKind, string sourceId, string slot, Guid? typeId, DiagramSite? site,
@@ -382,6 +384,7 @@ namespace VmsMap.Adapter
       if (spaceGuid is null || !await _db.Spaces.AnyAsync(s => s.object_id == spaceGuid, ct))
         return null;
 
+      var parent = await ParentOnCanvasAsync(sourceId, spaceGuid.Value, ct);
       var point = site!.Lat is { } lat && site.Lon is { } lon
         ? (Lat: lat, Lon: lon)
         : await BesideCameraAsync(sourceId, spaceGuid.Value, ct);
@@ -395,7 +398,7 @@ namespace VmsMap.Adapter
       var name = $"{camera?.Name ?? sourceId} / {type?.name ?? "Diagram"}";
 
       await _map.UpdateHierarchyAsync([
-        new BaseMarkerDTO { id = objectId, parent_id = site.SpaceId, name = name }
+        new BaseMarkerDTO { id = objectId, parent_id = parent, name = name }
       ]);
 
       await _diagrams.UpdateListAsync([
@@ -414,7 +417,7 @@ namespace VmsMap.Adapter
         new FigureGeoDTO
         {
           id = objectId,
-          parent_id = site.SpaceId,
+          parent_id = parent,
           name = name,
           geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
         }
@@ -436,8 +439,9 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// Puts an existing diagram on a canvas: the node moves under the space and gets its point, and
-    /// a diagram that is already there is left alone — a reinstall must not move what was dragged.
+    /// Puts an existing diagram on a canvas: the node moves under the picture of the camera it draws
+    /// and keeps the point it stands at, unless the site names one — a reinstall must not move what
+    /// was dragged, and the move that nests a diagram under its camera must not either.
     /// </summary>
     private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite site, CancellationToken ct)
     {
@@ -451,26 +455,56 @@ namespace VmsMap.Adapter
         return;
 
       var objectId = Utils.ConvertGuidToObjectId(row.object_id);
-      if (marker.parent_id == spaceGuid && await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct))
+      var parent = await ParentOnCanvasAsync(row.source_id, spaceGuid.Value, ct);
+      var parentGuid = Utils.ConvertObjectIdToGuid(parent);
+
+      if (marker.parent_id == parentGuid && await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct))
         return;
 
       var point = site.Lat is { } lat && site.Lon is { } lon
         ? (Lat: lat, Lon: lon)
-        : await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+        : await CurrentPointAsync(row.object_id, ct)
+          ?? await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
 
       await _map.UpdateHierarchyAsync([
-        new BaseMarkerDTO { id = objectId, parent_id = site.SpaceId, name = marker.name }
+        new BaseMarkerDTO { id = objectId, parent_id = parent, name = marker.name }
       ]);
 
       await _geo.CreateGeo([
         new FigureGeoDTO
         {
           id = objectId,
-          parent_id = site.SpaceId,
+          parent_id = parent,
           name = marker.name,
           geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = point.Lat, Lon = point.Lon }),
         }
       ]);
+    }
+
+    /// <summary>
+    /// Where a diagram hangs on a canvas: under the picture of the camera it draws, when the camera
+    /// is drawn there, and under the space itself otherwise. A diagram is a map object and belongs
+    /// with the device's picture on the plan; the camera's own node under the server is hardware.
+    /// </summary>
+    private async Task<string> ParentOnCanvasAsync(string cameraId, Guid spaceId, CancellationToken ct)
+    {
+      var picture = await PictureAsync(cameraId, spaceId, ct);
+      return Utils.ConvertGuidToObjectId(picture ?? spaceId);
+    }
+
+    /// The camera's picture on this canvas, when the camera is drawn there.
+    private Task<Guid?> PictureAsync(string cameraId, Guid spaceId, CancellationToken ct) =>
+      (from p in _db.CameraPlacements
+       join m in _db.Markers on p.object_id equals m.id
+       where p.camera_id == cameraId && m.parent_id == spaceId
+       select (Guid?)p.object_id).FirstOrDefaultAsync(ct);
+
+    /// Where the diagram stands now, when it already has a figure of its own.
+    private async Task<(double Lat, double Lon)?> CurrentPointAsync(Guid objectId, CancellationToken ct)
+    {
+      var geo = await _db.GeoObjects.AsNoTracking()
+        .FirstOrDefaultAsync(g => g.id == objectId, ct);
+      return geo?.figure is Point point ? (point.Y, point.X) : null;
     }
 
     /// A few metres off the camera: on its marker would hide one behind the other. The camera's own
@@ -479,17 +513,11 @@ namespace VmsMap.Adapter
     private async Task<(double Lat, double Lon)> BesideCameraAsync(
       string cameraId, Guid spaceId, CancellationToken ct)
     {
-      var placement = await (
-        from p in _db.CameraPlacements
-        join m in _db.Markers on p.object_id equals m.id
-        where p.camera_id == cameraId && m.parent_id == spaceId
-        select p.object_id).FirstOrDefaultAsync(ct);
-
-      if (placement != Guid.Empty)
+      if (await PictureAsync(cameraId, spaceId, ct) is { } placement)
       {
         var geo = await _db.GeoObjects.AsNoTracking()
           .FirstOrDefaultAsync(g => g.id == placement, ct);
-        if (geo?.figure is NetTopologySuite.Geometries.Point point)
+        if (geo?.figure is Point point)
           return Offset(point.Y, point.X);
       }
 

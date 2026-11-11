@@ -77,11 +77,7 @@ namespace VmsMap.Demo
     // point, and without a picture it is a plain dot nobody would take for an entrance.
     string? VisualKey = null,
     int? VisualWidth = null,
-    int? VisualHeight = null,
-    // A replica of a camera: the node shows that camera's states and values (`objects.owner_id`),
-    // and is skipped, and reported, while the deployment does not have the camera. It gets no
-    // camera_placement — a diagram's canvas is not a space.
-    string? OwnerCameraId = null);
+    int? VisualHeight = null);
 
   /// A camera from the installation, placed where the world wants it. A camera the deployment
   /// does not have yet is skipped and reported; the world without cameras is still valid.
@@ -121,9 +117,10 @@ namespace VmsMap.Demo
   public sealed record DemoState(string NodeKey, params string[] States);
 
   /// A device's own diagram, drawn on a canvas of the world: the registry key it is remembered
-  /// under, the device, the template its model names, and where it stands. It is made by the
-  /// device-diagram service, not written as a node — the service owns the diagram and binds the
-  /// device's parts to its regions.
+  /// under, the device, the template its model names, and where its point stands on the canvas
+  /// beside the camera's picture. It is made by the device-diagram service, not written as a node —
+  /// the service owns the diagram, hangs it under the camera's picture and binds the device's parts
+  /// to its regions.
   public sealed record DemoDeviceDiagram(
     string Key,
     string CameraKey,

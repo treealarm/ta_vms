@@ -234,9 +234,10 @@ export const createDiagramNode = createAsyncThunk(
 )
 
 /**
- * Draws a device on a canvas: the map makes the diagram node beside the camera's placement, from
- * the template the device's model names, and binds the device's configured parts to its regions.
- * One diagram per device — asking again returns the one it already has.
+ * Draws a device on a canvas: the map makes the diagram node under the camera's placement, from the
+ * template the device's model names, and binds the device's configured parts to its regions. One
+ * diagram per device — asking again returns the one it already has and makes sure its picture stands
+ * on this canvas.
  */
 export const attachDeviceDiagram = createAsyncThunk(
   'mapEdits/attachDeviceDiagram',
@@ -247,7 +248,7 @@ export const attachDeviceDiagram = createAsyncThunk(
       spaceId,
     })
 
-    // The new node is a child of the canvas and a figure on it: both reads are out of date.
+    // The diagram hangs under the camera's picture and is drawn beside it: both reads are stale.
     await api.dispatch(loadChildren({ parentId: spaceId }))
     await api.dispatch(loadCanvas(spaceId))
     if (marker.id) await api.dispatch(loadNodes([marker.id]))

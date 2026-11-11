@@ -13,6 +13,7 @@ import { loadDiagramTypes } from '../../store/diagramsSlice'
 import { deleteNode, saveDiagramPlacement } from '../../store/mapEditsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import DetailToolbar from '../settings/DetailToolbar'
+import NodeIdentity from '../objects/NodeIdentity'
 import NodeStateChips from '../objects/NodeStateChips'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
 
@@ -160,19 +161,10 @@ export default function DiagramElementEditor({
       <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5, overflowY: 'auto' }}>
         {error ? <Typography color="error" variant="body2">{error}</Typography> : null}
 
-        <TextField
-          size="small"
-          label={t('maps.editor.name')}
-          value={draft.name}
-          onChange={(event) => set('name', event.target.value)}
-        />
-
-        <TextField
-          size="small"
-          label={t('maps.editor.objectId')}
-          value={marker.id}
-          slotProps={{ input: { readOnly: true } }}
-          sx={{ '& input': { fontFamily: 'monospace', fontSize: 12 } }}
+        <NodeIdentity
+          node={marker}
+          name={draft.name}
+          onNameChange={(name) => set('name', name)}
         />
 
         {/* The type decides what draws the diagram and which places its children may take; the

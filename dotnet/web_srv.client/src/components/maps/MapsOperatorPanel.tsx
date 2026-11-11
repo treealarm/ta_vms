@@ -339,14 +339,12 @@ export default function MapsOperatorPanel() {
   }
 
   /**
-   * The diagram a camera's template draws hangs under the canonical node, not under the picture of
-   * it standing on a canvas: the owner's children are where to look.
+   * The diagram a camera's template draws hangs under the picture of the camera on the canvas, so
+   * the node's own children are where to look.
    */
   const openDeviceDiagram = async (id: string) => {
-    const marker = markers[id]
-    const parentId = marker?.ownerId ?? id
-    const page = await dispatch(loadChildren({ parentId })).unwrap().catch(() => null)
-    const children = page?.children ?? childrenOf(markers, childrenByParent, parentId)
+    const page = await dispatch(loadChildren({ parentId: id })).unwrap().catch(() => null)
+    const children = page?.children ?? childrenOf(markers, childrenByParent, id)
     const diagram = children.find((child) => child.nodeKind === 'diagram')
     if (!diagram) {
       setNotice(t('diagramEditor.noDeviceDiagram'))
@@ -356,6 +354,7 @@ export default function MapsOperatorPanel() {
     setDiagramId(diagram.id)
     setSelectedNodeId(diagram.id)
   }
+
 
   /**
    * Enter a node that holds children. A space or a mnemoscheme opens its own canvas, which is a
@@ -565,7 +564,11 @@ export default function MapsOperatorPanel() {
               diagramId={diagramId}
               selectedId={selectedNodeId}
               onPick={(marker) => setSelectedNodeId(marker.id)}
-              onOpen={(marker) => selectNode(marker)}
+              onOpen={(marker) => {
+                // Anything but a diagram is not a canvas of its own: step out of the viewer first.
+                if (marker.nodeKind !== 'diagram') setDiagramId(null)
+                selectNode(marker)
+              }}
             />
           ) : (
             <SpaceCanvas
@@ -610,6 +613,7 @@ export default function MapsOperatorPanel() {
                     dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
                     alarm={byCamera.get(p.cameraId) ?? null}
                     levels={levels}
+                    visual={node ? figureById.get(node.id)?.visual : undefined}
                     zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
                     onSelect={() => void selectCamera(p.cameraId)}
                   />
@@ -635,6 +639,7 @@ export default function MapsOperatorPanel() {
             onEnter={enterNode}
             onLocate={locateNode}
             onOpenDiagram={(id) => void openDeviceDiagram(id)}
+            onSelectCamera={(cameraId) => void selectCamera(cameraId)}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}

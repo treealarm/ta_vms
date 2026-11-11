@@ -55,7 +55,11 @@ namespace VmsMap.Demo
     //     and what hangs under the server is hardware.
     // 19: the world no longer brings zoom layers of its own: the dictionary names the map's scales
     //     (`World` … `Room`) and nothing in the demo used the three it wrote.
-    public const int UmdDataCenterVersion = 19;
+    // 20: the camera's diagram hangs under the camera's picture on the floor, not beside it as a
+    //     child of the plan; the readings replica is gone — it repeated the picture of the camera,
+    //     only drawn as an icon — with the Device telemetry type and the feeder behind it, and the
+    //     cameras are drawn from a picture instead of the map's dot.
+    public const int UmdDataCenterVersion = 20;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -150,11 +154,6 @@ namespace VmsMap.Demo
     // diagram of the floor, not a place with coordinates of its own.
     private const string FloorLayout = "object/floor-layout";
 
-    // A replica of the indoor master, showing the readings the camera itself reports. Its owner is
-    // the camera's canonical node, so values written there appear here. It is a camera that stands
-    // still, which is what makes a diagram on a plan honest: the one on the car is a car on the map.
-    private const string MasterTelemetry = "object/telemetry-sim-master";
-
     private const string RackType = "type/rack";
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
@@ -169,14 +168,15 @@ namespace VmsMap.Demo
         // footprint, with the doorway the simulator cuts in its north wall.
         new("file/floor-plan", DemoArt.FloorPlan(BuildingOutline, Door, DoorWidthM), "image/svg+xml"),
         DemoFile.Asset("file/server-room-icon", "server-room-icon.png", "image/png"),
-        DemoFile.Asset("file/readings-icon", "readings-icon.png", "image/png"),
+        // The cameras are drawn from a picture rather than the map's dot; the map turns it by the
+        // camera's heading, so it points the way its view cone does.
+        new("file/camera-icon", DemoArt.CameraGlyph(), "image/svg+xml"),
         // The diagram backgrounds are vector, and their regions are drawn from the same geometry:
         // see DemoArt, where a socket and the region a port takes are one rectangle.
         new("file/floor-layout-background", DemoArt.FloorLayout(), "image/svg+xml"),
         new("file/rack-background", DemoArt.Rack(), "image/svg+xml"),
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
-        new("file/device-telemetry-background", DemoArt.Telemetry(), "image/svg+xml"),
         new("file/camera-panel-background", DemoArt.CameraRearPanel(), "image/svg+xml"),
       };
 
@@ -186,7 +186,6 @@ namespace VmsMap.Demo
         RackTypeDefinition(),
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
-        DeviceTelemetryTypeDefinition(),
         CameraPanelTypeDefinition(),
       };
 
@@ -215,16 +214,6 @@ namespace VmsMap.Demo
         Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
         At: Racks,
         VisualKey: "file/server-room-icon", VisualWidth: 44, VisualHeight: 44));
-
-      // The indoor master's own readings, on a replica standing beside it on the floor: its place,
-      // how fast it moves (nought — it is bolted to the wall), and the relay and sensor wired around
-      // it. `DemoValueFeeder` keeps the values fresh from what the camera reports over ONVIF.
-      nodes.Add(new DemoNode(MasterTelemetry, "Camera sim-master readings", "space/building",
-        DemoTelemetry.TypeKey,
-        Canvas: new DemoRect(0, 0, DemoArt.TelemetryWidth, DemoArt.TelemetryHeight),
-        At: new DemoPoint(38.9928060, -76.9379290),
-        VisualKey: "file/readings-icon", VisualWidth: 40, VisualHeight: 40,
-        OwnerCameraId: "sim-master"));
 
       // The four racks stand in the floor's schematic, filled with switches: every slot takes one,
       // and every switch eight ports. A rack has no point of its own — its place is its region of
@@ -364,17 +353,6 @@ namespace VmsMap.Demo
 
       return new(RackType, "Rack 42U", "file/rack-background", regions);
     }
-
-    /// The camera's own readings, one region per value. The region and the label in the picture come
-    /// from one geometry (DemoArt.TelemetryReading), so a value is never written beside its name.
-    private static DemoDiagramType DeviceTelemetryTypeDefinition() => new(
-      DemoTelemetry.TypeKey,
-      "Device telemetry",
-      "file/device-telemetry-background",
-      DemoTelemetry.Readings
-        .Select(key => new DemoRegion(key, DemoArt.TelemetryReading(key),
-          new Dictionary<string, string> { ["color"] = "#e3f2fd", ["fontSize"] = "12px" }))
-        .ToList());
 
     /// A Catalyst's front panel: eight ports in one row.
     private static DemoDiagramType SwitchTypeDefinition()

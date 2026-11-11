@@ -261,6 +261,31 @@ namespace VmsMap.Grpc
       if (visual is not null)
         result.Visual = ToProto(visual);
 
+      // A diagram says whose it is: its registry row is the only thing that knows, and the panel
+      // names the device and links to it from there.
+      if (Utils.ConvertObjectIdToGuid(request.Id) is { } nodeGuid)
+      {
+        var device = await _db.DeviceDiagrams.AsNoTracking()
+          .Where(d => d.object_id == nodeGuid)
+          .Select(d => new { d.source_kind, d.source_id })
+          .FirstOrDefaultAsync(ct);
+        if (device is not null)
+        {
+          var nodeId = string.Equals(device.source_kind, DeviceObjectId.CameraSource, StringComparison.Ordinal)
+            ? CameraObjectId.For(device.source_id)
+            : string.Empty;
+          result.Device = new MapProto.DeviceRef
+          {
+            SourceKind = device.source_kind,
+            SourceId = device.source_id,
+            NodeId = nodeId,
+            Name = nodeId.Length == 0
+              ? string.Empty
+              : (await _mapService.GetAsync(nodeId))?.name ?? string.Empty,
+          };
+        }
+      }
+
       var geo = await _geoService.GetGeoObjectAsync(request.Id);
       if (!string.IsNullOrEmpty(geo?.zoom_level))
       {

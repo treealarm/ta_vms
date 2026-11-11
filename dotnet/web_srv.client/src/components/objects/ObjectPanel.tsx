@@ -15,6 +15,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
+import NodeIdentity from './NodeIdentity'
 import NodeStateChips from './NodeStateChips'
 
 type Props = {
@@ -27,6 +28,8 @@ type Props = {
   onLocate?: (id: string) => void
   /** The diagram drawn for this camera by its template, if the deployment has one. */
   onOpenDiagram?: (id: string) => void
+  /** Selects a camera by id: what the "show device" link of a diagram's panel does. */
+  onSelectCamera?: (cameraId: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -41,7 +44,7 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, onEnter, onLocate, onOpenDiagram,
+  nodeId, onClose, onSelect, onEnter, onLocate, onOpenDiagram, onSelectCamera,
   aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
@@ -104,13 +107,13 @@ export default function ObjectPanel({
         ) : null}
         {onOpenDiagram && kind === 'camera' ? (
           <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
-            <IconButton
+            <Button
               size="small"
-              aria-label={t('diagramEditor.openDeviceDiagram')}
+              startIcon={<OpenInNewIcon fontSize="small" />}
               onClick={() => onOpenDiagram(nodeId)}
             >
-              <OpenInNewIcon fontSize="small" />
-            </IconButton>
+              {t('diagramEditor.deviceDiagram')}
+            </Button>
           </Tooltip>
         ) : null}
         <Button
@@ -119,13 +122,22 @@ export default function ObjectPanel({
         >
           {t('maps.node.journal')}
         </Button>
-        {marker?.ownerId ? (
-          <Button size="small" onClick={() => onSelect(marker.ownerId!)}>{t('maps.node.owner')}</Button>
-        ) : null}
         <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
       </Stack>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.5 }}>
+        {/* What the node is, before what it reports: a picture on a plan is a replica, and the
+            panel says which node it shows; a diagram says which device it draws. */}
+        {marker ? (
+          <Box sx={{ mb: 1.5 }}>
+            <NodeIdentity
+              node={marker}
+              device={props?.device}
+              onSelect={onSelect}
+              onSelectCamera={onSelectCamera}
+            />
+          </Box>
+        ) : null}
         {camera ? (
           <>
             <Box sx={{ height: 340, flexShrink: 0, mb: 1 }}>

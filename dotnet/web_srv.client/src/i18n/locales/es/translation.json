@@ -1266,7 +1266,8 @@
       "zoomIn": "Acercar",
       "zoomOut": "Alejar",
       "reset": "Restablecer zoom",
-      "empty": "Este mimosesquema no tiene nada que dibujar."
+      "empty": "Este mimosesquema no tiene nada que dibujar.",
+      "up": "Subir un nivel"
     },
     "editor": {
       "tabNodes": "Nodos",
@@ -1353,7 +1354,9 @@
       "caption": "Leyenda",
       "enter": "Entrar",
       "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio",
-      "locate": "Mostrar en el mapa"
+      "locate": "Mostrar en el mapa",
+      "deviceOf": "Diagrama de",
+      "showDevice": "Mostrar dispositivo"
     },
     "tabSpaces": "Espacios",
     "tabDevices": "Dispositivos",

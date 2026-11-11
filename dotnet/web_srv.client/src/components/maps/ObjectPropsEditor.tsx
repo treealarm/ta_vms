@@ -5,12 +5,14 @@ import {
 import AddIcon from '@mui/icons-material/Add'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import type {
   MapExtraProperty, MapFigure, MapLevel, MapMarker, MapObjProps,
 } from '../../dto/mapDtos'
-import { useAppDispatch, useAppSelector } from '../../store'
+import { useAppDispatch } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
+import NodeIdentity from '../objects/NodeIdentity'
 import PropertyValueField from './PropertyValueField'
 import { visualImageUrl } from '../../map/visualImage'
 import {
@@ -67,10 +69,7 @@ const same = (a: Draft, b: Draft) => JSON.stringify(a) === JSON.stringify(b)
 export default function ObjectPropsEditor({ node, figure, loaded, levels, showLayer, onDelete, onClose }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  // A picture of another node carries its owner's id: two rows with one name are the node and
-  // the replica of it, and the panel says which is which.
-  const markers = useAppSelector((s) => s.objects.markers)
-  const owner = node.ownerId ? markers[node.ownerId] : undefined
+  const navigate = useNavigate()
   const initial = draftOf(node, figure, loaded)
   const [draft, setDraft] = useState<Draft>(initial)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -158,32 +157,15 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, showLa
       />
 
       <Box sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5, overflowY: 'auto' }}>
-        <TextField
-          size="small"
-          label={t('maps.editor.name')}
-          value={draft.name}
-          onChange={(event) => set('name', event.target.value)}
+        {/* The name is what the administrator came to change; the id and the node this one stands
+            for are what every other surface names it by. */}
+        <NodeIdentity
+          node={node}
+          name={draft.name}
+          onNameChange={(name) => set('name', name)}
+          device={loaded?.device}
+          onSelect={(id) => navigate(`/admin/nodes?node=${encodeURIComponent(id)}`)}
         />
-
-        {/* The id is what every other surface names this node by; a read-only field is the one
-            way to copy it without hunting through the network tab. */}
-        <TextField
-          size="small"
-          label={t('maps.editor.objectId')}
-          value={node.id}
-          slotProps={{ input: { readOnly: true } }}
-          sx={{ '& input': { fontFamily: 'monospace', fontSize: 12 } }}
-        />
-
-        {node.ownerId && (
-          <TextField
-            size="small"
-            label={t('maps.editor.replicaOf')}
-            value={owner?.name ? `${owner.name} · ${node.ownerId}` : node.ownerId}
-            slotProps={{ input: { readOnly: true } }}
-            sx={{ '& input': { fontSize: 12 } }}
-          />
-        )}
 
         <Divider />
 

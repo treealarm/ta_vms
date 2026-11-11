@@ -25,8 +25,6 @@ namespace VmsMap.Demo
     public const int FloorLayoutHeight = 600;
     public const int PortWidth = 60;
     public const int PortHeight = 40;
-    public const int TelemetryWidth = 360;
-    public const int TelemetryHeight = 220;
     public const int CameraPanelWidth = 640;
     public const int CameraPanelHeight = 400;
 
@@ -77,23 +75,6 @@ namespace VmsMap.Demo
 
     private const double RackRegionWidth = 0.18;
 
-    // A reading's label and the box its value is written into. Both come from TelemetryRows, so a
-    // row cannot be labelled on thing and filled on another.
-    private static readonly (string Key, string Label)[] TelemetryRows =
-    [
-      (DemoTelemetry.Lat, "LAT"),
-      (DemoTelemetry.Lon, "LON"),
-      (DemoTelemetry.Speed, "SPEED, km/h"),
-      (DemoTelemetry.Relay, "RELAY"),
-      (DemoTelemetry.Sensor, "SENSOR"),
-    ];
-
-    private const double TelemetryRowTop = 0.16;
-    private const double TelemetryRowStep = 0.16;
-    private const double TelemetryRowHeight = 0.11;
-    private const double TelemetryValueLeft = 0.34;
-    private const double TelemetryValueWidth = 0.60;
-
     /// A switch's port socket, left to right; `port` is 1-based.
     public static DemoRect SwitchPort(int port) =>
       new(0.025 + (port - 1) * 0.12, 0.36, 0.10, 0.28);
@@ -105,20 +86,6 @@ namespace VmsMap.Demo
       SlotTop + (slot - 1) * SlotStep,
       SlotWidth,
       SlotWidth * RackWidth * SwitchHeight / SwitchWidth / RackHeight);
-
-    /// Where one reading of the demo's Device telemetry diagram is written: `key` is one of
-    /// <see cref="DemoTelemetry.Readings"/>.
-    public static DemoRect TelemetryReading(string key)
-    {
-      var index = Array.FindIndex(TelemetryRows, row => row.Key == key);
-      return index < 0
-        ? throw new ArgumentOutOfRangeException(nameof(key), key, "Not a telemetry reading")
-        : new DemoRect(
-            TelemetryValueLeft,
-            TelemetryRowTop + index * TelemetryRowStep,
-            TelemetryValueWidth,
-            TelemetryRowHeight);
-    }
 
     /// A cabinet in the first floor's schematic; `index` is 1-based. Four of them stand in a row,
     /// and the height is the rack's own aspect at the region's width, so the rack drawn in it is not
@@ -185,22 +152,17 @@ namespace VmsMap.Demo
       return Close(svg);
     }
 
-    /// The camera's own readings as a panel: one labelled row per value
-    /// (<see cref="TelemetryReading"/>). It is the demo's picture of what ONVIF reports — position,
-    /// speed, a relay and a sensor — and the values are written into its boxes by the feeder.
-    public static byte[] Telemetry()
+    /// A camera as it stands on the map, seen from above: a body with its lens at the north end, so
+    /// the marker's rotation by the heading points it the way the view cone does. The map draws it
+    /// in place of its own dot when the placement node carries a picture, and the demo gives every
+    /// placed camera this one.
+    public static byte[] CameraGlyph()
     {
-      var svg = Open(TelemetryWidth, TelemetryHeight);
-      svg.Append($"<rect x=\"2\" y=\"2\" width=\"{TelemetryWidth - 4}\" height=\"{TelemetryHeight - 4}\" rx=\"8\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"2\"/>");
-      svg.Append("<text x=\"18\" y=\"27\" font-family=\"monospace\" font-size=\"13\" letter-spacing=\"2\" fill=\"#7f9ab1\">DEVICE TELEMETRY</text>");
-
-      foreach (var (key, label) in TelemetryRows)
-      {
-        var (x, y, w, h) = Pixels(TelemetryReading(key), TelemetryWidth, TelemetryHeight);
-        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"3\" fill=\"#0f1a24\" stroke=\"#2c4154\" stroke-width=\"1\"/>");
-        svg.Append($"<text x=\"18\" y=\"{N(y + h / 2 + 4)}\" font-family=\"monospace\" font-size=\"11\" fill=\"#6f8aa1\">{label}</text>");
-      }
-
+      var svg = Open(64, 64);
+      svg.Append("<rect x=\"18\" y=\"22\" width=\"28\" height=\"30\" rx=\"7\" fill=\"#cfd8dc\" stroke=\"#0b0f14\" stroke-width=\"3\"/>");
+      svg.Append("<rect x=\"22\" y=\"8\" width=\"20\" height=\"16\" rx=\"5\" fill=\"#90a4ae\" stroke=\"#0b0f14\" stroke-width=\"3\"/>");
+      svg.Append("<circle cx=\"32\" cy=\"16\" r=\"6\" fill=\"#0d151d\" stroke=\"#e3f2fd\" stroke-width=\"2\"/>");
+      svg.Append("<circle cx=\"32\" cy=\"40\" r=\"4\" fill=\"#78909c\" stroke=\"#0b0f14\" stroke-width=\"2\"/>");
       return Close(svg);
     }
 

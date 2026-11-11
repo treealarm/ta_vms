@@ -91,7 +91,7 @@ public class MapServiceReadsTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
-        TestWiring.DeviceNodes(db, map, updates), TestWiring.DeviceDiagrams(db, map, updates, geo)),
+        TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, arming), alarms,
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);
@@ -281,6 +281,36 @@ public class MapServiceReadsTests
     // The panel that opens on this read replaces the node in the client's store, and a container
     // without this flag loses its "enter" action.
     Assert.True(props.Marker.HasChildren);
+  }
+
+  [Fact]
+  public async Task GetObjPropsNamesTheDeviceADiagramDraws()
+  {
+    var s = Create();
+    var deviceId = CameraObjectId.For(TestCameras.One);
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = deviceId, name = "Camera " + TestCameras.One }]);
+    var diagram = await Node(s.Map, "Camera / rear panel");
+    s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = Guid.Parse(diagram.id!),
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
+    {
+      Id = diagram.id,
+      Caller = Caller("admin", "admin"),
+    }, new TestContext());
+
+    // The panel says whose diagram it is, and can send the reader to the device: the registry row
+    // is the only place that knows, and the camera's node id is derived from the camera.
+    Assert.Equal(DeviceObjectId.CameraSource, props.Device.SourceKind);
+    Assert.Equal(TestCameras.One, props.Device.SourceId);
+    Assert.Equal(deviceId, props.Device.NodeId);
+    Assert.Equal("Camera " + TestCameras.One, props.Device.Name);
   }
 
   [Fact]

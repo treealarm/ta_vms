@@ -46,6 +46,7 @@ import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
 import { DRAW_MODES, useEditorState, type Mode, type SideTab } from './editorState'
+import { useDeviceDiagram } from './useDeviceDiagram'
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
 const MAX_PLAN_BYTES = 20 * 1024 * 1024
@@ -102,6 +103,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
+  const { showDeviceDiagram } = useDeviceDiagram(spaceId)
   // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
   // shape being drawn. What the click is for always wins over what it lands on.
   const picking = !!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)
@@ -445,10 +447,11 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         camera={camerasById[selectedPlacement.cameraId]}
         placement={selectedPlacement}
         nodeId={nodeForPlacement(selectedPlacement)?.id}
+        node={nodeForPlacement(selectedPlacement)}
         // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
         showLayer={space.kind === 'map'}
-        ownerNodeId={nodeForPlacement(selectedPlacement)?.ownerId}
         referenceSpace={referenceSpace}
+        onDeviceDiagram={() => void showDeviceDiagram(selectedPlacement.cameraId)}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
           await dispatch(removePlacement({ cameraId: selectedPlacement.cameraId, spaceId })).unwrap()
@@ -725,6 +728,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   placement={p}
                   label={camera?.name || p.cameraId}
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
+                  // The picture is the placement node's own: the map turns it by the heading, as it
+                  // turns its dot.
+                  visual={node ? figuresById[node.id]?.visual : undefined}
                   // A marker is the picture the placement draws: the one node, not every picture
                   // of that camera.
                   selected={selection?.kind === 'camera'

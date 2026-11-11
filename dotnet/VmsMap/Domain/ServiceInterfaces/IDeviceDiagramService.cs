@@ -27,11 +27,12 @@ namespace VmsMap.Domain
     Task EnsureAsync(string sourceKind, string sourceId, string slot, CancellationToken ct);
 
     /// <summary>
-    /// Draws a device on the map: creates its diagram node in the given space, at the given point,
-    /// from the template named or the one that matches the device's model — an empty sheet when
-    /// none does — and binds the device's configured parts to its regions. A device that already
-    /// has a diagram keeps it; the type it was drawn from is replaced when another is named.
-    /// Returns the diagram's node id.
+    /// Draws a device on the map: creates its diagram node under the camera's picture on the given
+    /// canvas (the space itself when the camera is not drawn there), at the given point, from the
+    /// template named or the one that matches the device's model — an empty sheet when none does —
+    /// and binds the device's configured parts to its regions. A device that already has a diagram
+    /// keeps it and keeps the point it stands at; the type it was drawn from is replaced when
+    /// another is named. Returns the diagram's node id.
     /// </summary>
     Task<string?> AttachAsync(
       string sourceKind, string sourceId, string? diagramTypeId, string slot,

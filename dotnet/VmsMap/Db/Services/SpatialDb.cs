@@ -996,19 +996,40 @@ namespace VmsMap.Db
       }
     }
 
-    /// Leaves a picture where the camera stood before: a replica of the camera node with a copy of
-    /// the placement it had.
-    /// Removes one picture: its row, its point and its node. A picture is a leaf, so nothing else
-    /// hangs from it.
+    /// <summary>
+    /// Removes one picture: its node, everything the camera hangs under it on that canvas — the
+    /// device's diagram and the replicas of its parts — and its placement and point. A diagram is a
+    /// map object, and on a canvas it belongs under the picture of the camera it draws; taking the
+    /// picture away takes the drawing with it. The device-diagram registry rows follow their nodes
+    /// through ON DELETE CASCADE in the schema.
+    /// </summary>
     private async Task DeletePictureAsync(Guid objectId, CancellationToken ct)
     {
+      var objectIdText = Utils.ConvertGuidToObjectId(objectId);
+      var subtreeGuids = (await _mapService.GetSubtreeIdsAsync([objectIdText]))
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(guid => guid.HasValue)
+        .Select(guid => guid!.Value)
+        .ToList();
+
+      // The in-memory provider the tests use has neither the schema's cascades nor the explicit
+      // cleanup the delete below does on Postgres: the registry and the side rows are taken here by
+      // name, before the nodes they point at.
+      _db.DeviceDiagramParts.RemoveRange(
+        await _db.DeviceDiagramParts
+          .Where(part => subtreeGuids.Contains(part.diagram_object_id))
+          .ToListAsync(ct));
+      _db.DeviceDiagrams.RemoveRange(
+        await _db.DeviceDiagrams
+          .Where(diagram => subtreeGuids.Contains(diagram.object_id))
+          .ToListAsync(ct));
       _db.CameraPlacements.RemoveRange(
         await _db.CameraPlacements.Where(p => p.object_id == objectId).ToListAsync(ct));
       _db.GeoObjects.RemoveRange(
         await _db.GeoObjects.Where(g => g.id == objectId).ToListAsync(ct));
-      _db.Markers.RemoveRange(
-        await _db.Markers.Where(m => m.id == objectId).ToListAsync(ct));
       await _db.SaveChangesAsync(ct);
+
+      await _mapUpdateService.Delete([objectIdText]);
     }
 
     private static void ApplyValues(DBCameraPlacement row, CameraPlacement placement)

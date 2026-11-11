@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapr.Client;
@@ -10,11 +9,11 @@ using Vms.Onvif;
 
 namespace VmsMap.Clients
 {
-  // Everything the map asks a camera about itself: where it stands, and what its relays and inputs
-  // are doing. The question goes to the camera's own node's VmsOnvif — ONVIF only reaches cameras on
-  // its local subnet — and every call is short and best-effort: a camera that cannot be asked this
-  // second is asked again on the next tick, and nothing else on the map waits for it.
-  internal sealed class VmsOnvifCameraSource : ICameraGeoSource, ICameraDeviceIoSource
+  // What the map asks a camera about itself: where it stands. The question goes to the camera's own
+  // node's VmsOnvif — ONVIF only reaches cameras on its local subnet — and the call is short and
+  // best-effort: a camera that cannot be asked this second is asked again on the next tick, and
+  // nothing else on the map waits for it.
+  internal sealed class VmsOnvifCameraSource : ICameraGeoSource
   {
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(5);
 
@@ -45,32 +44,6 @@ namespace VmsMap.Clients
         ? new CameraGeoPoint(response.Lat, response.Lon,
             response.HasHeadingDeg ? ((response.HeadingDeg % 360) + 360) % 360 : null)
         : null;
-    }
-
-    public async Task<CameraDeviceState> GetRelayAsync(CameraInfo camera, CancellationToken ct)
-    {
-      var response = await AskAsync(camera, (client, options) =>
-        client.GetRelayOutputsAsync(new CameraRequest { SourceId = camera.CameraId }, options), ct);
-      if (response is null || !string.IsNullOrEmpty(response.Error))
-        return new CameraDeviceState(false, null);
-
-      var relay = response.Relays.FirstOrDefault();
-      return relay is null
-        ? new CameraDeviceState(false, null)
-        : new CameraDeviceState(true, relay.HasLiveActive ? relay.LiveActive : null);
-    }
-
-    public async Task<CameraDeviceState> GetInputAsync(CameraInfo camera, CancellationToken ct)
-    {
-      var response = await AskAsync(camera, (client, options) =>
-        client.GetDigitalInputsAsync(new CameraRequest { SourceId = camera.CameraId }, options), ct);
-      if (response is null || !string.IsNullOrEmpty(response.Error))
-        return new CameraDeviceState(false, null);
-
-      var input = response.Inputs.FirstOrDefault();
-      return input is null
-        ? new CameraDeviceState(false, null)
-        : new CameraDeviceState(true, input.HasLiveActive ? input.LiveActive : null);
     }
 
     private async Task<T?> AskAsync<T>(

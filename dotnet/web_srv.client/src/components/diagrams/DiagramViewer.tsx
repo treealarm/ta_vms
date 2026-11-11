@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box, Breadcrumbs, Button, CircularProgress, IconButton, Stack, ToggleButton, ToggleButtonGroup,
-  Typography,
+  Tooltip, Typography,
 } from '@mui/material'
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import PentagonIcon from '@mui/icons-material/Pentagon'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
@@ -360,6 +361,10 @@ export default function DiagramViewer({
 
   const cancelTool = () => { setTool(null); setDraft([]) }
 
+  // The breadcrumb chain ends with the open diagram itself: one step out is the node before it —
+  // the space, the enclosing diagram, or the camera's picture this one hangs under.
+  const upParent = shown?.parents?.[shown.parents.length - 2]
+
   const deleteDiagram = async () => {
     const name = shown?.parents?.[shown.parents.length - 1]?.name ?? diagramId
     if (!window.confirm(t('maps.editor.confirmDelete', { name }))) return
@@ -395,6 +400,20 @@ export default function DiagramViewer({
           ))}
           {!shown?.parents?.length ? <Typography variant="body2" noWrap>{diagramId}</Typography> : null}
         </Breadcrumbs>
+
+        {/* The breadcrumb already leads out; this is the one click a reader looks for instead of
+            picking the second-to-last crumb. */}
+        {upParent ? (
+          <Tooltip title={t('maps.diagram.up')}>
+            <IconButton
+              size="small"
+              aria-label={t('maps.diagram.up')}
+              onClick={() => onOpen(upParent)}
+            >
+              <ArrowUpwardIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
 
         <ToggleButtonGroup
           size="small"

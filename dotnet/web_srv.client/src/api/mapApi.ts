@@ -152,8 +152,9 @@ export const mapApi = {
 
   /** Draws a device from a template an administrator picked. */
   /**
-   * Draws a device on a canvas: the diagram is put beside the camera's placement there. Without a
-   * template the one the device's model names is taken, and a blank sheet when none does.
+   * Draws a device on a canvas: the diagram hangs under the camera's placement there, drawn beside
+   * it. Without a template the one the device's model names is taken, and a blank sheet when none
+   * does.
    */
   attachDeviceDiagram: (body: {
     sourceKind: string

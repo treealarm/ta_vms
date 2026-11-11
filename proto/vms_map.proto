@@ -328,6 +328,18 @@ message GetObjPropsRequest {
   Caller caller = 2;
 }
 
+// The device a diagram node draws: the camera it belongs to and the device's canonical node, so
+// the panel can say whose diagram it is. Set only on a node that has a device_diagram row.
+message DeviceRef {
+  string source_kind = 1;
+  // The camera the diagram is of.
+  string source_id = 2;
+  // The device's canonical node in the tree (the camera node under its server).
+  string node_id = 3;
+  // The camera's name, as the map knows it.
+  string name = 4;
+}
+
 message ObjProps {
   Marker marker = 1;
   repeated ExtraProperty extra_props = 2;
@@ -336,6 +348,8 @@ message ObjProps {
   optional int32 zoom_max = 4;
   // How the node is drawn. Empty when it has no visual row.
   Visual visual = 5;
+  // The device this node is the diagram of, when it is one.
+  DeviceRef device = 6;
 }
 
 message CreateReplicaRequest {

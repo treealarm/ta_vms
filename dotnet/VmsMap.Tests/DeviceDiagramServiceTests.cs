@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
@@ -485,8 +486,59 @@ public class DeviceDiagramServiceTests
     Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
   }
 
+  /// <summary>
+  /// A picture of the camera on the tests' canvas: the node the plan draws for it, and the placement
+  /// row behind it. A diagram of the device is hung under this node, not under the camera's
+  /// canonical one — that one is hardware, and the diagram is what the plan shows of it.
+  /// </summary>
+  private static async Task<Guid> SeedPictureAsync(Services s)
+  {
+    var picture = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(picture),
+        parent_id = Utils.ConvertGuidToObjectId(Space),
+        owner_id = CameraObjectId.For(CameraId),
+        name = "Camera " + CameraId,
+      }
+    ]);
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = picture,
+      camera_id = CameraId,
+      is_reference = true,
+    });
+    await s.Db.SaveChangesAsync();
+    return picture;
+  }
+
   [Fact]
-  public async Task APlacementMovesADiagramMadeUnderTheCameraOntoTheCanvas()
+  public async Task TheDiagramHangsUnderTheCamerasPictureOnTheCanvas()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    var picture = await SeedPictureAsync(s);
+
+    await AttachAsync(s);
+
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    var node = await s.Db.Markers.SingleAsync(m => m.id == row.object_id);
+    Assert.Equal(picture, node.parent_id);
+
+    // Its own point stays on the plan: the ground it is drawn on is the space through the picture,
+    // and the point asked for is the point stored.
+    var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == row.object_id);
+    Assert.Equal(Space, geo.canvas_id);
+    Assert.True(geo.figure is Point point
+                && Math.Abs(point.Y - 38.99) < 1e-9 && Math.Abs(point.X + 76.94) < 1e-9);
+  }
+
+  [Fact]
+  public async Task ADiagramBesideTheCameraIsNestedUnderItsPictureAndKeepsItsPoint()
   {
     var s = await CreateAsync();
     await SeedCameraAsync(s);
@@ -494,30 +546,20 @@ public class DeviceDiagramServiceTests
     await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
     await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
 
-    // A diagram made when they still hung under the camera: the node's parent is the camera.
-    var objectId = DeviceObjectId.ForDeviceDiagram(
-      DeviceObjectId.CameraSource, CameraId, IDeviceDiagramService.DefaultSlot);
-    var objectGuid = Guid.Parse(objectId);
-    await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = objectId, parent_id = CameraObjectId.For(CameraId), name = "Old panel" }
-    ]);
-    s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
-    {
-      object_id = objectGuid,
-      source_kind = DeviceObjectId.CameraSource,
-      source_id = CameraId,
-      slot = IDeviceDiagramService.DefaultSlot,
-      auto_created = true,
-    });
-    await s.Db.SaveChangesAsync();
-
+    // A diagram of the older world: it stands beside the camera as a child of the space.
     await AttachAsync(s);
-
-    // The button draws it here: under the canvas, with a point of its own, and its parts bound.
-    var row = await s.Db.DeviceDiagrams.SingleAsync();
-    Assert.Equal(objectGuid, row.object_id);
+    var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
     Assert.Equal(Space, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
-    Assert.Equal(1, await s.Db.GeoObjects.CountAsync(g => g.id == objectGuid));
+
+    // The camera's picture appears, and the button is pressed again from the canvas without a point:
+    // the diagram is nested under the picture, and the point it was dragged to stays.
+    var picture = await SeedPictureAsync(s);
+    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(Space)));
+
+    Assert.Equal(picture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
+    var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
+    Assert.True(geo.figure is Point point
+                && Math.Abs(point.Y - 38.99) < 1e-9 && Math.Abs(point.X + 76.94) < 1e-9);
     Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
   }
 

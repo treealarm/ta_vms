@@ -14,7 +14,7 @@ import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren } from '../../store/objectsSlice'
-import { attachDeviceDiagram, createDiagramNode } from '../../store/mapEditsSlice'
+import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
@@ -23,6 +23,7 @@ import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
+import { useDeviceDiagram } from './useDeviceDiagram'
 
 type SpaceTab = 'devices' | 'nodes' | 'landmarks'
 
@@ -351,6 +352,7 @@ function NodesTree({ markers, space, onOpenSpace }: {
   const { selection, setSelection, openDiagram } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
+  const { showDeviceDiagram: openDeviceDiagram, busy: diagramBusy } = useDeviceDiagram(space.id)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -408,33 +410,15 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * The device's diagram on this canvas: drawn if it is not there yet, opened if it is. A diagram
-   * is a map object of its own — placed beside the camera — so the lookup starts at the replica's
-   * owner, where the device's nodes hang, and a missing one is created here rather than reported.
+   * The device's diagram on this canvas: drawn if it is not there yet, opened if it is. It hangs
+   * under the camera's picture here, and asking again is safe — the server keeps one per device.
    */
   const showDeviceDiagram = async (marker: MapMarker) => {
-    if (!space.id || !marker.cameraId) return
+    if (!marker.cameraId) return
 
-    const parentId = marker.ownerId ?? marker.id
-    setBusy(true)
     setNotice(null)
-    try {
-      const page = childrenByParent[parentId]?.loaded
-        ? null
-        : await dispatch(loadChildren({ parentId })).unwrap()
-      const children = page?.children ?? childrenOf(known, childrenByParent, parentId)
-      const existing = children.find((child) => child.nodeKind === 'diagram')
-
-      const diagram = existing
-        ?? await dispatch(attachDeviceDiagram({ cameraId: marker.cameraId, spaceId: space.id })).unwrap()
-
-      setSelection({ kind: 'node', id: diagram.id })
-      openDiagram(diagram.id)
-    } catch {
-      setNotice(t('diagramEditor.diagramNotCreated'))
-    } finally {
-      setBusy(false)
-    }
+    const shown = await openDeviceDiagram(marker.cameraId)
+    if (!shown) setNotice(t('diagramEditor.diagramNotCreated'))
   }
 
   return (
@@ -522,7 +506,7 @@ function NodesTree({ markers, space, onOpenSpace }: {
                   <IconButton
                     size="small"
                     aria-label={t('diagramEditor.deviceDiagram')}
-                    disabled={busy}
+                    disabled={busy || diagramBusy}
                     onClick={(event) => { event.stopPropagation(); void showDeviceDiagram(marker) }}
                   >
                     <DashboardCustomizeIcon fontSize="small" />
