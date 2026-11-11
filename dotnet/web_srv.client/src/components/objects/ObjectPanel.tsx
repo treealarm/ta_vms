@@ -63,6 +63,12 @@ export default function ObjectPanel({
     const cameraId = s.objects.markers[nodeId]?.cameraId
     return cameraId ? s.live.cameraStatesById[cameraId] : undefined
   })
+  // Where the node is, when it is anywhere: its own figure on some canvas, or — for a camera node,
+  // which is never drawn itself — a placement of the camera. Naming a place needs one.
+  const figure = useAppSelector((s) => s.objects.figures[nodeId])
+  const placements = useAppSelector((s) => s.spatial.placements)
+  const drawn = !!figure
+    || !!(marker?.cameraId && placements.some((placement) => placement.cameraId === marker.cameraId))
 
   useEffect(() => {
     void dispatch(loadObjProps(nodeId))
@@ -101,7 +107,7 @@ export default function ObjectPanel({
             </Button>
           </Tooltip>
         ) : null}
-        {onLocate ? (
+        {onLocate && drawn ? (
           <Tooltip title={t('maps.node.locate')}>
             <IconButton size="small" aria-label={t('maps.node.locate')} onClick={() => onLocate(nodeId)}>
               <CenterFocusStrongIcon fontSize="small" />

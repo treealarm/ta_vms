@@ -17,13 +17,13 @@ import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../../dto/dtos'
-import type { MapFigure, MapGeometry } from '../../dto/mapDtos'
+import type { MapFigure, MapGeometry, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import { loadCanvas, loadObjProps } from '../../store/objectsSlice'
+import { loadCanvas, loadObjProps, revealNode } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { isUnder } from '../../map/tree'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
@@ -36,7 +36,7 @@ import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
-import { cornersAround, distance, figureAtPlacement, rescaleCorners } from '../../map/geo'
+import { cornersAround, distance, figureAtPlacement, pointsCentre, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -91,7 +91,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const {
     mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
     pendingDiagramId, setPendingDiagramId, focus, select,
-    sideTab, setSideTab, openDiagramId, openDiagram, showInTree,
+    sideTab, setSideTab, openDiagramId, openDiagram, showInTree, focusOn,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
@@ -122,6 +122,42 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
   // The diagram of the camera picked on the canvas, offered as a link beside it.
   const deviceDiagram = useDeviceDiagramLink(selectedNodeId ? markersById[selectedNodeId] : undefined)
+
+  /**
+   * Finds the node where it is drawn: the diagram it stands in is opened over the plan, a node of
+   * another space opens that space, and on this plan the map is centred on its point. The mirror of
+   * "show in tree": there the row was known and the place was not.
+   */
+  const showOnCanvas = async (id: string) => {
+    const marker = markersById[id]
+    if (!marker) return
+
+    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const canvas = marker.nodeKind === 'diagram'
+      ? marker
+      : [...ancestors].reverse()
+        .find((ancestor) => ancestor.nodeKind === 'space' || ancestor.nodeKind === 'diagram')
+
+    if (!canvas) return
+    if (canvas.nodeKind === 'diagram') {
+      if (canvas.id !== openDiagramId) openDiagram(canvas.id)
+      return
+    }
+    if (canvas.id !== spaceId) {
+      openDiagram(null)
+      onOpenSpace(canvas.id)
+      return
+    }
+
+    // The figure drawn on this canvas, or the point the camera's placement stands at.
+    const cameraId = marker.cameraId
+    const placement = cameraId
+      ? placements.find((candidate) => candidate.cameraId === cameraId && candidate.spaceId === spaceId)
+      : undefined
+    const at = pointsCentre(figuresById[id]?.geometry?.coord ?? [])
+      ?? (placement ? { lat: placement.lat, lon: placement.lon } : null)
+    if (at) focusOn(at)
+  }
 
   // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
   // map. A node drawn inside the open diagram keeps it open — picking a zone on its paper must not
@@ -200,6 +236,10 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedNode = selectionNodeId ? markersById[selectionNodeId] : undefined
   const selectedFigure = selectionNodeId ? figuresById[selectionNodeId] : undefined
   const selectedProps = selectionNodeId ? propsById[selectionNodeId] : undefined
+  // "Show on map" names a place on this canvas: a node drawn nowhere here — a container, a camera
+  // part — has none to name, and a node inside the open diagram is already where it is.
+  const selectionDrawn = !!selectedFigure
+    || (!!selectedNode?.cameraId && here.some((placement) => placement.cameraId === selectedNode.cameraId))
 
   // The editor needs the node's properties and look, which the tree read does not carry.
   useEffect(() => {
@@ -831,19 +871,33 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             <Tab value="object" label={t('maps.tabObject')} />
             <Tab value="rights" label={t('rights.tab')} />
           </Tabs>
-          {/* The node was picked on the canvas; the tree beside it is where it stands among its
-              neighbours. A space is the canvas itself, not a row of its own tree. */}
+          {/* Both ways round for the node the panel is about: where it stands among its
+              neighbours in the tree, and where it is drawn on the plan. A space is the canvas
+              itself, not a row of its own tree. */}
           {selectionNodeId && selection?.kind !== 'footprint' ? (
-            <Tooltip title={t('maps.node.showInTree')}>
-              <IconButton
-                size="small"
-                aria-label={t('maps.node.showInTree')}
-                onClick={() => showInTree(selectionNodeId)}
-                sx={{ mr: 0.5 }}
-              >
-                <AccountTreeIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            <>
+              {selectionDrawn && !openDiagramId ? (
+                <Tooltip title={t('maps.node.locate')}>
+                  <IconButton
+                    size="small"
+                    aria-label={t('maps.node.locate')}
+                    onClick={() => void showOnCanvas(selectionNodeId)}
+                  >
+                    <CenterFocusStrongIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
+              <Tooltip title={t('maps.node.showInTree')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('maps.node.showInTree')}
+                  onClick={() => showInTree(selectionNodeId)}
+                  sx={{ mr: 0.5 }}
+                >
+                  <AccountTreeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </>
           ) : null}
         </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
