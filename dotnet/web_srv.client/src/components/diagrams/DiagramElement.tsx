@@ -87,7 +87,8 @@ export default function DiagramElement({
         width: shown.width,
         height: shown.height,
         cursor: onMove && movable ? 'move' : 'pointer',
-        zIndex: selected ? 2 : 1,
+        // Above the free shapes drawn on the paper (2), below the captions and the shape being drawn.
+        zIndex: selected ? 3 : 1,
         // Selection must not be read as an alarm: the alarm frame below is red, this one blue.
         outline: selected ? '2px solid' : 'none',
         outlineColor: SELECTED_COLOR,

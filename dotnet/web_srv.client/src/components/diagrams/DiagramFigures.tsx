@@ -74,9 +74,15 @@ export default function DiagramFigures({
 
   return (
     <>
+      {/* Over the diagram's own picture, which is its first element and carries a stacking order
+          of its own: under it a saved zone is drawn and never seen. Under the points and the shape
+          being drawn. */}
       {shapes.length > 0 ? (
         <svg
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+          style={{
+            position: 'absolute', inset: 0, width: '100%', height: '100%',
+            pointerEvents: 'none', zIndex: 2,
+          }}
           viewBox={`0 0 ${paper.width} ${paper.height}`}
           preserveAspectRatio="none"
         >

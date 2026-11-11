@@ -558,22 +558,28 @@ export default function DiagramViewer({
                   transformOrigin: 'top left',
                 }}
               >
-                <DiagramElement
-                  marker={rootMarker}
-                  rect={{ ...paper, left: 0, top: 0 }}
-                  content={shown}
-                  values={values}
-                  states={states}
-                  alarms={alarms}
-                  descriptions={descriptions}
-                  depth={shownDepth}
-                  selectedId={selectedId}
-                  onPick={pick}
-                  onMove={editing ? beginDrag : undefined}
-                  movable={false}
-                  dragged={dragging}
-                  showRegions={editing}
-                />
+                {/* The diagram itself — its picture and the elements standing on it — is one
+                    stacking context under the free shapes drawn on the paper: the root element
+                    lifts itself when it is selected, and without this the zones a reader drew
+                    would sink below the picture. */}
+                <Box sx={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+                  <DiagramElement
+                    marker={rootMarker}
+                    rect={{ ...paper, left: 0, top: 0 }}
+                    content={shown}
+                    values={values}
+                    states={states}
+                    alarms={alarms}
+                    descriptions={descriptions}
+                    depth={shownDepth}
+                    selectedId={selectedId}
+                    onPick={pick}
+                    onMove={editing ? beginDrag : undefined}
+                    movable={false}
+                    dragged={dragging}
+                    showRegions={editing}
+                  />
+                </Box>
 
                 <DiagramFigures
                   figures={figures}
