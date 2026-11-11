@@ -24,6 +24,7 @@ import {
 } from '../../store/spatialSlice'
 import { loadCanvas, loadObjProps } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
+import { isUnder } from '../../map/tree'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
@@ -122,10 +123,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const deviceDiagram = useDeviceDiagramLink(selectedNodeId ? markersById[selectedNodeId] : undefined)
 
   // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
-  // map.
+  // map. A node drawn inside the open diagram keeps it open — picking a zone on its paper must not
+  // throw the reader back to the plan.
   const selectNode = (id: string) => {
     setSelection({ kind: 'node', id })
-    openDiagram(markersById[id]?.nodeKind === 'diagram' ? id : null)
+    if (markersById[id]?.nodeKind === 'diagram') openDiagram(id)
+    else if (!openDiagramId || !isUnder(markersById, id, openDiagramId)) openDiagram(null)
   }
 
   // On the space's own canvas a click only selects. Entering a diagram on click would take the

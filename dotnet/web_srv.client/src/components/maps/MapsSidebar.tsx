@@ -19,6 +19,7 @@ import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
 import { treeRows } from '../../map/nodeTree'
+import { isUnder } from '../../map/tree'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
@@ -348,7 +349,9 @@ function NodesTree({ markers, space, onOpenSpace }: {
 }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const { selection, setSelection, openDiagram, setMode, setPendingDiagramId } = useEditorState()
+  const {
+    selection, setSelection, openDiagram, openDiagramId, setMode, setPendingDiagramId,
+  } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -472,8 +475,10 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 // draws, and its readings — only the row picked is selected, and the canvas marks
                 // that one. What the camera is, the panel beside shows from the node itself.
                 setSelection({ kind: 'node', id: marker.id })
-                // A diagram is its own canvas: picking it opens it in place of the map.
-                openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
+                // A diagram is its own canvas: picking it opens it in place of the map. A figure
+                // inside the open diagram keeps it open — a plan in its place would hide it.
+                if (marker.nodeKind === 'diagram') openDiagram(marker.id)
+                else if (!openDiagramId || !isUnder(known, marker.id, openDiagramId)) openDiagram(null)
               }}
               sx={{ cursor: 'grab', pl: 0.5 + depth * 1.5 }}
             >

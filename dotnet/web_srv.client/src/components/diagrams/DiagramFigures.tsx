@@ -87,11 +87,28 @@ export default function DiagramFigures({
           preserveAspectRatio="none"
         >
           {shapes.map((figure) => {
+            const moved = drag?.id === figure.id ? drag : null
             const points = (figure.geometry?.coord ?? [])
-              .map((coord) => { const at = figurePoint(coord); return `${at.x},${at.y}` })
+              .map((coord) => {
+                const at = figurePoint(coord)
+                return `${at.x + (moved?.dx ?? 0)},${at.y + (moved?.dy ?? 0)}`
+              })
               .join(' ')
             const colour = figure.visual?.color || DEFAULT_SHAPE
             const selected = figure.id === selectedId
+            // The drawing itself takes the click — its fill or its line, not the whole rectangle
+            // it happens to fit in, so the paper and the tools keep the rest.
+            const pickable = {
+              pointerEvents: 'visiblePainted' as const,
+              cursor: editing ? 'move' : 'pointer',
+              onPointerDown: (event: React.PointerEvent) => beginDrag(figure, event),
+              onClick: (event: React.MouseEvent) => {
+                // A drag is not a pick: the pointer went somewhere and the shape moved with it.
+                if (draggedRef.current) { draggedRef.current = false; return }
+                event.stopPropagation()
+                onPick?.(figure)
+              },
+            }
 
             return figure.geometry?.type === 'Polygon' ? (
               <polygon
@@ -101,6 +118,7 @@ export default function DiagramFigures({
                 fillOpacity={selected ? 0.3 : 0.15}
                 stroke={colour}
                 strokeWidth={selected ? 3 : 2}
+                {...pickable}
               />
             ) : (
               <polyline
@@ -109,6 +127,7 @@ export default function DiagramFigures({
                 fill="none"
                 stroke={colour}
                 strokeWidth={selected ? 3 : 2}
+                {...pickable}
               />
             )
           })}
