@@ -44,6 +44,10 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       },
       setSideTab: (sideTab) => patch({ sideTab }),
       openDiagram: (openDiagramId) => patch({ openDiagramId }),
+      // Repeating the ask for the same node is a new ask: the counter is what the tree watches.
+      showInTree: (id) => setSnapshot((s) => ({
+        ...s, revealed: { id, seq: (s.revealed?.seq ?? 0) + 1 },
+      })),
     }
   }, [snapshot])
 

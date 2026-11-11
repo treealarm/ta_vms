@@ -100,6 +100,8 @@ export default function MapsOperatorPanel() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   // The open rows of the tree; a search result unfolds the path down to itself.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Bumped when the panel asks the tree to show a node picked on the canvas: the row scrolls to.
+  const [treeReveal, setTreeReveal] = useState(0)
   const [leftTab, setLeftTab] = useState(0)
   const [aiming, setAiming] = useState(false)
   const [aimTarget, setAimTarget] = useState<GeoPointDto | null>(null)
@@ -343,6 +345,28 @@ export default function MapsOperatorPanel() {
   }
 
   /**
+   * The other way round: a node picked on the canvas is shown in the tree beside it, among its
+   * neighbours. The path down to it is unfolded — its pages read, when they were not — and the
+   * row is scrolled to. The canvas stays as it is: nothing is re-opened or re-centred.
+   */
+  const showInTree = async (id: string) => {
+    const marker = markers[id]
+    if (!marker) return
+
+    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    if (ancestors.length > 0) {
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    }
+
+    setLeftTab(0)
+    setTreeReveal((count) => count + 1)
+  }
+
+  /**
    * The diagram a camera's template draws hangs under the picture of the camera on the canvas, so
    * the node's own children are where to look.
    */
@@ -551,6 +575,7 @@ export default function MapsOperatorPanel() {
                 onCheckedChange={setCheckedIds}
                 expanded={expanded}
                 onExpandedChange={setExpanded}
+                reveal={treeReveal}
               />
             ) : leftTab === 1 ? (
               <MapObjectList sections={[alarmSection]} />
@@ -652,6 +677,7 @@ export default function MapsOperatorPanel() {
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             onEnter={enterNode}
             onLocate={locateNode}
+            onShowInTree={(id) => void showInTree(id)}
             onOpenDiagram={(id) => void openDeviceDiagram(id)}
             onSelectCamera={(cameraId) => void selectCamera(cameraId)}
             aiming={aiming}

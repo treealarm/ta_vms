@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Alert, Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
@@ -13,7 +13,7 @@ import { enc } from '../../api/requestJson'
 import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
-import { childrenOf, loadChildren } from '../../store/objectsSlice'
+import { childrenOf, loadChildren, loadNodes, revealNode } from '../../store/objectsSlice'
 import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
@@ -48,11 +48,21 @@ type Props = {
 export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Props) {
   const { t } = useTranslation()
   const [tab, setTab] = useState<SpaceTab>('devices')
+  const { revealed } = useEditorState()
   const cameraCount = useAppSelector((s) => Object.keys(s.live.cameraStatesById).length)
   const placedHere = useAppSelector((s) => new Set(
     s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
   const landmarkCount = useAppSelector((s) => s.spatial.landmarksBySpace[space?.id ?? '']?.length ?? 0)
   const { markers } = useMapChildren(space?.id ?? null)
+
+  // A node was asked for from the panel beside the map: the tree is the tab that shows it. Set
+  // while rendering, as the editor state resets on a new space, so the list below is right at once.
+  const [showedSeq, setShowedSeq] = useState(0)
+  const revealSeq = revealed?.seq ?? 0
+  if (revealSeq !== showedSeq) {
+    setShowedSeq(revealSeq)
+    if (revealed) setTab('nodes')
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
@@ -80,7 +90,12 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
             {tab === 'devices' ? (
               <DevicesList space={space} />
             ) : tab === 'nodes' ? (
-              <NodesTree markers={markers} space={space} onOpenSpace={onSelectSpace} />
+              <NodesTree
+                markers={markers}
+                space={space}
+                onOpenSpace={onSelectSpace}
+                revealed={revealed}
+              />
             ) : (
               <LandmarksList space={space} />
             )}
@@ -344,8 +359,12 @@ function DevicesList({ space }: { space: SpaceDto }) {
  * onto the map becomes a replica of itself where it is dropped — the way a camera's picture is
  * made on another plan.
  */
-function NodesTree({ markers, space, onOpenSpace }: {
-  markers: MapMarker[]; space: SpaceDto; onOpenSpace: (spaceId: string) => void
+function NodesTree({ markers, space, onOpenSpace, revealed }: {
+  markers: MapMarker[]
+  space: SpaceDto
+  onOpenSpace: (spaceId: string) => void
+  /** The node the panel asked the tree to show, and a counter that repeats the ask. */
+  revealed: { id: string; seq: number } | null
 }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -365,9 +384,45 @@ function NodesTree({ markers, space, onOpenSpace }: {
     }
   }, [space.id, childrenByParent, dispatch])
 
+  // The panel beside the map asked for this node to be shown: every page down to it is read and
+  // its rows unfolded, so the row is there to scroll to. One read per ask, not per store change.
+  useEffect(() => {
+    if (!revealed) return
+    void (async () => {
+      let marker: MapMarker | undefined = known[revealed.id]
+      if (!marker) {
+        const loaded = await dispatch(loadNodes([revealed.id])).unwrap().catch(() => null)
+        marker = loaded?.markers.find((candidate) => candidate.id === revealed.id)
+      }
+      if (!marker) return
+
+      const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+      if (ancestors.length === 0) return
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed?.seq])
+
   const roots = space.id ? childrenOf(known, childrenByParent, space.id) : []
   const rows = treeRows(roots, childrenByParent, known, expanded)
   const rootsLoaded = !space.id || !!childrenByParent[space.id]?.loaded
+
+  // The row that ask is about, and whether its scroll is still owed: the rows arrive with the
+  // pages read above, so the scroll waits for the render that has the row in it.
+  const revealedRow = useRef<HTMLDivElement | null>(null)
+  const scrollOwed = useRef(false)
+  useEffect(() => {
+    if (revealed) scrollOwed.current = true
+  }, [revealed])
+  useEffect(() => {
+    if (!scrollOwed.current || !revealedRow.current) return
+    revealedRow.current.scrollIntoView({ block: 'center' })
+    scrollOwed.current = false
+  }, [rows])
 
   const toggle = (id: string) => {
     const next = new Set(expanded)
@@ -459,12 +514,18 @@ function NodesTree({ markers, space, onOpenSpace }: {
           return (
             <ListItemButton
               key={marker.id}
+              ref={revealed && marker.id === revealed.id
+                ? (element) => { revealedRow.current = element }
+                : undefined}
               draggable
               onDragStart={(event) => {
                 event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
                 event.dataTransfer.effectAllowed = 'copy'
               }}
-              selected={selection?.kind === 'node' && selection.id === marker.id}
+              // The row the panel asked for is the node the panel is about, even when the
+              // selection there is a camera's placement rather than the picture's node.
+              selected={(selection?.kind === 'node' && selection.id === marker.id)
+                || revealed?.id === marker.id}
               onClick={() => {
                 // A space is a world of its own, not a shape on this canvas: open it.
                 if (marker.nodeKind === 'space') {

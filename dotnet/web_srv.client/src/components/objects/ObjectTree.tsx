@@ -21,6 +21,11 @@ type Props = {
   /** The open rows. The page owns them, so a search result can unfold the path down to itself. */
   expanded: Set<string>
   onExpandedChange: (ids: Set<string>) => void
+  /**
+   * A counter bumped when the tree is asked to show what is selected: the row scrolls into view.
+   * The selection alone does not move the tree — clicking a row must not shift the one clicked.
+   */
+  reveal?: number
 }
 
 type TreeContextValue = {
@@ -30,6 +35,7 @@ type TreeContextValue = {
   selectedId: string | null
   checkedIds: Set<string>
   expanded: Set<string>
+  reveal: number
   onToggle: (id: string) => void
   onSelect: (marker: MapMarker) => void
   onCheck: (id: string, checked: boolean) => void
@@ -44,7 +50,7 @@ const TreeContext = createContext<TreeContextValue | null>(null)
  * because the counter lives on the node itself (`children_alarms`).
  */
 export default function ObjectTree({
-  selectedId, onSelect, checkedIds, onCheckedChange, expanded, onExpandedChange,
+  selectedId, onSelect, checkedIds, onCheckedChange, expanded, onExpandedChange, reveal = 0,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -102,6 +108,7 @@ export default function ObjectTree({
     selectedId,
     checkedIds,
     expanded,
+    reveal,
     onToggle: toggle,
     onSelect,
     onCheck: check,
@@ -133,6 +140,16 @@ export default function ObjectTree({
 function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
   const ctx = useContext(TreeContext)
   const { t } = useTranslation()
+  const rowRef = useRef<HTMLDivElement | null>(null)
+  const selected = ctx?.selectedId === marker.id
+  const reveal = ctx?.reveal ?? 0
+
+  // The tree was asked to show this node: it may have just been unfolded above, so the answer is
+  // read on every mount and whenever the ask is repeated.
+  useEffect(() => {
+    if (selected && reveal > 0) rowRef.current?.scrollIntoView({ block: 'center' })
+  }, [selected, reveal])
+
   if (!ctx) return null
 
   const page = ctx.childrenByParent[marker.id]
@@ -142,7 +159,6 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
   const hasChildren = marker.hasChildren || !!page?.loaded
   const alarm = ctx.alarms[marker.id]
   const alarming = !!(alarm?.alarm || (alarm?.childrenAlarms ?? 0) > 0)
-  const selected = ctx.selectedId === marker.id
   const children = open && page?.loaded
     ? sortMarkers(page.ids.map((id) => ctx.markers[id]).filter((child): child is MapMarker => !!child))
     : []
@@ -150,6 +166,7 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
   return (
     <>
       <ListItemButton
+        ref={rowRef}
         selected={selected}
         onClick={() => ctx.onSelect(marker)}
         sx={{ pl: 0.5 + depth * 1.5, pr: 0.5, py: 0.1, minHeight: 30 }}

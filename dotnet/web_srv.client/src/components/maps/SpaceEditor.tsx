@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, FormControlLabel, Stack, Switch, Tab, Tabs, ToggleButton,
-  ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Divider, FormControlLabel, IconButton, Stack, Switch, Tab, Tabs,
+  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import PanToolIcon from '@mui/icons-material/PanToolAlt'
 import PlaceIcon from '@mui/icons-material/Place'
 import ImageIcon from '@mui/icons-material/Image'
@@ -90,7 +91,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const {
     mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
     pendingDiagramId, setPendingDiagramId, focus, select,
-    sideTab, setSideTab, openDiagramId, openDiagram,
+    sideTab, setSideTab, openDiagramId, openDiagram, showInTree,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
@@ -809,22 +810,42 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       </Box>
 
       <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {/* Four labels in a 300px column: the tabs share the width and keep their own letter size,
-            so the last one is never the one that falls off the edge. */}
-        <Tabs
-          value={sideTab}
-          onChange={(_, v: SideTab) => setSideTab(v)}
-          variant="fullWidth"
-          sx={{
-            borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40,
-            '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
-          }}
+        <Stack
+          direction="row"
+          alignItems="center"
+          sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
         >
-          <Tab value="space" label={t('maps.tabSpace')} />
-          <Tab value="selection" label={t('maps.tabSelection')} />
-          <Tab value="object" label={t('maps.tabObject')} />
-          <Tab value="rights" label={t('rights.tab')} />
-        </Tabs>
+          {/* Four labels in a 300px column: the tabs share the width and keep their own letter
+              size, so the last one is never the one that falls off the edge. */}
+          <Tabs
+            value={sideTab}
+            onChange={(_, v: SideTab) => setSideTab(v)}
+            variant="fullWidth"
+            sx={{
+              flex: 1, minWidth: 0, minHeight: 40,
+              '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
+            }}
+          >
+            <Tab value="space" label={t('maps.tabSpace')} />
+            <Tab value="selection" label={t('maps.tabSelection')} />
+            <Tab value="object" label={t('maps.tabObject')} />
+            <Tab value="rights" label={t('rights.tab')} />
+          </Tabs>
+          {/* The node was picked on the canvas; the tree beside it is where it stands among its
+              neighbours. A space is the canvas itself, not a row of its own tree. */}
+          {selectionNodeId && selection?.kind !== 'footprint' ? (
+            <Tooltip title={t('maps.node.showInTree')}>
+              <IconButton
+                size="small"
+                aria-label={t('maps.node.showInTree')}
+                onClick={() => showInTree(selectionNodeId)}
+                sx={{ mr: 0.5 }}
+              >
+                <AccountTreeIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+        </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {/* Both stay mounted: the space's form keeps its unsaved edits while an object is looked at. */}
           <Box sx={{ display: sideTab === 'space' ? 'block' : 'none' }}>

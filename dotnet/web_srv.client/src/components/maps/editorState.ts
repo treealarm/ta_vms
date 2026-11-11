@@ -46,6 +46,12 @@ export type EditorState = {
   sideTab: SideTab
   setSideTab: (tab: SideTab) => void
   /**
+   * A node picked beside the map, asked to be shown in the tree: the sidebar opens its Nodes tab,
+   * unfolds the path down to it and scrolls there. `seq` repeats the ask for the same node.
+   */
+  revealed: { id: string; seq: number } | null
+  showInTree: (id: string) => void
+  /**
    * The mnemoscheme opened in place of the map, if one is. Kept apart from the selection: an
    * element inside it is selected while the diagram stays open, and only its breadcrumbs or a
    * space in the tree lead out.
@@ -62,11 +68,12 @@ export type Snapshot = {
   focus: MapFocus | null
   sideTab: SideTab
   openDiagramId: string | null
+  revealed: { id: string; seq: number } | null
 }
 
 export const FRESH: Snapshot = {
   mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null, focus: null,
-  sideTab: 'space', openDiagramId: null,
+  sideTab: 'space', openDiagramId: null, revealed: null,
 }
 
 export const EditorStateContext = createContext<EditorState | null>(null)

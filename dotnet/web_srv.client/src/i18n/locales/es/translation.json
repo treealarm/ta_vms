@@ -1357,6 +1357,7 @@
       "enter": "Entrar",
       "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio",
       "locate": "Mostrar en el mapa",
+      "showInTree": "Mostrar en el árbol",
       "deviceOf": "Diagrama de",
       "showDevice": "Mostrar dispositivo"
     },
