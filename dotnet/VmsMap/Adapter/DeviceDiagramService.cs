@@ -110,13 +110,22 @@ namespace VmsMap.Adapter
       var row = await _db.DeviceDiagrams.FirstOrDefaultAsync(
         d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot, ct);
 
+      // The match the device's model gives, read once and reused: creating the row and adopting a
+      // template into an already blank one ask the same question, and the answer cannot differ
+      // inside one transaction.
+      DiagramModelSelection? model = null;
+
       if (row is null)
       {
         // No template named: the device's own model decides. None matching is not a failure — the
         // sheet is blank, and the administrator draws on it.
         var chosen = wantedType;
-        if (chosen is null && (await SelectTypeAsync(sourceId, ct)).TypeId is { } match)
-          chosen = Utils.ConvertObjectIdToGuid(match);
+        if (chosen is null)
+        {
+          model = await SelectTypeAsync(sourceId, ct);
+          if (model.TypeId is { } match)
+            chosen = Utils.ConvertObjectIdToGuid(match);
+        }
 
         row = await CreateAsync(sourceKind, sourceId, slot, chosen, site, ct);
         if (row is null)
@@ -129,13 +138,16 @@ namespace VmsMap.Adapter
         await PlaceAsync(row, site, ct);
       }
 
-      if (wantedType is null && row.diagram_type_id is null
-          && (await SelectTypeAsync(sourceId, ct)).TypeId is { } matched
-          && Utils.ConvertObjectIdToGuid(matched) is { } matchedId)
+      if (wantedType is null && row.diagram_type_id is null)
       {
-        // A sheet left blank takes its model's template once there is one: the administrator asked
-        // for the device's diagram, not for a permanently empty one.
-        await SetTypeAsync(row, matchedId, ct);
+        model ??= await SelectTypeAsync(sourceId, ct);
+        if (model.TypeId is { } matched
+            && Utils.ConvertObjectIdToGuid(matched) is { } matchedId)
+        {
+          // A sheet left blank takes its model's template once there is one: the administrator
+          // asked for the device's diagram, not for a permanently empty one.
+          await SetTypeAsync(row, matchedId, ct);
+        }
       }
 
       if (wantedType is { } type && row.diagram_type_id != type)
@@ -462,9 +474,12 @@ namespace VmsMap.Adapter
     /// <summary>
     /// Keeps an existing diagram with its camera: the node moves under the picture of the camera it
     /// draws. On a named canvas it also stands there, at the point it already stands at unless the
-    /// site names one — a reinstall must not move what was dragged. With no canvas, a figure it
-    /// already has is the administrator's and is left alone: the diagram can be opened from the
-    /// camera without being drawn beside it.
+    /// site names one — a reinstall must not move what was dragged, and a point the administrator
+    /// clicked is applied even to a diagram already drawn.
+    ///
+    /// A diagram already drawn on a canvas is the administrator's: opening it from the camera (no
+    /// site) leaves the node and its figure alone, because moving the node out from under that
+    /// canvas's picture would leave the figure behind in another canvas's coordinates.
     /// </summary>
     private async Task PlaceAsync(DBDeviceDiagram row, DiagramSite? site, CancellationToken ct)
     {
@@ -473,11 +488,22 @@ namespace VmsMap.Adapter
       if (marker is null)
         return;
 
+      var drawn = await _db.GeoObjects.AsNoTracking().AnyAsync(g => g.id == row.object_id, ct);
+      // A figure already on this canvas keeps its point; one on another canvas says nothing here.
+      var drawnHere = false;
+
       Guid? parentGuid;
       (double Lat, double Lon)? point = null;
+      // A point named outright is applied even when the node already stands where it is asked to:
+      // the administrator clicked this exact place, and a card that did not move would be the
+      // request silently dropped.
+      var namedPoint = false;
 
       if (site is null)
       {
+        if (drawn)
+          return;
+
         parentGuid = await ReferencePictureAsync(row.source_id, ct);
         if (parentGuid is null)
           return;
@@ -490,23 +516,37 @@ namespace VmsMap.Adapter
 
         parentGuid = Utils.ConvertObjectIdToGuid(
           await ParentOnCanvasAsync(row.source_id, spaceGuid.Value, ct));
-        point = site.Lat is { } lat && site.Lon is { } lon
-          ? (Lat: lat, Lon: lon)
-          : await CurrentPointAsync(row.object_id, ct)
-            ?? await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
-      }
 
-      var drawn = await _db.GeoObjects.AnyAsync(g => g.id == row.object_id, ct);
-      if (marker.parent_id == parentGuid && (site is null || drawn))
-        return;
+        if (site.Lat is { } lat && site.Lon is { } lon)
+        {
+          point = (Lat: lat, Lon: lon);
+          namedPoint = true;
+        }
+        else if (drawn && await IsDrawnOnCanvasAsync(row.object_id, spaceGuid.Value, ct))
+        {
+          // Already here: the point it was dragged to is the point it keeps.
+          drawnHere = true;
+          point = await CurrentPointAsync(row.object_id, ct)
+            ?? await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+        }
+        else
+        {
+          // Not drawn here — on no canvas, or on one whose coordinates are its own.
+          point = await BesideCameraAsync(row.source_id, spaceGuid.Value, ct);
+        }
+      }
 
       var objectId = Utils.ConvertGuidToObjectId(row.object_id);
       var parent = Utils.ConvertGuidToObjectId(parentGuid);
-      await _map.UpdateHierarchyAsync([
-        new BaseMarkerDTO { id = objectId, parent_id = parent, name = marker.name }
-      ]);
 
-      if (point is { } at)
+      if (marker.parent_id != parentGuid)
+      {
+        await _map.UpdateHierarchyAsync([
+          new BaseMarkerDTO { id = objectId, parent_id = parent, name = marker.name }
+        ]);
+      }
+
+      if (point is { } at && (namedPoint || !drawnHere))
       {
         await _geo.CreateGeo([
           new FigureGeoDTO
@@ -554,6 +594,13 @@ namespace VmsMap.Adapter
         .FirstOrDefaultAsync(g => g.id == objectId, ct);
       return geo?.figure is Point point ? (point.Y, point.X) : null;
     }
+
+    /// <summary>
+    /// Whether the diagram's figure is drawn on this canvas. Its coordinates are the canvas's own,
+    /// so only a figure standing here says where the card belongs here.
+    /// </summary>
+    private Task<bool> IsDrawnOnCanvasAsync(Guid objectId, Guid spaceId, CancellationToken ct) =>
+      _db.GeoObjects.AsNoTracking().AnyAsync(g => g.id == objectId && g.canvas_id == spaceId, ct);
 
     /// A few metres off the camera: on its marker would hide one behind the other. The camera's own
     /// picture in that space says where; a space it is not drawn in yet falls back to the middle of

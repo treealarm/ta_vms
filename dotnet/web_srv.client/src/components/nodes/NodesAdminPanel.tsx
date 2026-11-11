@@ -14,7 +14,7 @@ import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
-import { loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
+import { loadChildren, loadNodes, loadRoots, revealNodePath } from '../../store/objectsSlice'
 import { attachDeviceDiagram } from '../../store/mapEditsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
@@ -119,26 +119,22 @@ export default function NodesAdminPanel() {
     setExpanded(next)
   }
 
-  const openInTree = async (marker: MapMarker) => {
+  const openInTree = async (node: MapMarker | string) => {
     setQuery('')
     setResults(null)
-    const chain = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { marker, ancestors } = await dispatch(revealNodePath(node)).unwrap()
     const next = new Set(expanded)
-    for (const ancestor of chain) next.add(ancestor.id)
-    if (marker.parentId) next.add(marker.parentId)
+    for (const ancestor of ancestors) next.add(ancestor.id)
+    if (marker?.parentId) next.add(marker.parentId)
     setExpanded(next)
-    setSelectedId(marker.id)
+    setSelectedId(typeof node === 'string' ? node : node.id)
   }
 
-  // A link from the map names a node the page has not read yet: read it, then unfold the path.
+  // A link from the map names a node the page has not read yet; the reveal reads it on the way.
   // Re-running on every marker change would fight the reader's own navigation.
   useEffect(() => {
     if (!linkedNode) return
-    void (async () => {
-      const loaded = await dispatch(loadNodes([linkedNode])).unwrap().catch(() => null)
-      const marker = loaded?.markers.find((candidate) => candidate.id === linkedNode)
-      if (marker) await openInTree(marker)
-    })()
+    void openInTree(linkedNode)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedNode, dispatch])
 

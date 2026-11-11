@@ -132,6 +132,37 @@ export const revealNode = createAsyncThunk(
   },
 )
 
+/**
+ * The one way a node is brought into view in a tree: read the node itself when this store has not
+ * seen it, then every page from the root down to it. Answers the node and the chain of ancestors
+ * for the caller to unfold — the tree widgets differ in what they do with the chain (a tab, a
+ * scroll, a selection), not in what has to be read first.
+ */
+export const revealNodePath = createAsyncThunk(
+  'objects/revealNodePath',
+  async (node: MapMarker | string, api): Promise<{
+    marker: MapMarker | null
+    ancestors: MapMarker[]
+  }> => {
+    const id = typeof node === 'string' ? node : node.id
+    let marker: MapMarker | undefined = typeof node === 'string'
+      ? (api.getState() as { objects: ObjectsState }).objects.markers[id]
+      : node
+
+    if (!marker) {
+      const loaded = await api.dispatch(loadNodes([id])).unwrap().catch(() => null)
+      marker = loaded?.markers.find((candidate) => candidate.id === id)
+    }
+    if (!marker) return { marker: null, ancestors: [] }
+
+    const ancestors = await api
+      .dispatch(revealNode(marker))
+      .unwrap()
+      .catch(() => [] as MapMarker[])
+    return { marker, ancestors }
+  },
+)
+
 function mergeMarker(state: ObjectsState, marker: MapMarker): void {
   const existing = state.markers[marker.id]
   const oldParent = existing?.parentId ?? ''

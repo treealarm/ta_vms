@@ -274,6 +274,16 @@ namespace VmsMap.Grpc
           var nodeId = string.Equals(device.source_kind, DeviceObjectId.CameraSource, StringComparison.Ordinal)
             ? CameraObjectId.For(device.source_id)
             : string.Empty;
+
+          // The camera's canonical node is not the node that was asked for, and a right on the
+          // diagram's canvas does not reach it: a node the caller may not see never leaves the
+          // service, and its name would be the same leak. The panel then offers no link.
+          if (nodeId.Length > 0
+              && !await _rightsService.IsAllowedAsync(nodeId, RightActions.View, caller, ct))
+          {
+            nodeId = string.Empty;
+          }
+
           result.Device = new MapProto.DeviceRef
           {
             SourceKind = device.source_kind,

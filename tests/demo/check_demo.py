@@ -159,8 +159,10 @@ def ancestor_chain(vms, start):
 def device_nodes(vms, name):
     """The camera's canonical node and its parts, as the demo's adapter wrote them.
 
-    The search answers for the camera id with both the canonical node under its server and every
-    picture of it; the canonical node is the one that is nobody's replica.
+    The search joins every node to its device_node row, so a camera id answers with the canonical
+    node under its server and that node's parts. A picture of the camera is a replica with no
+    device_node row of its own and is not returned; the canonical node is the one that is nobody's
+    replica.
     """
     camera_uuid = camera_id(name)
     found = map_search(vms, camera_uuid)

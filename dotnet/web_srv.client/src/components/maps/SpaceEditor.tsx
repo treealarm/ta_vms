@@ -17,13 +17,13 @@ import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../../dto/dtos'
-import type { MapFigure, MapGeometry, MapMarker } from '../../dto/mapDtos'
+import type { MapFigure, MapGeometry } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import { loadCanvas, loadNodes, loadObjProps, revealNode } from '../../store/objectsSlice'
+import { loadCanvas, loadNodes, loadObjProps, revealNodePath } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { isUnder } from '../../map/tree'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
@@ -160,7 +160,7 @@ export default function SpaceEditor({
     // Drawn elsewhere: the diagram it stands in is opened over the plan with the node picked out,
     // or the space it stands in is opened — and picked out there too, so the object is not lost on
     // the way.
-    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { ancestors } = await dispatch(revealNodePath(marker)).unwrap()
     const canvas = marker.nodeKind === 'diagram'
       ? marker
       : [...ancestors].reverse()
@@ -553,7 +553,11 @@ export default function SpaceEditor({
         // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
         showLayer={space.kind === 'map'}
         referenceSpace={referenceSpace}
-        onDeviceDiagram={() => void openDeviceDiagram(selectedPlacement.cameraId)}
+        onDeviceDiagram={() => void run(async () => {
+          if (!await openDeviceDiagram(selectedPlacement.cameraId)) {
+            throw new Error(t('diagramEditor.noDeviceDiagram'))
+          }
+        })}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
           await dispatch(removePlacement({ cameraId: selectedPlacement.cameraId, spaceId })).unwrap()

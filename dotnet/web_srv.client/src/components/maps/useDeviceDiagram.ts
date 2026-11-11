@@ -14,8 +14,8 @@ import { useEditorState } from './editorState'
  * — a permanent card beside the camera, and the reader stays on the plan where it landed.
  *
  * The server keeps one diagram per device, so asking again returns the node it has rather than a
- * second one. Answers whether it happened; a failure is the store's to say, and the caller decides
- * where to show it.
+ * second one. Answers the node, or null when the server made none; a rejection is thrown, not
+ * swallowed — the caller shows it where it belongs, beside the action that failed.
  */
 export function useDeviceDiagram(spaceId: string | null | undefined) {
   const dispatch = useAppDispatch()
@@ -29,8 +29,6 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
     try {
       const marker = await dispatch(attachDeviceDiagram({ cameraId, spaceId: canvas, at })).unwrap()
       return marker?.id ? marker : null
-    } catch {
-      return null
     } finally {
       setBusy(false)
     }

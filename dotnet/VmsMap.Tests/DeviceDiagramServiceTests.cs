@@ -491,14 +491,16 @@ public class DeviceDiagramServiceTests
   /// row behind it. A diagram of the device is hung under this node, not under the camera's
   /// canonical one — that one is hardware, and the diagram is what the plan shows of it.
   /// </summary>
-  private static async Task<Guid> SeedPictureAsync(Services s)
+  private static async Task<Guid> SeedPictureAsync(Services s) => await SeedPictureAsync(s, Space, true);
+
+  private static async Task<Guid> SeedPictureAsync(Services s, Guid spaceId, bool reference)
   {
     var picture = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO
       {
         id = Utils.ConvertGuidToObjectId(picture),
-        parent_id = Utils.ConvertGuidToObjectId(Space),
+        parent_id = Utils.ConvertGuidToObjectId(spaceId),
         owner_id = CameraObjectId.For(CameraId),
         name = "Camera " + CameraId,
       }
@@ -507,10 +509,20 @@ public class DeviceDiagramServiceTests
     {
       object_id = picture,
       camera_id = CameraId,
-      is_reference = true,
+      is_reference = reference,
     });
     await s.Db.SaveChangesAsync();
     return picture;
+  }
+
+  /// A second canvas, beside the one every other test draws on.
+  private static async Task<Guid> SeedSpaceAsync(Services s, string name)
+  {
+    var id = Guid.NewGuid();
+    s.Db.Markers.Add(new DBMarker { id = id, name = name });
+    s.Db.Spaces.Add(new DBSpace { object_id = id, kind = SpaceKinds.Map });
+    await s.Db.SaveChangesAsync();
+    return id;
   }
 
   [Fact]
@@ -598,6 +610,84 @@ public class DeviceDiagramServiceTests
     Assert.True(geo.figure is Point point
                 && Math.Abs(point.Y - 38.99) < 1e-9 && Math.Abs(point.X + 76.94) < 1e-9);
     Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
+  }
+
+  [Fact]
+  public async Task APointAskedForAgainMovesTheDiagramAlreadyDrawn()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    await AttachAsync(s);
+    var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
+
+    // The same canvas, another click: the node already hangs where it should, and the point is
+    // still the administrator's to choose. A run that returned early would drop the request.
+    await AttachAsync(s, site: new DiagramSite(
+      Utils.ConvertGuidToObjectId(Space), 38.95, -76.90));
+
+    var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
+    Assert.True(geo.figure is Point point
+                && Math.Abs(point.Y - 38.95) < 1e-9 && Math.Abs(point.X + 76.90) < 1e-9);
+  }
+
+  [Fact]
+  public async Task OpeningADrawnDiagramFromTheCameraLeavesItOnItsCanvas()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    // The camera is drawn on two canvases; the diagram is on the second one, not the reference.
+    await SeedPictureAsync(s);
+    var elsewhere = await SeedSpaceAsync(s, "Second plan");
+    var elsewherePicture = await SeedPictureAsync(s, elsewhere, false);
+
+    await s.Diagrams.AttachAsync(
+      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot,
+      new DiagramSite(Utils.ConvertGuidToObjectId(elsewhere), 38.99, -76.94), default);
+    var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
+    Assert.Equal(elsewherePicture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
+
+    // Opening it from the camera names no canvas. The figure is drawn on the second plan, so the
+    // node stays there: moving it under the reference picture would leave the figure behind in
+    // another plan's coordinates.
+    await s.Diagrams.AttachAsync(
+      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+
+    Assert.Equal(elsewherePicture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
+    Assert.Equal(elsewhere, (await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid)).canvas_id);
+  }
+
+  [Fact]
+  public async Task APointIsNotTakenFromAnotherCanvas()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+
+    // Drawn on the tests' canvas at a point of its own.
+    await AttachAsync(s);
+    var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
+
+    // Another canvas, no point named: the middle of its own view, not the coordinates the diagram
+    // has on the first one — those are the first plan's metres.
+    var elsewhere = await SeedSpaceAsync(s, "Second plan");
+    var space = await s.Db.Spaces.SingleAsync(x => x.object_id == elsewhere);
+    space.view_south = 38.9; space.view_north = 39.0;
+    space.view_west = -77.0; space.view_east = -76.9;
+    await s.Db.SaveChangesAsync();
+
+    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(elsewhere)));
+
+    var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
+    Assert.Equal(elsewhere, geo.canvas_id);
+    Assert.Equal(38.95, geo.figure!.Centroid.Y, 6);
+    Assert.Equal(-76.95, geo.figure!.Centroid.X, 6);
   }
 
   [Fact]

@@ -18,7 +18,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { loadNodes, resolveCameraNode, revealNode, childrenOf, loadChildren } from '../../store/objectsSlice'
+import { loadNodes, resolveCameraNode, revealNodePath, childrenOf, loadChildren } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
 import type { CameraPlacementDto } from '../../dto/dtos'
@@ -293,11 +293,12 @@ export default function MapsOperatorPanel() {
    * A node picked in the search tab: unfold the tree down to it, open the space it stands in and
    * select it. A camera then goes by its reference placement, like one picked anywhere else.
    */
-  const revealFromSearch = async (marker: MapMarker) => {
+  const revealFromSearch = async (found: MapMarker) => {
     resetAim()
 
     // The chain from the root down to its parent, with every page along it read.
-    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { marker, ancestors } = await dispatch(revealNodePath(found)).unwrap()
+    if (!marker) return
 
     // The canvas it stands on: itself for a space or a diagram, else the nearest one above it.
     const canvas = marker.nodeKind === 'space' || marker.nodeKind === 'diagram'
@@ -350,10 +351,7 @@ export default function MapsOperatorPanel() {
    * row is scrolled to. The canvas stays as it is: nothing is re-opened or re-centred.
    */
   const showInTree = async (id: string) => {
-    const marker = markers[id]
-    if (!marker) return
-
-    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { ancestors } = await dispatch(revealNodePath(id)).unwrap()
     if (ancestors.length > 0) {
       setExpanded((previous) => {
         const next = new Set(previous)

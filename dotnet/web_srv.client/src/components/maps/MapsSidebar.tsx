@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Alert, Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
+  Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
@@ -13,7 +13,7 @@ import { enc } from '../../api/requestJson'
 import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
-import { childrenOf, loadChildren, loadNodes, revealNode } from '../../store/objectsSlice'
+import { childrenOf, loadChildren, revealNodePath } from '../../store/objectsSlice'
 import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
@@ -375,7 +375,6 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
   useEffect(() => {
@@ -389,14 +388,7 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   useEffect(() => {
     if (!revealed) return
     void (async () => {
-      let marker: MapMarker | undefined = known[revealed.id]
-      if (!marker) {
-        const loaded = await dispatch(loadNodes([revealed.id])).unwrap().catch(() => null)
-        marker = loaded?.markers.find((candidate) => candidate.id === revealed.id)
-      }
-      if (!marker) return
-
-      const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+      const { ancestors } = await dispatch(revealNodePath(revealed.id)).unwrap()
       if (ancestors.length === 0) return
       setExpanded((previous) => {
         const next = new Set(previous)
@@ -482,7 +474,6 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   const askDeviceDiagram = (marker: MapMarker) => {
     if (!marker.cameraId) return
 
-    setNotice(null)
     setMode('select')
     setPendingDiagramId(marker.cameraId)
   }
@@ -507,11 +498,6 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
           </span>
         </Tooltip>
       </Stack>
-      {notice && (
-        <Alert severity="info" onClose={() => setNotice(null)} sx={{ mx: 1, mb: 1, py: 0 }}>
-          {notice}
-        </Alert>
-      )}
       <List dense disablePadding>
         {rows.map(({ marker, depth }) => {
           const open = expanded.has(marker.id)

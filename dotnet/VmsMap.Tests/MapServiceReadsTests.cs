@@ -314,6 +314,43 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task GetObjPropsDoesNotNameTheDeviceTheCallerMayNotSee()
+  {
+    var s = Create();
+    var deviceId = CameraObjectId.For(TestCameras.One);
+    // The device's canonical node hangs under a server whose rights name somebody else; the
+    // diagram is allowed on its own. Seeing the diagram is not seeing the device.
+    var server = await Node(s.Map, "Server");
+    await Grant(s.Db, server, "bob", RightActions.View);
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = deviceId, parent_id = server.id, name = "Camera " + TestCameras.One }
+    ]);
+
+    var diagram = await Node(s.Map, "Camera / rear panel");
+    await Grant(s.Db, diagram, "alice", RightActions.View);
+    s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = Guid.Parse(diagram.id!),
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
+    {
+      Id = diagram.id,
+      Caller = Caller("alice"),
+    }, new TestContext());
+
+    // A node the caller may not see never leaves the service: no node id, and no name to go with
+    // it. The panel draws no link to the device.
+    Assert.Equal(DeviceObjectId.CameraSource, props.Device.SourceKind);
+    Assert.Empty(props.Device.NodeId);
+    Assert.Empty(props.Device.Name);
+  }
+
+  [Fact]
   public async Task UpdateFiguresKeepsTheOwnerAndTheLayerItWasGiven()
   {
     var s = Create();
