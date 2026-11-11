@@ -1200,7 +1200,8 @@
     "openDeviceDiagram": "Open device diagram",
     "noDeviceDiagram": "This device has no diagram yet. Draw one from the camera's row under Admin → Maps.",
     "deviceDiagram": "Device diagram",
-    "diagramNotCreated": "The diagram could not be drawn"
+    "placeDeviceDiagram": "Place the device diagram on this canvas",
+    "placeDiagramHint": "Click the map to place the diagram of {{name}}"
   },
   "rights": {
     "tab": "Rights",
@@ -1266,7 +1267,8 @@
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
       "reset": "Reset zoom",
-      "empty": "This diagram has nothing to draw."
+      "empty": "This diagram has nothing to draw.",
+      "up": "Up one level"
     },
     "editor": {
       "tabNodes": "Nodes",
@@ -1354,7 +1356,10 @@
       "caption": "Caption",
       "enter": "Enter",
       "enterHint": "Zoom in to what is inside, or open a space's own canvas",
-      "locate": "Show on map"
+      "locate": "Show on map",
+      "showInTree": "Show in tree",
+      "deviceOf": "Diagram of",
+      "showDevice": "Show device"
     },
     "tabSpaces": "Spaces",
     "tabDevices": "Devices",

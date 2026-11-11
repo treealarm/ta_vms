@@ -18,7 +18,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
-import { loadNodes, resolveCameraNode, revealNode, childrenOf, loadChildren } from '../../store/objectsSlice'
+import { loadNodes, resolveCameraNode, revealNodePath, childrenOf, loadChildren } from '../../store/objectsSlice'
 import { clearTracks } from '../../store/tracksSlice'
 import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
 import type { CameraPlacementDto } from '../../dto/dtos'
@@ -42,6 +42,7 @@ import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
 import MapObjectList, { type MapObjectItem } from './MapObjectList'
 import { rootsOf, sharesGeometry } from './spatialUtils'
+import { useDeviceDiagramLink } from './useDeviceDiagram'
 
 /** The camera list carries recording state and stream freshness; this is how stale the map may get. */
 const CAMERA_POLL_MS = 5000
@@ -99,6 +100,8 @@ export default function MapsOperatorPanel() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
   // The open rows of the tree; a search result unfolds the path down to itself.
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Bumped when the panel asks the tree to show a node picked on the canvas: the row scrolls to.
+  const [treeReveal, setTreeReveal] = useState(0)
   const [leftTab, setLeftTab] = useState(0)
   const [aiming, setAiming] = useState(false)
   const [aimTarget, setAimTarget] = useState<GeoPointDto | null>(null)
@@ -138,6 +141,9 @@ export default function MapsOperatorPanel() {
   const selectedMarker = selectedNodeId ? markers[selectedNodeId] : undefined
   const selectedCameraId = selectedMarker?.cameraId ?? null
   const selectedPlacement = here.find((p) => p.cameraId === selectedCameraId)
+  // The diagram of the picked camera, offered as a link beside it instead of a card that always
+  // stands on the plan.
+  const deviceDiagram = useDeviceDiagramLink(selectedMarker)
   const figureById = useMemo(
     () => new Map(spaceData.figures.map((figure) => [figure.id, figure])),
     [spaceData.figures],
@@ -287,11 +293,12 @@ export default function MapsOperatorPanel() {
    * A node picked in the search tab: unfold the tree down to it, open the space it stands in and
    * select it. A camera then goes by its reference placement, like one picked anywhere else.
    */
-  const revealFromSearch = async (marker: MapMarker) => {
+  const revealFromSearch = async (found: MapMarker) => {
     resetAim()
 
     // The chain from the root down to its parent, with every page along it read.
-    const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { marker, ancestors } = await dispatch(revealNodePath(found)).unwrap()
+    if (!marker) return
 
     // The canvas it stands on: itself for a space or a diagram, else the nearest one above it.
     const canvas = marker.nodeKind === 'space' || marker.nodeKind === 'diagram'
@@ -339,14 +346,31 @@ export default function MapsOperatorPanel() {
   }
 
   /**
-   * The diagram a camera's template draws hangs under the canonical node, not under the picture of
-   * it standing on a canvas: the owner's children are where to look.
+   * The other way round: a node picked on the canvas is shown in the tree beside it, among its
+   * neighbours. The path down to it is unfolded — its pages read, when they were not — and the
+   * row is scrolled to. The canvas stays as it is: nothing is re-opened or re-centred.
+   */
+  const showInTree = async (id: string) => {
+    const { ancestors } = await dispatch(revealNodePath(id)).unwrap()
+    if (ancestors.length > 0) {
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    }
+
+    setLeftTab(0)
+    setTreeReveal((count) => count + 1)
+  }
+
+  /**
+   * The diagram a camera's template draws hangs under the picture of the camera on the canvas, so
+   * the node's own children are where to look.
    */
   const openDeviceDiagram = async (id: string) => {
-    const marker = markers[id]
-    const parentId = marker?.ownerId ?? id
-    const page = await dispatch(loadChildren({ parentId })).unwrap().catch(() => null)
-    const children = page?.children ?? childrenOf(markers, childrenByParent, parentId)
+    const page = await dispatch(loadChildren({ parentId: id })).unwrap().catch(() => null)
+    const children = page?.children ?? childrenOf(markers, childrenByParent, id)
     const diagram = children.find((child) => child.nodeKind === 'diagram')
     if (!diagram) {
       setNotice(t('diagramEditor.noDeviceDiagram'))
@@ -356,6 +380,7 @@ export default function MapsOperatorPanel() {
     setDiagramId(diagram.id)
     setSelectedNodeId(diagram.id)
   }
+
 
   /**
    * Enter a node that holds children. A space or a mnemoscheme opens its own canvas, which is a
@@ -548,6 +573,7 @@ export default function MapsOperatorPanel() {
                 onCheckedChange={setCheckedIds}
                 expanded={expanded}
                 onExpandedChange={setExpanded}
+                reveal={treeReveal}
               />
             ) : leftTab === 1 ? (
               <MapObjectList sections={[alarmSection]} />
@@ -565,7 +591,11 @@ export default function MapsOperatorPanel() {
               diagramId={diagramId}
               selectedId={selectedNodeId}
               onPick={(marker) => setSelectedNodeId(marker.id)}
-              onOpen={(marker) => selectNode(marker)}
+              onOpen={(marker) => {
+                // Anything but a diagram is not a canvas of its own: step out of the viewer first.
+                if (marker.nodeKind !== 'diagram') setDiagramId(null)
+                selectNode(marker)
+              }}
             />
           ) : (
             <SpaceCanvas
@@ -610,7 +640,18 @@ export default function MapsOperatorPanel() {
                     dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
                     alarm={byCamera.get(p.cameraId) ?? null}
                     levels={levels}
+                    visual={node ? figureById.get(node.id)?.visual : undefined}
                     zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
+                    diagramLink={deviceDiagram && node?.id === selectedNodeId
+                      ? {
+                          label: t('diagramEditor.openDeviceDiagram'),
+                          visual: deviceDiagram.visual,
+                          onOpen: () => {
+                            setDiagramId(deviceDiagram.diagram.id)
+                            setSelectedNodeId(deviceDiagram.diagram.id)
+                          },
+                        }
+                      : undefined}
                     onSelect={() => void selectCamera(p.cameraId)}
                   />
                 )
@@ -634,7 +675,9 @@ export default function MapsOperatorPanel() {
             onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
             onEnter={enterNode}
             onLocate={locateNode}
+            onShowInTree={(id) => void showInTree(id)}
             onOpenDiagram={(id) => void openDeviceDiagram(id)}
+            onSelectCamera={(cameraId) => void selectCamera(cameraId)}
             aiming={aiming}
             onAimingChange={setAiming}
             aimUnavailable={aimUnavailable}

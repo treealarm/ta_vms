@@ -1200,7 +1200,8 @@
     "openDeviceDiagram": "Abrir diagrama del dispositivo",
     "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Dibuje uno desde la fila de la cámara en Administración → Mapas.",
     "deviceDiagram": "Diagrama del dispositivo",
-    "diagramNotCreated": "No se pudo dibujar el diagrama"
+    "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo",
+    "placeDiagramHint": "Haga clic en el mapa para colocar el diagrama de {{name}}"
   },
   "rights": {
     "tab": "Derechos",
@@ -1266,7 +1267,8 @@
       "zoomIn": "Acercar",
       "zoomOut": "Alejar",
       "reset": "Restablecer zoom",
-      "empty": "Este mimosesquema no tiene nada que dibujar."
+      "empty": "Este mimosesquema no tiene nada que dibujar.",
+      "up": "Subir un nivel"
     },
     "editor": {
       "tabNodes": "Nodos",
@@ -1353,7 +1355,10 @@
       "caption": "Leyenda",
       "enter": "Entrar",
       "enterHint": "Acercar a lo que hay dentro, o abrir el lienzo propio de un espacio",
-      "locate": "Mostrar en el mapa"
+      "locate": "Mostrar en el mapa",
+      "showInTree": "Mostrar en el árbol",
+      "deviceOf": "Diagrama de",
+      "showDevice": "Mostrar dispositivo"
     },
     "tabSpaces": "Espacios",
     "tabDevices": "Dispositivos",

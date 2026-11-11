@@ -29,11 +29,14 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       ...snapshot,
       setMode: (mode) => patch({ mode }),
       setSelection,
-      setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId }),
+      // Two placements wait for the same click; asking for one drops the other.
+      setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId, pendingDiagramId: null }),
+      setPendingDiagramId: (pendingDiagramId) => patch({ pendingDiagramId, pendingCameraId: null }),
       focusOn,
       select: (kind, id, at) => {
         setSnapshot((s) => ({
-          ...s, mode: 'select', pendingCameraId: null, selection: { kind, id }, sideTab: 'selection',
+          ...s, mode: 'select', pendingCameraId: null, pendingDiagramId: null,
+          selection: { kind, id }, sideTab: 'selection',
           // A list acts on the space's own map: a diagram open over it hides the object picked.
           openDiagramId: null,
           focus: { lat: at.lat, lon: at.lon, seq: (s.focus?.seq ?? 0) + 1 },
@@ -41,6 +44,10 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       },
       setSideTab: (sideTab) => patch({ sideTab }),
       openDiagram: (openDiagramId) => patch({ openDiagramId }),
+      // Repeating the ask for the same node is a new ask: the counter is what the tree watches.
+      showInTree: (id) => setSnapshot((s) => ({
+        ...s, revealed: { id, seq: (s.revealed?.seq ?? 0) + 1 },
+      })),
     }
   }, [snapshot])
 

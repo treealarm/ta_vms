@@ -5,6 +5,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
+import type { MapMarker } from '../../dto/mapDtos'
+import NodeIdentity from '../objects/NodeIdentity'
 import NumberField from './NumberField'
 import ZoomLevelField from './ZoomLevelField'
 import CameraUnifiedCard from '../CameraUnifiedCard'
@@ -15,12 +17,14 @@ type CameraProps = {
   placement: CameraPlacementDto
   /** The node that carries this placement: its shape carries the scale layer. */
   nodeId?: string
+  /** The node itself: its name, id and the device it is a picture of. */
+  node?: MapMarker
   /** Whether the canvas this stands on is a map; a plan is looked at at one scale and has no layers. */
   showLayer?: boolean
-  /** The canonical node of the device this picture shows — where its parts and diagram hang. */
-  ownerNodeId?: string
   /** Where the camera really stands, when that is another space; null when it stands nowhere. */
   referenceSpace: SpaceDto | null
+  /** Draws the device's diagram under this picture, and opens it. */
+  onDeviceDiagram?: () => void
   onChange: (placement: CameraPlacementDto) => void
   onRemove: () => void
   onCalibrate: () => void
@@ -30,8 +34,8 @@ type CameraProps = {
 
 /** The selected camera's placement in this space. Each field saves when left; drags on the map save on release. */
 export function CameraPlacementPanel({
-  camera, placement, nodeId, showLayer, ownerNodeId,
-  referenceSpace, onChange, onRemove, onCalibrate, onGoToReference, onClose,
+  camera, placement, nodeId, node, showLayer,
+  referenceSpace, onDeviceDiagram, onChange, onRemove, onCalibrate, onGoToReference, onClose,
 }: CameraProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -43,21 +47,19 @@ export function CameraPlacementPanel({
   return (
     <Stack spacing={1.5} sx={{ p: 1.5 }}>
       <Box>
-        <Typography variant="subtitle2" noWrap>{camera?.name || placement.cameraId}</Typography>
-        <Typography variant="caption" color="text.secondary">{formatLatLon(placement.lat, placement.lon)}</Typography>
         {/* This picture is a replica: the device's own node — its parts, its diagram — is elsewhere
-            in the tree, and that is what the button opens. */}
-        {ownerNodeId ? (
-          <Box>
-            <Button
-              size="small"
-              sx={{ px: 0 }}
-              onClick={() => navigate(`/admin/nodes?node=${encodeURIComponent(ownerNodeId)}`)}
-            >
-              {t('maps.editor.nodeInTree')}
-            </Button>
-          </Box>
-        ) : null}
+            in the tree, and the panel names it and goes there. */}
+        {node ? (
+          <NodeIdentity
+            node={node}
+            onSelect={(id) => navigate(`/admin/nodes?node=${encodeURIComponent(id)}`)}
+          />
+        ) : (
+          <Typography variant="subtitle2" noWrap>{camera?.name || placement.cameraId}</Typography>
+        )}
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+          {formatLatLon(placement.lat, placement.lon)}
+        </Typography>
       </Box>
 
       {/* The device itself, beside its placement: one camera, and the map is where it stands. */}
@@ -66,13 +68,20 @@ export function CameraPlacementPanel({
           <Box sx={{ height: 200, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
             <CameraUnifiedCard camera={camera} slotKey={`editor:${camera.cameraId}`} />
           </Box>
-          <Button
-            size="small"
-            sx={{ px: 0 }}
-            onClick={() => navigate(`/admin/cameras?camera=${encodeURIComponent(camera.cameraId)}`)}
-          >
-            {t('maps.editor.cameraSettings')}
-          </Button>
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              sx={{ px: 0 }}
+              onClick={() => navigate(`/admin/cameras?camera=${encodeURIComponent(camera.cameraId)}`)}
+            >
+              {t('maps.editor.cameraSettings')}
+            </Button>
+            {onDeviceDiagram ? (
+              <Button size="small" sx={{ px: 0 }} onClick={onDeviceDiagram}>
+                {t('diagramEditor.deviceDiagram')}
+              </Button>
+            ) : null}
+          </Stack>
         </Box>
       ) : null}
       <Box>

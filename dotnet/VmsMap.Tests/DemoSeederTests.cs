@@ -70,7 +70,7 @@ public class DemoSeederTests
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
       new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
-      TestWiring.DeviceNodes(db, map, updates), TestWiring.DeviceDiagrams(db, map, updates, geo));
+      TestWiring.DeviceDiagrams(db, map, updates, geo));
 
     return new Services(db, map, seeder, catalog);
   }
@@ -314,36 +314,4 @@ public class DemoSeederTests
     Assert.Equal(DemoIds.Camera("sim-master"), mark.camera_id);
   }
 
-  private static DemoNode TelemetryReplica() =>
-    new("object/telemetry", "Camera sim-vehicle", "space/room", "type/rack",
-      Canvas: new DemoRect(0, 0, 300, 200), OwnerCameraId: "sim-vehicle");
-
-  [Fact]
-  public async Task AReplicaHangsOffTheCamerasCanonicalNodeAndTakesNoPlacement()
-  {
-    var s = Create("sim-vehicle");
-
-    await s.Seeder.InstallAsync(World(nodes: [.. DefaultNodes(), TelemetryReplica()]), CancellationToken.None);
-
-    var replicaId = Guid.Parse(DemoIds.Id("object/telemetry"));
-    var replica = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == replicaId);
-    Assert.Equal(Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-vehicle"))), replica.owner_id);
-
-    // The camera stands where its placement put it; the replica shows it from a diagram, which is
-    // not a space, so there is nothing to place.
-    Assert.Empty(await s.Db.CameraPlacements.ToListAsync());
-  }
-
-  [Fact]
-  public async Task AReplicaIsSkippedWhileTheDeploymentLacksTheCamera()
-  {
-    var s = Create();
-
-    var report = await s.Seeder.InstallAsync(
-      World(nodes: [.. DefaultNodes(), TelemetryReplica()]), CancellationToken.None);
-
-    Assert.Contains("sim-vehicle", report.SkippedCameras);
-    Assert.Null(await s.Db.Markers.AsNoTracking()
-      .FirstOrDefaultAsync(m => m.id == Guid.Parse(DemoIds.Id("object/telemetry"))));
-  }
 }

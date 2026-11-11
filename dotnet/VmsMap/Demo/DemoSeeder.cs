@@ -28,6 +28,11 @@ namespace VmsMap.Demo
     private static readonly string[] DeleteOrder =
       ["object", "camera", "landmark", "space", "type", "level", "file"];
 
+    // The picture a world draws its placed cameras with, when it brings one: pixels of the glyph on
+    // the map, and the file key it travels under.
+    private const string CameraIconKey = "file/camera-icon";
+    private const int CameraIconSize = 34;
+
     private readonly VmsMapDbContext _db;
     private readonly IMapUpdateService _updates;
     private readonly IDiagramServiceInternal _diagrams;
@@ -39,7 +44,6 @@ namespace VmsMap.Demo
     private readonly VisualService _visuals;
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
-    private readonly IDeviceNodeService _cameraNodes;
     private readonly IDeviceDiagramService _deviceDiagrams;
     // Only to remove the layers an older world wrote: the dictionary is the map's own now.
     private readonly ILevelService _levels;
@@ -57,7 +61,6 @@ namespace VmsMap.Demo
       VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras,
-      IDeviceNodeService cameraNodes,
       IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
@@ -71,7 +74,6 @@ namespace VmsMap.Demo
       _visuals = visuals;
       _spatial = spatial;
       _cameras = cameras;
-      _cameraNodes = cameraNodes;
       _deviceDiagrams = deviceDiagrams;
       _levels = levels;
     }
@@ -98,32 +100,6 @@ namespace VmsMap.Demo
     public async Task<DemoReport> InstallAsync(DemoWorld world, CancellationToken ct)
     {
       var report = new DemoReport { Key = world.Key, Version = world.Version };
-
-      // A replica hangs off the camera's canonical node, which the adapter owns and which is keyed
-      // in device_node. That node is created before the install transaction opens — the adapter
-      // keeps a transaction of its own — so a camera provisioned moments ago is already there. A
-      // camera the deployment does not have is skipped and reported, like a placement.
-      var owners = new Dictionary<string, Guid>(StringComparer.Ordinal);
-      foreach (var node in world.Nodes.Where(node => node.OwnerCameraId is not null))
-      {
-        var cameraId = DemoIds.Camera(node.OwnerCameraId!);
-        var camera = await _cameras.GetAsync(cameraId, ct);
-        if (camera is null)
-        {
-          report.SkippedCameras.Add(node.OwnerCameraId!);
-          continue;
-        }
-
-        await _cameraNodes.EnsureCameraAsync(camera, ct);
-        var owner = await _db.DeviceNodes.AsNoTracking()
-          .Where(row => row.source_kind == DeviceObjectId.CameraSource
-                        && row.source_id == cameraId
-                        && row.part_kind == DeviceObjectId.DevicePart)
-          .Select(row => (Guid?)row.object_id)
-          .FirstOrDefaultAsync(ct);
-        if (owner is not null)
-          owners[node.Key] = owner.Value;
-      }
 
       await using var tx = await BeginAsync(ct);
       await LockAsync(ct);
@@ -241,17 +217,11 @@ namespace VmsMap.Demo
       // ── Nodes: mnemoschemes, their children and the figures they are drawn at ───────────────
       foreach (var node in ParentsFirst(world.Nodes, n => n.Key, n => n.ParentKey))
       {
-        // A replica whose camera was skipped above has no owner to hang off; the next install,
-        // once the camera exists, writes it.
-        if (node.OwnerCameraId is not null && !owners.TryGetValue(node.Key, out _))
-          continue;
-
         var id = IdOf(node.Key);
         var parentId = node.ParentKey is null ? null : Required(node.ParentKey).ToString();
-        var ownerId = owners.TryGetValue(node.Key, out var owner) ? owner.ToString() : null;
 
         await _updates.UpdateObjects([
-          new BaseMarkerDTO { id = id.ToString(), parent_id = parentId, name = node.Name, owner_id = ownerId }]);
+          new BaseMarkerDTO { id = id.ToString(), parent_id = parentId, name = node.Name }]);
 
         if (node.TypeKey is not null)
         {
@@ -336,13 +306,35 @@ namespace VmsMap.Demo
           RangeM = placement.RangeM,
         }, ct);
 
+        // The picture the plan draws the camera with, rather than the map's own dot. It hangs on
+        // the placement's replica node, which is the node drawn there — the camera's canonical node
+        // under its server carries no figure. The map turns the picture by the placement's heading.
+        if (world.Files.FirstOrDefault(file => file.Key == CameraIconKey) is { } glyph)
+        {
+          var canonical = Utils.ConvertObjectIdToGuid(CameraObjectId.For(cameraId));
+          var picture = await _db.Markers.AsNoTracking()
+            .Where(m => m.parent_id == spaceId && m.owner_id == canonical)
+            .Select(m => (Guid?)m.id)
+            .FirstOrDefaultAsync(ct);
+          if (picture is not null)
+          {
+            await _visuals.UpdateListAsync([new VisualDTO
+            {
+              object_id = Utils.ConvertGuidToObjectId(picture),
+              image = glyph.Content,
+              image_width = CameraIconSize,
+              image_height = CameraIconSize,
+            }]);
+          }
+        }
+
         ids[key] = spaceId;
         keep.Add(key);
         placedCameras.Add(placement.CameraId);
         Written(key);
       }
 
-      // ── A device's own diagram: an object of a canvas, made by the service that owns it ────
+      // ── A device's diagram: under the camera's picture, made by the service that owns it ─────
       foreach (var diagram in world.DeviceDiagrams)
       {
         if (!placedCameras.Contains(diagram.CameraKey))
@@ -353,15 +345,19 @@ namespace VmsMap.Demo
           continue;
         }
 
+        // No canvas named: the diagram hangs under the camera's picture and is not drawn on it. The
+        // world does not want a second card beside the camera — the map offers a link into it when
+        // the camera is selected — and drops the picture an earlier world put there.
         var diagramId = await _deviceDiagrams.AttachAsync(
           DeviceObjectId.CameraSource, DemoIds.Camera(diagram.CameraKey),
-          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot,
-          new DiagramSite(Required(diagram.SpaceKey).ToString(), diagram.At.Lat, diagram.At.Lon), ct);
+          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot, site: null, ct);
         if (diagramId is null)
           continue;
 
-        // The diagram's own marker on the map is a thumbnail of the device it draws: the paper it
-        // opens on is the same picture, so the point reads as "the panel".
+        await _geo.RemoveAsync([diagramId]);
+
+        // The thumbnail the map draws when it offers a link into the diagram: the paper it opens on
+        // is the same picture.
         var picture = world.Files.Single(file => file.Key == diagram.VisualKey);
         await _visuals.UpdateListAsync([new VisualDTO
         {
@@ -523,22 +519,21 @@ namespace VmsMap.Demo
         switch (kind)
         {
           case "object":
-            // A value has no foreign key of its own in the model the tests use, and the demo's
-            // feeder writes them: take them away before the node they belong to. A replica owns no
-            // values, though — the feeder writes them to the camera's canonical node under the ids
-            // derived from it — so those are named explicitly rather than swept per owner.
+            // A value has no foreign key of its own in the model the tests use: take the values
+            // away before the nodes they belong to. A replica owns nothing — the readings panel
+            // the world shipped up to version 19 wrote its values into the camera's canonical
+            // node — so its owner's keys are named too, under the names that panel used.
             var objectGuids = ofKind.Select(pair => pair.Value).ToList();
             var owners = await _db.Markers.AsNoTracking()
               .Where(m => objectGuids.Contains(m.id) && m.owner_id != null)
               .Select(m => m.owner_id!.Value)
               .ToListAsync(ct);
-            var demoValueIds = owners
-              .SelectMany(owner => DemoTelemetry.Readings
-                .Select(name => DemoIds.For($"value/{owner}/{name}")))
+            string[] retiredReadings = ["lat", "lon", "speed", "relay", "sensor"];
+            var retiredValueIds = owners
+              .SelectMany(owner => retiredReadings.Select(name => DemoIds.For($"value/{owner}/{name}")))
               .ToList();
-
             var values = await _db.Values
-              .Where(value => objectGuids.Contains(value.owner_id) || demoValueIds.Contains(value.id))
+              .Where(value => objectGuids.Contains(value.owner_id) || retiredValueIds.Contains(value.id))
               .ToListAsync(ct);
             if (values.Count > 0)
             {

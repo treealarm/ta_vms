@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box, Breadcrumbs, Button, CircularProgress, IconButton, Stack, ToggleButton, ToggleButtonGroup,
-  Typography,
+  Tooltip, Typography,
 } from '@mui/material'
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import PentagonIcon from '@mui/icons-material/Pentagon'
 import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import TextFieldsIcon from '@mui/icons-material/TextFields'
@@ -360,6 +361,27 @@ export default function DiagramViewer({
 
   const cancelTool = () => { setTool(null); setDraft([]) }
 
+  // The breadcrumb chain ends with the open diagram itself: one step out is the node before it —
+  // the space, the enclosing diagram, or the camera's picture this one hangs under.
+  const upParent = shown?.parents?.[shown.parents.length - 2]
+
+  // A device diagram is named "<device> / <panel>", and the chain already carries its parent, so
+  // the crumb keeps only what the crumb before it does not say.
+  const crumbName = (parent: MapMarker, index: number) => {
+    const owner = index > 0 ? shown?.parents?.[index - 1]?.name : undefined
+    const name = parent.name || parent.id
+    return owner && name.startsWith(`${owner} / `) ? name.slice(owner.length + 3) : name
+  }
+
+  // The path of a deeply nested node is wider than this toolbar: it stays one line and is scrolled
+  // to its end, where the open diagram is.
+  const crumbsRef = useRef<HTMLDivElement>(null)
+  const crumbPath = (shown?.parents ?? []).map((parent) => parent.id).join('/')
+  useEffect(() => {
+    const element = crumbsRef.current
+    if (element) element.scrollLeft = element.scrollWidth
+  }, [crumbPath])
+
   const deleteDiagram = async () => {
     const name = shown?.parents?.[shown.parents.length - 1]?.name ?? diagramId
     if (!window.confirm(t('maps.editor.confirmDelete', { name }))) return
@@ -380,21 +402,49 @@ export default function DiagramViewer({
         alignItems="center"
         sx={{ px: 1, py: 0.25, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
       >
-        <Breadcrumbs sx={{ flex: 1, minWidth: 0, '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' } }}>
-          {(shown?.parents ?? []).map((parent) => parent.id === diagramId ? (
-            <Typography key={parent.id} variant="body2" noWrap>{parent.name || parent.id}</Typography>
+        <Breadcrumbs
+          ref={crumbsRef}
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            overflowX: 'auto',
+            scrollbarWidth: 'thin',
+            '&::-webkit-scrollbar': { height: 4 },
+            '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 2 },
+            '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap' },
+            '& .MuiBreadcrumbs-separator': { mx: 0.5 },
+          }}
+        >
+          {(shown?.parents ?? []).map((parent, index) => parent.id === diagramId ? (
+            <Typography key={parent.id} variant="body2" noWrap sx={{ flexShrink: 0 }}>
+              {crumbName(parent, index)}
+            </Typography>
           ) : (
             <Button
               key={parent.id}
               size="small"
               onClick={() => onOpen(parent)}
-              sx={{ minWidth: 0, textTransform: 'none', py: 0 }}
+              sx={{ minWidth: 0, flexShrink: 0, whiteSpace: 'nowrap', textTransform: 'none', py: 0 }}
             >
-              {parent.name || parent.id}
+              {crumbName(parent, index)}
             </Button>
           ))}
           {!shown?.parents?.length ? <Typography variant="body2" noWrap>{diagramId}</Typography> : null}
         </Breadcrumbs>
+
+        {/* The breadcrumb already leads out; this is the one click a reader looks for instead of
+            picking the second-to-last crumb. */}
+        {upParent ? (
+          <Tooltip title={t('maps.diagram.up')}>
+            <IconButton
+              size="small"
+              aria-label={t('maps.diagram.up')}
+              onClick={() => onOpen(upParent)}
+            >
+              <ArrowUpwardIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
 
         <ToggleButtonGroup
           size="small"
@@ -508,22 +558,28 @@ export default function DiagramViewer({
                   transformOrigin: 'top left',
                 }}
               >
-                <DiagramElement
-                  marker={rootMarker}
-                  rect={{ ...paper, left: 0, top: 0 }}
-                  content={shown}
-                  values={values}
-                  states={states}
-                  alarms={alarms}
-                  descriptions={descriptions}
-                  depth={shownDepth}
-                  selectedId={selectedId}
-                  onPick={pick}
-                  onMove={editing ? beginDrag : undefined}
-                  movable={false}
-                  dragged={dragging}
-                  showRegions={editing}
-                />
+                {/* The diagram itself — its picture and the elements standing on it — is one
+                    stacking context under the free shapes drawn on the paper: the root element
+                    lifts itself when it is selected, and without this the zones a reader drew
+                    would sink below the picture. */}
+                <Box sx={{ position: 'absolute', inset: 0, zIndex: 0 }}>
+                  <DiagramElement
+                    marker={rootMarker}
+                    rect={{ ...paper, left: 0, top: 0 }}
+                    content={shown}
+                    values={values}
+                    states={states}
+                    alarms={alarms}
+                    descriptions={descriptions}
+                    depth={shownDepth}
+                    selectedId={selectedId}
+                    onPick={pick}
+                    onMove={editing ? beginDrag : undefined}
+                    movable={false}
+                    dragged={dragging}
+                    showRegions={editing}
+                  />
+                </Box>
 
                 <DiagramFigures
                   figures={figures}

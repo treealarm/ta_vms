@@ -409,6 +409,38 @@ public class SpatialDbTests
   }
 
   [Fact]
+  public async Task RemovingAPictureTakesTheCameraDiagramHangingUnderIt()
+  {
+    var test = Create();
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+
+    var picture = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == TestCameras.One);
+
+    // The device's diagram, nested under the camera's picture on the canvas: the plan shows it
+    // under the camera, and taking the camera's picture away takes the drawing with it.
+    var diagram = DeviceObjectId.ForDeviceDiagram(
+      DeviceObjectId.CameraSource, TestCameras.One, IDeviceDiagramService.DefaultSlot);
+    await test.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = diagram, parent_id = picture.object_id.ToString(), name = "Camera / rear panel" }
+    ]);
+    test.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = Guid.Parse(diagram),
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await test.Db.SaveChangesAsync();
+
+    Assert.True(await test.Spatial.RemovePlacementAsync(TestCameras.One, Guid.Parse(map.Id), CancellationToken.None));
+
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == Guid.Parse(diagram)));
+    Assert.Empty(await test.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
   public async Task UnknownCameraIsRejected()
   {
     var test = Create();

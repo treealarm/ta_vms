@@ -14,7 +14,8 @@ import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadCameras } from '../../store/liveSlice'
 import { loadPlacements, loadSpaces } from '../../store/spatialSlice'
-import { childrenOf, loadChildren, loadNodes, loadRoots, revealNode } from '../../store/objectsSlice'
+import { loadChildren, loadNodes, loadRoots, revealNodePath } from '../../store/objectsSlice'
+import { attachDeviceDiagram } from '../../store/mapEditsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
@@ -118,46 +119,39 @@ export default function NodesAdminPanel() {
     setExpanded(next)
   }
 
-  const openInTree = async (marker: MapMarker) => {
+  const openInTree = async (node: MapMarker | string) => {
     setQuery('')
     setResults(null)
-    const chain = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
+    const { marker, ancestors } = await dispatch(revealNodePath(node)).unwrap()
     const next = new Set(expanded)
-    for (const ancestor of chain) next.add(ancestor.id)
-    if (marker.parentId) next.add(marker.parentId)
+    for (const ancestor of ancestors) next.add(ancestor.id)
+    if (marker?.parentId) next.add(marker.parentId)
     setExpanded(next)
-    setSelectedId(marker.id)
+    setSelectedId(typeof node === 'string' ? node : node.id)
   }
 
-  // A link from the map names a node the page has not read yet: read it, then unfold the path.
+  // A link from the map names a node the page has not read yet; the reveal reads it on the way.
   // Re-running on every marker change would fight the reader's own navigation.
   useEffect(() => {
     if (!linkedNode) return
-    void (async () => {
-      const loaded = await dispatch(loadNodes([linkedNode])).unwrap().catch(() => null)
-      const marker = loaded?.markers.find((candidate) => candidate.id === linkedNode)
-      if (marker) await openInTree(marker)
-    })()
+    void openInTree(linkedNode)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linkedNode, dispatch])
 
   /**
-   * The diagram a camera carries is a child of its canonical node, so opening it from the camera
-   * means reading that node's children first. A diagram node opens as itself.
+   * The diagram of a device hangs under the picture of its camera on the canvas, not under the
+   * device's own node in this tree, so the row asks the server for the device's diagram: it answers
+   * with the node it keeps — one per device — and with nothing when the camera is not placed.
    */
   const openDiagram = async (marker: MapMarker) => {
     if (marker.nodeKind === 'diagram') {
       setViewer({ id: marker.id, name: marker.name || marker.id })
       return
     }
-    const parentId = marker.ownerId ?? marker.id
+    if (!marker.cameraId) return
     try {
-      const page = pages[parentId]?.loaded
-        ? null
-        : await dispatch(loadChildren({ parentId })).unwrap()
-      const children = page?.children ?? childrenOf(markers, pages, parentId)
-      const diagram = children.find((child) => child.nodeKind === 'diagram')
-      if (diagram) setViewer({ id: diagram.id, name: diagram.name || diagram.id })
+      const diagram = await dispatch(attachDeviceDiagram({ cameraId: marker.cameraId })).unwrap()
+      if (diagram?.id) setViewer({ id: diagram.id, name: diagram.name || diagram.id })
       else setError(t('diagramEditor.noDeviceDiagram'))
     } catch (e) {
       setError(errorText(e))
@@ -376,8 +370,13 @@ export default function NodesAdminPanel() {
             selectedId={null}
             onPick={() => undefined}
             onOpen={(marker) => {
-              if (marker.nodeKind === 'diagram')
+              if (marker.nodeKind === 'diagram') {
                 setViewer({ id: marker.id, name: marker.name || marker.id })
+                return
+              }
+              // Out of the diagram and onto where it hangs: the camera's picture, or the space.
+              setViewer(null)
+              void openInTree(marker)
             }}
             editing={false}
           />

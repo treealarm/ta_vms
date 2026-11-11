@@ -2,27 +2,79 @@ import { useMemo, useRef } from 'react'
 import { Marker, Polygon, Polyline, Tooltip } from 'react-leaflet'
 import L from 'leaflet'
 import type { CameraPlacementDto, LandmarkDto } from '../dto/dtos'
-import type { MapLevel } from '../dto/mapDtos'
+import type { MapLevel, MapVisual } from '../dto/mapDtos'
 import { bearing, destination, distance, fovPolygon } from './geo'
 import { ALARM_COLOR } from './cameraStatus'
 import { inLayer, levelRanges } from './zoomLevels'
 import { useMapZoom } from '../hooks/useMapZoom'
+import { visualImageUrl } from './visualImage'
 
-const cameraIcon = (color: string, headingDeg: number, selected: boolean, alarm: CameraAlarm) => L.divIcon({
-  className: 'vms-map-camera',
-  html: `<div style="position:relative;width:26px;height:26px">`
-    // A ring round the camera, outside the rotated body so it stays round: breathing while the
-    // alarm runs, faint for a while after it ended.
-    + (alarm ? `<div class="${alarm === 'active' ? 'vms-alarm-pulse' : ''}" style="position:absolute;left:-6px;top:-5px;width:34px;height:34px;`
-      + `border-radius:50%;border:3px solid ${ALARM_COLOR};opacity:${alarm === 'active' ? 1 : 0.45};box-sizing:border-box"></div>` : '')
-    + `<div style="width:26px;height:26px;transform:rotate(${headingDeg}deg)">`
-    + `<svg width="26" height="26" viewBox="0 0 26 26">`
-    + `<path d="M13 1 L18 9 L8 9 Z" fill="${color}" stroke="#000" stroke-width="0.8"/>`
-    + `<circle cx="13" cy="14" r="8" fill="${color}" stroke="${selected ? '#fff' : '#000'}" stroke-width="${selected ? 3 : 1}"/>`
-    + `</svg></div></div>`,
-  iconSize: [26, 26],
-  iconAnchor: [13, 14],
-})
+/**
+ * A camera on the map: its own picture turned by the heading, when the placement carries one, and
+ * the map's grey body with a nose pointing north otherwise. Either way the nose (or the lens, in a
+ * picture) points the way the view cone does. The alarm ring stays round outside the rotated body
+ * and never turns with it.
+ */
+const cameraIcon = (
+  color: string, headingDeg: number, selected: boolean, alarm: CameraAlarm, visual?: MapVisual,
+) => {
+  const width = visual?.imageWidth || 26
+  const height = visual?.imageHeight || 26
+  const picture = visualImageUrl(visual?.image)
+
+  const body = picture
+    ? `<img src="${picture}" alt="" draggable="false" style="width:${width}px;height:${height}px;`
+      + `object-fit:contain;display:block;pointer-events:none;`
+      + (selected ? 'outline:2px dashed #fff;outline-offset:2px;border-radius:4px;' : '')
+      + `" />`
+    : `<svg width="26" height="26" viewBox="0 0 26 26">`
+      + `<path d="M13 1 L18 9 L8 9 Z" fill="${color}" stroke="#000" stroke-width="0.8"/>`
+      + `<circle cx="13" cy="14" r="8" fill="${color}" stroke="${selected ? '#fff' : '#000'}" stroke-width="${selected ? 3 : 1}"/>`
+      + `</svg>`
+
+  return L.divIcon({
+    className: 'vms-map-camera',
+    html: `<div style="position:relative;width:${width}px;height:${height}px">`
+      + (alarm ? `<div class="${alarm === 'active' ? 'vms-alarm-pulse' : ''}" style="position:absolute;left:-4px;top:-4px;`
+        + `width:${width + 8}px;height:${height + 8}px;`
+        + `border-radius:50%;border:3px solid ${ALARM_COLOR};opacity:${alarm === 'active' ? 1 : 0.45};box-sizing:border-box"></div>` : '')
+      + `<div style="width:${width}px;height:${height}px;transform:rotate(${headingDeg}deg);transform-origin:center">`
+      + body
+      + `</div></div>`,
+    iconSize: [width, height],
+    iconAnchor: [width / 2, height / 2],
+  })
+}
+
+/**
+ * The link into the device's diagram that stands beside a selected camera: a thumbnail of what the
+ * diagram opens on, ringed with a dashed line so it reads as a way in rather than as a node somebody
+ * placed on the plan.
+ */
+const diagramLinkIcon = (visual?: MapVisual) => {
+  const width = visual?.imageWidth || 34
+  const height = visual?.imageHeight || 34
+  const picture = visualImageUrl(visual?.image)
+  const body = picture
+    ? `<img src="${picture}" alt="" draggable="false" style="width:${width}px;height:${height}px;object-fit:contain;display:block;pointer-events:none" />`
+    : `<svg width="34" height="24" viewBox="0 0 34 24">`
+      + `<rect x="2" y="2" width="30" height="20" rx="3" fill="none" stroke="#4fc3f7" stroke-width="1.5"/>`
+      + `<path d="M7 8h20M7 12h20M7 16h12" stroke="#4fc3f7" stroke-width="1.2"/>`
+      + `</svg>`
+
+  return L.divIcon({
+    className: 'vms-map-diagram-link',
+    html: `<div style="width:${width + 8}px;height:${height + 8}px;box-sizing:border-box;`
+      + `border:2px dashed #4fc3f7;border-radius:8px;padding:2px;`
+      + `background:rgba(28,38,48,0.75);display:flex;align-items:center;justify-content:center;`
+      + `box-shadow:0 1px 4px rgba(0,0,0,0.45)">${body}</div>`,
+    iconSize: [width + 8, height + 8],
+    iconAnchor: [(width + 8) / 2, (height + 8) / 2],
+  })
+}
+
+/** The diagram a selected camera offers a way into, beside it on the canvas. */
+export type CameraDiagramLink = { label: string; visual?: MapVisual; onOpen: () => void }
 
 /** Whether a camera is alarming now, did lately, or neither. */
 export type CameraAlarm = 'active' | 'recent' | null
@@ -46,6 +98,10 @@ type CameraProps = {
   placement: CameraPlacementDto
   label: string
   color: string
+  /** The placement's own picture, when the administrator gave it one: drawn instead of the dot. */
+  visual?: MapVisual
+  /** Where to enter the device's diagram, offered beside the camera while it is selected. */
+  diagramLink?: CameraDiagramLink
   selected?: boolean
   /** Lets the marker be dragged, and, when selected, its cone be turned and stretched. */
   editable?: boolean
@@ -63,17 +119,22 @@ type CameraProps = {
 
 /** A camera and its view cone. heading 0 points the cone north, clockwise from there. */
 export function CameraMarker({
-  placement, label, color, selected, editable, interactive = true, dimmed, alarm = null, levels,
-  zoomLevel, onSelect, onChange,
+  placement, label, color, visual, diagramLink, selected, editable, interactive = true, dimmed,
+  alarm = null, levels, zoomLevel, onSelect, onChange,
 }: CameraProps) {
   const zoom = useMapZoom()
   const ranges = useMemo(() => levelRanges(levels ?? []), [levels])
 
   const p = placement
   const tip = destination({ lat: p.lat, lon: p.lon }, p.headingDeg, p.rangeM)
+  // North-east of the camera, the same few metres the service puts a diagram drawn by hand at.
+  const linkAt = destination({ lat: p.lat, lon: p.lon }, 45, 5)
   const startRef = useRef(p)
   // One icon object per look: a marker handed a new one rebuilds its element, which ends a drag.
-  const icon = useMemo(() => cameraIcon(color, p.headingDeg, !!selected, alarm), [color, p.headingDeg, selected, alarm])
+  const icon = useMemo(
+    () => cameraIcon(color, p.headingDeg, !!selected, alarm, visual),
+    [color, p.headingDeg, selected, alarm, visual],
+  )
 
   // A camera is drawn on its own scale layer like any other node; without one it is always drawn.
   if (levels && !inLayer(ranges, zoomLevel, zoom)) return null
@@ -132,6 +193,20 @@ export function CameraMarker({
             eventHandlers={{ drag: (e) => aimCone(e, false), dragend: (e) => aimCone(e, true) }}
           />
         </>
+      )}
+      {/* The way into the device's diagram: only while the camera is picked, and only when the
+          device has one. It is a link, not a node — the plan itself carries no second card. */}
+      {interactive && selected && diagramLink && (
+        <Marker
+          position={[linkAt.lat, linkAt.lon]}
+          icon={diagramLinkIcon(diagramLink.visual)}
+          zIndexOffset={800}
+          eventHandlers={{
+            click: (e) => { L.DomEvent.stopPropagation(e); diagramLink.onOpen() },
+          }}
+        >
+          <Tooltip direction="top" offset={[0, -20]}>{diagramLink.label}</Tooltip>
+        </Marker>
       )}
     </>
   )

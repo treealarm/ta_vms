@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  Alert, Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
+  Box, Chip, IconButton, List, ListItemButton, ListItemText, Stack, Tab, Tabs, Tooltip, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
@@ -13,12 +13,13 @@ import { enc } from '../../api/requestJson'
 import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
-import { childrenOf, loadChildren } from '../../store/objectsSlice'
-import { attachDeviceDiagram, createDiagramNode } from '../../store/mapEditsSlice'
+import { childrenOf, loadChildren, revealNodePath } from '../../store/objectsSlice'
+import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
 import { treeRows } from '../../map/nodeTree'
+import { isUnder } from '../../map/tree'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
@@ -47,11 +48,21 @@ type Props = {
 export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Props) {
   const { t } = useTranslation()
   const [tab, setTab] = useState<SpaceTab>('devices')
+  const { revealed } = useEditorState()
   const cameraCount = useAppSelector((s) => Object.keys(s.live.cameraStatesById).length)
   const placedHere = useAppSelector((s) => new Set(
     s.spatial.placements.filter((p) => p.spaceId === space?.id).map((p) => p.cameraId)).size)
   const landmarkCount = useAppSelector((s) => s.spatial.landmarksBySpace[space?.id ?? '']?.length ?? 0)
   const { markers } = useMapChildren(space?.id ?? null)
+
+  // A node was asked for from the panel beside the map: the tree is the tab that shows it. Set
+  // while rendering, as the editor state resets on a new space, so the list below is right at once.
+  const [showedSeq, setShowedSeq] = useState(0)
+  const revealSeq = revealed?.seq ?? 0
+  if (revealSeq !== showedSeq) {
+    setShowedSeq(revealSeq)
+    if (revealed) setTab('nodes')
+  }
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
@@ -79,7 +90,12 @@ export default function MapsSidebar({ tree, loaded, space, onSelectSpace }: Prop
             {tab === 'devices' ? (
               <DevicesList space={space} />
             ) : tab === 'nodes' ? (
-              <NodesTree markers={markers} space={space} onOpenSpace={onSelectSpace} />
+              <NodesTree
+                markers={markers}
+                space={space}
+                onOpenSpace={onSelectSpace}
+                revealed={revealed}
+              />
             ) : (
               <LandmarksList space={space} />
             )}
@@ -343,17 +359,22 @@ function DevicesList({ space }: { space: SpaceDto }) {
  * onto the map becomes a replica of itself where it is dropped — the way a camera's picture is
  * made on another plan.
  */
-function NodesTree({ markers, space, onOpenSpace }: {
-  markers: MapMarker[]; space: SpaceDto; onOpenSpace: (spaceId: string) => void
+function NodesTree({ markers, space, onOpenSpace, revealed }: {
+  markers: MapMarker[]
+  space: SpaceDto
+  onOpenSpace: (spaceId: string) => void
+  /** The node the panel asked the tree to show, and a counter that repeats the ask. */
+  revealed: { id: string; seq: number } | null
 }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const { selection, setSelection, openDiagram } = useEditorState()
+  const {
+    selection, setSelection, openDiagram, openDiagramId, setMode, setPendingDiagramId,
+  } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
   useEffect(() => {
@@ -362,9 +383,46 @@ function NodesTree({ markers, space, onOpenSpace }: {
     }
   }, [space.id, childrenByParent, dispatch])
 
+  // The panel beside the map asked for this node to be shown: every page down to it is read and
+  // its rows unfolded, so the row is there to scroll to. One read per ask, not per store change.
+  useEffect(() => {
+    if (!revealed) return
+    void (async () => {
+      const { ancestors } = await dispatch(revealNodePath(revealed.id)).unwrap()
+      if (ancestors.length === 0) return
+      setExpanded((previous) => {
+        const next = new Set(previous)
+        for (const ancestor of ancestors) next.add(ancestor.id)
+        return next
+      })
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed?.seq])
+
   const roots = space.id ? childrenOf(known, childrenByParent, space.id) : []
   const rows = treeRows(roots, childrenByParent, known, expanded)
   const rootsLoaded = !space.id || !!childrenByParent[space.id]?.loaded
+
+  // What the panel beside the map is about, as a node of this tree. A camera picked by its
+  // placement names the camera; the row is the picture of it drawn here.
+  const selectedNodeId = selection?.kind === 'node' || selection?.kind === 'landmark'
+    ? selection.id
+    : selection?.kind === 'camera'
+      ? markers.find((marker) => marker.cameraId === selection.id)?.id
+      : undefined
+
+  // The row that ask is about, and whether its scroll is still owed: the rows arrive with the
+  // pages read above, so the scroll waits for the render that has the row in it.
+  const revealedRow = useRef<HTMLDivElement | null>(null)
+  const scrollOwed = useRef(false)
+  useEffect(() => {
+    if (revealed) scrollOwed.current = true
+  }, [revealed])
+  useEffect(() => {
+    if (!scrollOwed.current || !revealedRow.current) return
+    revealedRow.current.scrollIntoView({ block: 'center' })
+    scrollOwed.current = false
+  }, [rows])
 
   const toggle = (id: string) => {
     const next = new Set(expanded)
@@ -408,33 +466,16 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * The device's diagram on this canvas: drawn if it is not there yet, opened if it is. A diagram
-   * is a map object of its own — placed beside the camera — so the lookup starts at the replica's
-   * owner, where the device's nodes hang, and a missing one is created here rather than reported.
+   * Asks for the device's diagram to be put on this canvas: the next click on the map places it,
+   * the way a click places the camera itself. A diagram is otherwise only kept with the camera —
+   * the map offers a link into it when the camera is selected — so this is the administrator asking
+   * for a permanent card, and they say where it stands.
    */
-  const showDeviceDiagram = async (marker: MapMarker) => {
-    if (!space.id || !marker.cameraId) return
+  const askDeviceDiagram = (marker: MapMarker) => {
+    if (!marker.cameraId) return
 
-    const parentId = marker.ownerId ?? marker.id
-    setBusy(true)
-    setNotice(null)
-    try {
-      const page = childrenByParent[parentId]?.loaded
-        ? null
-        : await dispatch(loadChildren({ parentId })).unwrap()
-      const children = page?.children ?? childrenOf(known, childrenByParent, parentId)
-      const existing = children.find((child) => child.nodeKind === 'diagram')
-
-      const diagram = existing
-        ?? await dispatch(attachDeviceDiagram({ cameraId: marker.cameraId, spaceId: space.id })).unwrap()
-
-      setSelection({ kind: 'node', id: diagram.id })
-      openDiagram(diagram.id)
-    } catch {
-      setNotice(t('diagramEditor.diagramNotCreated'))
-    } finally {
-      setBusy(false)
-    }
+    setMode('select')
+    setPendingDiagramId(marker.cameraId)
   }
 
   return (
@@ -457,11 +498,6 @@ function NodesTree({ markers, space, onOpenSpace }: {
           </span>
         </Tooltip>
       </Stack>
-      {notice && (
-        <Alert severity="info" onClose={() => setNotice(null)} sx={{ mx: 1, mb: 1, py: 0 }}>
-          {notice}
-        </Alert>
-      )}
       <List dense disablePadding>
         {rows.map(({ marker, depth }) => {
           const open = expanded.has(marker.id)
@@ -472,12 +508,15 @@ function NodesTree({ markers, space, onOpenSpace }: {
           return (
             <ListItemButton
               key={marker.id}
+              ref={revealed && marker.id === revealed.id
+                ? (element) => { revealedRow.current = element }
+                : undefined}
               draggable
               onDragStart={(event) => {
                 event.dataTransfer.setData(NODE_DRAG_TYPE, marker.id)
                 event.dataTransfer.effectAllowed = 'copy'
               }}
-              selected={selection?.kind === 'node' && selection.id === marker.id}
+              selected={selectedNodeId === marker.id}
               onClick={() => {
                 // A space is a world of its own, not a shape on this canvas: open it.
                 if (marker.nodeKind === 'space') {
@@ -488,8 +527,10 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 // draws, and its readings — only the row picked is selected, and the canvas marks
                 // that one. What the camera is, the panel beside shows from the node itself.
                 setSelection({ kind: 'node', id: marker.id })
-                // A diagram is its own canvas: picking it opens it in place of the map.
-                openDiagram(marker.nodeKind === 'diagram' ? marker.id : null)
+                // A diagram is its own canvas: picking it opens it in place of the map. A figure
+                // inside the open diagram keeps it open — a plan in its place would hide it.
+                if (marker.nodeKind === 'diagram') openDiagram(marker.id)
+                else if (!openDiagramId || !isUnder(known, marker.id, openDiagramId)) openDiagram(null)
               }}
               sx={{ cursor: 'grab', pl: 0.5 + depth * 1.5 }}
             >
@@ -514,16 +555,15 @@ function NodesTree({ markers, space, onOpenSpace }: {
                 secondary={t(`maps.node.kind.${marker.nodeKind ?? 'object'}`)}
                 secondaryTypographyProps={{ variant: 'caption' }}
               />
-              {/* A device's own actions on its own row: draw it from a template, or open the
-                  diagram it already has. Both act on the device, so a picture of it offers them
-                  too — the dialog names the device, not the picture. */}
+              {/* A device's own action on its own row: put its diagram here, drawing it beside the
+                  camera. A diagram otherwise shows as a link beside the selected camera only. */}
               {marker.nodeKind === 'camera' && marker.cameraId ? (
-                <Tooltip title={t('diagramEditor.deviceDiagram')}>
+                <Tooltip title={t('diagramEditor.placeDeviceDiagram')}>
                   <IconButton
                     size="small"
-                    aria-label={t('diagramEditor.deviceDiagram')}
+                    aria-label={t('diagramEditor.placeDeviceDiagram')}
                     disabled={busy}
-                    onClick={(event) => { event.stopPropagation(); void showDeviceDiagram(marker) }}
+                    onClick={(event) => { event.stopPropagation(); askDeviceDiagram(marker) }}
                   >
                     <DashboardCustomizeIcon fontSize="small" />
                   </IconButton>

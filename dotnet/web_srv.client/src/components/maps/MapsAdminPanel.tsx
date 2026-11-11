@@ -39,6 +39,9 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
     [placements, wantedCameraId],
   )
   const [addMenu, setAddMenu] = useState<HTMLElement | null>(null)
+  // A node asked for on a space the editor is not on: the space opens and the node is picked out
+  // there, so the reader arrives with the object rather than having to hunt for it again.
+  const [pendingNode, setPendingNode] = useState<{ spaceId: string; nodeId: string } | null>(null)
   const [creating, setCreating] = useState<NewSpace | null>(null)
   const [dictionariesOpen, setDictionariesOpen] = useState(false)
 
@@ -60,6 +63,11 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
   }
 
   const current = selected?.space ?? null
+
+  const openSpaceWithNode = (spaceId: string, nodeId?: string) => {
+    if (nodeId) setPendingNode({ spaceId, nodeId })
+    select(spaceId)
+  }
 
   return (
     <EditorStateProvider spaceId={current?.id ?? null}>
@@ -115,7 +123,9 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
             space={selected.space}
             settings={<SpaceForm ref={detailRef} key={detailKey} space={selected.space} onSaved={() => undefined} onRemoved={reset} />}
             initialCameraId={selected.space.id === wantedSpaceId ? wantedCameraId : null}
-            onOpenSpace={select}
+            initialNodeId={pendingNode && pendingNode.spaceId === selected.space.id ? pendingNode.nodeId : null}
+            onInitialNodeShown={() => setPendingNode(null)}
+            onOpenSpace={openSpaceWithNode}
           />
         ) : (
           <Box sx={{ p: 2 }}>

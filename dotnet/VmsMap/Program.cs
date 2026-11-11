@@ -98,20 +98,15 @@ builder.Services.AddScoped<FileService>();
 builder.Services.AddScoped<SpatialDb>();
 // The follower runs on a scope of its own; SpatialDb stays scoped with the context it shares.
 builder.Services.AddScoped<ICameraGeoWriter>(sp => sp.GetRequiredService<SpatialDb>());
-// One ONVIF client cache shared by the follower and the demo feeder.
+// The follower asks the camera where it stands through this one ONVIF client cache.
 builder.Services.AddSingleton<VmsOnvifCameraSource>();
 builder.Services.AddSingleton<ICameraGeoSource>(sp => sp.GetRequiredService<VmsOnvifCameraSource>());
-builder.Services.AddSingleton<ICameraDeviceIoSource>(sp => sp.GetRequiredService<VmsOnvifCameraSource>());
+
 builder.Services.AddSingleton(TimeProvider.System);
 
 // The demo world: install, reinstall and removal behind one registry. The flag and the gRPC calls
 // that reach it are wired in M2.2's later steps; the seeder is the same for both.
 builder.Services.AddScoped<DemoSeeder>();
-// The camera readings of the installed world; a no-op while no demo is installed. The speed
-// tracker is a singleton because the feeder is scoped and a speed spans two of its rounds.
-builder.Services.AddSingleton<DemoSpeedTracker>();
-builder.Services.AddScoped<DemoValueFeeder>();
-builder.Services.AddHostedService<DemoValueFeederService>();
 // `DEMO_CONFIG` names a world to install at startup; empty means none.
 builder.Services.AddHostedService<DemoInstallService>();
 

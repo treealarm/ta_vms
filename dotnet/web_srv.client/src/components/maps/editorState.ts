@@ -32,6 +32,12 @@ export type EditorState = {
   /** A camera picked from the list; the next click on the map places it. */
   pendingCameraId: string | null
   setPendingCameraId: (cameraId: string | null) => void
+  /**
+   * A camera whose diagram was asked for on the canvas: the next click puts the diagram there,
+   * the way a click puts the camera itself. One at a time with `pendingCameraId`.
+   */
+  pendingDiagramId: string | null
+  setPendingDiagramId: (cameraId: string | null) => void
   focus: MapFocus | null
   /** Pans the map to the point; the same point again pans again. */
   focusOn: (at: GeoPointDto) => void
@@ -39,6 +45,12 @@ export type EditorState = {
   select: (kind: NonNullable<Selection>['kind'], id: string, at: GeoPointDto) => void
   sideTab: SideTab
   setSideTab: (tab: SideTab) => void
+  /**
+   * A node picked beside the map, asked to be shown in the tree: the sidebar opens its Nodes tab,
+   * unfolds the path down to it and scrolls there. `seq` repeats the ask for the same node.
+   */
+  revealed: { id: string; seq: number } | null
+  showInTree: (id: string) => void
   /**
    * The mnemoscheme opened in place of the map, if one is. Kept apart from the selection: an
    * element inside it is selected while the diagram stays open, and only its breadcrumbs or a
@@ -52,13 +64,16 @@ export type Snapshot = {
   mode: Mode
   selection: Selection
   pendingCameraId: string | null
+  pendingDiagramId: string | null
   focus: MapFocus | null
   sideTab: SideTab
   openDiagramId: string | null
+  revealed: { id: string; seq: number } | null
 }
 
 export const FRESH: Snapshot = {
-  mode: 'select', selection: null, pendingCameraId: null, focus: null, sideTab: 'space', openDiagramId: null,
+  mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null, focus: null,
+  sideTab: 'space', openDiagramId: null, revealed: null,
 }
 
 export const EditorStateContext = createContext<EditorState | null>(null)

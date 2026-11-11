@@ -94,12 +94,24 @@ export type MapGetByParentResponse = {
   endId?: string
 }
 
+/** The device a diagram node draws, from its `device_diagram` row: the camera, its canonical node. */
+export type MapDeviceRef = {
+  sourceKind?: string
+  /** The camera the diagram is of. */
+  sourceId?: string
+  /** The camera's canonical node under its server. */
+  nodeId?: string
+  name?: string
+}
+
 export type MapObjProps = {
   marker?: MapMarker
   extraProps?: MapExtraProperty[]
   zoomMin?: number
   zoomMax?: number
   visual?: MapVisual
+  /** Set only on a node that is a device's diagram. */
+  device?: MapDeviceRef
 }
 
 export type MapBox = {

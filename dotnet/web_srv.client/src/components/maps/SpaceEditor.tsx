@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, FormControlLabel, Stack, Switch, Tab, Tabs, ToggleButton,
-  ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Divider, FormControlLabel, IconButton, Stack, Switch, Tab, Tabs,
+  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import PanToolIcon from '@mui/icons-material/PanToolAlt'
 import PlaceIcon from '@mui/icons-material/Place'
 import ImageIcon from '@mui/icons-material/Image'
@@ -22,8 +23,9 @@ import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import { loadObjProps } from '../../store/objectsSlice'
+import { loadCanvas, loadNodes, loadObjProps, revealNodePath } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
+import { isUnder } from '../../map/tree'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
@@ -34,7 +36,7 @@ import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
 import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
-import { cornersAround, distance, figureAtPlacement, rescaleCorners } from '../../map/geo'
+import { cornersAround, distance, figureAtPlacement, pointsCentre, rescaleCorners } from '../../map/geo'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -46,6 +48,7 @@ import SpaceNav from './SpaceNav'
 import PtzGeoCalibrationDialog from './PtzGeoCalibrationDialog'
 import GroundCalibrationDialog from './GroundCalibrationDialog'
 import { DRAW_MODES, useEditorState, type Mode, type SideTab } from './editorState'
+import { useDeviceDiagram, useDeviceDiagramLink } from './useDeviceDiagram'
 
 /** Mirrors VmsCfg's limit, so an oversized plan is refused before it is uploaded. */
 const MAX_PLAN_BYTES = 20 * 1024 * 1024
@@ -61,8 +64,15 @@ type Props = {
   settings: React.ReactNode
   /** A camera to select, once, when its placement here appears — for arriving with it in mind. */
   initialCameraId?: string | null
-  /** Moves the whole page to another space — the tree beside it follows. */
-  onOpenSpace: (spaceId: string) => void
+  /** A node to select, once, when its place on this canvas appears: found on the map elsewhere. */
+  initialNodeId?: string | null
+  /** That node was picked out; the page drops its note of it. */
+  onInitialNodeShown?: () => void
+  /**
+   * Moves the whole page to another space — the tree beside it follows. A node named with it is
+   * selected there, so "show on map" crosses spaces without losing the object.
+   */
+  onOpenSpace: (spaceId: string, nodeId?: string) => void
 }
 
 /**
@@ -76,7 +86,9 @@ type Props = {
  * selected object's on the other. The selection, the tool and the camera waiting to be placed are
  * shared with the lists through `useEditorState`.
  */
-export default function SpaceEditor({ space, settings, initialCameraId, onOpenSpace }: Props) {
+export default function SpaceEditor({
+  space, settings, initialCameraId, initialNodeId, onInitialNodeShown, onOpenSpace,
+}: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
@@ -86,8 +98,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const landmarks = useMemo(() => loadedLandmarks ?? [], [loadedLandmarks])
 
   const {
-    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, select,
-    sideTab, setSideTab, openDiagramId, openDiagram,
+    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
+    pendingDiagramId, setPendingDiagramId, focus, select,
+    sideTab, setSideTab, openDiagramId, openDiagram, showInTree, focusOn,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
   const [draftCorners, setDraftCorners] = useState<PlanCornersDto | null>(null)
@@ -102,9 +115,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
+  const { openDeviceDiagram, placeDeviceDiagram } = useDeviceDiagram(spaceId)
   // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
-  // shape being drawn. What the click is for always wins over what it lands on.
-  const picking = !!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)
+  // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
+  // on.
+  const picking = !!pendingCameraId || !!pendingDiagramId || mode === 'landmark'
+    || DRAW_MODES.includes(mode)
   const mapData = useMapChildren(spaceId || null)
   const levels = useAppSelector((s) => s.levels.levels)
   const markersById = useAppSelector((s) => s.objects.markers)
@@ -113,12 +129,62 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null
   const diagramContent = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
+  // The diagram of the camera picked on the canvas, offered as a link beside it.
+  const deviceDiagram = useDeviceDiagramLink(selectedNodeId ? markersById[selectedNodeId] : undefined)
+
+  /**
+   * Finds the node where it is drawn: the diagram it stands in is opened over the plan, a node of
+   * another space opens that space, and on this plan the map is centred on its point. The mirror of
+   * "show in tree": there the row was known and the place was not.
+   */
+  const showOnCanvas = async (id: string) => {
+    const marker = markersById[id]
+    if (!marker) return
+
+    // Drawn on this canvas already — a figure here, a camera's placement here — so the place is
+    // this one: the map comes to it and nothing else moves. Opening the diagram such a node is
+    // *of* would take away the very canvas the reader pointed at. The figure is looked for among
+    // this canvas's, not among every node the store happens to hold.
+    const cameraId = marker.cameraId
+    const placement = cameraId
+      ? placements.find((candidate) => candidate.cameraId === cameraId && candidate.spaceId === spaceId)
+      : undefined
+    const onThisCanvas = mapData.figures.find((figure) => figure.id === id)
+    const at = pointsCentre(onThisCanvas?.geometry?.coord ?? [])
+      ?? (placement ? { lat: placement.lat, lon: placement.lon } : null)
+    if (at) {
+      focusOn(at)
+      return
+    }
+
+    // Drawn elsewhere: the diagram it stands in is opened over the plan with the node picked out,
+    // or the space it stands in is opened — and picked out there too, so the object is not lost on
+    // the way.
+    const { ancestors } = await dispatch(revealNodePath(marker)).unwrap()
+    const canvas = marker.nodeKind === 'diagram'
+      ? marker
+      : [...ancestors].reverse()
+        .find((ancestor) => ancestor.nodeKind === 'space' || ancestor.nodeKind === 'diagram')
+
+    if (!canvas) return
+    if (canvas.nodeKind === 'diagram') {
+      setSelection({ kind: 'node', id })
+      if (canvas.id !== openDiagramId) openDiagram(canvas.id)
+      return
+    }
+    if (canvas.id !== spaceId) {
+      openDiagram(null)
+      onOpenSpace(canvas.id, id)
+    }
+  }
 
   // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
-  // map.
+  // map. A node drawn inside the open diagram keeps it open — picking a zone on its paper must not
+  // throw the reader back to the plan.
   const selectNode = (id: string) => {
     setSelection({ kind: 'node', id })
-    openDiagram(markersById[id]?.nodeKind === 'diagram' ? id : null)
+    if (markersById[id]?.nodeKind === 'diagram') openDiagram(id)
+    else if (!openDiagramId || !isUnder(markersById, id, openDiagramId)) openDiagram(null)
   }
 
   // On the space's own canvas a click only selects. Entering a diagram on click would take the
@@ -189,10 +255,19 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const selectedNode = selectionNodeId ? markersById[selectionNodeId] : undefined
   const selectedFigure = selectionNodeId ? figuresById[selectionNodeId] : undefined
   const selectedProps = selectionNodeId ? propsById[selectionNodeId] : undefined
+  // "Show on map" names a place on this canvas: a node drawn nowhere here — a container, a camera
+  // part — has none to name, and a node inside the open diagram is already where it is.
+  const selectionDrawn = !!selectedFigure
+    || (!!selectedNode?.cameraId && here.some((placement) => placement.cameraId === selectedNode.cameraId))
 
   // The editor needs the node's properties and look, which the tree read does not carry.
   useEffect(() => {
-    if (selectionNodeId) void dispatch(loadObjProps(selectionNodeId))
+    if (selectionNodeId) {
+      void dispatch(loadObjProps(selectionNodeId))
+      // Its figure too: whether it is drawn anywhere, and where — what the "show on map" offer
+      // is about — is told by the node's own geometry.
+      void dispatch(loadNodes([selectionNodeId]))
+    }
   }, [selectionNodeId, dispatch])
 
   // A container is any selected node: a new object goes inside it, as a parent is chosen in Square.
@@ -325,6 +400,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
       return
     }
+    if (pendingDiagramId) {
+      // The diagram is the camera's, standing where it was asked for: one per device, so this
+      // either draws it here or brings the one it has to this point.
+      const cameraId = pendingDiagramId
+      setPendingDiagramId(null)
+      void run(async () => {
+        const placed = await placeDeviceDiagram(cameraId, { lat: at.lat, lon: at.lon })
+        if (!placed) throw new Error(t('diagramEditor.noDeviceDiagram'))
+      })
+      return
+    }
     if (pendingCameraId) {
       // A camera drawn here for the first time looks the way it does where it really stands: the
       // picture should not contradict the original.
@@ -414,7 +500,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const planCorners = draftCorners ?? plan?.corners
   const planWidthM = plan && planCorners ? distance(planCorners.topLeft, planCorners.topRight) : 0
 
-  const hint = pendingCameraId
+  const hint = pendingDiagramId
+    ? t('diagramEditor.placeDiagramHint', { name: camerasById[pendingDiagramId]?.name || pendingDiagramId })
+    : pendingCameraId
     ? t('maps.placeHint', { name: camerasById[pendingCameraId]?.name || pendingCameraId })
     : mode === 'landmark' ? t('maps.landmarkModeHint')
     : mode === 'plan' ? t('maps.planModeHint')
@@ -436,6 +524,22 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `here` is rebuilt every render
   }, [initialCameraId, placements, select])
 
+  // Arrived from "show on map" on another space: the node is picked out once its canvas has it,
+  // and the map comes to it. Waiting for the canvas is what tells the page is shown, not just
+  // mounted — the marker is drawn only when the space's figures have been read.
+  const initialNodeApplied = useRef(false)
+  useEffect(() => {
+    if (initialNodeApplied.current || !initialNodeId) return
+    const drawn = mapData.figures.find((figure) => figure.id === initialNodeId)
+    if (!drawn) return
+    initialNodeApplied.current = true
+    setSelection({ kind: 'node', id: initialNodeId })
+    const at = pointsCentre(drawn.geometry?.coord ?? [])
+    if (at) focusOn(at)
+    onInitialNodeShown?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the canvas is rebuilt every render
+  }, [initialNodeId, mapData])
+
   const selectionPanel = selectedPlacement ? (() => {
     const reference = referenceOf(selectedPlacement.cameraId)
     const referenceSpace = reference && reference.spaceId !== spaceId ? spaceById(reference.spaceId) ?? null : null
@@ -445,10 +549,15 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         camera={camerasById[selectedPlacement.cameraId]}
         placement={selectedPlacement}
         nodeId={nodeForPlacement(selectedPlacement)?.id}
+        node={nodeForPlacement(selectedPlacement)}
         // A plan is looked at at one scale: the layer is a map's way of hiding what is far away.
         showLayer={space.kind === 'map'}
-        ownerNodeId={nodeForPlacement(selectedPlacement)?.ownerId}
         referenceSpace={referenceSpace}
+        onDeviceDiagram={() => void run(async () => {
+          if (!await openDeviceDiagram(selectedPlacement.cameraId)) {
+            throw new Error(t('diagramEditor.noDeviceDiagram'))
+          }
+        })}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
           await dispatch(removePlacement({ cameraId: selectedPlacement.cameraId, spaceId })).unwrap()
@@ -526,6 +635,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         showLayer={space.kind === 'map'}
         onDelete={() => void run(async () => {
           await dispatch(deleteNode(selectedNode.id)).unwrap()
+          // The canvas is not the node tree: a camera's picture is drawn by its placement and a
+          // landmark by the space's own list, so what is drawn here is read again rather than
+          // trusted to have been dropped with the node.
+          await dispatch(loadCanvas(spaceId)).unwrap()
+          await dispatch(loadPlacements()).unwrap()
+          if (spaceId) await dispatch(loadLandmarks(spaceId)).unwrap()
           setSelection(null)
         })}
         onClose={() => setSelection(null)}
@@ -610,6 +725,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               if (!v) return
               setMode(v)
               setPendingCameraId(null)
+              setPendingDiagramId(null)
               setDraftPoints(null)
             }}
           >
@@ -630,7 +746,11 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               {hint}
             </Typography>
           )}
-          {pendingCameraId && <Button size="small" onClick={() => setPendingCameraId(null)}>{t('common.cancel')}</Button>}
+          {(pendingCameraId || pendingDiagramId) && (
+            <Button size="small" onClick={() => { setPendingCameraId(null); setPendingDiagramId(null) }}>
+              {t('common.cancel')}
+            </Button>
+          )}
           {draftPoints && (mode === 'line' || mode === 'polygon') && (
             <>
               <Button size="small" variant="outlined" onClick={finishDrawing}>{t('maps.editor.finish')}</Button>
@@ -702,7 +822,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
             <Footprints
               nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
-              selectedId={selectedNested?.id}
+              selectedId={selectionNodeId}
               levels={levels}
               zoomLevels={spaceZoomLevels}
               interactive={!picking}
@@ -725,11 +845,23 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
                   placement={p}
                   label={camera?.name || p.cameraId}
                   color={STATUS_COLOR[cameraMapStatus(camera)]}
+                  // The picture is the placement node's own: the map turns it by the heading, as it
+                  // turns its dot.
+                  visual={node ? figuresById[node.id]?.visual : undefined}
                   // A marker is the picture the placement draws: the one node, not every picture
                   // of that camera.
                   selected={selection?.kind === 'camera'
                     ? selection.id === p.cameraId
                     : nodeForPlacement(p)?.id === selectedNodeId}
+                  // The device's diagram is a link beside the picked camera, not a node of its own:
+                  // clicking it opens the diagram, and the plan stays one point per camera.
+                  diagramLink={deviceDiagram && node?.id === selectedNodeId
+                    ? {
+                        label: t('diagramEditor.openDeviceDiagram'),
+                        visual: deviceDiagram.visual,
+                        onOpen: () => selectNode(deviceDiagram.diagram.id),
+                      }
+                    : undefined}
                   editable={mode === 'select'}
                   interactive={!picking}
                   levels={levels}
@@ -746,7 +878,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               <LandmarkMarker
                 key={m.id}
                 landmark={m}
-                selected={selection?.kind === 'landmark' && selection.id === m.id}
+                // The node whichever way it was picked: a row in the tree selects the node, the
+                // map itself selects the landmark.
+                selected={selectionNodeId === m.id}
                 // A landmark is picked while selecting and while placing one; the drawing tools
                 // and a camera waiting for its spot take the click instead.
                 interactive={!pendingCameraId && (mode === 'select' || mode === 'landmark')}
@@ -762,22 +896,56 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       </Box>
 
       <Box sx={{ width: SIDE_WIDTH, flexShrink: 0, borderLeft: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {/* Four labels in a 300px column: the tabs share the width and keep their own letter size,
-            so the last one is never the one that falls off the edge. */}
-        <Tabs
-          value={sideTab}
-          onChange={(_, v: SideTab) => setSideTab(v)}
-          variant="fullWidth"
-          sx={{
-            borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 40,
-            '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
-          }}
+        <Stack
+          direction="row"
+          alignItems="center"
+          sx={{ borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}
         >
-          <Tab value="space" label={t('maps.tabSpace')} />
-          <Tab value="selection" label={t('maps.tabSelection')} />
-          <Tab value="object" label={t('maps.tabObject')} />
-          <Tab value="rights" label={t('rights.tab')} />
-        </Tabs>
+          {/* Four labels in a 300px column: the tabs share the width and keep their own letter
+              size, so the last one is never the one that falls off the edge. */}
+          <Tabs
+            value={sideTab}
+            onChange={(_, v: SideTab) => setSideTab(v)}
+            variant="fullWidth"
+            sx={{
+              flex: 1, minWidth: 0, minHeight: 40,
+              '& .MuiTab-root': { minHeight: 40, minWidth: 0, px: 0.5, fontSize: 11, textTransform: 'none' },
+            }}
+          >
+            <Tab value="space" label={t('maps.tabSpace')} />
+            <Tab value="selection" label={t('maps.tabSelection')} />
+            <Tab value="object" label={t('maps.tabObject')} />
+            <Tab value="rights" label={t('rights.tab')} />
+          </Tabs>
+          {/* Both ways round for the node the panel is about: where it stands among its
+              neighbours in the tree, and where it is drawn on the plan. A space is the canvas
+              itself, not a row of its own tree. */}
+          {selectionNodeId && selection?.kind !== 'footprint' ? (
+            <>
+              {selectionDrawn && !openDiagramId ? (
+                <Tooltip title={t('maps.node.locate')}>
+                  <IconButton
+                    size="small"
+                    aria-label={t('maps.node.locate')}
+                    onClick={() => void showOnCanvas(selectionNodeId)}
+                  >
+                    <CenterFocusStrongIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              ) : null}
+              <Tooltip title={t('maps.node.showInTree')}>
+                <IconButton
+                  size="small"
+                  aria-label={t('maps.node.showInTree')}
+                  onClick={() => showInTree(selectionNodeId)}
+                  sx={{ mr: 0.5 }}
+                >
+                  <AccountTreeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </>
+          ) : null}
+        </Stack>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {/* Both stay mounted: the space's form keeps its unsaved edits while an object is looked at. */}
           <Box sx={{ display: sideTab === 'space' ? 'block' : 'none' }}>

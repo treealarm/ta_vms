@@ -4,6 +4,7 @@ import {
   Alert, Box, Button, Chip, Divider, IconButton, Stack, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
+import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import GpsFixedIcon from '@mui/icons-material/GpsFixed'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
@@ -15,6 +16,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
+import NodeIdentity from './NodeIdentity'
 import NodeStateChips from './NodeStateChips'
 
 type Props = {
@@ -25,8 +27,12 @@ type Props = {
   onEnter?: (id: string) => void
   /** Find the node on the canvas that draws it: its space or diagram is opened and it is centred. */
   onLocate?: (id: string) => void
+  /** Show the node in the tree beside the map: the path down to it is unfolded and scrolled to. */
+  onShowInTree?: (id: string) => void
   /** The diagram drawn for this camera by its template, if the deployment has one. */
   onOpenDiagram?: (id: string) => void
+  /** Selects a camera by id: what the "show device" link of a diagram's panel does. */
+  onSelectCamera?: (cameraId: string) => void
   /** Map aiming: a camera with telemetry can be pointed at a place on the canvas. */
   aiming: boolean
   onAimingChange: (on: boolean) => void
@@ -41,7 +47,7 @@ type Props = {
  * only. The camera itself and its capability to be aimed come from the map: the panel only draws.
  */
 export default function ObjectPanel({
-  nodeId, onClose, onSelect, onEnter, onLocate, onOpenDiagram,
+  nodeId, onClose, onSelect, onEnter, onLocate, onShowInTree, onOpenDiagram, onSelectCamera,
   aiming, onAimingChange, aimUnavailable, aimResult, aimError,
 }: Props) {
   const { t } = useTranslation()
@@ -57,6 +63,12 @@ export default function ObjectPanel({
     const cameraId = s.objects.markers[nodeId]?.cameraId
     return cameraId ? s.live.cameraStatesById[cameraId] : undefined
   })
+  // Where the node is, when it is anywhere: its own figure on some canvas, or — for a camera node,
+  // which is never drawn itself — a placement of the camera. Naming a place needs one.
+  const figure = useAppSelector((s) => s.objects.figures[nodeId])
+  const placements = useAppSelector((s) => s.spatial.placements)
+  const drawn = !!figure
+    || !!(marker?.cameraId && placements.some((placement) => placement.cameraId === marker.cameraId))
 
   useEffect(() => {
     void dispatch(loadObjProps(nodeId))
@@ -95,22 +107,35 @@ export default function ObjectPanel({
             </Button>
           </Tooltip>
         ) : null}
-        {onLocate ? (
+        {onLocate && drawn ? (
           <Tooltip title={t('maps.node.locate')}>
             <IconButton size="small" aria-label={t('maps.node.locate')} onClick={() => onLocate(nodeId)}>
               <CenterFocusStrongIcon fontSize="small" />
             </IconButton>
           </Tooltip>
         ) : null}
-        {onOpenDiagram && kind === 'camera' ? (
-          <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
+        {/* The other way round: the node was picked on the canvas, the tree is where it stands
+            among its neighbours. */}
+        {onShowInTree ? (
+          <Tooltip title={t('maps.node.showInTree')}>
             <IconButton
               size="small"
-              aria-label={t('diagramEditor.openDeviceDiagram')}
+              aria-label={t('maps.node.showInTree')}
+              onClick={() => onShowInTree(nodeId)}
+            >
+              <AccountTreeIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
+        {onOpenDiagram && kind === 'camera' ? (
+          <Tooltip title={t('diagramEditor.openDeviceDiagram')}>
+            <Button
+              size="small"
+              startIcon={<OpenInNewIcon fontSize="small" />}
               onClick={() => onOpenDiagram(nodeId)}
             >
-              <OpenInNewIcon fontSize="small" />
-            </IconButton>
+              {t('diagramEditor.deviceDiagram')}
+            </Button>
           </Tooltip>
         ) : null}
         <Button
@@ -119,13 +144,22 @@ export default function ObjectPanel({
         >
           {t('maps.node.journal')}
         </Button>
-        {marker?.ownerId ? (
-          <Button size="small" onClick={() => onSelect(marker.ownerId!)}>{t('maps.node.owner')}</Button>
-        ) : null}
         <IconButton size="small" onClick={onClose}><CloseIcon fontSize="small" /></IconButton>
       </Stack>
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.5 }}>
+        {/* What the node is, before what it reports: a picture on a plan is a replica, and the
+            panel says which node it shows; a diagram says which device it draws. */}
+        {marker ? (
+          <Box sx={{ mb: 1.5 }}>
+            <NodeIdentity
+              node={marker}
+              device={props?.device}
+              onSelect={onSelect}
+              onSelectCamera={onSelectCamera}
+            />
+          </Box>
+        ) : null}
         {camera ? (
           <>
             <Box sx={{ height: 340, flexShrink: 0, mb: 1 }}>
