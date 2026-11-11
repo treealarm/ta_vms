@@ -162,6 +162,8 @@ export const mapApi = {
     sourceId: string
     spaceId?: string
     diagramTypeId?: string
+    /** Where it stands on that canvas; unset puts it beside the camera's own placement. */
+    at?: { lat: number; lon: number }
   }) => post<MapMarker>(`${ADMIN}/device-diagram`, body),
 
   // ── Levels ─────────────────────────────────────────────────────────────────────────────────

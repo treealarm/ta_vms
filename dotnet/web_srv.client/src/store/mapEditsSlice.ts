@@ -240,11 +240,16 @@ export const createDiagramNode = createAsyncThunk(
  */
 export const attachDeviceDiagram = createAsyncThunk(
   'mapEdits/attachDeviceDiagram',
-  async ({ cameraId, spaceId }: { cameraId: string; spaceId?: string }, api) => {
+  async ({ cameraId, spaceId, at }: {
+    cameraId: string
+    spaceId?: string
+    at?: { lat: number; lon: number }
+  }, api) => {
     const marker = await mapApi.attachDeviceDiagram({
       sourceKind: 'camera',
       sourceId: cameraId,
       spaceId,
+      at,
     })
 
     if (spaceId) {

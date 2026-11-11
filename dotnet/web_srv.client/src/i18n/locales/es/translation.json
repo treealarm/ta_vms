@@ -1201,7 +1201,8 @@
     "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Dibuje uno desde la fila de la cámara en Administración → Mapas.",
     "deviceDiagram": "Diagrama del dispositivo",
     "diagramNotCreated": "No se pudo dibujar el diagrama",
-    "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo"
+    "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo",
+    "placeDiagramHint": "Haga clic en el mapa para colocar el diagrama de {{name}}"
   },
   "rights": {
     "tab": "Derechos",

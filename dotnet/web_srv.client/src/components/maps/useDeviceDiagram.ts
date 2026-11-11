@@ -10,8 +10,8 @@ import { useEditorState } from './editorState'
  *
  * `openDeviceDiagram` keeps it with the camera and opens it: the node hangs under the camera's
  * picture on the plan, nothing is drawn there, and the map offers a link into it while the camera is
- * selected. `placeDeviceDiagram` also draws it on the canvas in front of the reader — the
- * administrator asking for a permanent picture beside the camera.
+ * selected. `placeDeviceDiagram` also draws it on the canvas, at the point the administrator clicked
+ * — a permanent card beside the camera, and the reader stays on the plan where it landed.
  *
  * The server keeps one diagram per device, so asking again returns the node it has rather than a
  * second one. Answers whether it happened; a failure is the store's to say, and the caller decides
@@ -22,30 +22,36 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   const { setSelection, openDiagram } = useEditorState()
   const [busy, setBusy] = useState(false)
 
-  const attach = useCallback(async (cameraId: string, canvas: string | undefined, open: boolean) => {
+  const attach = useCallback(async (
+    cameraId: string, canvas: string | undefined, at?: { lat: number; lon: number },
+  ) => {
     setBusy(true)
     try {
-      const marker = await dispatch(attachDeviceDiagram({ cameraId, spaceId: canvas })).unwrap()
-      if (!marker.id) return false
-      // Putting it on the canvas is asked for on the canvas: the reader stays there and sees the
-      // card land, rather than being carried off into it.
-      if (open) {
-        setSelection({ kind: 'node', id: marker.id })
-        openDiagram(marker.id)
-      }
-      return true
+      const marker = await dispatch(attachDeviceDiagram({ cameraId, spaceId: canvas, at })).unwrap()
+      return marker?.id ? marker : null
     } catch {
-      return false
+      return null
     } finally {
       setBusy(false)
     }
-  }, [dispatch, setSelection, openDiagram])
+  }, [dispatch])
 
-  const openDeviceDiagram = useCallback(
-    (cameraId: string) => attach(cameraId, undefined, true), [attach])
+  const openDeviceDiagram = useCallback(async (cameraId: string) => {
+    const marker = await attach(cameraId, undefined)
+    if (!marker) return false
+    setSelection({ kind: 'node', id: marker.id })
+    openDiagram(marker.id)
+    return true
+  }, [attach, setSelection, openDiagram])
 
-  const placeDeviceDiagram = useCallback(
-    (cameraId: string) => attach(cameraId, spaceId ?? undefined, false), [attach, spaceId])
+  const placeDeviceDiagram = useCallback(async (cameraId: string, at: { lat: number; lon: number }) => {
+    const marker = await attach(cameraId, spaceId ?? undefined, at)
+    if (!marker) return false
+    // Selected where it landed: the card is the thing the next drag or look is about, and the
+    // canvas stays the canvas.
+    setSelection({ kind: 'node', id: marker.id })
+    return true
+  }, [attach, spaceId, setSelection])
 
   return { openDeviceDiagram, placeDeviceDiagram, busy }
 }

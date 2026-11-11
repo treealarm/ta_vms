@@ -23,7 +23,6 @@ import { NODE_DRAG_TYPE } from '../../map/dragTypes'
 import SettingsListItem from '../settings/SettingsListItem'
 import MapObjectList, { type MapObjectSection } from './MapObjectList'
 import { useEditorState } from './editorState'
-import { useDeviceDiagram } from './useDeviceDiagram'
 
 type SpaceTab = 'devices' | 'nodes' | 'landmarks'
 
@@ -349,10 +348,9 @@ function NodesTree({ markers, space, onOpenSpace }: {
 }) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const { selection, setSelection, openDiagram } = useEditorState()
+  const { selection, setSelection, openDiagram, setMode, setPendingDiagramId } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
-  const { placeDeviceDiagram, busy: diagramBusy } = useDeviceDiagram(space.id)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -410,17 +408,17 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * Puts the device's diagram on this canvas: a picture beside the camera, drawn from its template,
-   * and leaves the reader on the plan to see it land. A diagram is otherwise only kept with the
-   * camera — the map offers a link into it when the camera is selected — so this is the
-   * administrator asking for a permanent card.
+   * Asks for the device's diagram to be put on this canvas: the next click on the map places it,
+   * the way a click places the camera itself. A diagram is otherwise only kept with the camera —
+   * the map offers a link into it when the camera is selected — so this is the administrator asking
+   * for a permanent card, and they say where it stands.
    */
-  const showDeviceDiagram = async (marker: MapMarker) => {
+  const askDeviceDiagram = (marker: MapMarker) => {
     if (!marker.cameraId) return
 
     setNotice(null)
-    const shown = await placeDeviceDiagram(marker.cameraId)
-    if (!shown) setNotice(t('diagramEditor.diagramNotCreated'))
+    setMode('select')
+    setPendingDiagramId(marker.cameraId)
   }
 
   return (
@@ -507,8 +505,8 @@ function NodesTree({ markers, space, onOpenSpace }: {
                   <IconButton
                     size="small"
                     aria-label={t('diagramEditor.placeDeviceDiagram')}
-                    disabled={busy || diagramBusy}
-                    onClick={(event) => { event.stopPropagation(); void showDeviceDiagram(marker) }}
+                    disabled={busy}
+                    onClick={(event) => { event.stopPropagation(); askDeviceDiagram(marker) }}
                   >
                     <DashboardCustomizeIcon fontSize="small" />
                   </IconButton>

@@ -87,7 +87,8 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const landmarks = useMemo(() => loadedLandmarks ?? [], [loadedLandmarks])
 
   const {
-    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId, focus, select,
+    mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
+    pendingDiagramId, setPendingDiagramId, focus, select,
     sideTab, setSideTab, openDiagramId, openDiagram,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
@@ -103,10 +104,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const fileRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
-  const { openDeviceDiagram } = useDeviceDiagram(spaceId)
+  const { openDeviceDiagram, placeDeviceDiagram } = useDeviceDiagram(spaceId)
   // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
-  // shape being drawn. What the click is for always wins over what it lands on.
-  const picking = !!pendingCameraId || mode === 'landmark' || DRAW_MODES.includes(mode)
+  // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
+  // on.
+  const picking = !!pendingCameraId || !!pendingDiagramId || mode === 'landmark'
+    || DRAW_MODES.includes(mode)
   const mapData = useMapChildren(spaceId || null)
   const levels = useAppSelector((s) => s.levels.levels)
   const markersById = useAppSelector((s) => s.objects.markers)
@@ -329,6 +332,17 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
       setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
       return
     }
+    if (pendingDiagramId) {
+      // The diagram is the camera's, standing where it was asked for: one per device, so this
+      // either draws it here or brings the one it has to this point.
+      const cameraId = pendingDiagramId
+      setPendingDiagramId(null)
+      void run(async () => {
+        const placed = await placeDeviceDiagram(cameraId, { lat: at.lat, lon: at.lon })
+        if (!placed) throw new Error(t('diagramEditor.noDeviceDiagram'))
+      })
+      return
+    }
     if (pendingCameraId) {
       // A camera drawn here for the first time looks the way it does where it really stands: the
       // picture should not contradict the original.
@@ -418,7 +432,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
   const planCorners = draftCorners ?? plan?.corners
   const planWidthM = plan && planCorners ? distance(planCorners.topLeft, planCorners.topRight) : 0
 
-  const hint = pendingCameraId
+  const hint = pendingDiagramId
+    ? t('diagramEditor.placeDiagramHint', { name: camerasById[pendingDiagramId]?.name || pendingDiagramId })
+    : pendingCameraId
     ? t('maps.placeHint', { name: camerasById[pendingCameraId]?.name || pendingCameraId })
     : mode === 'landmark' ? t('maps.landmarkModeHint')
     : mode === 'plan' ? t('maps.planModeHint')
@@ -621,6 +637,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               if (!v) return
               setMode(v)
               setPendingCameraId(null)
+              setPendingDiagramId(null)
               setDraftPoints(null)
             }}
           >
@@ -641,7 +658,11 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               {hint}
             </Typography>
           )}
-          {pendingCameraId && <Button size="small" onClick={() => setPendingCameraId(null)}>{t('common.cancel')}</Button>}
+          {(pendingCameraId || pendingDiagramId) && (
+            <Button size="small" onClick={() => { setPendingCameraId(null); setPendingDiagramId(null) }}>
+              {t('common.cancel')}
+            </Button>
+          )}
           {draftPoints && (mode === 'line' || mode === 'polygon') && (
             <>
               <Button size="small" variant="outlined" onClick={finishDrawing}>{t('maps.editor.finish')}</Button>

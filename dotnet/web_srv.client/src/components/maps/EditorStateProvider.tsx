@@ -29,11 +29,14 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       ...snapshot,
       setMode: (mode) => patch({ mode }),
       setSelection,
-      setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId }),
+      // Two placements wait for the same click; asking for one drops the other.
+      setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId, pendingDiagramId: null }),
+      setPendingDiagramId: (pendingDiagramId) => patch({ pendingDiagramId, pendingCameraId: null }),
       focusOn,
       select: (kind, id, at) => {
         setSnapshot((s) => ({
-          ...s, mode: 'select', pendingCameraId: null, selection: { kind, id }, sideTab: 'selection',
+          ...s, mode: 'select', pendingCameraId: null, pendingDiagramId: null,
+          selection: { kind, id }, sideTab: 'selection',
           // A list acts on the space's own map: a diagram open over it hides the object picked.
           openDiagramId: null,
           focus: { lat: at.lat, lon: at.lon, seq: (s.focus?.seq ?? 0) + 1 },

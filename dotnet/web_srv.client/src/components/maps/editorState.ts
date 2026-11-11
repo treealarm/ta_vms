@@ -32,6 +32,12 @@ export type EditorState = {
   /** A camera picked from the list; the next click on the map places it. */
   pendingCameraId: string | null
   setPendingCameraId: (cameraId: string | null) => void
+  /**
+   * A camera whose diagram was asked for on the canvas: the next click puts the diagram there,
+   * the way a click puts the camera itself. One at a time with `pendingCameraId`.
+   */
+  pendingDiagramId: string | null
+  setPendingDiagramId: (cameraId: string | null) => void
   focus: MapFocus | null
   /** Pans the map to the point; the same point again pans again. */
   focusOn: (at: GeoPointDto) => void
@@ -52,13 +58,15 @@ export type Snapshot = {
   mode: Mode
   selection: Selection
   pendingCameraId: string | null
+  pendingDiagramId: string | null
   focus: MapFocus | null
   sideTab: SideTab
   openDiagramId: string | null
 }
 
 export const FRESH: Snapshot = {
-  mode: 'select', selection: null, pendingCameraId: null, focus: null, sideTab: 'space', openDiagramId: null,
+  mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null, focus: null,
+  sideTab: 'space', openDiagramId: null,
 }
 
 export const EditorStateContext = createContext<EditorState | null>(null)

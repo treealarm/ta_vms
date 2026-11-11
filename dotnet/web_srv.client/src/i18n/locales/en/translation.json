@@ -1201,7 +1201,8 @@
     "noDeviceDiagram": "This device has no diagram yet. Draw one from the camera's row under Admin → Maps.",
     "deviceDiagram": "Device diagram",
     "diagramNotCreated": "The diagram could not be drawn",
-    "placeDeviceDiagram": "Place the device diagram on this canvas"
+    "placeDeviceDiagram": "Place the device diagram on this canvas",
+    "placeDiagramHint": "Click the map to place the diagram of {{name}}"
   },
   "rights": {
     "tab": "Rights",
