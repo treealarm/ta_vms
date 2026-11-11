@@ -132,6 +132,22 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     const marker = markersById[id]
     if (!marker) return
 
+    // Drawn here already — a figure on this canvas, a camera's placement — so the place is this
+    // one: the map comes to it and nothing else moves. Opening the diagram such a node is *of*
+    // would take away the very canvas the reader pointed at.
+    const cameraId = marker.cameraId
+    const placement = cameraId
+      ? placements.find((candidate) => candidate.cameraId === cameraId && candidate.spaceId === spaceId)
+      : undefined
+    const here = pointsCentre(figuresById[id]?.geometry?.coord ?? [])
+      ?? (placement ? { lat: placement.lat, lon: placement.lon } : null)
+    if (here) {
+      focusOn(here)
+      return
+    }
+
+    // Drawn elsewhere: the diagram it stands in is opened over the plan, a node of another space
+    // opens that space.
     const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
     const canvas = marker.nodeKind === 'diagram'
       ? marker
@@ -146,17 +162,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     if (canvas.id !== spaceId) {
       openDiagram(null)
       onOpenSpace(canvas.id)
-      return
     }
-
-    // The figure drawn on this canvas, or the point the camera's placement stands at.
-    const cameraId = marker.cameraId
-    const placement = cameraId
-      ? placements.find((candidate) => candidate.cameraId === cameraId && candidate.spaceId === spaceId)
-      : undefined
-    const at = pointsCentre(figuresById[id]?.geometry?.coord ?? [])
-      ?? (placement ? { lat: placement.lat, lon: placement.lon } : null)
-    if (at) focusOn(at)
   }
 
   // A diagram is its own canvas: opening it from the list, or entering a nested one, replaces the
