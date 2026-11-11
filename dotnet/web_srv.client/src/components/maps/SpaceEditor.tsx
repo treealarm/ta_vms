@@ -23,7 +23,7 @@ import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import { loadCanvas, loadObjProps, revealNode } from '../../store/objectsSlice'
+import { loadCanvas, loadNodes, loadObjProps, revealNode } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { isUnder } from '../../map/tree'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
@@ -64,8 +64,15 @@ type Props = {
   settings: React.ReactNode
   /** A camera to select, once, when its placement here appears — for arriving with it in mind. */
   initialCameraId?: string | null
-  /** Moves the whole page to another space — the tree beside it follows. */
-  onOpenSpace: (spaceId: string) => void
+  /** A node to select, once, when its place on this canvas appears: found on the map elsewhere. */
+  initialNodeId?: string | null
+  /** That node was picked out; the page drops its note of it. */
+  onInitialNodeShown?: () => void
+  /**
+   * Moves the whole page to another space — the tree beside it follows. A node named with it is
+   * selected there, so "show on map" crosses spaces without losing the object.
+   */
+  onOpenSpace: (spaceId: string, nodeId?: string) => void
 }
 
 /**
@@ -79,7 +86,9 @@ type Props = {
  * selected object's on the other. The selection, the tool and the camera waiting to be placed are
  * shared with the lists through `useEditorState`.
  */
-export default function SpaceEditor({ space, settings, initialCameraId, onOpenSpace }: Props) {
+export default function SpaceEditor({
+  space, settings, initialCameraId, initialNodeId, onInitialNodeShown, onOpenSpace,
+}: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
@@ -132,22 +141,25 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     const marker = markersById[id]
     if (!marker) return
 
-    // Drawn here already — a figure on this canvas, a camera's placement — so the place is this
-    // one: the map comes to it and nothing else moves. Opening the diagram such a node is *of*
-    // would take away the very canvas the reader pointed at.
+    // Drawn on this canvas already — a figure here, a camera's placement here — so the place is
+    // this one: the map comes to it and nothing else moves. Opening the diagram such a node is
+    // *of* would take away the very canvas the reader pointed at. The figure is looked for among
+    // this canvas's, not among every node the store happens to hold.
     const cameraId = marker.cameraId
     const placement = cameraId
       ? placements.find((candidate) => candidate.cameraId === cameraId && candidate.spaceId === spaceId)
       : undefined
-    const here = pointsCentre(figuresById[id]?.geometry?.coord ?? [])
+    const onThisCanvas = mapData.figures.find((figure) => figure.id === id)
+    const at = pointsCentre(onThisCanvas?.geometry?.coord ?? [])
       ?? (placement ? { lat: placement.lat, lon: placement.lon } : null)
-    if (here) {
-      focusOn(here)
+    if (at) {
+      focusOn(at)
       return
     }
 
-    // Drawn elsewhere: the diagram it stands in is opened over the plan, a node of another space
-    // opens that space.
+    // Drawn elsewhere: the diagram it stands in is opened over the plan with the node picked out,
+    // or the space it stands in is opened — and picked out there too, so the object is not lost on
+    // the way.
     const ancestors = await dispatch(revealNode(marker)).unwrap().catch(() => [] as MapMarker[])
     const canvas = marker.nodeKind === 'diagram'
       ? marker
@@ -156,12 +168,13 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
 
     if (!canvas) return
     if (canvas.nodeKind === 'diagram') {
+      setSelection({ kind: 'node', id })
       if (canvas.id !== openDiagramId) openDiagram(canvas.id)
       return
     }
     if (canvas.id !== spaceId) {
       openDiagram(null)
-      onOpenSpace(canvas.id)
+      onOpenSpace(canvas.id, id)
     }
   }
 
@@ -249,7 +262,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
 
   // The editor needs the node's properties and look, which the tree read does not carry.
   useEffect(() => {
-    if (selectionNodeId) void dispatch(loadObjProps(selectionNodeId))
+    if (selectionNodeId) {
+      void dispatch(loadObjProps(selectionNodeId))
+      // Its figure too: whether it is drawn anywhere, and where — what the "show on map" offer
+      // is about — is told by the node's own geometry.
+      void dispatch(loadNodes([selectionNodeId]))
+    }
   }, [selectionNodeId, dispatch])
 
   // A container is any selected node: a new object goes inside it, as a parent is chosen in Square.
@@ -505,6 +523,22 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
     select('camera', initialCameraId, placement)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `here` is rebuilt every render
   }, [initialCameraId, placements, select])
+
+  // Arrived from "show on map" on another space: the node is picked out once its canvas has it,
+  // and the map comes to it. Waiting for the canvas is what tells the page is shown, not just
+  // mounted — the marker is drawn only when the space's figures have been read.
+  const initialNodeApplied = useRef(false)
+  useEffect(() => {
+    if (initialNodeApplied.current || !initialNodeId) return
+    const drawn = mapData.figures.find((figure) => figure.id === initialNodeId)
+    if (!drawn) return
+    initialNodeApplied.current = true
+    setSelection({ kind: 'node', id: initialNodeId })
+    const at = pointsCentre(drawn.geometry?.coord ?? [])
+    if (at) focusOn(at)
+    onInitialNodeShown?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the canvas is rebuilt every render
+  }, [initialNodeId, mapData])
 
   const selectionPanel = selectedPlacement ? (() => {
     const reference = referenceOf(selectedPlacement.cameraId)
@@ -784,7 +818,7 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
             {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
             <Footprints
               nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
-              selectedId={selectedNested?.id}
+              selectedId={selectionNodeId}
               levels={levels}
               zoomLevels={spaceZoomLevels}
               interactive={!picking}
@@ -840,7 +874,9 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
               <LandmarkMarker
                 key={m.id}
                 landmark={m}
-                selected={selection?.kind === 'landmark' && selection.id === m.id}
+                // The node whichever way it was picked: a row in the tree selects the node, the
+                // map itself selects the landmark.
+                selected={selectionNodeId === m.id}
                 // A landmark is picked while selecting and while placing one; the drawing tools
                 // and a camera waiting for its spot take the click instead.
                 interactive={!pendingCameraId && (mode === 'select' || mode === 'landmark')}
