@@ -7,13 +7,13 @@ import './App.css'
 import App from './App.tsx'
 import { store } from './store'
 import { installAuthFetch } from './auth/authFetch'
-import { netTerrainTheme } from './theme/ntTheme'
+import { ntTheme } from './theme/ntTheme'
 // Leaflet's own layout rules (panes, markers, controls); the maps tabs need them on every page load.
 import 'leaflet/dist/leaflet.css'
 
 installAuthFetch()
 
-const theme = netTerrainTheme
+const theme = ntTheme
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -12,7 +12,7 @@ import type { DrawableBox } from './bbox/bboxDraw'
 
 const W = '#fff'
 
-// netTerrainTheme panel.elevated — keep in sync with theme/ntTheme.ts
+// ntTheme panel.elevated — keep in sync with theme/ntTheme.ts
 const PANEL_BG = { bgcolor: '#434343', backdropFilter: 'blur(6px)' } as const
 const BTN = {
   p: '3px',

@@ -17,7 +17,7 @@ const panel = {
   border: '#333333',
 } as const
 
-export const netTerrainTheme = createTheme({
+export const ntTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {

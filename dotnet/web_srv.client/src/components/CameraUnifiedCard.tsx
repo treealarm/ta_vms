@@ -72,7 +72,7 @@ const PANEL_W = 182
 const W = '#fff'   // common.white shorthand for video overlays
 const B = '#000'   // common.black shorthand for video overlays
 
-// netTerrainTheme panel.elevated — keep in sync with theme/ntTheme.ts
+// ntTheme panel.elevated — keep in sync with theme/ntTheme.ts
 const STRIP_BG = { bgcolor: '#434343', backdropFilter: 'blur(6px)' } as const
 
 const BTN_SX = {
