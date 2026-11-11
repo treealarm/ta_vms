@@ -22,13 +22,17 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   const { setSelection, openDiagram } = useEditorState()
   const [busy, setBusy] = useState(false)
 
-  const attach = useCallback(async (cameraId: string, canvas: string | undefined) => {
+  const attach = useCallback(async (cameraId: string, canvas: string | undefined, open: boolean) => {
     setBusy(true)
     try {
       const marker = await dispatch(attachDeviceDiagram({ cameraId, spaceId: canvas })).unwrap()
       if (!marker.id) return false
-      setSelection({ kind: 'node', id: marker.id })
-      openDiagram(marker.id)
+      // Putting it on the canvas is asked for on the canvas: the reader stays there and sees the
+      // card land, rather than being carried off into it.
+      if (open) {
+        setSelection({ kind: 'node', id: marker.id })
+        openDiagram(marker.id)
+      }
       return true
     } catch {
       return false
@@ -38,10 +42,10 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   }, [dispatch, setSelection, openDiagram])
 
   const openDeviceDiagram = useCallback(
-    (cameraId: string) => attach(cameraId, undefined), [attach])
+    (cameraId: string) => attach(cameraId, undefined, true), [attach])
 
   const placeDeviceDiagram = useCallback(
-    (cameraId: string) => attach(cameraId, spaceId ?? undefined), [attach, spaceId])
+    (cameraId: string) => attach(cameraId, spaceId ?? undefined, false), [attach, spaceId])
 
   return { openDeviceDiagram, placeDeviceDiagram, busy }
 }

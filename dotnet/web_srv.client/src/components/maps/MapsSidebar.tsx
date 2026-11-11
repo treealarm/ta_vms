@@ -410,9 +410,10 @@ function NodesTree({ markers, space, onOpenSpace }: {
   }
 
   /**
-   * Puts the device's diagram on this canvas: a picture beside the camera, drawn from its template
-   * and opened. A diagram is otherwise only kept with the camera — the map offers a link into it
-   * when the camera is selected — so this is the administrator asking for a permanent card.
+   * Puts the device's diagram on this canvas: a picture beside the camera, drawn from its template,
+   * and leaves the reader on the plan to see it land. A diagram is otherwise only kept with the
+   * camera — the map offers a link into it when the camera is selected — so this is the
+   * administrator asking for a permanent card.
    */
   const showDeviceDiagram = async (marker: MapMarker) => {
     if (!marker.cameraId) return

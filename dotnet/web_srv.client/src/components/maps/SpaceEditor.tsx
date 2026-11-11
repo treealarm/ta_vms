@@ -22,7 +22,7 @@ import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
   upsertLandmark, upsertPlacement, upsertSpace, uploadSpacePlan,
 } from '../../store/spatialSlice'
-import { loadObjProps } from '../../store/objectsSlice'
+import { loadCanvas, loadObjProps } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
@@ -531,6 +531,12 @@ export default function SpaceEditor({ space, settings, initialCameraId, onOpenSp
         showLayer={space.kind === 'map'}
         onDelete={() => void run(async () => {
           await dispatch(deleteNode(selectedNode.id)).unwrap()
+          // The canvas is not the node tree: a camera's picture is drawn by its placement and a
+          // landmark by the space's own list, so what is drawn here is read again rather than
+          // trusted to have been dropped with the node.
+          await dispatch(loadCanvas(spaceId)).unwrap()
+          await dispatch(loadPlacements()).unwrap()
+          if (spaceId) await dispatch(loadLandmarks(spaceId)).unwrap()
           setSelection(null)
         })}
         onClose={() => setSelection(null)}
