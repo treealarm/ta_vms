@@ -14,9 +14,9 @@ type Props = {
 
 // Relays only get a toggle here — mode/idle-state/delay configuration is admin-only, mirroring
 // how PTZ presets are admin-only while the joystick lives in the monitor.
-function RelayRow({ cameraId, relay }: { cameraId: string; relay: RelayOutputDto }) {
+function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: RelayOutputDto; onChanged: () => void }) {
   const { t } = useTranslation()
-  const { active, applyCommandedState } = useRelayToggle(relay.mode, relay.delayMs)
+  const { active, applyCommandedState } = useRelayToggle(relay.mode, relay.delayMs, relay.liveActive)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,6 +31,9 @@ function RelayRow({ cameraId, relay }: { cameraId: string; relay: RelayOutputDto
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setPending(false)
+      // The card's copy of the reported state comes from the camera; read it back now, so the
+      // chip beside the switch agrees with the command without waiting for the next event.
+      onChanged()
     }
   }
 
@@ -176,7 +179,7 @@ export default function DeviceIoPanel({ cameraId, live }: Props) {
           {relays.length > 0 && (
             <Stack spacing={0.5}>
               <Typography variant="caption" color="text.secondary">{t('onvifSettings.deviceIoRelaysGroup')}</Typography>
-              {relays.map((r) => <RelayRow key={r.token} cameraId={cameraId} relay={r} />)}
+              {relays.map((r) => <RelayRow key={r.token} cameraId={cameraId} relay={r} onChanged={live.reload} />)}
             </Stack>
           )}
           {inputs.length > 0 && (

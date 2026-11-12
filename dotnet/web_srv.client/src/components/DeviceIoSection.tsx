@@ -259,7 +259,7 @@ function RelayOutputRow({ cameraId, relay, options, onSaved }: {
   const [delayMs, setDelayMs] = useState(relay.delayMs)
   // Drive the optimistic auto-revert timer off the locally edited mode/delay (post-save, without a
   // refetch) rather than the original props, so a toggle after a mode/delay change reverts correctly.
-  const { active, applyCommandedState } = useRelayToggle(mode, delayMs)
+  const { active, applyCommandedState } = useRelayToggle(mode, delayMs, relay.liveActive)
   const [toggling, setToggling] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -272,6 +272,9 @@ function RelayOutputRow({ cameraId, relay, options, onSaved }: {
     try {
       await setRelayOutputState(cameraId, relay.token, next)
       applyCommandedState(next)
+      // Re-read the list: the chip beside the switch is the camera's report, and it is the read
+      // that brings the new one in.
+      onSaved?.()
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : String(e))
     } finally {
