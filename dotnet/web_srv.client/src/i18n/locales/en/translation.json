@@ -86,7 +86,7 @@
     "nodes": "Nodes",
     "eventRouting": "Event routing",
     "map": "Map",
-    "guarding": "Guarding",
+    "control": "Control",
     "changePassword": "Change password",
     "deployment": "Deployment"
   },
@@ -774,6 +774,7 @@
     "deviceIoGuardOnZone": "On guard (zone)",
     "deviceIoGuardOffZone": "Off guard (zone)",
     "deviceIoGuardUnknown": "Guard state unknown",
+    "deviceIoGuardLabel": "Guard",
     "deviceIoGuardHint": "Disarming does not acknowledge or close an alarm that is already active.",
     "deviceIoNoControl": "No control right on this camera",
     "geoLocation": "Position (ONVIF)",
@@ -1607,17 +1608,33 @@
       "other": "Other"
     }
   },
-  "guarding": {
-    "title": "Guarding",
+  "control": {
+    "title": "Control",
     "space": "Space",
+    "allSpaces": "All spaces",
     "spaceHint": "The space and everything inside it.",
-    "sensor": "Sensor",
-    "camera": "Camera",
-    "spaceColumn": "Space",
-    "guard": "Guarding",
-    "empty": "No sensors in this space.",
+    "kindAll": "All",
+    "kindCamera": "Cameras",
+    "kindSensor": "Sensors",
+    "kindRelay": "Relays",
+    "kindLabel": {
+      "camera": "Camera",
+      "digital_input": "Sensor",
+      "relay": "Relay"
+    },
+    "state": "State",
+    "stateOpen": "Open",
+    "stateClosed": "Closed",
+    "stateActive": "Active",
+    "stateInactive": "Inactive",
+    "stateUnknown": "Not reported yet",
+    "guard": "Guard",
+    "relay": "Relay",
+    "alarmEnabled": "This sensor raises an alarm.",
+    "empty": "Nothing to control in this space.",
     "more": "Load more",
     "loaded": "{{count}} shown",
+    "nothingSelected": "Select an object to see what you can do with it.",
     "notConfigured": "This sensor has no settings yet: an administrator must configure it."
   }
 }

@@ -53,6 +53,8 @@ M2.4f.
 - Панельная логика (задержки входа/выхода, шлейфы, bypass) —
   [12-event-routing-followups.md](12-event-routing-followups.md).
 
-> Операторская панель «Охрана» сделана в [M2.4g](../plans/square-merge/m2.4g-guarding-panel.md):
-> список датчиков пространства, `ListGuardSensors`, тумблер через `SetDeviceArmMode`. Здесь
-> остаётся охрана пространств и зон свойством `armed`, фасад `SetNodeArming` и аудит.
+> Операторская панель «Управление» сделана в [M2.4g](../plans/square-merge/m2.4g-control-panel.md):
+> список объектов пространства (камера, датчик, реле), `ListControlObjects`; действия — флаг
+> камеры, `SetDeviceArmMode` датчика и состояние реле. Реле остаётся переключаемым, но не ставится
+> на охрану. Здесь остаётся охрана пространств и зон свойством `armed`, фасад `SetNodeArming` и
+> аудит.

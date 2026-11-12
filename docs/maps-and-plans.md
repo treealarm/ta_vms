@@ -204,13 +204,23 @@ there is no `GetRelayState` at all.
   output, an input is a camera's input, and what changes one appears on the other through the
   events above.
 
-## Guarding sensors
+## Control surface
 
-A sensor is a camera's digital input an administrator configured in VmsCfg (`device_settings`):
-its name, its trigger and whether a contact raises an alarm. The physical contact is observed by
-the adapter before anyone configures it — it is a `device_node` row — and the operator's panel shows
-it with its toggle disabled until it is configured, because the arming command writes a settings row
-and never creates one.
+The operator's **Control** tab (`/operator/control`) lists the objects an operator acts on in a
+space and keeps their actions beside the selected one: `GET api/control/objects?spaceId=&kind=&cameraId=&pageSize=&afterName=&afterId=`,
+backed by `MapService.ListControlObjects`. Three kinds share one row, and each answers with what
+its own action writes:
+
+- **camera** (`part_kind='device'`) — arming is the camera's own flag in VmsCfg
+  (`camera_states.armed`, `PUT api/cameras/{id}/state`), the same flag the camera card's guard
+  toggle writes. Its row never reads the zone scheme: that is what the camera's *sensors* inherit,
+  not what the camera is.
+- **digital input** — the effective arming of `EffectiveArmingResolver`, its configured mode and
+  alarm flag, and the contact the camera reports (`SENSOR_OPEN`/`SENSOR_CLOSED` on the part node).
+- **relay** — never armed: a relay is driven, not watched (the policy is recorded in
+  `docs/future_plans/20-zone-arming.md`). Its action is its state
+  (`POST api/DeviceIo/.../relay-outputs/{token}/state`), and its row shows what the camera reports
+  (`RELAY_ACTIVE`/`RELAY_INACTIVE`).
 
 **One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
 answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
@@ -219,22 +229,35 @@ own armed flag (`camera`). `inherit` is the administrator's mode and is not an o
 The scheme is the same for one card and for a page of the panel — the page resolves in one pass,
 with the settings and the camera flags read in bulk.
 
-**The panel is server-side.** `GET api/guarding/sensors?spaceId=&pageSize=&afterName=&afterId=`
-answers one page of a space's sensors through `MapService.ListGuardSensors`:
+**The list is server-side.** It is the tree's own read, not a browser enumeration:
 
 - `space_id` covers the space **and everything under it**, which is the set the space's own `armed`
   property reaches; an empty id asks for everything the caller may see. A zone will arrive as a
   polygon in the same request, not as a second list.
+- `kind` narrows to `camera`, `digital_input` or `relay`; `camera_id` answers one device's objects
+  wherever they stand — the administrator's placement palette asks this way.
 - Each row is addressed by `source_kind`/`source_id`/`part_kind`/`part_token`, never by camera:
   a fire panel and its loops will join the same list under a kind of their own.
 - Rows are filtered by the caller's `view_live` before the page is cut, and `can_control` says
-  whether the toggle may be used. The page is a keyset one — ordered by the sensor's name, `has_more`
+  whether an action may be used. The page is a keyset one — ordered by the object's name, `has_more`
   plus a cursor, no total — because rights can hide rows and an offset would shift the list every
-  time somebody arms a sensor.
-- The toggle is the existing `PUT api/DeviceIo/cameras/{id}/digital-inputs/{token}/arm-mode`
-  (`SetDeviceArmMode`); the panel adds no write path. The camera card's Device I/O overlay is
-  read-only for sensors: it shows the contact and the effective guard state, and arming happens
-  here — a switch beside the live value read as changing what the sensor says.
+  time somebody arms something.
+- A camera with no reference placement stands nowhere: a space filter leaves it out, the
+  unfiltered list still shows it.
+- No write path is added. The actions are the commands that already write — the camera flag, the
+  sensor's `SetDeviceArmMode`, the relay's state.
+
+**One object by any of its nodes.** `GET api/control/objects/{objectId}` answers the same row for a
+canonical node or a replica of it, resolving the replica through `objects.owner_id`. The operator
+map's inspector uses it, so selecting a sensor or a relay — a picture, a diagram region, or the node
+itself — offers the same actions as the panel. A node the caller may not see answers not-found,
+exactly as if it did not exist. A camera needs no such section there: its card arms it already, and
+a second switch would be two ways to say one thing.
+
+**The card keeps its switch.** The camera card's Device I/O overlay arms a sensor on a line of its
+own, under the caption "Guard", beside the effective state — not on the token line beside the live
+0/1, where it read as changing what the sensor says. Arming from the monitor is ordinary operator
+work; the panel is where a whole space is worked through.
 
 ## States, events and rights
 

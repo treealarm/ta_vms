@@ -114,11 +114,15 @@ service MapService {
   // token, because the card holds the device, not the part's node id. `source_kind` is "camera"
   // today; another kind of device hub joins the same registry under a kind of its own.
   rpc GetDevicePartArming(GetDevicePartArmingRequest) returns (GetDevicePartArmingResponse);
-  // The operator's guarding list: one page of a space's sensors with their effective arming,
-  // filtered by the caller's `view_live` and addressed by source, not by camera. `space_id` covers
-  // the space and everything under it — the same set a space's own `armed` property reaches. A
-  // zone filter will join this request as a polygon; it will not be a second list.
-  rpc ListGuardSensors(ListGuardSensorsRequest) returns (ListGuardSensorsResponse);
+  // The operator's control list: one page of the objects an operator acts on — cameras, digital
+  // inputs and relays — filtered by the caller's `view_live` and addressed by source, not by
+  // camera. `space_id` covers the space and everything under it — the same set a space's own
+  // `armed` property reaches. A zone filter will join this request as a polygon; it will not be a
+  // second list.
+  rpc ListControlObjects(ListControlObjectsRequest) returns (ListControlObjectsResponse);
+  // The same row for one node, canonical or a replica of it: the map's inspector selects a node,
+  // and a picture resolves through its owner. A node the caller may not see answers found=false.
+  rpc GetControlObject(GetControlObjectRequest) returns (GetControlObjectResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
   // The operator's alarm entity, independent of the ALARM state: a row with a status, an
@@ -783,51 +787,78 @@ message GetDevicePartArmingResponse {
   NodeArming arming = 2;
 }
 
-// ── The operator's guarding list ────────────────────────────────────────────────────────────
+// ── The operator's control list ─────────────────────────────────────────────────────────────
 
-message ListGuardSensorsRequest {
+message ListControlObjectsRequest {
   // Empty asks for everything the caller may see. Otherwise this space and every space under it,
-  // which is the set the space's own armed property would reach.
+  // which is the set the space's own armed property would reach. A camera with no reference
+  // placement stands nowhere and is left out by a space filter, not by the unfiltered list.
   string space_id  = 1;
+  // "" asks for every controllable kind: "camera", "digital_input" and "relay".
+  string kind      = 2;
+  // One device's parts, whatever their space: the administrator's palette places them.
+  string camera_id = 3;
   // 0 takes the server's default (50); capped at 200.
-  int32  page_size = 2;
+  int32  page_size = 4;
   // Keyset position, not an offset: an operator arming a sensor must not shift every page after it.
-  GuardSensorCursor after = 3;
-  Caller caller    = 4;
+  ControlObjectCursor after = 5;
+  Caller caller    = 6;
 }
 
-message GuardSensorCursor {
-  string after_name = 1;  // the sensor node's name
+message ControlObjectCursor {
+  string after_name = 1;  // the object node's name
   string after_id   = 2;  // its node id, which keeps equal names apart
 }
 
-message GuardSensor {
-  // The address a device card uses: the sensor belongs to a source device, not necessarily a camera.
-  string source_kind = 1;  // "camera" today
-  string source_id   = 2;
-  string part_kind   = 3;  // "digital_input"
-  string part_token  = 4;
-  string object_id   = 5;
-  string name        = 6;
-  string camera_name = 7;
-  // The canvas the camera's reference replica stands on; the space the sensor belongs to.
-  string space_id    = 8;
-  string space_name  = 9;
+message ControlObject {
+  string object_id = 1;
+  // "camera" for the device itself, otherwise its part kind: "digital_input" or "relay".
+  string kind = 2;
+  // The address a device card uses: the object belongs to a source device, not necessarily a
+  // camera. `source_kind` is "camera" today; another hub joins the same registry and this list.
+  string source_kind = 3;
+  string source_id   = 4;
+  string part_kind   = 5;
+  string part_token  = 6;
+  string name        = 7;
+  string camera_name = 8;
+  // The canvas the camera's reference replica stands on; the space the object belongs to.
+  string space_id    = 9;
+  string space_name  = 10;
+  // What the part reports right now: "open"/"closed" for an input, "active"/"inactive" for a
+  // relay, empty when the device has not reported one or the object has no live state (a camera).
+  string state = 11;
   // The administrator's configuration; empty arm_mode means no settings row exists, and the
   // operator has nothing to write a mode to.
-  string arm_mode      = 10;  // "inherit" | "armed" | "disarmed" | ""
-  bool   alarm_enabled = 11;
-  bool   configured    = 12;
-  // What it actually resolves to right now, and why.
-  bool   armed         = 13;
-  string arming_source = 14;  // "explicit" | "space" | "camera"
-  bool   can_control   = 15;
+  string arm_mode      = 12;  // "inherit" | "armed" | "disarmed" | ""
+  bool   alarm_enabled = 13;
+  bool   configured    = 14;
+  // Arming has no meaning for a relay: `has_arming` is false and the action is a state toggle.
+  bool   has_arming    = 15;
+  // What it actually resolves to right now, and why. A camera answers with its own flag
+  // ("camera"); a sensor with the arming scheme ("explicit" | "space" | "camera").
+  bool   armed         = 16;
+  string arming_source = 17;
+  bool   can_control   = 18;
 }
 
-message ListGuardSensorsResponse {
-  repeated GuardSensor sensors = 1;
-  bool              has_more   = 2;
-  GuardSensorCursor next       = 3;
+message ListControlObjectsResponse {
+  repeated ControlObject objects = 1;
+  bool                has_more  = 2;
+  ControlObjectCursor next      = 3;
+}
+
+message GetControlObjectRequest {
+  // Any node of the object: the canonical node or a replica; a replica resolves through its owner.
+  string object_id = 1;
+  Caller caller    = 2;
+}
+
+message GetControlObjectResponse {
+  // False when the id is not a device object, or is one the caller may not see. The two answers
+  // are the same on purpose: what a caller may not see does not exist for it.
+  bool           found  = 1;
+  ControlObject  object = 2;
 }
 
 message AlarmStateList {

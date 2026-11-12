@@ -49,7 +49,7 @@ namespace VmsMap.Grpc
     private readonly MapWatchPoller _watchPoller;
     private readonly DemoSeeder _demoSeeder;
     private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
-    private readonly VmsMap.Domain.Arming.GuardSensorQuery _guardSensors;
+    private readonly VmsMap.Domain.Control.ControlObjectQuery _controlObjects;
     private readonly AlarmStore _alarmStore;
     private readonly IDeviceDiagramService _deviceDiagrams;
 
@@ -77,7 +77,7 @@ namespace VmsMap.Grpc
       MapWatchPoller watchPoller,
       DemoSeeder demoSeeder,
       VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver,
-      VmsMap.Domain.Arming.GuardSensorQuery guardSensors,
+      VmsMap.Domain.Control.ControlObjectQuery controlObjects,
       AlarmStore alarmStore,
       IDeviceDiagramService deviceDiagrams)
     {
@@ -104,7 +104,7 @@ namespace VmsMap.Grpc
       _watchPoller = watchPoller;
       _demoSeeder = demoSeeder;
       _armingResolver = armingResolver;
-      _guardSensors = guardSensors;
+      _controlObjects = controlObjects;
       _deviceDiagrams = deviceDiagrams;
       _alarmStore = alarmStore;
     }

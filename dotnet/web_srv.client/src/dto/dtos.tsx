@@ -1147,39 +1147,49 @@ export type DigitalInputDto = {
   canControl: boolean
 }
 
-// One row of the operator's guarding panel: a sensor of a space with what it is configured as and
-// what its arming actually resolves to. Addressed by source, not by camera: a fire panel's loops
-// will arrive with a source_kind of their own.
-export type GuardSensorDto = {
+/** What kind of object the control list holds: the camera itself, or one of its parts. */
+export type ControlObjectKind = 'camera' | 'digital_input' | 'relay'
+
+/** What a part reports right now; '' means the device has not reported one (or it is a camera). */
+export type ControlObjectState = '' | 'open' | 'closed' | 'active' | 'inactive'
+
+// One row of the operator's control panel: an object of a space, what it is configured as and what
+// it currently resolves to. Addressed by source, not by camera: a fire panel's loops will arrive
+// with a source_kind of their own.
+export type ControlObjectDto = {
+  objectId: string
+  kind: ControlObjectKind
   sourceKind: string
   sourceId: string
   partKind: string
   partToken: string
-  objectId: string
   name: string
   cameraName: string
   spaceId: string
   spaceName: string
+  state: ControlObjectState
   /** The administrator's mode; 'inherit' also when no settings row exists — see `configured`. */
   armMode: DeviceArmMode
   alarmEnabled: boolean
-  /** False when no administrator configured this input: there is no row to write a mode to. */
+  /** False when no administrator configured this part: there is no row to write a mode to. */
   configured: boolean
-  /** What it resolves to right now. Unlike the camera card's per-part read, this is never unknown. */
+  /** Relays have no arming at all: their action is a state toggle, not a guard switch. */
+  hasArming: boolean
+  /** What it resolves to right now. A camera answers with its own flag, a sensor with the scheme. */
   armed: boolean
-  armingSource: ArmSource
+  armingSource: ArmSource | ''
   canControl: boolean
 }
 
-export type GuardSensorCursorDto = {
+export type ControlObjectCursorDto = {
   afterName: string
   afterId: string
 }
 
-export type GuardSensorPageDto = {
-  sensors: GuardSensorDto[]
+export type ControlObjectPageDto = {
+  objects: ControlObjectDto[]
   hasMore: boolean
-  next?: GuardSensorCursorDto | null
+  next?: ControlObjectCursorDto | null
 }
 
 // Where the camera says it stands. found=false means it reports no location at all; an individual

@@ -9,6 +9,7 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.Domain.Arming;
+using VmsMap.Domain.Control;
 
 namespace VmsMap.Tests;
 
@@ -67,11 +68,14 @@ internal static class TestWiring
     IDeviceSettingsSource? settings = null) =>
     new(db, settings ?? new NoDeviceSettings(), cameraState ?? new TestCameraState());
 
-  public static GuardSensorQuery GuardSensors(
+  public static ControlObjectQuery ControlObjects(
     VmsMapDbContext db, MapDb map, IRightsService? rights = null,
-    IDeviceSettingsSource? settings = null, ICameraStateSource? cameraState = null) =>
-    new(db, map, rights ?? new RightsService(db), settings ?? new NoDeviceSettings(),
-      Arming(db, cameraState, settings));
+    IDeviceSettingsSource? settings = null, ICameraStateSource? cameraState = null)
+  {
+    var states = cameraState ?? new TestCameraState();
+    return new(db, map, rights ?? new RightsService(db), settings ?? new NoDeviceSettings(),
+      states, Arming(db, states, settings));
+  }
 
   public static AlarmStore Alarms(
     VmsMapDbContext db, MapDb map, StatesUpdateService states, ICameraStateSource? cameraState = null)

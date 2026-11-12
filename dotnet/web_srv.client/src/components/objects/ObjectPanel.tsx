@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert, Box, Button, Chip, Divider, IconButton, Stack, ToggleButton, Tooltip, Typography,
@@ -11,11 +11,13 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
 import type { MapExtraProperty } from '../../dto/mapDtos'
-import type { PtzGeoAimResultDto } from '../../dto/dtos'
+import type { ControlObjectDto, PtzGeoAimResultDto } from '../../dto/dtos'
+import { getControlObject } from '../../api/controlApi'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
+import ObjectControl from '../control/ObjectControl'
 import NodeIdentity from './NodeIdentity'
 import NodeStateChips from './NodeStateChips'
 
@@ -83,6 +85,25 @@ export default function ObjectPanel({
   const kind = marker?.nodeKind ?? 'object'
   const childrenAlarms = alarm?.childrenAlarms ?? 0
   const states = state?.states ?? []
+
+  // A device part — a sensor or a relay, canonical or the replica the operator clicked — answers
+  // with the same control row the Control panel shows, resolved by the server through its owner.
+  // A camera needs none of this: its card above already arms it, and a second switch would be two
+  // ways to say one thing.
+  const [control, setControl] = useState<{ nodeId: string; row: ControlObjectDto | null } | null>(null)
+  const [controlNonce, setControlNonce] = useState(0)
+  useEffect(() => {
+    if (kind !== 'part') return
+
+    let cancelled = false
+    void getControlObject(nodeId)
+      .then((row) => { if (!cancelled) setControl({ nodeId, row }) })
+      .catch(() => { if (!cancelled) setControl({ nodeId, row: null }) })
+    return () => { cancelled = true }
+  }, [kind, nodeId, controlNonce])
+
+  // The answer must be this node's: a part selected before keeps its row until the next one lands.
+  const controlRow = kind === 'part' && control?.nodeId === nodeId ? control.row : null
 
   return (
     <Stack sx={{ width: 420, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
@@ -197,6 +218,15 @@ export default function ObjectPanel({
         ) : marker?.cameraId ? (
           <Alert severity="info" sx={{ mb: 1.5 }}>{t('maps.node.cameraMissing')}</Alert>
         ) : null}
+
+        {controlRow && (
+          <Section title={t('control.title')}>
+            <ObjectControl
+              row={controlRow}
+              onChanged={() => setControlNonce((n) => n + 1)}
+            />
+          </Section>
+        )}
 
         <Section title={t('maps.node.states')}>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>

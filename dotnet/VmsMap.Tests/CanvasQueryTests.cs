@@ -76,7 +76,7 @@ public class CanvasQueryTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
-      TestWiring.Arming(db), TestWiring.GuardSensors(db, map, rights),
+      TestWiring.Arming(db), TestWiring.ControlObjects(db, map, rights),
       TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);

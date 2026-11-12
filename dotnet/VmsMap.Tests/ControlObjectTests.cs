@@ -9,13 +9,15 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.Domain.Arming;
+using VmsMap.Domain.Control;
 
 namespace VmsMap.Tests;
 
-// The operator's guarding list: which sensors a space has, one page at a time, with the effective
-// arming and only the rows the caller may see. The tests run on the in-memory provider, which has
-// its own (LINQ) selection path; the relational one is the same query in SQL.
-public class GuardSensorTests
+// The operator's control list: which objects a space holds — cameras, their sensors and their
+// relays — one page at a time, with the effective arming, the live state and only the rows the
+// caller may see. The tests run on the in-memory provider, which has its own (LINQ) selection
+// path; the relational one is the same selection in SQL.
+public class ControlObjectTests
 {
   private const string CameraA = "11111111-1111-4111-8111-111111111111";
   private const string CameraB = "22222222-2222-4222-8222-222222222222";
@@ -24,7 +26,7 @@ public class GuardSensorTests
   private sealed record Fixture(
     VmsMapDbContext Db,
     MapDb Map,
-    GuardSensorQuery Query,
+    ControlObjectQuery Query,
     FakeSettings Settings,
     FakeCameraStates CameraStates,
     string SiteId,
@@ -32,7 +34,8 @@ public class GuardSensorTests
     string OtherSiteId,
     string PartA,
     string PartB,
-    string PartC);
+    string PartC,
+    string RelayA);
 
   private sealed class FakeSettings : IDeviceSettingsSource
   {
@@ -89,8 +92,8 @@ public class GuardSensorTests
     var settings = new FakeSettings();
     var cameraStates = new FakeCameraStates();
     var rights = new RightsService(db);
-    var query = new GuardSensorQuery(
-      db, map, rights, settings, new EffectiveArmingResolver(db, settings, cameraStates));
+    var query = new ControlObjectQuery(
+      db, map, rights, settings, cameraStates, new EffectiveArmingResolver(db, settings, cameraStates));
 
     var site = await Node(map, "Site");
     var floor = await Node(map, "First floor", parentId: site.id);
@@ -103,24 +106,30 @@ public class GuardSensorTests
     settings.Rows.Add(new DeviceSettingsInfo(
       CameraC, DeviceObjectId.DigitalInputPart, "input", "Gate", "armed", "closed", true));
 
-    // A stands on the floor, B directly on the site, C elsewhere.
+    // A stands on the floor, B directly on the site, C elsewhere. A also declares a relay.
     var partA = (await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraA, DeviceObjectId.DigitalInputPart, "input", default))!;
     var partB = (await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraB, DeviceObjectId.DigitalInputPart, "input", default))!;
     var partC = (await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraC, DeviceObjectId.DigitalInputPart, "input", default))!;
+    var relayA = (await nodes.EnsureAsync(
+      DeviceObjectId.CameraSource, CameraA, "relay", "lamp", default))!;
 
     await PlaceAsync(db, map, CameraA, floor.id!);
     await PlaceAsync(db, map, CameraB, site.id!);
     await PlaceAsync(db, map, CameraC, otherSite.id!);
+
+    // What the parts report right now: A's door is closed, A's lamp is active.
+    await StateAsync(db, partA, "SENSOR_CLOSED");
+    await StateAsync(db, relayA, "RELAY_ACTIVE");
 
     cameraStates.Armed[CameraA] = false;
     cameraStates.Armed[CameraB] = true;
 
     return new Fixture(
       db, map, query, settings, cameraStates, site.id!, floor.id!, otherSite.id!,
-      partA, partB, partC);
+      partA, partB, partC, relayA);
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -156,21 +165,38 @@ public class GuardSensorTests
     await db.SaveChangesAsync();
   }
 
+  private static async Task StateAsync(VmsMapDbContext db, string nodeId, string state)
+  {
+    var id = Guid.Parse(nodeId);
+    db.ObjectStates.Add(new DBObjectState
+    {
+      id = id,
+      timestamp = DateTime.UtcNow,
+      states = [new DBObjectStateValue { id = Guid.NewGuid(), object_id = id, state = state }],
+    });
+    await db.SaveChangesAsync();
+  }
+
   private static CallerContext Admin() => new("admin", ["admin"], Unrestricted: false);
 
   private static CallerContext User(params string[] roles) => new("olga", roles, Unrestricted: false);
 
-  private static Task<GuardSensorPage> List(
-    Fixture f, string? spaceId, int pageSize = 50, CallerContext? caller = null,
-    string? afterName = null, string? afterId = null) =>
-    f.Query.ListAsync(spaceId, pageSize, afterName, afterId, caller ?? Admin(), default);
+  private static Task<ControlObjectPage> List(
+    Fixture f, string? spaceId, string? kind = null, string? cameraId = null, int pageSize = 50,
+    CallerContext? caller = null, string? afterName = null, string? afterId = null) =>
+    f.Query.ListAsync(
+      spaceId, kind, cameraId, pageSize, afterName, afterId, caller ?? Admin(), default);
+
+  private static Task<ControlObjectRow?> Find(
+    Fixture f, string nodeId, CallerContext? caller = null) =>
+    f.Query.FindAsync(nodeId, caller ?? Admin(), default);
 
   [Fact]
-  public async Task ASpacesListCoversTheSpaceAndEverythingUnderIt()
+  public async Task ASpacesSensorsCoverTheSpaceAndEverythingUnderIt()
   {
     var f = await CreateAsync();
 
-    var page = await List(f, f.SiteId);
+    var page = await List(f, f.SiteId, kind: "digital_input");
 
     // The part's display name is the node's name; the test wiring names it after its camera.
     Assert.Equal(
@@ -185,7 +211,7 @@ public class GuardSensorTests
   {
     var f = await CreateAsync();
 
-    var page = await List(f, f.FloorId);
+    var page = await List(f, f.FloorId, kind: "digital_input");
 
     Assert.Single(page.Rows);
     Assert.Equal(CameraA, page.Rows[0].SourceId);
@@ -198,7 +224,7 @@ public class GuardSensorTests
     // A second, non-reference picture of C on the floor: a picture is not where the camera stands.
     await PlaceAsync(f.Db, f.Map, CameraC, f.FloorId, reference: false);
 
-    var page = await List(f, f.FloorId);
+    var page = await List(f, f.FloorId, kind: "digital_input");
 
     Assert.DoesNotContain(page.Rows, r => r.SourceId == CameraC);
   }
@@ -213,7 +239,8 @@ public class GuardSensorTests
 
     for (var guard = 0; guard < 10; guard++)
     {
-      var page = await List(f, null, pageSize: 1, afterName: afterName, afterId: afterId);
+      var page = await List(
+        f, null, kind: "digital_input", pageSize: 1, afterName: afterName, afterId: afterId);
       seen.AddRange(page.Rows.Select(r => r.ObjectId));
       if (!page.HasMore)
         break;
@@ -234,9 +261,10 @@ public class GuardSensorTests
   {
     var f = await CreateAsync();
 
-    var first = await List(f, null, pageSize: 2);
+    var first = await List(f, null, kind: "digital_input", pageSize: 2);
     var second = await List(
-      f, null, pageSize: 2, afterName: first.NextName, afterId: first.NextId);
+      f, null, kind: "digital_input", pageSize: 2,
+      afterName: first.NextName, afterId: first.NextId);
 
     Assert.Equal(2, first.Rows.Count);
     Assert.True(first.HasMore);
@@ -254,13 +282,14 @@ public class GuardSensorTests
   {
     var f = await CreateAsync();
 
-    var page = await List(f, f.SiteId);
+    var page = await List(f, f.SiteId, kind: "digital_input");
     var unconfigured = page.Rows.Single(r => r.SourceId == CameraB);
 
     Assert.False(unconfigured.Configured);
     Assert.Equal("inherit", unconfigured.ArmMode);
     Assert.True(unconfigured.Armed); // from the camera, since the site carries no armed property
     Assert.Equal(EffectiveArmingResolver.Camera, unconfigured.ArmingSource);
+    Assert.True(unconfigured.HasArming);
   }
 
   [Fact]
@@ -276,7 +305,7 @@ public class GuardSensorTests
     });
     await f.Db.SaveChangesAsync();
 
-    var page = await List(f, f.SiteId);
+    var page = await List(f, f.SiteId, kind: "digital_input");
     var sensor = page.Rows.Single(r => r.SourceId == CameraA);
 
     Assert.True(sensor.Armed);
@@ -298,7 +327,7 @@ public class GuardSensorTests
     });
     await f.Db.SaveChangesAsync();
 
-    var page = await List(f, null, caller: User("operator"));
+    var page = await List(f, null, kind: "digital_input", caller: User("operator"));
 
     Assert.Equal(
       new[] { CameraA, CameraB },
@@ -322,7 +351,7 @@ public class GuardSensorTests
     }
     await f.Db.SaveChangesAsync();
 
-    var page = await List(f, f.FloorId, caller: User("operator"));
+    var page = await List(f, f.FloorId, kind: "digital_input", caller: User("operator"));
 
     Assert.Single(page.Rows);
     Assert.True(page.Rows[0].CanControl);
@@ -332,7 +361,7 @@ public class GuardSensorTests
   public async Task AnEmptySpaceIsAnEmptyPageNotAnError()
   {
     var f = await CreateAsync();
-    var page = await List(f, Guid.NewGuid().ToString());
+    var page = await List(f, Guid.NewGuid().ToString(), kind: "digital_input");
 
     Assert.Empty(page.Rows);
     Assert.False(page.HasMore);
@@ -344,7 +373,7 @@ public class GuardSensorTests
   {
     var f = await CreateAsync();
 
-    var page = await List(f, null);
+    var page = await List(f, null, kind: "digital_input");
     var a = page.Rows.Single(r => r.SourceId == CameraA);
     var c = page.Rows.Single(r => r.SourceId == CameraC);
 
@@ -354,5 +383,123 @@ public class GuardSensorTests
     Assert.True(c.Configured);
     Assert.True(c.Armed);
     Assert.Equal(EffectiveArmingResolver.Explicit, c.ArmingSource);
+  }
+
+  // A camera is an object of its own in the list: what it says is its own flag, not what a zone
+  // would make its sensors inherit.
+  [Fact]
+  public async Task ACameraRowCarriesItsOwnFlag()
+  {
+    var f = await CreateAsync();
+
+    var page = await List(f, null, kind: "camera");
+
+    Assert.Equal(3, page.Rows.Count);
+    var a = page.Rows.Single(r => r.SourceId == CameraA);
+    var b = page.Rows.Single(r => r.SourceId == CameraB);
+    var c = page.Rows.Single(r => r.SourceId == CameraC);
+
+    Assert.Equal("camera", a.Kind);
+    Assert.True(a.HasArming);
+    Assert.False(a.Armed);
+    Assert.True(b.Armed);
+    Assert.False(c.Armed);
+    Assert.Equal(EffectiveArmingResolver.Camera, a.ArmingSource);
+    Assert.True(a.CanControl);
+  }
+
+  // A relay is driven, not watched: no guard, a live state, and a toggle is the whole action.
+  [Fact]
+  public async Task ARelayRowIsSwitchedButNeverArmed()
+  {
+    var f = await CreateAsync();
+
+    var page = await List(f, null, kind: "relay");
+
+    var relay = Assert.Single(page.Rows);
+    Assert.Equal(f.RelayA, relay.ObjectId);
+    Assert.Equal("relay", relay.Kind);
+    Assert.False(relay.HasArming);
+    Assert.Equal("active", relay.State);
+    Assert.Equal(string.Empty, relay.ArmMode);
+    Assert.True(relay.CanControl);
+  }
+
+  [Fact]
+  public async Task ALiveStateComesFromTheOwner()
+  {
+    var f = await CreateAsync();
+
+    var page = await List(f, null, kind: "digital_input");
+
+    Assert.Equal("closed", page.Rows.Single(r => r.SourceId == CameraA).State);
+    Assert.Equal(string.Empty, page.Rows.Single(r => r.SourceId == CameraB).State);
+  }
+
+  [Fact]
+  public async Task ACameraFilterSelectsThatDevicesObjects()
+  {
+    var f = await CreateAsync();
+
+    var page = await List(f, null, cameraId: CameraA);
+
+    Assert.Equal(3, page.Rows.Count);
+    Assert.All(page.Rows, r => Assert.Equal(CameraA, r.SourceId));
+  }
+
+  [Fact]
+  public async Task AnUnknownKindIsRejected()
+  {
+    Assert.Throws<ArgumentException>(() => ControlObjectQuery.ParseKind("door"));
+    Assert.Null(ControlObjectQuery.ParseKind(""));
+    Assert.Equal(new[] { "relay" }, ControlObjectQuery.ParseKind("relay")!);
+  }
+
+  // A node selected on a map may be the picture rather than the object: the read resolves it
+  // through its owner and answers with the object's own row.
+  [Fact]
+  public async Task AReplicaResolvesToTheObjectItShows()
+  {
+    var f = await CreateAsync();
+    var picture = await Node(
+      f.Map, "Door picture", parentId: f.FloorId, ownerId: f.PartA);
+
+    var row = await Find(f, picture.id!);
+
+    Assert.NotNull(row);
+    Assert.Equal(f.PartA, row!.ObjectId);
+    Assert.Equal($"Camera {CameraA} / input", row.Name);
+    Assert.Equal(f.FloorId, row.SpaceId);
+    Assert.False(row.Armed); // A's camera flag; no zone property on the floor
+    Assert.Equal(EffectiveArmingResolver.Camera, row.ArmingSource);
+    Assert.Equal("closed", row.State);
+    Assert.True(row.CanControl);
+  }
+
+  [Fact]
+  public async Task AnObjectThatIsNotADeviceIsNotFound()
+  {
+    var f = await CreateAsync();
+
+    Assert.Null(await Find(f, f.FloorId));
+    Assert.Null(await Find(f, Guid.NewGuid().ToString()));
+    Assert.Null(await Find(f, "not-a-uuid"));
+  }
+
+  [Fact]
+  public async Task AReplicaTheCallerMayNotSeeIsNotFound()
+  {
+    var f = await CreateAsync();
+    var picture = await Node(f.Map, "Door picture", parentId: f.FloorId, ownerId: f.PartA);
+    f.Db.RightsModes.Add(new DBRightsMode { id = true, mode = "enforced" });
+    f.Db.Rights.Add(new DBRight
+    {
+      object_id = Guid.Parse(f.OtherSiteId),
+      subject = "operator",
+      action = RightActions.ViewLive,
+    });
+    await f.Db.SaveChangesAsync();
+
+    Assert.Null(await Find(f, picture.id!, User("operator")));
   }
 }

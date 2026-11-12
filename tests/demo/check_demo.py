@@ -1068,11 +1068,15 @@ def check_operator_arming(vms):
                 set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
 
 
-def guarding_sensors(vms, space_id=None, page_size=None, after=None):
-    """One page of the operator's guarding list, as the panel asks for it."""
+def control_objects(vms, space_id=None, kind=None, for_camera=None, page_size=None, after=None):
+    """One page of the operator's Control list, as the panel asks for it."""
     params = {}
     if space_id:
         params["spaceId"] = space_id
+    if kind:
+        params["kind"] = kind
+    if for_camera:
+        params["cameraId"] = for_camera
     if page_size:
         params["pageSize"] = str(page_size)
     if after:
@@ -1080,17 +1084,28 @@ def guarding_sensors(vms, space_id=None, page_size=None, after=None):
         params["afterId"] = after.get("afterId") or ""
 
     query = f"?{urllib.parse.urlencode(params)}" if params else ""
-    return vms.call("GET", f"/api/guarding/sensors{query}") or {}
+    return vms.call("GET", f"/api/control/objects{query}") or {}
 
 
-def check_guarding_panel(vms):
-    """The operator's guarding tab: a space's sensors, paged and with their effective arming.
+def control_object(vms, object_id):
+    """One object as the map's inspector asks for it: None when it is not an object it may drive."""
+    try:
+        return vms.call("GET", f"/api/control/objects/{object_id}")
+    except HttpError as e:
+        if e.status == 404:
+            return None
+        raise
 
-    The demo has two configured sensors, both on the first floor: the master's own (installed to
-    follow its disarmed camera) and sim-ptz's (installed armed). The check proves the server filters
-    by space and rights, pages by keyset, and reads the arming the same way the camera card does.
+
+def check_control_panel(vms):
+    """The operator's Control tab: a space's objects, paged, with what each one resolves to.
+
+    The demo has two configured sensors on the first floor, two cameras standing there and
+    sim-master's three relays. The check proves the server filters by space, kind and camera,
+    pages by keyset, resolves a node id (or a picture of it) to the object, and reads the arming
+    and the live state the same way the camera card does.
     """
-    print("Guarding panel")
+    print("Control panel")
 
     floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
     if not check(floor is not None, f"the demo has the space {BUILDING_NAME!r}"):
@@ -1099,65 +1114,149 @@ def check_guarding_panel(vms):
     if not check(site is not None, f"the demo has the map {MAP_NAME!r}"):
         return
 
-    page = guarding_sensors(vms, floor["id"])
-    rows = page.get("sensors") or []
-    check(sorted(row.get("name") for row in rows) == ["Master sensor", "Sensor"],
-          f"the floor lists its two configured sensors (has {[r.get('name') for r in rows]!r})")
-    check(all(row.get("sourceKind") == "camera" and row.get("partKind") == "digital_input"
-              and row.get("partToken") == ARMED_TOKEN for row in rows),
+    sensors = control_objects(vms, floor["id"], kind="digital_input").get("objects") or []
+    check(sorted(row.get("name") for row in sensors) == ["Master sensor", "Sensor"],
+          f"the floor lists its two configured sensors (has {[r.get('name') for r in sensors]!r})")
+    check(all(row.get("kind") == "digital_input" and row.get("sourceKind") == "camera"
+              and row.get("partToken") == ARMED_TOKEN for row in sensors),
           "each row is addressed by source and part token, not by a node id alone")
-    check(all(row.get("spaceName") == BUILDING_NAME for row in rows),
+    check(all(row.get("spaceName") == BUILDING_NAME for row in sensors),
           "each row is placed in the room its camera stands in")
+    check(all(row.get("state") in ("open", "closed", "", None) for row in sensors),
+          "a sensor row carries the contact the camera reports")
 
-    master = next((row for row in rows if row.get("sourceId") == camera_id(ARMED_CAMERA)), None)
-    sensor = next((row for row in rows if row.get("sourceId") == camera_id(SENSOR_CAMERA)), None)
+    master = next((row for row in sensors if row.get("sourceId") == camera_id(ARMED_CAMERA)), None)
+    sensor = next((row for row in sensors if row.get("sourceId") == camera_id(SENSOR_CAMERA)), None)
     if check(master is not None and sensor is not None,
              "both the master's sensor and the ptz's are listed"):
         check(master.get("configured") is True and master.get("canControl") is True,
               "the admin's row is configured and may be driven")
+        check(master.get("hasArming") is True, "a sensor row is guardable")
         check(master.get("armed") is False and master.get("armingSource") == "camera",
               "the master's sensor follows its disarmed camera")
         check(sensor.get("armed") is True and sensor.get("armingSource") == "explicit",
               "the ptz sensor is explicitly on guard")
 
+    # A camera is an object of its own, and what its row says is its own flag — not what a zone
+    # would make its sensors inherit.
+    cameras = control_objects(vms, floor["id"], kind="camera").get("objects") or []
+    camera_ids = {row.get("sourceId") for row in cameras}
+    check({camera_id(ARMED_CAMERA), camera_id(SENSOR_CAMERA)} <= camera_ids,
+          f"the floor lists the cameras that stand in it (has {sorted(camera_ids)!r})")
+    ptz_camera = next((row for row in cameras if row.get("sourceId") == camera_id(SENSOR_CAMERA)), None)
+    if ptz_camera is not None:
+        state = vms.call("GET", f"/api/cameras/{camera_id(SENSOR_CAMERA)}/state") or {}
+        check(ptz_camera.get("kind") == "camera" and ptz_camera.get("hasArming") is True,
+              "a camera row is armable like the card")
+        check(ptz_camera.get("armed") == state.get("armed"),
+              "a camera row reads the same flag the card reads")
+
+    relays = wait_until(
+        lambda: control_objects(vms, floor["id"], kind="relay").get("objects"), 30) or []
+    relay_tokens = {row.get("partToken") for row in relays}
+    if check({"lamp", "peer", "loop"} <= relay_tokens,
+             f"sim-master's relays are listed (has {sorted(relay_tokens)!r})"):
+        check(all(row.get("hasArming") is False for row in relays),
+              "a relay row is switched, not armed")
+        check(all(row.get("state") in ("active", "inactive", "", None) for row in relays),
+              "a relay row carries the state the camera reports")
+        lamp = next(row for row in relays if row.get("partToken") == LAMP_RELAY_TOKEN)
+        check(control_object(vms, lamp["objectId"]) is not None,
+              "the map's inspector resolves a relay node by id")
+
     # No space at all asks for everything the caller may see — the SQL takes another shape there
     # (no subtree), so it is worth a call of its own.
-    everything = guarding_sensors(vms).get("sensors") or []
-    check(set(row.get("objectId") for row in rows) <= set(row.get("objectId") for row in everything),
+    everything = control_objects(vms).get("objects") or []
+    check(set(row.get("objectId") for row in sensors) <= set(row.get("objectId") for row in everything),
           "an unfiltered page contains the floor's sensors")
 
     # The map above the floor is the same set through the subtree: the filter is not a canvas id.
-    nested = guarding_sensors(vms, site["id"]).get("sensors") or []
-    check(sorted(row.get("objectId") for row in nested)
-          == sorted(row.get("objectId") for row in rows),
+    nested = control_objects(vms, site["id"], kind="digital_input").get("objects") or []
+    check(sorted(row.get("objectId") for row in nested) == sorted(row.get("objectId") for row in sensors),
           "the map above lists the floor's sensors through the nested space")
 
-    nothing = guarding_sensors(vms, str(uuid.uuid4()))
-    check(not (nothing.get("sensors") or []) and nothing.get("hasMore") is False,
-          "a space with no sensors is an empty page")
+    # One device's objects, wherever they stand: the placement palette asks this way.
+    owned = control_objects(vms, for_camera=camera_id(ARMED_CAMERA)).get("objects") or []
+    check(all(row.get("sourceId") == camera_id(ARMED_CAMERA) for row in owned) and len(owned) >= 2,
+          "a camera filter answers with that device's camera and parts")
 
-    try:
-        vms.call("GET", "/api/guarding/sensors?spaceId=not-a-uuid")
-        check(False, "a malformed space id is refused")
-    except HttpError as e:
-        check(e.status == 400, f"a malformed space id is refused with 400 (got {e.status})")
+    nothing = control_objects(vms, str(uuid.uuid4()))
+    check(not (nothing.get("objects") or []) and nothing.get("hasMore") is False,
+          "a space with no objects is an empty page")
 
-    single = guarding_sensors(vms, floor["id"], page_size=1)
-    first_rows = single.get("sensors") or []
+    for bad in ("/api/control/objects?spaceId=not-a-uuid", "/api/control/objects?kind=door"):
+        try:
+            vms.call("GET", bad)
+            check(False, f"{bad} is refused")
+        except HttpError as e:
+            check(e.status == 400, f"{bad} is refused with 400 (got {e.status})")
+
+    single = control_objects(vms, floor["id"], kind="digital_input", page_size=1)
+    first_rows = single.get("objects") or []
     check(len(first_rows) == 1 and single.get("hasMore") is True,
           "a page of one reports that there is more")
-    second = guarding_sensors(vms, floor["id"], page_size=1, after=single.get("next"))
-    second_rows = second.get("sensors") or []
+    second = control_objects(vms, floor["id"], kind="digital_input", page_size=1,
+                             after=single.get("next"))
+    second_rows = second.get("objects") or []
     check(len(second_rows) == 1 and second.get("hasMore") is False,
           "the next page takes the other row and ends the list")
     check(first_rows and second_rows
           and first_rows[0].get("objectId") != second_rows[0].get("objectId"),
           "the pages share no row")
 
+    # The inspector's lookup: a node id is the object, and a picture of a camera is still the camera.
+    node, parts = device_nodes(vms, ARMED_CAMERA)
+    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    if check(part is not None, "the master sensor has a node of its own"):
+        row = control_object(vms, part["id"])
+        check(row is not None and row.get("objectId") == part["id"]
+              and row.get("kind") == "digital_input",
+              "a part's node id resolves to the same object row")
+    if node is not None:
+        picture = next((child for child in children(vms, floor["id"])
+                        if child.get("ownerId") == node["id"]), None)
+        if check(picture is not None, "the camera has a picture on the floor"):
+            row = control_object(vms, picture["id"])
+            check(row is not None and row.get("objectId") == node["id"]
+                  and row.get("kind") == "camera",
+                  "a picture resolves through its owner to the camera")
+
+    # The panel's camera switch is the same command the monitor card sends.
+    all_cameras = control_objects(vms, kind="camera").get("objects") or []
+    other = next((row for row in all_cameras if row.get("sourceId") == camera_id("sim-master2")), None)
+    if check(other is not None, "sim-master2 has a camera row"):
+        before = vms.call("GET", f"/api/cameras/{camera_id('sim-master2')}/state") or {}
+        try:
+            vms.call("PUT", f"/api/cameras/{camera_id('sim-master2')}/state",
+                     {"armed": not before.get("armed")})
+            flipped = wait_until(
+                lambda: (control_object(vms, other["objectId"]) or {}).get("armed")
+                == (not before.get("armed")), 20)
+            check(bool(flipped), "arming a camera from its row flips the flag the row shows")
+        finally:
+            vms.call("PUT", f"/api/cameras/{camera_id('sim-master2')}/state",
+                     {"armed": bool(before.get("armed"))})
+
+    # A relay's row follows what the camera reports, not only what was commanded.
+    if relays:
+        lamp = next((row for row in relays if row.get("partToken") == LAMP_RELAY_TOKEN), None)
+        if lamp is not None:
+            try:
+                set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, True)
+                lit = wait_until(
+                    lambda: (next((row for row in control_objects(vms, floor["id"], kind="relay")
+                                   .get("objects") or []
+                                   if row.get("partToken") == LAMP_RELAY_TOKEN), {}) or {})
+                    .get("state") == "active", 40)
+                check(bool(lit), "a relay row shows the state the camera reports")
+            finally:
+                set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, False)
+
     try:
         set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
         armed = wait_until(
-            lambda: next((row for row in guarding_sensors(vms, floor["id"]).get("sensors") or []
+            lambda: next((row for row in control_objects(vms, floor["id"], kind="digital_input")
+                          .get("objects") or []
                           if row.get("sourceId") == camera_id(ARMED_CAMERA)), None), 20)
         check(armed is not None and armed.get("armed") is True
               and armed.get("armingSource") == "explicit",
@@ -1165,7 +1264,8 @@ def check_guarding_panel(vms):
 
         set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "disarmed")
         disarmed = wait_until(
-            lambda: next((row for row in guarding_sensors(vms, floor["id"]).get("sensors") or []
+            lambda: next((row for row in control_objects(vms, floor["id"], kind="digital_input")
+                          .get("objects") or []
                           if row.get("sourceId") == camera_id(ARMED_CAMERA)
                           and row.get("armed") is False
                           and row.get("armingSource") == "explicit"), None), 20)
@@ -1612,7 +1712,7 @@ def main():
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
         check_operator_arming(vms)
-        check_guarding_panel(vms)
+        check_control_panel(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

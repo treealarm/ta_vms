@@ -15,14 +15,14 @@ namespace web_srv.Tests;
 // The gateway's one authorization boundary, and the row the operator's guard switch sits in it.
 // Inheriting `control` down the tree is VmsMap's answer and is tested there; this checks the
 // fail-closed contract of the filter, that every DeviceIo action declares what it needs, and that
-// the guarding list is a self-filtering read rather than a per-camera check.
+// the control list is a self-filtering read rather than a per-camera check.
 public class DeviceIoRightsTests
 {
   [Fact]
-  public void TheGuardingListFiltersItselfByViewLive()
+  public void TheControlListFiltersItselfByViewLive()
   {
-    var required = typeof(GuardingController)
-      .GetMethod(nameof(GuardingController.ListSensors))!
+    var required = typeof(ControlController)
+      .GetMethod(nameof(ControlController.ListObjects))!
       .GetCustomAttribute<RequiresRightAttribute>();
 
     Assert.NotNull(required);

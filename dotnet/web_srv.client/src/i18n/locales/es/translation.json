@@ -86,7 +86,7 @@
     "nodes": "Nodos",
     "eventRouting": "Enrutado de eventos",
     "map": "Mapa",
-    "guarding": "Vigilancia",
+    "control": "Control",
     "changePassword": "Cambiar contraseña",
     "deployment": "Despliegue"
   },
@@ -774,6 +774,7 @@
     "deviceIoGuardOnZone": "En guardia (zona)",
     "deviceIoGuardOffZone": "Sin guardia (zona)",
     "deviceIoGuardUnknown": "Estado de guardia desconocido",
+    "deviceIoGuardLabel": "Vigilancia",
     "deviceIoGuardHint": "Desarmar no reconoce ni cierra una alarma que ya está activa.",
     "deviceIoNoControl": "Sin derecho de control sobre esta cámara",
     "geoLocation": "Posición (ONVIF)",
@@ -1606,17 +1607,33 @@
       "other": "Otra"
     }
   },
-  "guarding": {
-    "title": "Vigilancia",
+  "control": {
+    "title": "Control",
     "space": "Espacio",
+    "allSpaces": "Todos los espacios",
     "spaceHint": "El espacio y todo lo que contiene.",
-    "sensor": "Sensor",
-    "camera": "Cámara",
-    "spaceColumn": "Espacio",
+    "kindAll": "Todo",
+    "kindCamera": "Cámaras",
+    "kindSensor": "Sensores",
+    "kindRelay": "Relés",
+    "kindLabel": {
+      "camera": "Cámara",
+      "digital_input": "Sensor",
+      "relay": "Relé"
+    },
+    "state": "Estado",
+    "stateOpen": "Abierto",
+    "stateClosed": "Cerrado",
+    "stateActive": "Activo",
+    "stateInactive": "Inactivo",
+    "stateUnknown": "Aún sin reportar",
     "guard": "Vigilancia",
-    "empty": "No hay sensores en este espacio.",
+    "relay": "Relé",
+    "alarmEnabled": "Este sensor genera una alarma.",
+    "empty": "No hay nada que controlar en este espacio.",
     "more": "Cargar más",
     "loaded": "{{count}} mostrados",
+    "nothingSelected": "Selecciona un objeto para ver qué puedes hacer con él.",
     "notConfigured": "Este sensor aún no tiene configuración: un administrador debe configurarlo."
   }
 }
