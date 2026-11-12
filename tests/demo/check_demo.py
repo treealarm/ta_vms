@@ -1276,6 +1276,89 @@ def check_control_panel(vms):
             set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
 
 
+def place_part_picture(vms, part_id, floor_id, name, lat, lon):
+    """A part's replica on a plan, as the administrator places one: the node, its point, its look."""
+    picture = vms.call("POST", "/api/map/admin/replicas", {
+        "ownerId": part_id,
+        "parentId": floor_id,
+        "name": name,
+    })
+    if not picture or not picture.get("id"):
+        return None
+
+    vms.call("PUT", "/api/map/admin/figures", {
+        "figs": [{
+            "id": picture["id"],
+            "parentId": floor_id,
+            "ownerId": part_id,
+            "name": name,
+            "geometry": {"type": "Point", "coord": [{"lat": lat, "lon": lon}]},
+        }],
+    })
+    vms.call("PUT", "/api/map/admin/visual", {
+        "visuals": [{"objectId": picture["id"], "color": "#26a69a", "text": name}],
+    })
+    return picture
+
+
+def check_part_replica(vms, sensor):
+    """A part placed on a plan is a replica of the part's node, and the map acts on the part.
+
+    A sensor is placed the way a camera is: a replica under the plan with a point of its own. The
+    replica is not a second device — its owner is the part, it carries no camera placement, the
+    inspector reads it back as the part, and arming through the picture arms the real input.
+    Deleting the picture leaves the part; only the camera's own deletion takes both.
+    """
+    print("Part replicas on a plan")
+
+    part = sensor["part"]
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if not check(floor is not None, f"the demo has the space {BUILDING_NAME!r}"):
+        return
+
+    reference = next((p for p in placements(vms)
+                      if p.get("cameraId") == camera_id(ARMED_CAMERA)), None)
+    lat = (reference or {}).get("lat") or 38.99285
+    lon = (reference or {}).get("lon") or -76.93783
+
+    picture = None
+    try:
+        picture = place_part_picture(vms, part["id"], floor["id"], "Sensor (plan)",
+                                     lat + 0.00002, lon + 0.00002)
+        if not check(picture is not None, "the plan takes a replica of a part"):
+            return
+
+        row = marker(vms, picture["id"])
+        check(row is not None and row.get("ownerId") == part["id"] and row.get("nodeKind") == "part",
+              "the picture is a part of the device, not a second device")
+        check(row.get("parentId") == floor["id"], "the picture stands in the room it was placed in")
+        check(not row.get("cameraId"), "a part's picture is not a camera placement")
+
+        through = control_object(vms, picture["id"])
+        check(through is not None and through.get("objectId") == part["id"]
+              and through.get("kind") == "digital_input",
+              "the inspector's read of the picture answers the part")
+
+        set_arm_mode(vms, SENSOR_CAMERA, SENSOR_TOKEN, "disarmed")
+        disarmed = wait_until(
+            lambda: (control_object(vms, picture["id"]) or {}).get("armed") is False, 20)
+        check(bool(disarmed), "the picture shows the sensor it shows going off guard")
+        set_arm_mode(vms, SENSOR_CAMERA, SENSOR_TOKEN, "armed")
+        armed = wait_until(
+            lambda: (control_object(vms, picture["id"]) or {}).get("armed") is True, 20)
+        check(bool(armed), "acting on the command turns the sensor on guard")
+    finally:
+        # sim-ptz's input is installed armed; the step leaves it that way.
+        set_arm_mode(vms, SENSOR_CAMERA, SENSOR_TOKEN, "armed")
+        if picture and picture.get("id"):
+            vms.call("DELETE", "/api/map/admin/objects", {"ids": [picture["id"]]})
+
+    if picture and picture.get("id"):
+        check(bool(wait_until(lambda: marker(vms, picture["id"]) is None, 20)),
+              "removing the picture leaves the plan")
+    check(marker(vms, part["id"]) is not None, "the part's own node is untouched by the picture")
+
+
 def sensor_settings_row(vms, name, token):
     """The administrator's settings row of one part, as the settings endpoint reports it."""
     return next((row for row in device_settings(vms, camera_id(name))
@@ -1549,12 +1632,20 @@ def check_cleanup(vms, sensor):
 
 
 def check_camera_removal_cascade(vms, sensor):
-    """Deleting the camera takes its part nodes with it; the world never owned them."""
+    """Deleting the camera takes its part nodes and their pictures with it."""
     part_id = sensor["part"]["id"]
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    picture = place_part_picture(vms, part_id, floor["id"], "Sensor (plan)", 38.99285, -76.93783) \
+        if floor is not None else None
+
     vms.delete_camera(camera_id(SENSOR_CAMERA))
 
     gone = wait_until(lambda: not map_search(vms, camera_id(SENSOR_CAMERA)), 60)
     check(bool(gone), "deleting the camera removes its nodes from the logical tree")
+    if picture and picture.get("id"):
+        check(bool(wait_until(lambda: marker(vms, picture["id"]) is None, 30)),
+              "deleting the camera removes the pictures of its parts")
     check(not any(alarm.get("objectId") == part_id
                   for branch in ("open", "closed")
                   for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []),
@@ -1717,6 +1808,7 @@ def main():
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
+            check_part_replica(vms, sensor)
             since = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
             alarm = check_sensor_alarm(vms, sensor)
             if alarm is not None:

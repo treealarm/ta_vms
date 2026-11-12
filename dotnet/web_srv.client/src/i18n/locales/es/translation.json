@@ -1402,6 +1402,7 @@
     "planTooLarge": "La imagen del plano no puede superar {{mb}} MB",
     "planUnreadable": "El navegador no puede leer este archivo como imagen",
     "placeHint": "Haga clic en el mapa para colocar {{name}}",
+    "placePartHint": "Haga clic en el mapa para colocar {{name}} (a part of the device)",
     "landmarkModeHint": "Haga clic en el mapa para añadir un punto de referencia",
     "planModeHint": "Arrastre ✥ para mover el plano, ⟳ para girarlo, ⤡ para cambiar su tamaño, o escriba su ancho",
     "cameras": "Cámaras",
@@ -1419,7 +1420,8 @@
       "input": "entrada digital",
       "relay": "relé",
       "loading": "Leyendo las partes del dispositivo…",
-      "noParts": "Este dispositivo no declara partes"
+      "noParts": "Este dispositivo no declara partes",
+      "here": "colocada aquí"
     },
     "notPlaced": "Sin colocar",
     "cameraHeight": "Altura, m",

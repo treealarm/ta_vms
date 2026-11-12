@@ -1403,6 +1403,7 @@
     "planTooLarge": "A plan image may not exceed {{mb}} MB",
     "planUnreadable": "This file is not an image the browser can read",
     "placeHint": "Click the map to place {{name}}",
+    "placePartHint": "Click the map to place {{name}} (a part of the device)",
     "landmarkModeHint": "Click the map to add a landmark",
     "planModeHint": "Drag ✥ to move the plan, ⟳ to turn it, ⤡ to resize it — or type its width",
     "cameras": "Cameras",
@@ -1420,7 +1421,8 @@
       "input": "digital input",
       "relay": "relay",
       "loading": "Reading the device's parts…",
-      "noParts": "This device declares no parts"
+      "noParts": "This device declares no parts",
+      "here": "placed here"
     },
     "notPlaced": "Not placed",
     "cameraHeight": "Height, m",

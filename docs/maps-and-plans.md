@@ -108,7 +108,12 @@ Conventions that hold everywhere:
   placed at all**: it exists as a canonical node the moment it is configured, and its parts —
   digital inputs and relays — are canonical nodes under it. That is the tree **Admin → Nodes**
   shows in full and **Admin → Maps → Devices** offers for placement; the map's **Nodes** tab shows
-  only what is drawn on the open space, pictures included.
+  only what is drawn on the open space, pictures included. **A part may be drawn too.** A digital
+  input or a relay placed from the palette is an ordinary replica of the part's node: a point on
+  the space, a name and a colour of its own, no placement row and no camera binding. It shows what
+  the owner reports and offers the same actions as the Control panel; it counts no alarm of its
+  own, because the room counts the alarm of the camera it stands in, once. Removing the picture
+  leaves the part; removing the camera takes the part and every picture of it.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.

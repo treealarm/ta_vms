@@ -99,7 +99,7 @@ export default function SpaceEditor({
 
   const {
     mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
-    pendingDiagramId, setPendingDiagramId, focus, select,
+    pendingDiagramId, setPendingDiagramId, pendingPart, setPendingPart, focus, select,
     sideTab, setSideTab, openDiagramId, openDiagram, showInTree, focusOn,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
@@ -400,6 +400,28 @@ export default function SpaceEditor({
       setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
       return
     }
+    if (pendingPart && spaceId) {
+      // A part has no placement row of its own: the replica is an ordinary picture of the part's
+      // node, and its colour says which kind of contact it is. The name is the part's, so the map
+      // says "Master sensor" and not the replica's generated name.
+      const part = pendingPart
+      setPendingPart(null)
+      void run(async () => {
+        const marker = await dispatch(createReplicaAt({
+          ownerId: part.id,
+          parentId: spaceId,
+          lat: at.lat,
+          lon: at.lon,
+          name: part.name,
+          visual: {
+            color: part.kind === 'relay' ? '#ffb300' : '#26a69a',
+            text: part.name,
+          },
+        })).unwrap()
+        setSelection({ kind: 'node', id: marker.id })
+      })
+      return
+    }
     if (pendingDiagramId) {
       // The diagram is the camera's, standing where it was asked for: one per device, so this
       // either draws it here or brings the one it has to this point.
@@ -500,7 +522,9 @@ export default function SpaceEditor({
   const planCorners = draftCorners ?? plan?.corners
   const planWidthM = plan && planCorners ? distance(planCorners.topLeft, planCorners.topRight) : 0
 
-  const hint = pendingDiagramId
+  const hint = pendingPart
+    ? t('maps.placePartHint', { name: pendingPart.name })
+    : pendingDiagramId
     ? t('diagramEditor.placeDiagramHint', { name: camerasById[pendingDiagramId]?.name || pendingDiagramId })
     : pendingCameraId
     ? t('maps.placeHint', { name: camerasById[pendingCameraId]?.name || pendingCameraId })
@@ -726,6 +750,7 @@ export default function SpaceEditor({
               setMode(v)
               setPendingCameraId(null)
               setPendingDiagramId(null)
+              setPendingPart(null)
               setDraftPoints(null)
             }}
           >
@@ -746,8 +771,12 @@ export default function SpaceEditor({
               {hint}
             </Typography>
           )}
-          {(pendingCameraId || pendingDiagramId) && (
-            <Button size="small" onClick={() => { setPendingCameraId(null); setPendingDiagramId(null) }}>
+          {(pendingCameraId || pendingDiagramId || pendingPart) && (
+            <Button size="small" onClick={() => {
+              setPendingCameraId(null)
+              setPendingDiagramId(null)
+              setPendingPart(null)
+            }}>
               {t('common.cancel')}
             </Button>
           )}

@@ -419,4 +419,33 @@ public class DeviceNodeTests
     Assert.Empty(await s.Db.Markers.Where(m => ids.Contains(m.id)).ToListAsync());
     Assert.Empty(await s.Db.DeviceNodes.Where(n => n.source_id == device.CameraId).ToListAsync());
   }
+
+  // A sensor placed on a plan is a replica of the part's node, and `owner_id` has no foreign key:
+  // the picture has to be taken explicitly, or it outlives the part it shows.
+  [Fact]
+  public async Task DeletingACameraRemovesThePicturesOfItsParts()
+  {
+    var s = Create();
+    var device = await SeedDeviceAsync(s);
+
+    var space = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = space.ToString(), name = "Room" },
+    ]);
+    var picture = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = picture.ToString(),
+        parent_id = space.ToString(),
+        owner_id = device.DigitalInput,
+        name = "Sensor picture",
+      },
+    ]);
+
+    await s.Nodes.RemoveCameraAsync(device.CameraId, CancellationToken.None);
+
+    Assert.Empty(await s.Db.Markers.Where(m => m.id == picture).ToListAsync());
+    Assert.Single(await s.Db.Markers.Where(m => m.id == space).ToListAsync());
+  }
 }

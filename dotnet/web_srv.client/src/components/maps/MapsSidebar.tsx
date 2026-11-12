@@ -8,9 +8,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import PlaceIcon from '@mui/icons-material/Place'
 import DashboardCustomizeIcon from '@mui/icons-material/DashboardCustomize'
 import { useTranslation } from 'react-i18next'
-import { apiFetch } from '../../api/apiFetch'
-import { enc } from '../../api/requestJson'
-import type { DigitalInputDto, RelayOutputDto, SpaceDto } from '../../dto/dtos'
+import { listControlObjects } from '../../api/controlApi'
+import type { ControlObjectDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren, revealNodePath } from '../../store/objectsSlice'
@@ -186,16 +185,15 @@ type DeviceParts = {
   loading: boolean
   loaded: boolean
   error?: string
-  inputs: DigitalInputDto[]
-  relays: RelayOutputDto[]
+  rows: ControlObjectDto[]
 }
 
 /**
  * The placement palette: every physical device, by server, each saying where it is with respect to
  * this space, and — once opened — the parts it declares. One placed here is selected; one placed
  * elsewhere, or nowhere, is armed for the next click on the map, which makes another picture (the
- * service makes the first one the camera's reference). Parts are shown to be found and are not
- * placed in M2.4; their replicas are M2.6.
+ * service makes the first one the camera's reference). A part is placed the same way: the click
+ * makes an ordinary replica of the part's node, and the map is where an operator then acts on it.
  */
 function DevicesList({ space }: { space: SpaceDto }) {
   const { t } = useTranslation()
@@ -203,26 +201,39 @@ function DevicesList({ space }: { space: SpaceDto }) {
   const servers = useAppSelector((s) => s.live.servers)
   const placements = useAppSelector((s) => s.spatial.placements)
   const spaces = useAppSelector((s) => s.spatial.spaces)
-  const { selection, pendingCameraId, setPendingCameraId, setMode, select } = useEditorState()
+  // What is already drawn on this canvas, to say "placed here" about a part.
+  const canvasIds = useAppSelector((s) => (space.id ? s.objects.canvases[space.id]?.ids : undefined))
+  const figuresById = useAppSelector((s) => s.objects.figures)
+  const {
+    selection, pendingCameraId, setPendingCameraId, pendingPart, setPendingPart, setMode, select,
+  } = useEditorState()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [parts, setParts] = useState<Record<string, DeviceParts>>({})
 
+  const placedOwners = useMemo(() => {
+    const owners = new Set<string>()
+    for (const id of canvasIds ?? []) {
+      const owner = figuresById[id]?.ownerId
+      if (owner) owners.add(owner)
+    }
+    return owners
+  }, [canvasIds, figuresById])
+
   // One request per device, and only when the reader opens it: at a hundred thousand cameras a
-  // part list fetched for the whole palette would be a hundred thousand requests.
+  // part list fetched for the whole palette would be a hundred thousand requests. The parts come
+  // from the control list, which already knows their nodes — a replica needs the node to own.
   const loadParts = useCallback(async (cameraId: string) => {
     if (parts[cameraId]?.loading || parts[cameraId]?.loaded) return
-    setParts((prev) => ({ ...prev, [cameraId]: { loading: true, loaded: false, inputs: [], relays: [] } }))
+    setParts((prev) => ({ ...prev, [cameraId]: { loading: true, loaded: false, rows: [] } }))
     try {
-      const [inputs, relays] = await Promise.all([
-        apiFetch<DigitalInputDto[]>(`/api/DeviceIo/cameras/${enc(cameraId)}/digital-inputs`),
-        apiFetch<RelayOutputDto[]>(`/api/DeviceIo/cameras/${enc(cameraId)}/relay-outputs`),
-      ])
-      setParts((prev) => ({ ...prev, [cameraId]: { loading: false, loaded: true, inputs, relays } }))
+      const page = await listControlObjects({ cameraId, pageSize: 200 })
+      const rows = (page.objects ?? []).filter((row) => row.kind !== 'camera')
+      setParts((prev) => ({ ...prev, [cameraId]: { loading: false, loaded: true, rows } }))
     } catch (e) {
       setParts((prev) => ({
         ...prev,
         [cameraId]: {
-          loading: false, loaded: true, inputs: [], relays: [],
+          loading: false, loaded: true, rows: [],
           error: e instanceof Error ? e.message : String(e),
         },
       }))
@@ -298,8 +309,8 @@ function DevicesList({ space }: { space: SpaceDto }) {
 
         if (!open) continue
 
-        // Streams come with the camera's own configuration; the I/O parts come from the camera
-        // through VmsOnvif, because the browser does not subscribe to the device topic.
+        // Streams come with the camera's own configuration; the I/O parts come from the control
+        // list, which is also what the operator's panel reads.
         for (const stream of c.streams ?? []) {
           items.push({
             key: `stream:${c.cameraId}:${stream.streamName}`,
@@ -316,32 +327,32 @@ function DevicesList({ space }: { space: SpaceDto }) {
         } else if (own.error) {
           items.push({ key: `parts:${c.cameraId}`, primary: own.error, indent: true, ...inactive })
         } else {
-          for (const input of own.inputs) {
+          for (const part of own.rows) {
+            const kind = part.kind === 'relay' ? 'relay' : 'digital_input'
+            const kindLabel = t(kind === 'relay' ? 'maps.devices.relay' : 'maps.devices.input')
             items.push({
-              key: `input:${c.cameraId}:${input.token}`,
-              primary: input.token,
-              secondary: t('maps.devices.input'),
+              key: `${kind}:${part.objectId}`,
+              primary: part.name || part.partToken,
+              secondary: placedOwners.has(part.objectId)
+                ? `${kindLabel} · ${part.partToken} · ${t('maps.devices.here')}`
+                : `${kindLabel} · ${part.partToken}`,
               indent: true,
-              ...inactive,
+              selected: pendingPart?.id === part.objectId,
+              onClick: () => {
+                setMode('select')
+                setPendingPart({ id: part.objectId, name: part.name || part.partToken, kind })
+              },
             })
           }
-          for (const relay of own.relays) {
-            items.push({
-              key: `relay:${c.cameraId}:${relay.token}`,
-              primary: relay.token,
-              secondary: t('maps.devices.relay'),
-              indent: true,
-              ...inactive,
-            })
-          }
-          if (own.inputs.length === 0 && own.relays.length === 0 && (c.streams ?? []).length === 0)
+          if (own.rows.length === 0 && (c.streams ?? []).length === 0)
             items.push({ key: `parts:${c.cameraId}`, primary: t('maps.devices.noParts'), indent: true, ...inactive })
         }
       }
 
       return { title: g.title, items }
     })
-  }, [camerasById, servers, placements, spaces, space.id, selection, pendingCameraId, select, setMode, setPendingCameraId, t, expanded, parts, toggle])
+  }, [camerasById, servers, placements, spaces, space.id, selection, pendingCameraId, pendingPart,
+    select, setMode, setPendingCameraId, setPendingPart, t, expanded, parts, toggle, placedOwners])
 
   return (
     <>

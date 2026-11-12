@@ -122,6 +122,24 @@ namespace VmsMap.Adapter
         .Select(m => m.id)
         .ToListAsync(ct);
 
+      // A part may be drawn as well — a sensor or a relay placed on a plan is a replica of the
+      // part's node, and `owner_id` has no foreign key to take it along. The rows are still there:
+      // the device_node range below is removed after this read.
+      var partIds = await _db.DeviceNodes
+        .Where(n => n.source_kind == DeviceObjectId.CameraSource
+                    && n.source_id == cameraId
+                    && n.part_kind != DeviceObjectId.DevicePart)
+        .Select(n => n.object_id)
+        .ToListAsync(ct);
+      if (partIds.Count > 0)
+      {
+        var partReplicas = await _db.Markers
+          .Where(m => m.owner_id != null && partIds.Contains(m.owner_id.Value))
+          .Select(m => m.id)
+          .ToListAsync(ct);
+        replicaIds.AddRange(partReplicas);
+      }
+
       // A device's diagrams hang under its node without a foreign key to lean on — `parent_id`
       // has none — so they are collected here and deleted with it.
       var diagramIds = await _db.DeviceDiagrams
