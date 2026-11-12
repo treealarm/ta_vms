@@ -46,6 +46,11 @@ SENSOR_CAMERA = "sim-ptz"
 SENSOR_TOKEN = "input"
 LAMP_RELAY_CAMERA = "sim-master"
 LAMP_RELAY_TOKEN = "lamp"
+# The operator's own sensor: sim-master's input, wired to its `loop` relay in the same simulator
+# world. It is installed following its camera, so the operator's switch is what arms it.
+ARMED_CAMERA = "sim-master"
+ARMED_TOKEN = "input"
+ARMED_RELAY_TOKEN = "loop"
 
 
 def camera_id(name):
@@ -131,6 +136,19 @@ def input_live(vms, name, token):
     return None if row is None else row.get("liveActive")
 
 
+def digital_input_row(vms, name, token):
+    """One input as the operator's card sees it: its mode, its effective arming and the right."""
+    rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
+    return next((candidate for candidate in rows if candidate.get("token") == token), None)
+
+
+def set_arm_mode(vms, name, token, mode):
+    """The operator's guard switch, as the browser sends it: the mode and nothing else."""
+    vms.call("PUT",
+             f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs/{token}/arm-mode",
+             {"armMode": mode})
+
+
 # ── The logical tree, the journal, alarms and the device settings ────────────────
 
 
@@ -186,10 +204,16 @@ def set_device_settings(vms, camera_uuid, settings):
 
 
 def device_io_ready(vms, name):
-    """Whether the camera's inputs report a live state: a re-added camera needs a moment before
-    VmsOnvif's watcher is back, and a check that starts before it would read nothing."""
+    """Whether the camera's inputs and relays report a live state.
+
+    A camera that was just added, or a stack that just started, needs a moment before VmsOnvif's
+    watcher has heard from the device; a check that starts before that reads nothing and would
+    report the demo broken rather than slow."""
     rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
-    return all(row.get("liveActive") is not None for row in rows)
+    rows += vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/relay-outputs") or []
+    # An empty list is not readiness: a camera just added has no parts until the device declares
+    # them, and `all([])` would call that ready and let the next check read nothing.
+    return bool(rows) and all(row.get("liveActive") is not None for row in rows)
 
 
 def events_of(vms, object_id, event_name=None):
@@ -395,10 +419,13 @@ def walk_the_world(vms):
         return None
 
     # The four racks are regions of the floor's schematic, and every rack is filled with switches.
+    # An administrator may draw something else on the same diagram, so the world's racks are what
+    # is checked for, not the absence of anything else.
     layout_racks = children(vms, layout["id"])
     expected_racks = {f"Rack A-{index:02}" for index in range(1, 5)}
-    check({r.get("name") for r in layout_racks} == expected_racks,
-          f"the floor diagram shows Rack A-01 … A-04 (got {sorted(r.get('name') for r in layout_racks)})")
+    drawn = {r.get("name") for r in layout_racks}
+    check(expected_racks <= drawn,
+          f"the floor diagram shows Rack A-01 … A-04 (got {sorted(drawn)})")
 
     rack = by_name(vms, layout_racks, "Rack A-01")
     if not check(rack is not None and rack.get("nodeKind") == "diagram",
@@ -482,8 +509,9 @@ def check_positions(vms, world):
     check(not layout.get("regionId"), "the floor diagram stands by its own rectangle on the floor")
 
     # Every rack fills a region of the floor's schematic, and keeps a canvas of its own inside it.
-    # The children come back unordered; the rack's own name says which region it fills.
-    for rack in world["layout_racks"]:
+    # The children come back unordered; the rack's own name says which region it fills. Anything
+    # else on the diagram is an administrator's, not the world's, and is left alone.
+    for rack in [r for r in world["layout_racks"] if (r.get("name") or "").startswith("Rack A-")]:
         index = int(rack["name"].rsplit("-", 1)[1])
         placed = diagrams.get(rack["id"], {})
         check(placed.get("regionId") == f"rack-{index}",
@@ -859,14 +887,16 @@ def check_wired_devices(vms, sim):
     which is where the map's readings used to come from — and the simulator's own lamp, which is
     not a device with a state, so its rule (any wired relay closed) is applied to its world.
     """
-    if not check(relay_live(vms, LAMP_RELAY_CAMERA, "peer") is not None
-                 and input_live(vms, SENSOR_CAMERA, SENSOR_TOKEN) is not None,
-                 "the demo starts with a relay and a sensor the cameras report"):
+    # A camera that was deleted and re-provisioned by an earlier run needs a moment before its
+    # watcher has heard from the device: wait for the readings rather than call the demo broken.
+    ready = wait_until(
+        lambda: relay_live(vms, LAMP_RELAY_CAMERA, "peer") is not None
+        and input_live(vms, SENSOR_CAMERA, SENSOR_TOKEN) is not None, 60)
+    if not check(bool(ready), "the demo starts with a relay and a sensor the cameras report"):
         return
 
     def switch(active):
         set_relay(vms, camera_id("sim-master"), "peer", active)
-        set_relay(vms, camera_id("sim-master"), "lamp", active)
         # The camera's event (its pull point is polled), then VmsOnvif's cache. Polling for the
         # reading rather than sleeping a fixed time keeps a slower source from turning into a false
         # failure. The input's idle state is open, so the closed circuit is its active state.
@@ -878,14 +908,22 @@ def check_wired_devices(vms, sim):
           "the relay reports itself closed")
     check(input_live(vms, SENSOR_CAMERA, SENSOR_TOKEN) is True,
           "the wired sensor reads 1 (active) while the relay is closed")
-    check(lamp_lit(sim_world(sim), "alert") is True, "the lamp in the simulator lights up")
+
+    # The lamp is lit by the demo's routing rule, not by this script: the closed contact makes the
+    # rule drive the lamp relay. Waiting for it here both proves that delivery and gets it out of
+    # the way — a rule action landing after the off phase below would relight the lamp and look
+    # like a broken wire. The lamp itself is the simulator's derivation, so poll it.
+    check(bool(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is True, 60)),
+          "the demo rule lights the lamp in the simulator")
 
     switch(False)
+    set_relay(vms, camera_id("sim-master"), "lamp", False)
     check(relay_live(vms, LAMP_RELAY_CAMERA, "peer") is False,
           "the relay reports itself open again")
     check(input_live(vms, SENSOR_CAMERA, SENSOR_TOKEN) is False,
           "the sensor returns to 0 (idle)")
-    check(lamp_lit(sim_world(sim), "alert") is False, "the lamp goes dark again")
+    check(bool(wait_until(lambda: lamp_lit(sim_world(sim), "alert") is False, 20)),
+          "the lamp goes dark again")
 
 
 def check_vehicle_picture(sim):
@@ -932,6 +970,110 @@ def check_provisioning(vms):
           "the demo's sensor-recording rule is installed and enabled")
 
 
+def check_operator_arming(vms):
+    """The operator's guard switch on a camera's own sensor.
+
+    The demo installs `sim-master/input` following its camera and wired to the `loop` relay. This
+    arms it from the card, trips it through the relay, and proves the two invariants an operator
+    relies on: a repeated arming raises no second alarm, and disarming lets an acknowledgement
+    through without taking the alarm away.
+
+    Everything it changes is put back in `finally`: a failure halfway through must not leave the
+    demo with a sensor on guard, a relay closed and an alarm active.
+    """
+    print("Operator arming")
+
+    def row():
+        return digital_input_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+
+    # The part's node is the adapter's work, from the device's first snapshot: until it exists the
+    # effective arming is unknown, and that is what `armingSource` says.
+    listed = wait_until(lambda: (row() or {}).get("armingSource"), 45)
+    if not check(bool(listed), "sim-master/input resolves an arming source"):
+        return
+
+    node, parts = device_nodes(vms, ARMED_CAMERA)
+    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    if not check(part is not None, "the master sensor is a node under the camera"):
+        return
+    ancestors = ancestor_chain(vms, part)
+
+    initial = row()
+    check(initial.get("armMode") == "inherit",
+          f"the sensor starts configured to follow its camera (has {initial.get('armMode')!r})")
+    check(initial.get("armed") is False and initial.get("armingSource") == "camera",
+          "an inherit sensor on a disarmed camera reads off guard, from the camera")
+    check(initial.get("alarmEnabled") is True, "the sensor alarms on its contact")
+    check(initial.get("canControl") is True, "the demo's admin may control the camera")
+
+    try:
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+        armed = wait_until(lambda: (row() or {}).get("armMode") == "armed"
+                           and (row() or {}).get("armed") is True
+                           and (row() or {}).get("armingSource") == "explicit", 30)
+        check(bool(armed), "arming writes 'armed' and the effective state follows at once")
+
+        relay_on = camera_id(ARMED_CAMERA)
+        before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
+        set_relay(vms, relay_on, ARMED_RELAY_TOKEN, True)
+        wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is True, 40)
+        event = wait_until(
+            lambda: next((e for e in sensor_events(vms, part["id"], "closed")
+                          if e["id"] not in before), None), 45)
+        check(event is not None, "closing `loop` writes one `sensor` event with contact=closed")
+
+        alarm = wait_until(lambda: active_alarm(vms, part["id"]), 30)
+        if check(alarm is not None, "the armed sensor raises an active alarm"):
+            for caused in [part] + ancestors:
+                wait_until(lambda target=caused: alarm_reaches(vms, target["id"]), 20)
+                check(alarm_reaches(vms, caused["id"]),
+                      f"ALARM reaches {caused.get('name') or caused['id']}")
+
+            # The same command again is not a second arming: the alarm is deduplicated by its key,
+            # so a lost or repeated notification cannot double it.
+            set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+            time.sleep(3)
+            open_rows = [row for row in (alarms(vms).get("open") or {}).get("alarms") or []
+                         if row.get("objectId") == part["id"]]
+            check(len(open_rows) == 1,
+                  f"arming again keeps exactly one alarm (has {len(open_rows)})")
+
+            status = acknowledge(vms, alarm["id"])
+            check(status == 409, f"acknowledging while armed answers 409 (got {status})")
+
+            set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "disarmed")
+            disarmed = wait_until(lambda: (row() or {}).get("armed") is False, 30)
+            check(bool(disarmed), "disarming reads off guard")
+            status = wait_until(lambda: acknowledge(vms, alarm["id"]) == 200, 25)
+            check(bool(status), "acknowledging after disarming succeeds")
+            check(is_alarmed(vms, part["id"]),
+                  "acknowledging does not take ALARM away: the condition still holds")
+
+            # The contact returning is what closes the alarm, on a disarmed sensor as on an armed one.
+            opened = {e["id"] for e in sensor_events(vms, part["id"], "open")}
+            set_relay(vms, relay_on, ARMED_RELAY_TOKEN, False)
+            wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)
+            returned = wait_until(
+                lambda: next((e for e in sensor_events(vms, part["id"], "open")
+                              if e["id"] not in opened), None), 45)
+            check(returned is not None, "opening `loop` writes a `sensor` event with contact=open")
+            check(bool(wait_until(lambda: not is_alarmed(vms, part["id"]), 40)),
+                  "ALARM leaves the sensor when the contact returns")
+    finally:
+        try:
+            set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+        finally:
+            restore = sensor_settings_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+            if restore:
+                set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
+
+
+def sensor_settings_row(vms, name, token):
+    """The administrator's settings row of one part, as the settings endpoint reports it."""
+    return next((row for row in device_settings(vms, camera_id(name))
+                 if row.get("kind") == "digital_input" and row.get("token") == token), None)
+
+
 def check_sensor_in_the_tree(vms):
     """A part is a node of its own, visible under its camera, and placed nowhere."""
     node, parts = device_nodes(vms, SENSOR_CAMERA)
@@ -958,9 +1100,14 @@ def check_sensor_in_the_tree(vms):
 def check_sensor_alarm(vms, sensor):
     """The contact becomes the alarm, and ALARM bubbles up the canonical tree."""
     part = sensor["part"]
+    # The journal keeps its rows when a camera is deleted and re-added, so an old `closed` event
+    # must not stand in for this front: only an event the command below caused can prove anything.
+    before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "closed"), 45)
+    event = wait_until(
+        lambda: next((e for e in sensor_events(vms, part["id"], "closed")
+                      if e["id"] not in before), None), 45)
     check(event is not None, "the peer relay closing writes one `sensor` event with contact=closed")
 
     # An earlier front (the wired-relay check above) may have left the same alarm open and
@@ -1015,9 +1162,12 @@ def check_ack_after_disarm(vms, sensor, alarm):
 def check_return_to_normal(vms, sensor, alarm):
     """The contact coming back ends the alarm and takes ALARM off the node and its ancestors."""
     part = sensor["part"]
+    before = {event["id"] for event in sensor_events(vms, part["id"], "open")}
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
 
-    event = wait_until(lambda: sensor_events(vms, part["id"], "open"), 45)
+    event = wait_until(
+        lambda: next((e for e in sensor_events(vms, part["id"], "open")
+                      if e["id"] not in before), None), 45)
     check(event is not None, "the contact returning writes a `sensor` event with contact=open")
 
     row = wait_until(
@@ -1079,8 +1229,10 @@ def check_repeat_front(vms, sensor, group, since):
     before = {episode.get("cameraId"): episode.get("eventUuid")
               for episode in (group or {}).get("episodes") or []}
 
+    before_fronts = len(sensor_events(vms, part["id"], "closed"))
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
-    check(bool(wait_until(lambda: len(sensor_events(vms, part["id"], "closed")) >= 2, 45)),
+    check(bool(wait_until(
+        lambda: len(sensor_events(vms, part["id"], "closed")) > before_fronts, 45)),
           "a second front writes a second `sensor` event")
 
     extended = wait_until(lambda: demo_group(vms, since), 30)
@@ -1160,13 +1312,18 @@ def check_emit_loop(vms, sensor):
 
 
 def check_cleanup(vms, sensor):
-    """Leaves the world as it was installed: relay off, the input armed again."""
+    """Leaves the world as it was installed: relays off, each sensor back to its own mode."""
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, False)
+    set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
 
     row = sensor_settings(vms)
     if row:
         set_device_settings(vms, camera_id(SENSOR_CAMERA), {**row, "armMode": "armed"})
+
+    master = sensor_settings_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+    if master:
+        set_device_settings(vms, camera_id(ARMED_CAMERA), {**master, "armMode": "inherit"})
 
 
 def check_camera_removal_cascade(vms, sensor):
@@ -1316,6 +1473,11 @@ def main():
     if not sim_up:
         warn(f"OnvifSim is not answering at {args.sim_url}: skipped the lamp and picture checks")
     if sim_up:
+        # The device checks below read what the camera last said, and a stack that just started
+        # has not been told yet: wait for it rather than reporting a slow first read as a fault.
+        for name in (LAMP_RELAY_CAMERA, SENSOR_CAMERA):
+            if not wait_until(lambda name=name: device_io_ready(vms, name), 90):
+                warn(f"{name}'s device I/O is still not reporting")
         print("The moving camera")
         check_vehicle_picture(sim)
         print("Wired relays and the lamp")
@@ -1327,6 +1489,7 @@ def main():
     if sim_up:
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
+        check_operator_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

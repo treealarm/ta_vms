@@ -430,6 +430,48 @@ namespace VmsMap.Grpc
       };
     }
 
+    public override async Task<MapProto.GetDevicePartArmingResponse> GetDevicePartArming(
+      MapProto.GetDevicePartArmingRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+
+      // Addressed by source rather than by camera: the registry takes a fire panel or another
+      // device hub as readily as a camera, and the contract must not have to change for one.
+      if (string.IsNullOrWhiteSpace(request.SourceKind)
+        || string.IsNullOrWhiteSpace(request.SourceId)
+        || string.IsNullOrWhiteSpace(request.PartKind)
+        || string.IsNullOrWhiteSpace(request.PartToken))
+        throw new RpcException(new Status(StatusCode.InvalidArgument,
+          "source_kind, source_id, part_kind and part_token are all required"));
+
+      var node = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => n.source_kind == request.SourceKind
+                 && n.source_id == request.SourceId
+                 && n.part_kind == request.PartKind
+                 && n.part_token == request.PartToken)
+        .Select(n => n.object_id)
+        .FirstOrDefaultAsync(ct);
+
+      if (node == Guid.Empty)
+        return new MapProto.GetDevicePartArmingResponse { Found = false };
+
+      var arming = await _armingResolver.ResolveAsync(
+        Utils.ConvertGuidToObjectId(node), ct);
+      if (arming is null)
+        return new MapProto.GetDevicePartArmingResponse { Found = false };
+
+      return new MapProto.GetDevicePartArmingResponse
+      {
+        Found = true,
+        Arming = new MapProto.NodeArming
+        {
+          ObjectId = arming.ObjectId,
+          Armed = arming.Armed,
+          Source = arming.Source,
+        },
+      };
+    }
+
     public override async Task<MapProto.AlarmStateList> GetAlarmedStates(
       MapProto.GetStatesRequest request, ServerCallContext context)
     {

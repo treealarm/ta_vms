@@ -46,6 +46,25 @@ public class DemoInstallerTests
     Assert.True(settings.AlarmEnabled);
   }
 
+  // The operator's arming demo: an input that is configured, alarms on a closed contact, and
+  // starts out following a camera that is disarmed. If it were installed armed the switch would
+  // have nothing to do, and if it had no alarm the switch would mean nothing.
+  [Fact]
+  public void TheMasterSensorIsConfiguredToBeArmedFromTheCard()
+  {
+    var settings = DemoDevices.MasterSensorSettings();
+
+    Assert.Null(DeviceSettingsRules.Validate(settings));
+    Assert.Equal(DemoCameraIds.For("sim-master"), settings.CameraId);
+    Assert.Equal("Master sensor", settings.Name);
+    Assert.Equal(DeviceSettingsRules.Inherit, settings.ArmMode);
+    Assert.Equal(DemoDevices.SensorTrigger, settings.TriggerOn);
+    Assert.True(settings.AlarmEnabled);
+    Assert.Contains(
+      DemoDevices.MasterSettings(),
+      s => s.Kind == DeviceSettingsRules.DigitalInput && s.Token == "input");
+  }
+
   [Fact]
   public void TheDemoIdsAreTheOnesTheWorldAndOnvifUse()
   {

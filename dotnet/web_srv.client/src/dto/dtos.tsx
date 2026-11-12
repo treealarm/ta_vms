@@ -1114,6 +1114,8 @@ export type RelayOutputDto = {
   idleState: IdleState
   delayMs: number
   liveActive: boolean | null
+  /** False when the caller has no control right on this camera. */
+  canControl: boolean
 }
 
 export type RelayOutputOptionsDto = {
@@ -1127,10 +1129,22 @@ export type RelayOutputOptionsDto = {
 
 // idleState is null when the camera didn't report it at all. liveActive is the logical state the
 // camera last announced (Device/Trigger/DigitalInput), null until it has announced one.
+/** Where an input's effective arming came from: its own mode, an armed zone, or the camera. */
+export type ArmSource = 'explicit' | 'space' | 'camera'
+
 export type DigitalInputDto = {
   token: string
   idleState: IdleState | null
   liveActive: boolean | null
+  /** The configured mode, null when no administrator configured this input. */
+  armMode: DeviceArmMode | null
+  /** Whether a contact raises an alarm; null when there is no settings row to follow. */
+  alarmEnabled: boolean | null
+  /** What the mode actually resolves to. null means unknown, never "off guard". */
+  armed: boolean | null
+  armingSource: ArmSource | null
+  /** False when the caller has no control right on this camera: the switch is shown, not usable. */
+  canControl: boolean
 }
 
 // Where the camera says it stands. found=false means it reports no location at all; an individual
