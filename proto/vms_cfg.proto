@@ -88,6 +88,11 @@ service CfgService {
   rpc ListDeviceSettings(ListDeviceSettingsRequest) returns (ListDeviceSettingsResponse);
   rpc SetDeviceSettings(SetDeviceSettingsRequest) returns (OperationStatus);
 
+  // Arm or disarm one of a camera's digital inputs, as the operator does from the camera card.
+  // Only the mode changes; the name, trigger and alarm flag stay as the administrator configured
+  // them, and the input must already exist. 'inherit' is not an operator's command.
+  rpc SetDeviceArmMode(SetDeviceArmModeRequest) returns (OperationStatus);
+
   // The definitions an alarm is raised under: its severity and what its acknowledgement policy is.
   // Read-only in M2.4 — an alarm must not be able to point at a definition nobody can enumerate.
   rpc ListAlarmDefinitions(ListAlarmDefinitionsRequest) returns (ListAlarmDefinitionsResponse);
@@ -1024,6 +1029,12 @@ message ListDeviceSettingsResponse {
 
 message SetDeviceSettingsRequest {
   DeviceSettings settings = 1;
+}
+
+message SetDeviceArmModeRequest {
+  string camera_id = 1;
+  string token     = 2;
+  string arm_mode  = 3;  // "armed" | "disarmed"
 }
 
 // ── Alarm definitions ────────────────────────────────────────────────────────

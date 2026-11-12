@@ -1073,6 +1073,32 @@ namespace VmsCfg
       return new OperationStatus { Success = true };
     }
 
+    // The operator's arming switch on the camera card. Separate from SetDeviceSettings on purpose:
+    // that one replaces the row wholesale, and a card holding a slightly stale copy would silently
+    // undo an administrator's edit of the name, the trigger or the alarm flag.
+    public override async Task<OperationStatus> SetDeviceArmMode(
+      SetDeviceArmModeRequest request, ServerCallContext context)
+    {
+      var error = DeviceSettingsRules.ValidateArmCommand(
+        request.CameraId, request.Token, request.ArmMode);
+      if (error is not null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument, error));
+
+      var changed = await deviceStorage.SetArmModeAsync(
+        request.CameraId, request.Token, request.ArmMode, context.CancellationToken);
+      if (!changed)
+        throw new RpcException(new Status(StatusCode.NotFound,
+          $"no digital input '{request.Token}' is configured for this camera"));
+
+      logger.LogInformation(
+        "Digital input {Token} of camera '{CameraId}' arm_mode={ArmMode}",
+        request.Token, request.CameraId, request.ArmMode);
+
+      // After the commit, as for a settings save: VmsMap re-reads it and reconciles the alarm.
+      await NotifyDeviceSettingsChangedAsync(request.CameraId, context.CancellationToken);
+      return new OperationStatus { Success = true };
+    }
+
     private Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct) =>
       deviceSettingsNotifier.NotifyAsync(cameraId, ct);
 
