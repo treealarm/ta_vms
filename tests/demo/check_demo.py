@@ -122,10 +122,15 @@ def set_relay(vms, camera_id, token, active):
              {"active": active})
 
 
+def relay_state(vms, name, token):
+    """One relay's row as the card sees it: the live value and whether it is still a wish."""
+    rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/relay-outputs") or []
+    return next((candidate for candidate in rows if candidate.get("token") == token), None)
+
+
 def relay_live(vms, name, token):
     """A relay's live state, as the camera reports it: None until it has said anything."""
-    rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/relay-outputs") or []
-    row = next((candidate for candidate in rows if candidate.get("token") == token), None)
+    row = relay_state(vms, name, token)
     return None if row is None else row.get("liveActive")
 
 
@@ -1168,6 +1173,33 @@ def check_control_panel(vms):
         lamp = next(row for row in relays if row.get("partToken") == LAMP_RELAY_TOKEN)
         check(control_object(vms, lamp["objectId"]) is not None,
               "the map's inspector resolves a relay node by id")
+
+        # A command is a wish until the camera confirms it: the card answers with the wish at once,
+        # the list follows when the map hears of it, and both settle on the camera's own report.
+        before = relay_state(vms, LAMP_RELAY_CAMERA, LAMP_RELAY_TOKEN) or {}
+        target = not bool(before.get("liveActive"))
+        expected = "active" if target else "inactive"
+
+        def state_now():
+            return (control_object(vms, lamp["objectId"]) or {}).get("state")
+
+        try:
+            set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, target)
+            check(bool(wait_until(
+                lambda: (relay_state(vms, LAMP_RELAY_CAMERA, LAMP_RELAY_TOKEN) or {}).get("liveActive")
+                == target, 10)),
+                "a relay command is shown before the camera confirms it")
+            check(bool(wait_until(
+                lambda: (relay_state(vms, LAMP_RELAY_CAMERA, LAMP_RELAY_TOKEN) or {}).get("livePending")
+                is False, 40)),
+                "the camera's own report ends the wait")
+            check(wait_until(lambda: state_now() == expected, 20),
+                  "the control list shows the state the card shows")
+        finally:
+            set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, bool(before.get("liveActive")))
+            wait_until(
+                lambda: (relay_state(vms, LAMP_RELAY_CAMERA, LAMP_RELAY_TOKEN) or {}).get("livePending")
+                is False, 40)
 
     # No space at all asks for everything the caller may see — the SQL takes another shape there
     # (no subtree), so it is worth a call of its own.
