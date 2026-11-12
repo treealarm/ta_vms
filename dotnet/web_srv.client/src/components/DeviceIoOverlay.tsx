@@ -12,7 +12,7 @@ function clamp(value: number, min: number, max: number) {
 
 type Props = {
   cameraId: string
-  live: DeviceIoLiveState
+  live: DeviceIoLiveState & { reload: () => void }
   onClose: () => void
 }
 
