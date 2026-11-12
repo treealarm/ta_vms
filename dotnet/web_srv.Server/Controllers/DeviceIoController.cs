@@ -44,8 +44,11 @@ public class DeviceIoController(
       mode    = FormatMode(r.Mode),
       idleState = FormatIdleState(r.IdleState),
       delayMs = r.DelayMs,
-      // null until the camera has said anything: "no event yet" is not "inactive".
+      // null until the camera has said anything: "no event yet" is not "inactive". While a
+      // command waits for the camera's confirmation this is the state that was asked for.
       liveActive = r.HasLiveActive ? r.LiveActive : (bool?)null,
+      // The value above is the operator's wish, not the camera's report yet.
+      livePending = r.Pending,
       canControl,
     }));
   }
