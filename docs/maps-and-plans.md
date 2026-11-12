@@ -265,11 +265,21 @@ time. A relay carries its switch in the list row as well as in the pane, with th
 the panel re-reads its pages every few seconds, so a change the panel did not make — another
 operator, a rule — appears without an action.
 
-**A relay command is announced at once.** ONVIF has no getter for a relay's state and a camera may
-report the change only when its event subscription next delivers one, a minute on some devices.
-VmsOnvif therefore announces the state a successful command set, and the camera's own late report
-of the same value is not a second transition. A monostable relay still reverts on the camera's
-clock; its later report is what takes the switch back.
+**A relay command is a wish until the camera confirms it.** ONVIF has no getter for a relay's state
+and a camera may report the change only when its event subscription next delivers one, a minute on
+some devices. VmsOnvif therefore keeps the commanded value apart from the camera's report and shows
+the wish until the camera says the same state; a report repeating an older value while the wish
+stands is not a transition and does not turn the switch back. The wish is repeated until the camera
+confirms it, and dropped after its lifetime (a monostable relay's `delayMs` plus a margin, otherwise
+20 s) with the camera's own report back on screen and a warning in the log. The card and the ONVIF
+settings pages mark a value that is still a wish; the Control list does not — VmsMap knows nothing
+of the wish and shows the value the command produced.
+
+**The tree reads a part's state, it does not drive it.** A part's row in the operator map's tree and
+in Admin → Nodes carries a state dot from the same `states` the Control panel reads, and no switch:
+one place drives a relay, and a second switch would be a second path that could disagree with the
+first. Admin → Nodes follows the map's watch stream, so a relay switched in the panel changes there
+without reopening the row.
 
 **The card keeps its switch.** The camera card's Device I/O overlay arms a sensor on a line of its
 own, under the caption "Guard", beside the effective state — not on the token line beside the live
