@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { setCameraArmed } from '../../api/controlApi'
 import { setDigitalInputArmMode } from '../../api/deviceIoApi'
 import { errorText } from '../../api/requestJson'
-import { setRelayOutputState } from '../../hooks/useRelayToggle'
+import RelaySwitch from './RelaySwitch'
 import type { ControlObjectDto } from '../../dto/dtos'
 
 type Props = {
@@ -33,8 +33,8 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // What the object reports now: a relay's live state, or the effective arming.
-  const observed = row.kind === 'relay' ? row.state === 'active' : row.armed
+  // What the effective arming resolves to; a relay's state has a switch of its own (RelaySwitch).
+  const observed = row.armed
   const value = optimistic ?? observed
 
   useEffect(() => {
@@ -53,9 +53,7 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
     setError(null)
     setOptimistic(next)
     try {
-      if (row.kind === 'relay')
-        await setRelayOutputState(row.sourceId, row.partToken, next)
-      else if (row.kind === 'camera')
+      if (row.kind === 'camera')
         await setCameraArmed(row.sourceId, next)
       else
         await setDigitalInputArmMode(row.sourceId, row.partToken, next ? 'armed' : 'disarmed')
@@ -94,19 +92,14 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
     />
   )
 
-  const stateLabel = row.kind === 'relay'
-    ? row.state === 'active'
-      ? t('control.stateActive')
-      : row.state === 'inactive'
-        ? t('control.stateInactive')
+  // Only a contact has a state apart from its action: a relay's is the switch's own label.
+  const stateLabel = row.kind === 'digital_input'
+    ? row.state === 'open'
+      ? t('control.stateOpen')
+      : row.state === 'closed'
+        ? t('control.stateClosed')
         : t('control.stateUnknown')
-    : row.kind === 'digital_input'
-      ? row.state === 'open'
-        ? t('control.stateOpen')
-        : row.state === 'closed'
-          ? t('control.stateClosed')
-          : t('control.stateUnknown')
-      : null
+    : null
 
   return (
     <Stack spacing={1.25}>
@@ -158,12 +151,7 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
           <Typography variant="body2" color="text.secondary" sx={{ minWidth: 110 }}>
             {t('control.relay')}
           </Typography>
-          {blockedReason ? (
-            <Tooltip title={blockedReason}><span>{controlSwitch}</span></Tooltip>
-          ) : controlSwitch}
-          <Typography variant="caption" color="text.secondary">
-            {value ? t('control.stateActive') : t('control.stateInactive')}
-          </Typography>
+          <RelaySwitch row={row} onChanged={onChanged} />
         </Stack>
       )}
 

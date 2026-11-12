@@ -259,6 +259,18 @@ itself — offers the same actions as the panel. A node the caller may not see a
 exactly as if it did not exist. A camera needs no such section there: its card arms it already, and
 a second switch would be two ways to say one thing.
 
+**Grouped by kind, and a relay is switched where it is listed.** In "All" the list is not one
+heap: cameras, sensors and relays are sections of their own, because a reader scans one kind at a
+time. A relay carries its switch in the list row as well as in the pane, with the state beside it;
+the panel re-reads its pages every few seconds, so a change the panel did not make — another
+operator, a rule — appears without an action.
+
+**A relay command is announced at once.** ONVIF has no getter for a relay's state and a camera may
+report the change only when its event subscription next delivers one, a minute on some devices.
+VmsOnvif therefore announces the state a successful command set, and the camera's own late report
+of the same value is not a second transition. A monostable relay still reverts on the camera's
+clock; its later report is what takes the switch back.
+
 **The card keeps its switch.** The camera card's Device I/O overlay arms a sensor on a line of its
 own, under the caption "Guard", beside the effective state — not on the token line beside the live
 0/1, where it read as changing what the sensor says. Arming from the monitor is ordinary operator

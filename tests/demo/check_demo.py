@@ -1006,6 +1006,11 @@ def check_operator_arming(vms):
     check(initial.get("alarmEnabled") is True, "the sensor alarms on its contact")
     check(initial.get("canControl") is True, "the demo's admin may control the camera")
 
+    # A late event from an earlier front can leave the map's copy of the contact closed while the
+    # wire is open; this front would then be deduplicated as a repeat. Settle it on the wire first.
+    set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+    settle_sensor(vms, part["id"])
+
     try:
         set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
         armed = wait_until(lambda: (row() or {}).get("armMode") == "armed"
@@ -1388,9 +1393,22 @@ def check_sensor_in_the_tree(vms):
     return {"node": node, "part": part, "ancestors": ancestor_chain(vms, part)}
 
 
+def settle_sensor(vms, part_id):
+    """Wait until the map's copy of the contact matches the wire: open, the idle state.
+
+    A device event may arrive late enough to land after the one that undid it, and then the map
+    keeps the older value. The next front would be deduplicated as a repeat of it, so the front
+    that needs a transition starts from a state that agrees with the camera.
+    """
+    return wait_until(
+        lambda: (control_object(vms, part_id) or {}).get("state") == "open", 30)
+
+
 def check_sensor_alarm(vms, sensor):
     """The contact becomes the alarm, and ALARM bubbles up the canonical tree."""
     part = sensor["part"]
+    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
+    settle_sensor(vms, part["id"])
     # The journal keeps its rows when a camera is deleted and re-added, so an old `closed` event
     # must not stand in for this front: only an event the command below caused can prove anything.
     before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
@@ -1540,13 +1558,13 @@ def check_repeat_front(vms, sensor, group, since):
         lambda: len(sensor_events(vms, part["id"], "closed")) > before_fronts, 45)),
           "a second front writes a second `sensor` event")
 
-    extended = wait_until(lambda: demo_group(vms, since), 30)
+    extended = wait_until(lambda: demo_group(vms, since), 45)
     if check(extended is not None, "the demo rule's group is still there"):
         after = {episode.get("cameraId"): episode.get("eventUuid")
                  for episode in extended.get("episodes") or []}
         for cam, uuid_before in before.items():
             check(after.get(cam) == uuid_before,
-                  "the episode on each camera is extended, not replaced")
+                  f"the episode on camera {cam} is extended, not replaced")
 
     subscription_alarms = [
         alarm for branch in ("open", "closed")

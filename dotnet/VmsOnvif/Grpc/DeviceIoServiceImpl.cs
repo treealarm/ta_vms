@@ -77,6 +77,9 @@ public class DeviceIoServiceImpl(
     try
     {
       await settingsService.SetRelayOutputStateAsync(request.SourceId, request.Token, request.Active, context.CancellationToken);
+      // The camera reports the new state on its own schedule; the operator's list should not wait
+      // for it. Announcing the commanded state also keeps a repeated report from doubling it.
+      await stateService.CommandedRelayStateAsync(request.SourceId, request.Token, request.Active);
       return Ok();
     }
     catch (Exception ex)

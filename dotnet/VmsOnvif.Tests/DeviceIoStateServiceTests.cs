@@ -357,6 +357,60 @@ public class DeviceIoStateServiceTests
     Assert.Equal(0, announced);
   }
 
+  // The operator's command is the state the relay was told to be: it is announced at once, because
+  // the camera may report its own change only on the next delivery of its subscription.
+  [Fact]
+  public async Task ACommandedRelayStateIsAnnouncedWithoutWaitingForTheCamera()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear(); // the subscription's Initialized replay
+
+    await service.CommandedRelayStateAsync(CameraId, "relay1", true);
+
+    var raised = Assert.Single(events);
+    Assert.True(raised.Active);
+    Assert.False(raised.Initialized);
+    Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+  }
+
+  // The camera does report its own state, late; the command already said it, so it is not a
+  // second transition and the map must not see one.
+  [Fact]
+  public async Task TheCamerasLateReportOfTheCommandIsNotASecondTransition()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await service.CommandedRelayStateAsync(CameraId, "relay1", true);
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
+    await WaitForDebounceAsync();
+
+    Assert.Single(events);
+  }
+
+  // A relay the subscription has not reported is left alone: there is no known state to correct,
+  // and its first report will bring it in as the camera says.
+  [Fact]
+  public async Task ACommandForAnUnknownRelayIsIgnored()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await service.CommandedRelayStateAsync(CameraId, "relay9", true);
+
+    Assert.Empty(events);
+    Assert.Null(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay9"));
+  }
+
   private static ConcurrentQueue<DeviceEvent> Capture(DeviceIoStateService service)
   {
     var events = new ConcurrentQueue<DeviceEvent>();

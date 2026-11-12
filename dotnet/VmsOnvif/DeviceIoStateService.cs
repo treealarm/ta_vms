@@ -169,6 +169,24 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   }
 
   /// <summary>
+  /// A relay command was accepted: record the state it set and announce it now. ONVIF has no getter
+  /// for a relay's state, and a camera may report the change only when its event subscription next
+  /// delivers one — a minute on some devices. The command is authoritative for the state the relay
+  /// was told to be; the camera's own report confirms it and is not announced twice.
+  /// </summary>
+  public async Task CommandedRelayStateAsync(string cameraId, string token, bool active)
+  {
+    if (!_watchers.TryGetValue(cameraId, out var lazy) || !lazy.IsValueCreated)
+      return;
+
+    Watch? watch;
+    try { watch = await lazy.Value; }
+    catch { return; }
+
+    watch?.SetCommandedState(DeviceIoKind.Relay, token, active);
+  }
+
+  /// <summary>
   /// Every part this process has a state for, for a stream that starts now. A part the camera has
   /// not reported yet is absent: the subscription's Initialized replay follows and fills it in.
   /// </summary>
@@ -422,6 +440,22 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
         return;
 
       DebouncePublish(state.Kind, state.Token);
+    }
+
+    /// <summary>
+    /// The operator set a relay: the state it was told to be is what the map shows from now on,
+    /// until the camera reports one of its own. A relay the subscription has not reported yet is
+    /// left alone — its next report brings it in.
+    /// </summary>
+    public void SetCommandedState(DeviceIoKind kind, string token, bool logical)
+    {
+      var key = (kind, token);
+      if (!_states.TryGetValue(key, out var known))
+        return;
+
+      _states[key] = new DeviceIoState(
+        kind, token, logical, known.ContactClosed, "Changed", DateTimeOffset.UtcNow);
+      Publish(kind, token, initialized: false);
     }
 
     // Flapping contacts are debounced per part: the last value within the window is what the map

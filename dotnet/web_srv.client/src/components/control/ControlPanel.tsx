@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, CircularProgress, List, ListItemButton, ListItemIcon, ListItemText,
-  MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, CircularProgress, List, ListItemButton, ListItemIcon, ListItemText,
+  ListSubheader, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined'
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined'
@@ -12,11 +12,12 @@ import { useTranslation } from 'react-i18next'
 
 import { listControlObjects } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
-import type { ControlObjectCursorDto, ControlObjectDto } from '../../dto/dtos'
+import type { ControlObjectCursorDto, ControlObjectDto, ControlObjectKind } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadSpaces } from '../../store/spatialSlice'
 import { treeOf } from '../maps/spatialUtils'
 import ObjectControl from './ObjectControl'
+import RelaySwitch from './RelaySwitch'
 
 const STORAGE_KEY = 'control.space'
 const PAGE_SIZE = 50
@@ -87,9 +88,12 @@ export default function ControlPanel() {
     void loadFirst()
   }, [loadFirst])
 
-  const reload = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  // A silent reload is the poll's: it must not flash the spinner or a stale error on every tick.
+  const reload = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
     try {
       const collected: ControlObjectDto[] = []
       let lastNext: ControlObjectCursorDto | null = null
@@ -103,11 +107,23 @@ export default function ControlPanel() {
       setNext(lastNext)
       setCursors(lastNext ? cursors : [null])
     } catch (e) {
-      setError(errorText(e))
+      if (!silent) setError(errorText(e))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [cursors, fetchPage])
+
+  // A relay does not report its new state in the same breath as the command, and the list has no
+  // stream of its own: without a tick the row would keep the snapshot it was read with until the
+  // next action, and an operator who leaves a relay and comes back would find it unchanged.
+  const reloadRef = useRef(reload)
+  useEffect(() => {
+    reloadRef.current = reload
+  }, [reload])
+  useEffect(() => {
+    const timer = window.setInterval(() => void reloadRef.current(true), 5000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   const loadMore = useCallback(async () => {
     if (!next || loading) return
@@ -128,6 +144,15 @@ export default function ControlPanel() {
   // The selected row survives a reload (the object id is stable); a filtered-out one falls back to
   // the first row, so the pane is never empty while the list is not.
   const selected = rows.find((r) => r.objectId === selectedId) ?? rows[0] ?? null
+
+  // "All" is not one heap: cameras, sensors and relays are one control surface, but a reader
+  // scans one kind at a time, and a page of a hundred mixed rows would not say where cameras end.
+  const groups = useMemo(() => {
+    const order: ControlObjectKind[] = ['camera', 'digital_input', 'relay']
+    return order
+      .map((kind) => ({ kind, rows: rows.filter((row) => row.kind === kind) }))
+      .filter((group) => group.rows.length > 0)
+  }, [rows])
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0 }}>
@@ -181,35 +206,41 @@ export default function ControlPanel() {
           }}
         >
           <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-            <List dense disablePadding>
-              {rows.map((row) => (
-                <ListItemButton
-                  key={row.objectId}
-                  selected={row.objectId === selected?.objectId}
-                  onClick={() => setSelectedId(row.objectId)}
-                >
-                  <ListItemIcon sx={{ minWidth: 32 }}>{kindIcon(row)}</ListItemIcon>
-                  <ListItemText
-                    primary={row.name}
-                    secondary={row.kind === 'camera' ? row.spaceName : row.cameraName}
-                    primaryTypographyProps={{ noWrap: true }}
-                    secondaryTypographyProps={{ noWrap: true }}
-                  />
-                  {row.kind === 'relay' ? (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      color={row.state === 'active' ? 'warning' : 'default'}
-                      label={row.state === 'active' ? t('control.stateActive') : t('control.stateInactive')}
+            {groups.map((group) => (
+              <List
+                key={group.kind}
+                dense
+                disablePadding
+                subheader={(
+                  <ListSubheader disableSticky sx={{ lineHeight: 2, bgcolor: 'transparent' }}>
+                    {`${t(groupTitle(group.kind))} (${group.rows.length})`}
+                  </ListSubheader>
+                )}
+              >
+                {group.rows.map((row) => (
+                  <ListItemButton
+                    key={row.objectId}
+                    selected={row.objectId === selected?.objectId}
+                    onClick={() => setSelectedId(row.objectId)}
+                  >
+                    <ListItemIcon sx={{ minWidth: 32 }}>{kindIcon(row)}</ListItemIcon>
+                    <ListItemText
+                      primary={row.name}
+                      secondary={row.kind === 'camera' ? row.spaceName : row.cameraName}
+                      primaryTypographyProps={{ noWrap: true }}
+                      secondaryTypographyProps={{ noWrap: true }}
                     />
-                  ) : row.hasArming ? (
-                    row.armed
-                      ? <LockOutlinedIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
-                      : <LockOpenOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
-                  ) : null}
-                </ListItemButton>
-              ))}
-            </List>
+                    {row.kind === 'relay' ? (
+                      <RelaySwitch row={row} onChanged={() => void reload()} />
+                    ) : row.hasArming ? (
+                      row.armed
+                        ? <LockOutlinedIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
+                        : <LockOpenOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
+                    ) : null}
+                  </ListItemButton>
+                ))}
+              </List>
+            ))}
 
             {!loading && rows.length === 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
@@ -247,6 +278,14 @@ export default function ControlPanel() {
       </Box>
     </Stack>
   )
+}
+
+// A section heading names its kind in the plural; the pane's heading names one object in the
+// singular, and the two must not read as a mistake.
+function groupTitle(kind: ControlObjectKind) {
+  if (kind === 'camera') return 'control.kindCamera'
+  if (kind === 'relay') return 'control.kindRelay'
+  return 'control.kindSensor'
 }
 
 function kindIcon(row: ControlObjectDto) {
