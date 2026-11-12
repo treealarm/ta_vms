@@ -110,6 +110,10 @@ service MapService {
   // The effective arming of one device node: an input's own setting when it has one, otherwise the
   // nearest armed property of the space the camera stands in, otherwise the camera's own arming.
   rpc GetNodeArming(GetNodeArmingRequest) returns (GetNodeArmingResponse);
+  // The same answer for a device part addressed the way a device card knows it: by its source and
+  // token, because the card holds the device, not the part's node id. `source_kind` is "camera"
+  // today; another kind of device hub joins the same registry under a kind of its own.
+  rpc GetDevicePartArming(GetDevicePartArmingRequest) returns (GetDevicePartArmingResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
   // The operator's alarm entity, independent of the ALARM state: a row with a status, an
@@ -757,6 +761,19 @@ message GetNodeArmingRequest {
 
 message GetNodeArmingResponse {
   // False when the id is not a device node; arming has no meaning for a space or a server.
+  bool found        = 1;
+  NodeArming arming = 2;
+}
+
+message GetDevicePartArmingRequest {
+  string source_kind = 1;  // "camera" today
+  string source_id   = 2;
+  string part_kind   = 3;  // "digital_input"
+  string part_token  = 4;
+}
+
+message GetDevicePartArmingResponse {
+  // False while the part has no node yet: the adapter creates one from its first snapshot or event.
   bool found        = 1;
   NodeArming arming = 2;
 }

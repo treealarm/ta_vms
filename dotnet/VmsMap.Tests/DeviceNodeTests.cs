@@ -11,6 +11,7 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
 using MapProto = Vms.Map;
@@ -66,7 +67,7 @@ public class DeviceNodeTests
   private sealed record Services(
     VmsMapDbContext Db, MapDb Map, StatesUpdateService States, DeviceNodeService Nodes, MapServiceImpl Grpc);
 
-  private static Services Create()
+  private static Services Create(bool cameraArmed = false)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -96,7 +97,7 @@ public class DeviceNodeTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
         new TestCatalog(), TestWiring.DeviceDiagrams(db, map, updates, geo)),
-      TestWiring.Arming(db), TestWiring.Alarms(db, map, states),
+      TestWiring.Arming(db, new TestCameraState(cameraArmed)), TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);
 
@@ -345,6 +346,60 @@ public class DeviceNodeTests
       Caller = Admin(),
     }, new TestContext());
     Assert.Single(events.Events);
+  }
+
+  [Fact]
+  public async Task APartsArmingIsAnsweredByItsSourceAndToken()
+  {
+    var s = Create(cameraArmed: true);
+    var device = await SeedDeviceAsync(s);
+
+    // The card holds the camera and the token, never the part's node id: that is the addressing the
+    // answer has to accept, and the only one a fire panel or another hub could share.
+    var arming = await s.Grpc.GetDevicePartArming(new MapProto.GetDevicePartArmingRequest
+    {
+      SourceKind = DeviceObjectId.CameraSource,
+      SourceId = device.CameraId,
+      PartKind = DeviceObjectId.DigitalInputPart,
+      PartToken = "1",
+    }, new TestContext());
+
+    Assert.True(arming.Found);
+    Assert.Equal(device.DigitalInput, arming.Arming.ObjectId);
+    Assert.True(arming.Arming.Armed);
+    Assert.Equal(EffectiveArmingResolver.Camera, arming.Arming.Source);
+  }
+
+  [Fact]
+  public async Task AnUnregisteredPartIsNotFoundRatherThanUnarmed()
+  {
+    var s = Create(cameraArmed: true);
+    var device = await SeedDeviceAsync(s);
+
+    var arming = await s.Grpc.GetDevicePartArming(new MapProto.GetDevicePartArmingRequest
+    {
+      SourceKind = DeviceObjectId.CameraSource,
+      SourceId = device.CameraId,
+      PartKind = DeviceObjectId.DigitalInputPart,
+      PartToken = "9",
+    }, new TestContext());
+
+    Assert.False(arming.Found);
+    Assert.Null(arming.Arming);
+  }
+
+  [Fact]
+  public async Task AnIncompleteAddressIsRefused()
+  {
+    var s = Create();
+
+    await Assert.ThrowsAsync<RpcException>(() => s.Grpc.GetDevicePartArming(
+      new MapProto.GetDevicePartArmingRequest
+      {
+        SourceKind = DeviceObjectId.CameraSource,
+        SourceId = TestCameras.One,
+        PartKind = DeviceObjectId.DigitalInputPart,
+      }, new TestContext()));
   }
 
   [Fact]
