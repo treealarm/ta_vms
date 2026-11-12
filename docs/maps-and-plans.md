@@ -232,7 +232,9 @@ answers one page of a space's sensors through `MapService.ListGuardSensors`:
   plus a cursor, no total — because rights can hide rows and an offset would shift the list every
   time somebody arms a sensor.
 - The toggle is the existing `PUT api/DeviceIo/cameras/{id}/digital-inputs/{token}/arm-mode`
-  (`SetDeviceArmMode`); the panel adds no write path.
+  (`SetDeviceArmMode`); the panel adds no write path. The camera card's Device I/O overlay is
+  read-only for sensors: it shows the contact and the effective guard state, and arming happens
+  here — a switch beside the live value read as changing what the sensor says.
 
 ## States, events and rights
 
