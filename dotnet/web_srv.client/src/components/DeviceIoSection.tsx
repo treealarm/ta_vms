@@ -257,9 +257,9 @@ function RelayOutputRow({ cameraId, relay, options, onSaved }: {
   const [mode, setMode] = useState<RelayMode>(relay.mode)
   const [idleState, setIdleState] = useState<IdleState>(relay.idleState)
   const [delayMs, setDelayMs] = useState(relay.delayMs)
-  // Drive the optimistic auto-revert timer off the locally edited mode/delay (post-save, without a
-  // refetch) rather than the original props, so a toggle after a mode/delay change reverts correctly.
-  const { active, applyCommandedState } = useRelayToggle(mode, delayMs, relay.liveActive)
+  // The server answers with the operator's wish until the camera confirms it, so the switch needs
+  // no guess of its own here.
+  const { active } = useRelayToggle(relay.liveActive)
   const [toggling, setToggling] = useState(false)
   const [toggleError, setToggleError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -271,9 +271,8 @@ function RelayOutputRow({ cameraId, relay, options, onSaved }: {
     setToggling(true); setToggleError(null)
     try {
       await setRelayOutputState(cameraId, relay.token, next)
-      applyCommandedState(next)
-      // Re-read the list: the chip beside the switch is the camera's report, and it is the read
-      // that brings the new one in.
+      // Re-read the list: the command is recorded before it returns, so the read carries the wish
+      // and the `pending` flag that says the camera has not confirmed it yet.
       onSaved?.()
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : String(e))
@@ -314,25 +313,30 @@ function RelayOutputRow({ cameraId, relay, options, onSaved }: {
       <CardContent>
         <Stack spacing={1.5}>
           <Stack direction="row" alignItems="center" spacing={2}>
-            {/* The switch is what was commanded; the chip is what the camera reports back. They
-                differ until the camera's next event arrives, and for a monostable relay they differ
-                again once it drops out on its own. */}
+            {/* One value on screen: until the camera confirms the command the switch shows the
+                wish, and the caption says so; afterwards the chip is the camera's own report. */}
             <Switch checked={active} disabled={toggling} onChange={() => void handleToggle()} />
             <Typography variant="body2" sx={{ flex: 1 }}>{relay.token}</Typography>
-            <Tooltip title={t('onvifSettings.deviceIoRelayStateTip')}>
-              <Chip
-                size="small"
-                variant="outlined"
-                color={relay.liveActive === true ? 'success' : 'default'}
-                label={`${t('onvifSettings.deviceIoReportedState')}: ${
-                  relay.liveActive === null
-                    ? t('onvifSettings.deviceIoStateUnknown')
-                    : relay.liveActive
-                      ? t('onvifSettings.deviceIoActive')
-                      : t('onvifSettings.deviceIoInactive')
-                }`}
-              />
-            </Tooltip>
+            {relay.livePending ? (
+              <Typography variant="caption" color="text.secondary">
+                {t('onvifSettings.deviceIoWaiting')}
+              </Typography>
+            ) : (
+              <Tooltip title={t('onvifSettings.deviceIoRelayStateTip')}>
+                <Chip
+                  size="small"
+                  variant="outlined"
+                  color={relay.liveActive === true ? 'success' : 'default'}
+                  label={`${t('onvifSettings.deviceIoReportedState')}: ${
+                    relay.liveActive === null
+                      ? t('onvifSettings.deviceIoStateUnknown')
+                      : relay.liveActive
+                        ? t('onvifSettings.deviceIoActive')
+                        : t('onvifSettings.deviceIoInactive')
+                  }`}
+                />
+              </Tooltip>
+            )}
           </Stack>
           {toggleError && <Alert severity="error" onClose={() => setToggleError(null)}>{toggleError}</Alert>}
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>

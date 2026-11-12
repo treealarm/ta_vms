@@ -13,6 +13,8 @@ export type DeviceIoUpdate = {
   contact?: string | null
   initialized: boolean
   observedAt?: string
+  /** The value is a relay command the camera has not confirmed yet, not a report of its own. */
+  pending?: boolean
 }
 
 type Listener = (update: DeviceIoUpdate) => void

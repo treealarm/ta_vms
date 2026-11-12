@@ -16,7 +16,7 @@ type Props = {
 // how PTZ presets are admin-only while the joystick lives in the monitor.
 function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: RelayOutputDto; onChanged: () => void }) {
   const { t } = useTranslation()
-  const { active, applyCommandedState } = useRelayToggle(relay.mode, relay.delayMs, relay.liveActive)
+  const { active } = useRelayToggle(relay.liveActive)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,24 +26,25 @@ function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: Rel
     setError(null)
     try {
       await setRelayOutputState(cameraId, relay.token, next)
-      applyCommandedState(next)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setPending(false)
-      // The card's copy of the reported state comes from the camera; read it back now, so the
-      // chip beside the switch agrees with the command without waiting for the next event.
+      // The server records the command before it answers, so this read carries the wish and the
+      // `pending` flag that says the camera has not confirmed it yet.
       onChanged()
     }
   }
 
-  // What the camera reports, beside what was commanded: the switch cannot know the real state on
-  // its own, because the state lives in the camera's Device/Trigger events.
-  const reported = relay.liveActive === null
-    ? t('onvifSettings.deviceIoStateUnknown')
-    : relay.liveActive
-      ? t('onvifSettings.deviceIoActive')
-      : t('onvifSettings.deviceIoInactive')
+  // What the camera reports; while the command is unconfirmed the server answers with the wish
+  // instead, and the caption says that is what it is.
+  const reported = relay.livePending
+    ? t('onvifSettings.deviceIoWaiting')
+    : relay.liveActive === null
+      ? t('onvifSettings.deviceIoStateUnknown')
+      : relay.liveActive
+        ? t('onvifSettings.deviceIoActive')
+        : t('onvifSettings.deviceIoInactive')
 
   return (
     <Stack spacing={0.25}>

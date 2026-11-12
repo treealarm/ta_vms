@@ -756,6 +756,7 @@
     "deviceIoStateUnknown": "Unknown",
     "deviceIoActive": "Active",
     "deviceIoInactive": "Inactive",
+    "deviceIoWaiting": "Waiting for the camera…",
     "deviceIoRelayStateTip": "The state the camera reports for this relay. It comes from ONVIF property events and can lag a command.",
     "deviceIoInputStateTip": "The logical state the camera reports for this input.",
     "deviceIoArmModeLabel": "Arming",

@@ -1113,7 +1113,10 @@ export type RelayOutputDto = {
   mode: RelayMode
   idleState: IdleState
   delayMs: number
+  /** The state the relay has, or — while `livePending` — the state it was told to take. */
   liveActive: boolean | null
+  /** The camera has not confirmed the command yet; `liveActive` is the wish, not a report. */
+  livePending: boolean
   /** False when the caller has no control right on this camera. */
   canControl: boolean
 }

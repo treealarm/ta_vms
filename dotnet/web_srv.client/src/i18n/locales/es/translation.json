@@ -756,6 +756,7 @@
     "deviceIoStateUnknown": "Desconocido",
     "deviceIoActive": "Activo",
     "deviceIoInactive": "Inactivo",
+    "deviceIoWaiting": "Esperando a la cámara…",
     "deviceIoRelayStateTip": "Estado que la cámara informa para este relé. Proviene de eventos ONVIF y puede retrasarse respecto a un comando.",
     "deviceIoInputStateTip": "Estado lógico que la cámara informa para esta entrada.",
     "deviceIoArmModeLabel": "Armado",
