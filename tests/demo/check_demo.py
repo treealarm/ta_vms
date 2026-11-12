@@ -46,6 +46,11 @@ SENSOR_CAMERA = "sim-ptz"
 SENSOR_TOKEN = "input"
 LAMP_RELAY_CAMERA = "sim-master"
 LAMP_RELAY_TOKEN = "lamp"
+# The operator's own sensor: sim-master's input, wired to its `loop` relay in the same simulator
+# world. It is installed following its camera, so the operator's switch is what arms it.
+ARMED_CAMERA = "sim-master"
+ARMED_TOKEN = "input"
+ARMED_RELAY_TOKEN = "loop"
 
 
 def camera_id(name):
@@ -129,6 +134,19 @@ def input_live(vms, name, token):
     rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
     row = next((candidate for candidate in rows if candidate.get("token") == token), None)
     return None if row is None else row.get("liveActive")
+
+
+def digital_input_row(vms, name, token):
+    """One input as the operator's card sees it: its mode, its effective arming and the right."""
+    rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
+    return next((candidate for candidate in rows if candidate.get("token") == token), None)
+
+
+def set_arm_mode(vms, name, token, mode):
+    """The operator's guard switch, as the browser sends it: the mode and nothing else."""
+    vms.call("PUT",
+             f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs/{token}/arm-mode",
+             {"armMode": mode})
 
 
 # ── The logical tree, the journal, alarms and the device settings ────────────────
@@ -932,6 +950,110 @@ def check_provisioning(vms):
           "the demo's sensor-recording rule is installed and enabled")
 
 
+def check_operator_arming(vms):
+    """The operator's guard switch on a camera's own sensor.
+
+    The demo installs `sim-master/input` following its camera and wired to the `loop` relay. This
+    arms it from the card, trips it through the relay, and proves the two invariants an operator
+    relies on: a repeated arming raises no second alarm, and disarming lets an acknowledgement
+    through without taking the alarm away.
+
+    Everything it changes is put back in `finally`: a failure halfway through must not leave the
+    demo with a sensor on guard, a relay closed and an alarm active.
+    """
+    print("Operator arming")
+
+    def row():
+        return digital_input_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+
+    # The part's node is the adapter's work, from the device's first snapshot: until it exists the
+    # effective arming is unknown, and that is what `armingSource` says.
+    listed = wait_until(lambda: (row() or {}).get("armingSource"), 45)
+    if not check(bool(listed), "sim-master/input resolves an arming source"):
+        return
+
+    node, parts = device_nodes(vms, ARMED_CAMERA)
+    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    if not check(part is not None, "the master sensor is a node under the camera"):
+        return
+    ancestors = ancestor_chain(vms, part)
+
+    initial = row()
+    check(initial.get("armMode") == "inherit",
+          f"the sensor starts configured to follow its camera (has {initial.get('armMode')!r})")
+    check(initial.get("armed") is False and initial.get("armingSource") == "camera",
+          "an inherit sensor on a disarmed camera reads off guard, from the camera")
+    check(initial.get("alarmEnabled") is True, "the sensor alarms on its contact")
+    check(initial.get("canControl") is True, "the demo's admin may control the camera")
+
+    try:
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+        armed = wait_until(lambda: (row() or {}).get("armMode") == "armed"
+                           and (row() or {}).get("armed") is True
+                           and (row() or {}).get("armingSource") == "explicit", 30)
+        check(bool(armed), "arming writes 'armed' and the effective state follows at once")
+
+        relay_on = camera_id(ARMED_CAMERA)
+        before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
+        set_relay(vms, relay_on, ARMED_RELAY_TOKEN, True)
+        wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is True, 40)
+        event = wait_until(
+            lambda: next((e for e in sensor_events(vms, part["id"], "closed")
+                          if e["id"] not in before), None), 45)
+        check(event is not None, "closing `loop` writes one `sensor` event with contact=closed")
+
+        alarm = wait_until(lambda: active_alarm(vms, part["id"]), 30)
+        if check(alarm is not None, "the armed sensor raises an active alarm"):
+            for caused in [part] + ancestors:
+                wait_until(lambda target=caused: alarm_reaches(vms, target["id"]), 20)
+                check(alarm_reaches(vms, caused["id"]),
+                      f"ALARM reaches {caused.get('name') or caused['id']}")
+
+            # The same command again is not a second arming: the alarm is deduplicated by its key,
+            # so a lost or repeated notification cannot double it.
+            set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+            time.sleep(3)
+            open_rows = [row for row in (alarms(vms).get("open") or {}).get("alarms") or []
+                         if row.get("objectId") == part["id"]]
+            check(len(open_rows) == 1,
+                  f"arming again keeps exactly one alarm (has {len(open_rows)})")
+
+            status = acknowledge(vms, alarm["id"])
+            check(status == 409, f"acknowledging while armed answers 409 (got {status})")
+
+            set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "disarmed")
+            disarmed = wait_until(lambda: (row() or {}).get("armed") is False, 30)
+            check(bool(disarmed), "disarming reads off guard")
+            status = wait_until(lambda: acknowledge(vms, alarm["id"]) == 200, 25)
+            check(bool(status), "acknowledging after disarming succeeds")
+            check(is_alarmed(vms, part["id"]),
+                  "acknowledging does not take ALARM away: the condition still holds")
+
+            # The contact returning is what closes the alarm, on a disarmed sensor as on an armed one.
+            opened = {e["id"] for e in sensor_events(vms, part["id"], "open")}
+            set_relay(vms, relay_on, ARMED_RELAY_TOKEN, False)
+            wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)
+            returned = wait_until(
+                lambda: next((e for e in sensor_events(vms, part["id"], "open")
+                              if e["id"] not in opened), None), 45)
+            check(returned is not None, "opening `loop` writes a `sensor` event with contact=open")
+            check(bool(wait_until(lambda: not is_alarmed(vms, part["id"]), 40)),
+                  "ALARM leaves the sensor when the contact returns")
+    finally:
+        try:
+            set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+        finally:
+            restore = sensor_settings_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+            if restore:
+                set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
+
+
+def sensor_settings_row(vms, name, token):
+    """The administrator's settings row of one part, as the settings endpoint reports it."""
+    return next((row for row in device_settings(vms, camera_id(name))
+                 if row.get("kind") == "digital_input" and row.get("token") == token), None)
+
+
 def check_sensor_in_the_tree(vms):
     """A part is a node of its own, visible under its camera, and placed nowhere."""
     node, parts = device_nodes(vms, SENSOR_CAMERA)
@@ -1160,13 +1282,18 @@ def check_emit_loop(vms, sensor):
 
 
 def check_cleanup(vms, sensor):
-    """Leaves the world as it was installed: relay off, the input armed again."""
+    """Leaves the world as it was installed: relays off, each sensor back to its own mode."""
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, False)
+    set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
 
     row = sensor_settings(vms)
     if row:
         set_device_settings(vms, camera_id(SENSOR_CAMERA), {**row, "armMode": "armed"})
+
+    master = sensor_settings_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+    if master:
+        set_device_settings(vms, camera_id(ARMED_CAMERA), {**master, "armMode": "inherit"})
 
 
 def check_camera_removal_cascade(vms, sensor):
@@ -1327,6 +1454,7 @@ def main():
     if sim_up:
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
+        check_operator_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

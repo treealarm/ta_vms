@@ -14,9 +14,9 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
   /// The contact that means "the relay fired", shared with the demo's routing rule so the arming and
   /// the rule cannot drift apart.
   /// <para>
-  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay. The input's idle state is open, so
-  /// an open circuit is idle and a closed one is active: that contact is closed. It is the polarity
-  /// the trigger is set to, not a guess from the picture.
+  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay, and `sim-master`'s own input to its
+  /// `loop` relay. Both inputs idle open, so an open circuit is idle and a closed one is active:
+  /// that contact is closed. It is the polarity the trigger is set to, not a guess from the picture.
   /// </para>
   public const string SensorTrigger = DeviceSettingsRules.TriggerClosed;
 
@@ -31,17 +31,26 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     AlarmEnabled = true,
   };
 
+  /// The master's own input, wired to its `loop` relay in the simulator. It is the operator's
+  /// sensor: installed to inherit, so the camera — disarmed at install — leaves it off guard, and
+  /// it fires only once somebody arms it from the card and closes `loop`.
+  public static DeviceSettings MasterSensorSettings() => new()
+  {
+    CameraId = DemoCameraIds.For("sim-master"),
+    Kind = DeviceSettingsRules.DigitalInput,
+    Token = "input",
+    Name = "Master sensor",
+    ArmMode = DeviceSettingsRules.Inherit,
+    TriggerOn = SensorTrigger,
+    AlarmEnabled = true,
+  };
+
   /// The parts of the master. They are configured — not merely discovered — because a device's
   /// diagram is drawn only from parts an operator set up, and the demo is where that rule is
   /// visible: `sim-vehicle` is the same model and has no settings, so it gets no panel.
   public static IEnumerable<DeviceSettings> MasterSettings() =>
   [
-    new()
-    {
-      CameraId = DemoCameraIds.For("sim-master"),
-      Kind = DeviceSettingsRules.DigitalInput, Token = "input", Name = "Input",
-      ArmMode = DeviceSettingsRules.Inherit,
-    },
+    MasterSensorSettings(),
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
