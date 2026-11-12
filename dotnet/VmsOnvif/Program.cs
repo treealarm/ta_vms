@@ -11,6 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddVmsLogging();
 
 builder.Services.AddGrpc();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton(_ => new DaprClientBuilder().Build());
 builder.Services.AddDaprPubSubClient();
 
@@ -78,6 +79,7 @@ builder.Services.AddHostedService(sp =>
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifLiveEventForwarder>());
 builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<IDeviceIoReader>(sp => sp.GetRequiredService<OnvifSettingsService>());
+builder.Services.AddSingleton<IRelayCommander>(sp => sp.GetRequiredService<OnvifSettingsService>());
 builder.Services.AddSingleton<IDeviceIoWatcherFactory, OnvifDeviceIoWatcherFactory>();
 builder.Services.AddSingleton<DeviceIoStateService>();
 builder.Services.AddSingleton<IDeviceIoStateSink>(sp => sp.GetRequiredService<DeviceIoStateService>());
@@ -90,6 +92,9 @@ builder.Services.AddSingleton(sp => new DeviceEventPublisher(
   sp.GetRequiredService<ILogger<DeviceEventPublisher>>()));
 builder.Services.AddSingleton<IDeviceSnapshotPublisher>(sp => sp.GetRequiredService<DeviceEventPublisher>());
 builder.Services.AddHostedService(sp => sp.GetRequiredService<DeviceEventPublisher>());
+// A relay command is a wish until the camera's own report confirms it.
+builder.Services.AddHostedService(sp => new RelayRetryService(
+  sp.GetRequiredService<DeviceIoStateService>()));
 // Opens the pull point for a camera without an operator watching: a sensor alarm must work while
 // the tab is closed. The interval is a setting because a minute-long sweep over a large node is
 // thousands of requests a second.

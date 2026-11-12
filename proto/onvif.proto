@@ -546,8 +546,12 @@ message RelayOutput {
   IdleState idle_state = 3;
   int32     delay_ms  = 4;
   // The coil's live state. Unset until the camera has reported one — the subscription's replay
-  // arrives asynchronously, so the first polls after it opens may have no value yet.
+  // arrives asynchronously, so the first polls after it opens may have no value yet. While a
+  // command waits for the camera's confirmation this is the state that was asked for.
   optional bool live_active = 5;
+  // The value is the operator's wish, not the camera's report: the relay was told to be in this
+  // state and the camera has not confirmed it yet.
+  bool pending = 6;
 }
 
 message GetRelayOutputsResponse {
@@ -636,6 +640,8 @@ message DeviceIoStateUpdate {
   bool   initialized   = 6;
   // ISO 8601 UTC, the camera's own time when it gave one.
   string observed_at   = 7;
+  // The state above is the operator's wish, waiting for the camera to confirm it.
+  bool   pending       = 8;
 }
 
 // ── Profile G: camera-side ("edge") recordings ────────────────────────────────
