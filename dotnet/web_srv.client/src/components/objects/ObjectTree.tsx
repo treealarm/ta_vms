@@ -5,13 +5,14 @@ import {
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
-import type { MapAlarmState, MapMarker } from '../../dto/mapDtos'
+import type { MapAlarmState, MapMarker, MapObjectState, MapStateDescription } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadChildren, loadRoots, type ChildrenPage } from '../../store/objectsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
 import KindIcon from '../../map/KindIcon'
 import { sortMarkers } from '../../map/nodeKind'
 import { ALARM_COLOR } from '../../map/nodeStyle'
+import PartStateDot from './PartStateDot'
 
 type Props = {
   selectedId: string | null
@@ -32,6 +33,8 @@ type TreeContextValue = {
   markers: Record<string, MapMarker>
   childrenByParent: Record<string, ChildrenPage>
   alarms: Record<string, MapAlarmState>
+  states: Record<string, MapObjectState>
+  descriptions: Record<string, MapStateDescription>
   selectedId: string | null
   checkedIds: Set<string>
   expanded: Set<string>
@@ -59,6 +62,7 @@ export default function ObjectTree({
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const alarms = useAppSelector((s) => s.states.alarms)
   const states = useAppSelector((s) => s.states.states)
+  const descriptions = useAppSelector((s) => s.states.descriptions)
   const busy = useAppSelector((s) => s.objects.busy)
 
   useEffect(() => {
@@ -105,6 +109,8 @@ export default function ObjectTree({
     markers,
     childrenByParent,
     alarms,
+    states,
+    descriptions,
     selectedId,
     checkedIds,
     expanded,
@@ -190,6 +196,11 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
         >
           {marker.name || marker.id}
         </Typography>
+        {/* A part is driven from the Control panel, not from here; the tree only says what it
+            currently is. */}
+        {marker.nodeKind === 'part' ? (
+          <PartStateDot state={ctx.states[marker.id]} descriptions={ctx.descriptions} />
+        ) : null}
         {alarming ? (
           <Tooltip title={alarm?.alarm
             ? t('maps.node.alarm')
