@@ -86,6 +86,7 @@
     "nodes": "Nodes",
     "eventRouting": "Event routing",
     "map": "Map",
+    "guarding": "Guarding",
     "changePassword": "Change password",
     "deployment": "Deployment"
   },
@@ -1605,5 +1606,18 @@
       "falseAlarm": "False alarm",
       "other": "Other"
     }
+  },
+  "guarding": {
+    "title": "Guarding",
+    "space": "Space",
+    "spaceHint": "The space and everything inside it.",
+    "sensor": "Sensor",
+    "camera": "Camera",
+    "spaceColumn": "Space",
+    "guard": "Guarding",
+    "empty": "No sensors in this space.",
+    "more": "Load more",
+    "loaded": "{{count}} shown",
+    "notConfigured": "This sensor has no settings yet: an administrator must configure it."
   }
 }

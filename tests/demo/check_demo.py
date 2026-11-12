@@ -1068,6 +1068,114 @@ def check_operator_arming(vms):
                 set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
 
 
+def guarding_sensors(vms, space_id=None, page_size=None, after=None):
+    """One page of the operator's guarding list, as the panel asks for it."""
+    params = {}
+    if space_id:
+        params["spaceId"] = space_id
+    if page_size:
+        params["pageSize"] = str(page_size)
+    if after:
+        params["afterName"] = after.get("afterName") or ""
+        params["afterId"] = after.get("afterId") or ""
+
+    query = f"?{urllib.parse.urlencode(params)}" if params else ""
+    return vms.call("GET", f"/api/guarding/sensors{query}") or {}
+
+
+def check_guarding_panel(vms):
+    """The operator's guarding tab: a space's sensors, paged and with their effective arming.
+
+    The demo has two configured sensors, both on the first floor: the master's own (installed to
+    follow its disarmed camera) and sim-ptz's (installed armed). The check proves the server filters
+    by space and rights, pages by keyset, and reads the arming the same way the camera card does.
+    """
+    print("Guarding panel")
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if not check(floor is not None, f"the demo has the space {BUILDING_NAME!r}"):
+        return
+    site = next((space for space in spaces(vms) if space.get("name") == MAP_NAME), None)
+    if not check(site is not None, f"the demo has the map {MAP_NAME!r}"):
+        return
+
+    page = guarding_sensors(vms, floor["id"])
+    rows = page.get("sensors") or []
+    check(sorted(row.get("name") for row in rows) == ["Master sensor", "Sensor"],
+          f"the floor lists its two configured sensors (has {[r.get('name') for r in rows]!r})")
+    check(all(row.get("sourceKind") == "camera" and row.get("partKind") == "digital_input"
+              and row.get("partToken") == ARMED_TOKEN for row in rows),
+          "each row is addressed by source and part token, not by a node id alone")
+    check(all(row.get("spaceName") == BUILDING_NAME for row in rows),
+          "each row is placed in the room its camera stands in")
+
+    master = next((row for row in rows if row.get("sourceId") == camera_id(ARMED_CAMERA)), None)
+    sensor = next((row for row in rows if row.get("sourceId") == camera_id(SENSOR_CAMERA)), None)
+    if check(master is not None and sensor is not None,
+             "both the master's sensor and the ptz's are listed"):
+        check(master.get("configured") is True and master.get("canControl") is True,
+              "the admin's row is configured and may be driven")
+        check(master.get("armed") is False and master.get("armingSource") == "camera",
+              "the master's sensor follows its disarmed camera")
+        check(sensor.get("armed") is True and sensor.get("armingSource") == "explicit",
+              "the ptz sensor is explicitly on guard")
+
+    # No space at all asks for everything the caller may see — the SQL takes another shape there
+    # (no subtree), so it is worth a call of its own.
+    everything = guarding_sensors(vms).get("sensors") or []
+    check(set(row.get("objectId") for row in rows) <= set(row.get("objectId") for row in everything),
+          "an unfiltered page contains the floor's sensors")
+
+    # The map above the floor is the same set through the subtree: the filter is not a canvas id.
+    nested = guarding_sensors(vms, site["id"]).get("sensors") or []
+    check(sorted(row.get("objectId") for row in nested)
+          == sorted(row.get("objectId") for row in rows),
+          "the map above lists the floor's sensors through the nested space")
+
+    nothing = guarding_sensors(vms, str(uuid.uuid4()))
+    check(not (nothing.get("sensors") or []) and nothing.get("hasMore") is False,
+          "a space with no sensors is an empty page")
+
+    try:
+        vms.call("GET", "/api/guarding/sensors?spaceId=not-a-uuid")
+        check(False, "a malformed space id is refused")
+    except HttpError as e:
+        check(e.status == 400, f"a malformed space id is refused with 400 (got {e.status})")
+
+    single = guarding_sensors(vms, floor["id"], page_size=1)
+    first_rows = single.get("sensors") or []
+    check(len(first_rows) == 1 and single.get("hasMore") is True,
+          "a page of one reports that there is more")
+    second = guarding_sensors(vms, floor["id"], page_size=1, after=single.get("next"))
+    second_rows = second.get("sensors") or []
+    check(len(second_rows) == 1 and second.get("hasMore") is False,
+          "the next page takes the other row and ends the list")
+    check(first_rows and second_rows
+          and first_rows[0].get("objectId") != second_rows[0].get("objectId"),
+          "the pages share no row")
+
+    try:
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+        armed = wait_until(
+            lambda: next((row for row in guarding_sensors(vms, floor["id"]).get("sensors") or []
+                          if row.get("sourceId") == camera_id(ARMED_CAMERA)), None), 20)
+        check(armed is not None and armed.get("armed") is True
+              and armed.get("armingSource") == "explicit",
+              "arming from the panel's command turns the row on guard at once")
+
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "disarmed")
+        disarmed = wait_until(
+            lambda: next((row for row in guarding_sensors(vms, floor["id"]).get("sensors") or []
+                          if row.get("sourceId") == camera_id(ARMED_CAMERA)
+                          and row.get("armed") is False
+                          and row.get("armingSource") == "explicit"), None), 20)
+        check(disarmed is not None, "disarming turns it off guard, explicitly")
+    finally:
+        restore = sensor_settings_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+        if restore:
+            set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
+
+
 def sensor_settings_row(vms, name, token):
     """The administrator's settings row of one part, as the settings endpoint reports it."""
     return next((row for row in device_settings(vms, camera_id(name))
@@ -1125,6 +1233,15 @@ def check_sensor_alarm(vms, sensor):
         check(alarm_reaches(vms, row["id"]),
               f"ALARM reaches {row.get('name') or row['id']}")
 
+    # The canonical tree ends at the server, but a person reads the room. The camera's reference
+    # replica stands on the floor plan, and the alarm is mirrored onto it so the space — and the
+    # map above it — counts it among their children.
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if check(floor is not None, f"the demo has the room the camera stands in ({BUILDING_NAME!r})"):
+        wait_until(lambda: alarm_reaches(vms, floor["id"]), 20)
+        check(alarm_reaches(vms, floor["id"]),
+              "ALARM reaches the room the camera stands in")
+
     return alarm
 
 
@@ -1181,6 +1298,11 @@ def check_return_to_normal(vms, sensor, alarm):
     for node in [part] + sensor["ancestors"]:
         check(not alarm_reaches(vms, node["id"]),
               f"ALARM is gone from {node.get('name') or node['id']}")
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if floor is not None:
+        check(bool(wait_until(lambda: not alarm_reaches(vms, floor["id"]), 20)),
+              "ALARM leaves the room when the contact returns")
 
     check(bool(events_of(vms, part["id"], "alarm_closed")), "`alarm_closed` is in the journal")
 
@@ -1490,6 +1612,7 @@ def main():
         print("Device I/O, alarms and the demo rule")
         check_provisioning(vms)
         check_operator_arming(vms)
+        check_guarding_panel(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

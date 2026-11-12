@@ -481,8 +481,14 @@ namespace VmsMap.Grpc
       // already knows, and an alarm that started before the page opened is the one that matters.
       if (request.Ids.Count == 0)
       {
-        var alarmed = await _db.AlarmStates.AsNoTracking()
-          .Where(s => s.alarm || s.children_alarms > 0)
+        // Pictures are left out: a camera's alarm row is mirrored onto its reference replica so
+        // the room above it counts the alarm, and answering with both rows would list the same
+        // camera twice. A picture read by its own id still answers through its owner.
+        var alarmed = await (
+            from state in _db.AlarmStates.AsNoTracking()
+            join node in _db.Markers.AsNoTracking() on state.id equals node.id
+            where (state.alarm || state.children_alarms > 0) && node.owner_id == null
+            select state)
           .ToListAsync(ct);
         var all = alarmed
           .Select(s => Utils.ConvertGuidToObjectId(s.id))

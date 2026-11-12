@@ -204,6 +204,36 @@ there is no `GetRelayState` at all.
   output, an input is a camera's input, and what changes one appears on the other through the
   events above.
 
+## Guarding sensors
+
+A sensor is a camera's digital input an administrator configured in VmsCfg (`device_settings`):
+its name, its trigger and whether a contact raises an alarm. The physical contact is observed by
+the adapter before anyone configures it — it is a `device_node` row — and the operator's panel shows
+it with its toggle disabled until it is configured, because the arming command writes a settings row
+and never creates one.
+
+**One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
+answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
+explicit `armed` property above the camera's **reference replica** (`space`), otherwise the camera's
+own armed flag (`camera`). `inherit` is the administrator's mode and is not an operator's command.
+The scheme is the same for one card and for a page of the panel — the page resolves in one pass,
+with the settings and the camera flags read in bulk.
+
+**The panel is server-side.** `GET api/guarding/sensors?spaceId=&pageSize=&afterName=&afterId=`
+answers one page of a space's sensors through `MapService.ListGuardSensors`:
+
+- `space_id` covers the space **and everything under it**, which is the set the space's own `armed`
+  property reaches; an empty id asks for everything the caller may see. A zone will arrive as a
+  polygon in the same request, not as a second list.
+- Each row is addressed by `source_kind`/`source_id`/`part_kind`/`part_token`, never by camera:
+  a fire panel and its loops will join the same list under a kind of their own.
+- Rows are filtered by the caller's `view_live` before the page is cut, and `can_control` says
+  whether the toggle may be used. The page is a keyset one — ordered by the sensor's name, `has_more`
+  plus a cursor, no total — because rights can hide rows and an offset would shift the list every
+  time somebody arms a sensor.
+- The toggle is the existing `PUT api/DeviceIo/cameras/{id}/digital-inputs/{token}/arm-mode`
+  (`SetDeviceArmMode`); the panel adds no write path.
+
 ## States, events and rights
 
 - **Every camera is a node from creation.** The adapter in `VmsMap/Adapter/` creates it from
@@ -218,6 +248,11 @@ there is no `GetRelayState` at all.
   sweep confirms the episode is over; `CONNECTED`/`DISCONNECTED` follow the open source outages in
   VmsFs. The alarm counters bubble up `alarm_states` in the same transaction. The event's id is the
   episode's `event_uuid`, so a redelivered message writes nothing twice.
+- **An alarm reaches the room the camera stands in.** The canonical tree ends at the server, so the
+  counters alone would stop above the camera. A camera whose row changes has that row mirrored onto
+  its **reference replica** — the picture on the floor plan — and the spaces above it recount; a
+  picture's row is never counted as a second alarm, and only the reference replica gets one. When a
+  placement moves the reference, the old picture's row goes and the new one's appears.
 - **Rights are rows on tree nodes** (`rights(object_id, subject, action)`), inherited downwards;
   `admin` bypasses them, and one open/enforced switch decides what a node with no rows means.
   VmsMap computes one user's effective set and applies it to every multi-node read; web_srv's

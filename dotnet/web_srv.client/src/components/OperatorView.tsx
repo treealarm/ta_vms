@@ -10,8 +10,9 @@ import SimulationFab from './SimulationFab'
 import LogToggleButton from './LogToggleButton'
 import ForensicSearchTab from './ForensicSearchTab'
 import MapsOperatorPanel from './maps/MapsOperatorPanel'
+import GuardingPanel from './guarding/GuardingPanel'
 
-const TABS = ['monitors', 'investigations', 'map', 'events', 'object-findings', 'gaps'] as const
+const TABS = ['monitors', 'investigations', 'map', 'guarding', 'events', 'object-findings', 'gaps'] as const
 
 export default function OperatorView() {
   const { t } = useTranslation()
@@ -34,6 +35,14 @@ export default function OperatorView() {
               element={(
                 <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
                   <MapsOperatorPanel />
+                </Box>
+              )}
+            />
+            <Route
+              path="guarding"
+              element={(
+                <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <GuardingPanel />
                 </Box>
               )}
             />
@@ -86,6 +95,7 @@ export default function OperatorView() {
             <Tab label={t('nav.monitors')} />
             <Tab label={t('nav.investigations')} />
             <Tab label={t('nav.map')} />
+            <Tab label={t('nav.guarding')} />
             <Tab label={t('nav.events')} />
             <Tab label={t('nav.objectFindings')} />
             <Tab label={t('nav.gaps')} />

@@ -35,6 +35,38 @@ public class DeviceStorage(IDbContextFactory<VmsCfgDbContext> dbFactory)
       .ToListAsync(ct);
   }
 
+  // The same rows for several cameras in one query: the operator's guarding list fills a page and
+  // asks for that page's cameras at once, not one round trip per camera.
+  public async Task<List<DeviceSettings>> ListManyAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    var ids = cameraIds
+      .Where(id => Guid.TryParse(id, out _))
+      .Distinct(StringComparer.Ordinal)
+      .ToList();
+    if (ids.Count == 0)
+      return [];
+
+    await using var db = await dbFactory.CreateDbContextAsync(ct);
+    return await db.DeviceSettings
+      .AsNoTracking()
+      .Where(x => ids.Contains(x.CameraId))
+      .OrderBy(x => x.CameraId)
+      .ThenBy(x => x.Kind)
+      .ThenBy(x => x.Token)
+      .Select(x => new DeviceSettings
+      {
+        CameraId = x.CameraId,
+        Kind = x.Kind,
+        Token = x.Token,
+        Name = x.Name,
+        ArmMode = x.ArmMode,
+        TriggerOn = x.TriggerOn ?? string.Empty,
+        AlarmEnabled = x.AlarmEnabled,
+      })
+      .ToListAsync(ct);
+  }
+
   // Arming is a command, not an edit: only the one column moves, so this cannot carry a stale
   // name, trigger or alarm flag over an administrator's concurrent save. Returns false when the
   // camera has no such digital input configured — the operator arms what was set up, and arming

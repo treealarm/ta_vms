@@ -259,6 +259,66 @@ public class DeviceSettingsPostgresTests
   }
 
   [Fact]
+  public async Task TheBulkReadAnswersEachCamerasConfiguredPartsInOneQuery()
+  {
+    var opened = await OpenAsync();
+    if (opened is not { } o)
+      return;
+
+    await using var source = o.Source;
+
+    var otherCamera = Guid.NewGuid().ToString();
+    await using (var command = source.CreateCommand(
+      "INSERT INTO camera_setup (camera_id, server_id, name) VALUES ($1::uuid, 'srv1', 'Yard');"))
+    {
+      command.Parameters.AddWithValue(otherCamera);
+      await command.ExecuteNonQueryAsync();
+    }
+
+    foreach (var (cameraId, token, name) in new[]
+             {
+               (o.CameraId, "input1", "Door"),
+               (o.CameraId, "relay1", "Lamp"),
+               (otherCamera, "input1", "Gate"),
+             })
+    {
+      await o.Storage.SetAsync(new DeviceSettings
+      {
+        CameraId = cameraId,
+        Kind = token.StartsWith("relay", StringComparison.Ordinal)
+          ? DeviceSettingsRules.Relay
+          : DeviceSettingsRules.DigitalInput,
+        Token = token,
+        Name = name,
+        ArmMode = DeviceSettingsRules.Inherit,
+      }, default);
+    }
+
+    // A camera with nothing configured is asked for too: its absence is the answer, not a miss.
+    var unconfigured = Guid.NewGuid().ToString();
+    var rows = await o.Storage.ListManyAsync(
+      [o.CameraId, otherCamera, unconfigured, "not-a-uuid"], default);
+
+    Assert.Equal(3, rows.Count);
+    Assert.Equal(2, rows.Count(r => r.CameraId == o.CameraId));
+    Assert.Equal(1, rows.Count(r => r.CameraId == otherCamera));
+    Assert.DoesNotContain(rows, r => r.CameraId == unconfigured);
+  }
+
+  [Fact]
+  public async Task TheBulkReadOfNoCamerasAsksTheDatabaseNothing()
+  {
+    var opened = await OpenAsync();
+    if (opened is not { } o)
+      return;
+
+    await using var source = o.Source;
+
+    Assert.Empty(await o.Storage.ListManyAsync([], default));
+    Assert.Empty(await o.Storage.ListManyAsync(["not-a-uuid"], default));
+  }
+
+  [Fact]
   public async Task DeletingTheCameraTakesItsSettings()
   {
     var opened = await OpenAsync();

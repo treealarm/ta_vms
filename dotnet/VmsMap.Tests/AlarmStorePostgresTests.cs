@@ -297,6 +297,81 @@ public class AlarmStorePostgresTests
     Assert.True((await AlarmAsync(s.Db, tree.Input))!.alarm);
   }
 
+  // The room above a camera is not an ancestor of its canonical node: the canonical node hangs
+  // under the server, and only the reference replica stands on the floor plan. The mirror is what
+  // makes the room count the camera's alarm, and removing it again when the contact returns.
+  private sealed record Room(Guid Building, Guid Floor, Guid Camera, Guid Input, Guid Replica);
+
+  private static async Task<Room> SeedRoomAsync(Services s)
+  {
+    var building = Guid.NewGuid();
+    var floor = Guid.NewGuid();
+    var server = Guid.NewGuid();
+    var camera = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    var input = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "1"));
+    var replica = Guid.NewGuid();
+
+    s.Db.Markers.AddRange(
+      new DBMarker { id = building, name = "Building" },
+      new DBMarker { id = floor, name = "Floor", parent_id = building },
+      new DBMarker { id = server, name = "Server" },
+      new DBMarker { id = camera, name = "Camera", parent_id = server },
+      new DBMarker { id = input, name = "Door", parent_id = camera },
+      // A picture of the camera on the floor plan, where a person looks for it.
+      new DBMarker { id = replica, name = "Camera", parent_id = floor, owner_id = camera });
+    await s.Db.SaveChangesAsync();
+
+    s.Db.DeviceNodes.AddRange(
+      TestCameras.DeviceNode(TestCameras.One, camera),
+      new DBDeviceNode
+      {
+        object_id = input,
+        source_kind = DeviceObjectId.CameraSource,
+        source_id = TestCameras.One,
+        part_kind = DeviceObjectId.DigitalInputPart,
+        part_token = "1",
+      });
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = replica,
+      camera_id = TestCameras.One,
+      is_reference = true,
+    });
+    await s.Db.SaveChangesAsync();
+
+    return new Room(building, floor, camera, input, replica);
+  }
+
+  [Fact]
+  public async Task TheRoomCountsTheCameraThatStandsInIt()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var room = await SeedRoomAsync(s);
+
+    await s.Alarms.RaiseAsync(Sensor(room.Input), default);
+
+    // The canonical path: the part, the camera, the server — not the room.
+    Assert.True((await AlarmAsync(s.Db, room.Input))!.alarm);
+    Assert.Equal(1, (await AlarmAsync(s.Db, room.Camera))!.children_alarms);
+
+    // The mirror on the reference replica carries the camera's row into the room's branch.
+    var replica = await AlarmAsync(s.Db, room.Replica);
+    Assert.NotNull(replica);
+    Assert.Equal(1, replica!.children_alarms);
+    Assert.Equal(1, (await AlarmAsync(s.Db, room.Floor))!.children_alarms);
+    Assert.Equal(1, (await AlarmAsync(s.Db, room.Building))!.children_alarms);
+
+    await s.Alarms.NormalAsync(room.Input, "sensor:1", default);
+
+    Assert.False((await AlarmAsync(s.Db, room.Input))!.alarm);
+    Assert.Equal(0, (await AlarmAsync(s.Db, room.Replica))!.children_alarms);
+    Assert.Equal(0, (await AlarmAsync(s.Db, room.Floor))!.children_alarms);
+    Assert.Equal(0, (await AlarmAsync(s.Db, room.Building))!.children_alarms);
+  }
+
   [Fact]
   public async Task DeletingTheCameraCascadesItsPartsAlarms()
   {

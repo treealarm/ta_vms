@@ -86,6 +86,7 @@
     "nodes": "Nodos",
     "eventRouting": "Enrutado de eventos",
     "map": "Mapa",
+    "guarding": "Vigilancia",
     "changePassword": "Cambiar contraseña",
     "deployment": "Despliegue"
   },
@@ -1604,5 +1605,18 @@
       "falseAlarm": "Falsa alarma",
       "other": "Otra"
     }
+  },
+  "guarding": {
+    "title": "Vigilancia",
+    "space": "Espacio",
+    "spaceHint": "El espacio y todo lo que contiene.",
+    "sensor": "Sensor",
+    "camera": "Cámara",
+    "spaceColumn": "Espacio",
+    "guard": "Vigilancia",
+    "empty": "No hay sensores en este espacio.",
+    "more": "Cargar más",
+    "loaded": "{{count}} mostrados",
+    "notConfigured": "Este sensor aún no tiene configuración: un administrador debe configurarlo."
   }
 }

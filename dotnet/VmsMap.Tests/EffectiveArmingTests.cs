@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,14 @@ public class EffectiveArmingTests
     public Task<DeviceSettingsInfo?> FindAsync(
       string cameraId, string kind, string token, CancellationToken ct) =>
       Task.FromResult(Row);
+
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
+        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
+          id => id,
+          _ => (IReadOnlyList<DeviceSettingsInfo>)(Row is null ? [] : [Row]),
+          StringComparer.Ordinal));
 
     public void Invalidate(string cameraId) { }
   }

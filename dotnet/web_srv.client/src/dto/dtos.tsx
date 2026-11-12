@@ -1147,6 +1147,41 @@ export type DigitalInputDto = {
   canControl: boolean
 }
 
+// One row of the operator's guarding panel: a sensor of a space with what it is configured as and
+// what its arming actually resolves to. Addressed by source, not by camera: a fire panel's loops
+// will arrive with a source_kind of their own.
+export type GuardSensorDto = {
+  sourceKind: string
+  sourceId: string
+  partKind: string
+  partToken: string
+  objectId: string
+  name: string
+  cameraName: string
+  spaceId: string
+  spaceName: string
+  /** The administrator's mode; 'inherit' also when no settings row exists — see `configured`. */
+  armMode: DeviceArmMode
+  alarmEnabled: boolean
+  /** False when no administrator configured this input: there is no row to write a mode to. */
+  configured: boolean
+  /** What it resolves to right now. Unlike the camera card's per-part read, this is never unknown. */
+  armed: boolean
+  armingSource: ArmSource
+  canControl: boolean
+}
+
+export type GuardSensorCursorDto = {
+  afterName: string
+  afterId: string
+}
+
+export type GuardSensorPageDto = {
+  sensors: GuardSensorDto[]
+  hasMore: boolean
+  next?: GuardSensorCursorDto | null
+}
+
 // Where the camera says it stands. found=false means it reports no location at all; an individual
 // coordinate the camera omitted stays null rather than becoming zero.
 export type CameraGeoLocationDto = {

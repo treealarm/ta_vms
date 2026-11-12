@@ -154,6 +154,9 @@ builder.Services.AddScoped<SensorAlarmService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
 builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
+// The operator's guarding list: a page of sensors with their effective arming, resolved in one
+// pass rather than one camera at a time.
+builder.Services.AddScoped<VmsMap.Domain.Arming.GuardSensorQuery>();
 builder.Services.AddScoped<CameraStateWriter>();
 // The alarm entity: transitions, the ALARM state and the lifecycle events in one transaction.
 builder.Services.AddScoped<AlarmStore>();

@@ -114,6 +114,11 @@ service MapService {
   // token, because the card holds the device, not the part's node id. `source_kind` is "camera"
   // today; another kind of device hub joins the same registry under a kind of its own.
   rpc GetDevicePartArming(GetDevicePartArmingRequest) returns (GetDevicePartArmingResponse);
+  // The operator's guarding list: one page of a space's sensors with their effective arming,
+  // filtered by the caller's `view_live` and addressed by source, not by camera. `space_id` covers
+  // the space and everything under it — the same set a space's own `armed` property reaches. A
+  // zone filter will join this request as a polygon; it will not be a second list.
+  rpc ListGuardSensors(ListGuardSensorsRequest) returns (ListGuardSensorsResponse);
   rpc GetStateDescriptions(GetStateDescriptionsRequest) returns (StateDescriptionList);
 
   // The operator's alarm entity, independent of the ALARM state: a row with a status, an
@@ -776,6 +781,53 @@ message GetDevicePartArmingResponse {
   // False while the part has no node yet: the adapter creates one from its first snapshot or event.
   bool found        = 1;
   NodeArming arming = 2;
+}
+
+// ── The operator's guarding list ────────────────────────────────────────────────────────────
+
+message ListGuardSensorsRequest {
+  // Empty asks for everything the caller may see. Otherwise this space and every space under it,
+  // which is the set the space's own armed property would reach.
+  string space_id  = 1;
+  // 0 takes the server's default (50); capped at 200.
+  int32  page_size = 2;
+  // Keyset position, not an offset: an operator arming a sensor must not shift every page after it.
+  GuardSensorCursor after = 3;
+  Caller caller    = 4;
+}
+
+message GuardSensorCursor {
+  string after_name = 1;  // the sensor node's name
+  string after_id   = 2;  // its node id, which keeps equal names apart
+}
+
+message GuardSensor {
+  // The address a device card uses: the sensor belongs to a source device, not necessarily a camera.
+  string source_kind = 1;  // "camera" today
+  string source_id   = 2;
+  string part_kind   = 3;  // "digital_input"
+  string part_token  = 4;
+  string object_id   = 5;
+  string name        = 6;
+  string camera_name = 7;
+  // The canvas the camera's reference replica stands on; the space the sensor belongs to.
+  string space_id    = 8;
+  string space_name  = 9;
+  // The administrator's configuration; empty arm_mode means no settings row exists, and the
+  // operator has nothing to write a mode to.
+  string arm_mode      = 10;  // "inherit" | "armed" | "disarmed" | ""
+  bool   alarm_enabled = 11;
+  bool   configured    = 12;
+  // What it actually resolves to right now, and why.
+  bool   armed         = 13;
+  string arming_source = 14;  // "explicit" | "space" | "camera"
+  bool   can_control   = 15;
+}
+
+message ListGuardSensorsResponse {
+  repeated GuardSensor sensors = 1;
+  bool              has_more   = 2;
+  GuardSensorCursor next       = 3;
 }
 
 message AlarmStateList {

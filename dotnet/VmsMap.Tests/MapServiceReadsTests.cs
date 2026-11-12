@@ -92,7 +92,7 @@ public class MapServiceReadsTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
-      TestWiring.Arming(db, arming), alarms,
+      TestWiring.Arming(db, arming), TestWiring.GuardSensors(db, map, rights), alarms,
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);
 
