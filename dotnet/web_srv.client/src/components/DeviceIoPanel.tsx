@@ -14,9 +14,9 @@ type Props = {
 
 // Relays only get a toggle here — mode/idle-state/delay configuration is admin-only, mirroring
 // how PTZ presets are admin-only while the joystick lives in the monitor.
-function RelayRow({ cameraId, relay }: { cameraId: string; relay: RelayOutputDto }) {
+function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: RelayOutputDto; onChanged: () => void }) {
   const { t } = useTranslation()
-  const { active, applyCommandedState } = useRelayToggle(relay.mode, relay.delayMs)
+  const { active } = useRelayToggle(relay.liveActive)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -26,21 +26,25 @@ function RelayRow({ cameraId, relay }: { cameraId: string; relay: RelayOutputDto
     setError(null)
     try {
       await setRelayOutputState(cameraId, relay.token, next)
-      applyCommandedState(next)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setPending(false)
+      // The server records the command before it answers, so this read carries the wish and the
+      // `pending` flag that says the camera has not confirmed it yet.
+      onChanged()
     }
   }
 
-  // What the camera reports, beside what was commanded: the switch cannot know the real state on
-  // its own, because the state lives in the camera's Device/Trigger events.
-  const reported = relay.liveActive === null
-    ? t('onvifSettings.deviceIoStateUnknown')
-    : relay.liveActive
-      ? t('onvifSettings.deviceIoActive')
-      : t('onvifSettings.deviceIoInactive')
+  // What the camera reports; while the command is unconfirmed the server answers with the wish
+  // instead, and the caption says that is what it is.
+  const reported = relay.livePending
+    ? t('onvifSettings.deviceIoWaiting')
+    : relay.liveActive === null
+      ? t('onvifSettings.deviceIoStateUnknown')
+      : relay.liveActive
+        ? t('onvifSettings.deviceIoActive')
+        : t('onvifSettings.deviceIoInactive')
 
   return (
     <Stack spacing={0.25}>
@@ -62,10 +66,11 @@ function RelayRow({ cameraId, relay }: { cameraId: string; relay: RelayOutputDto
   )
 }
 
-// The operator's guard switch. It is checked by what the input's arming actually resolves to, not
-// by its configured mode: 'inherit' on a camera that is on guard means the sensor is on guard, and
-// showing that as "off" would be a lie an operator acts on. The switch is offered only for an
-// input an administrator gave an alarm to — without one, arming changes nothing.
+// A sensor row on the camera card: the contact it reports, and — on a line of its own, under the
+// caption "Guard" — the switch that arms it. Arming from the monitor is ordinary operator work;
+// the switch is kept off the token line because beside the live 0/1 it read as "change what the
+// sensor says". The switch is checked by what the arming resolves to, not by the configured mode:
+// 'inherit' under an armed camera means on guard, and showing that as off would be a lie.
 function DigitalInputRow({
   cameraId, input, onChanged,
 }: { cameraId: string; input: DigitalInputDto; onChanged: () => void }) {
@@ -120,9 +125,6 @@ function DigitalInputRow({
   return (
     <Stack spacing={0.25}>
       <Stack direction="row" alignItems="center" spacing={1}>
-        {showGuard && (input.canControl ? guardSwitch : (
-          <Tooltip title={t('onvifSettings.deviceIoNoControl')}><span>{guardSwitch}</span></Tooltip>
-        ))}
         <Typography variant="body2" sx={{ flex: 1, fontSize: '0.78rem' }}>{input.token}</Typography>
         <Typography variant="caption" color="text.secondary">
           {input.idleState === 'open' && t('onvifSettings.deviceIoIdleOpen')}
@@ -139,13 +141,21 @@ function DigitalInputRow({
         </Typography>
       </Stack>
       {showGuard && (
-        <Typography
-          variant="caption"
-          color={armed === true ? 'success.main' : 'text.secondary'}
-          title={t('onvifSettings.deviceIoGuardHint')}
-        >
-          {guardLabel}
-        </Typography>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          <Typography variant="caption" color="text.secondary">
+            {t('onvifSettings.deviceIoGuardLabel')}
+          </Typography>
+          {input.canControl ? guardSwitch : (
+            <Tooltip title={t('onvifSettings.deviceIoNoControl')}><span>{guardSwitch}</span></Tooltip>
+          )}
+          <Typography
+            variant="caption"
+            color={armed === true ? 'success.main' : 'text.secondary'}
+            title={t('onvifSettings.deviceIoGuardHint')}
+          >
+            {guardLabel}
+          </Typography>
+        </Stack>
       )}
       {error && <Typography variant="caption" color="error.main">{error}</Typography>}
     </Stack>
@@ -170,7 +180,7 @@ export default function DeviceIoPanel({ cameraId, live }: Props) {
           {relays.length > 0 && (
             <Stack spacing={0.5}>
               <Typography variant="caption" color="text.secondary">{t('onvifSettings.deviceIoRelaysGroup')}</Typography>
-              {relays.map((r) => <RelayRow key={r.token} cameraId={cameraId} relay={r} />)}
+              {relays.map((r) => <RelayRow key={r.token} cameraId={cameraId} relay={r} onChanged={live.reload} />)}
             </Stack>
           )}
           {inputs.length > 0 && (

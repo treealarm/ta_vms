@@ -16,6 +16,14 @@ export type Selection =
 /** The modes that draw a shape click by click instead of acting on what is already there. */
 export const DRAW_MODES: Mode[] = ['point', 'line', 'polygon']
 
+/** A camera part picked from the palette: the next click on the map makes a replica of it. */
+export type PendingPart = {
+  /** The part's canonical node; the replica's owner. */
+  id: string
+  name: string
+  kind: 'digital_input' | 'relay'
+}
+
 /**
  * Which property tab beside the map is open: the space's own, what the selection is in this canvas
  * (a camera's placement, a landmark, a footprint, a diagram element), the selected node itself —
@@ -38,6 +46,13 @@ export type EditorState = {
    */
   pendingDiagramId: string | null
   setPendingDiagramId: (cameraId: string | null) => void
+  /**
+   * A part of a device picked from the palette — a sensor or a relay. The next click on the map
+   * makes a replica of it there, the way a click places a camera; a part has no placement row, so
+   * the replica is an ordinary picture of the part's node.
+   */
+  pendingPart: PendingPart | null
+  setPendingPart: (part: PendingPart | null) => void
   focus: MapFocus | null
   /** Pans the map to the point; the same point again pans again. */
   focusOn: (at: GeoPointDto) => void
@@ -65,6 +80,7 @@ export type Snapshot = {
   selection: Selection
   pendingCameraId: string | null
   pendingDiagramId: string | null
+  pendingPart: PendingPart | null
   focus: MapFocus | null
   sideTab: SideTab
   openDiagramId: string | null
@@ -72,7 +88,8 @@ export type Snapshot = {
 }
 
 export const FRESH: Snapshot = {
-  mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null, focus: null,
+  mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null,
+  pendingPart: null, focus: null,
   sideTab: 'space', openDiagramId: null, revealed: null,
 }
 

@@ -1113,7 +1113,10 @@ export type RelayOutputDto = {
   mode: RelayMode
   idleState: IdleState
   delayMs: number
+  /** The state the relay has, or — while `livePending` — the state it was told to take. */
   liveActive: boolean | null
+  /** The camera has not confirmed the command yet; `liveActive` is the wish, not a report. */
+  livePending: boolean
   /** False when the caller has no control right on this camera. */
   canControl: boolean
 }
@@ -1145,6 +1148,51 @@ export type DigitalInputDto = {
   armingSource: ArmSource | null
   /** False when the caller has no control right on this camera: the switch is shown, not usable. */
   canControl: boolean
+}
+
+/** What kind of object the control list holds: the camera itself, or one of its parts. */
+export type ControlObjectKind = 'camera' | 'digital_input' | 'relay'
+
+/** What a part reports right now; '' means the device has not reported one (or it is a camera). */
+export type ControlObjectState = '' | 'open' | 'closed' | 'active' | 'inactive'
+
+// One row of the operator's control panel: an object of a space, what it is configured as and what
+// it currently resolves to. Addressed by source, not by camera: a fire panel's loops will arrive
+// with a source_kind of their own.
+export type ControlObjectDto = {
+  objectId: string
+  kind: ControlObjectKind
+  sourceKind: string
+  sourceId: string
+  partKind: string
+  partToken: string
+  name: string
+  cameraName: string
+  spaceId: string
+  spaceName: string
+  state: ControlObjectState
+  /** The administrator's mode; 'inherit' also when no settings row exists — see `configured`. */
+  armMode: DeviceArmMode
+  alarmEnabled: boolean
+  /** False when no administrator configured this part: there is no row to write a mode to. */
+  configured: boolean
+  /** Relays have no arming at all: their action is a state toggle, not a guard switch. */
+  hasArming: boolean
+  /** What it resolves to right now. A camera answers with its own flag, a sensor with the scheme. */
+  armed: boolean
+  armingSource: ArmSource | ''
+  canControl: boolean
+}
+
+export type ControlObjectCursorDto = {
+  afterName: string
+  afterId: string
+}
+
+export type ControlObjectPageDto = {
+  objects: ControlObjectDto[]
+  hasMore: boolean
+  next?: ControlObjectCursorDto | null
 }
 
 // Where the camera says it stands. found=false means it reports no location at all; an individual

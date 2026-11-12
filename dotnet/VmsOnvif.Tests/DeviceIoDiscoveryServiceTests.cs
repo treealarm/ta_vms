@@ -28,9 +28,9 @@ public class DeviceIoDiscoveryServiceTests
     };
     var sink = new FakeSink();
     sink.Snapshots[("cam1", DeviceIoKind.Relay, "relay1")] =
-      new DeviceIoSnapshot(DeviceIoKind.Relay, "relay1", true, "closed", null);
+      new DeviceIoSnapshot(DeviceIoKind.Relay, "relay1", true, "closed", null, Pending: false);
     sink.Snapshots[("cam1", DeviceIoKind.DigitalInput, "input1")] =
-      new DeviceIoSnapshot(DeviceIoKind.DigitalInput, "input1", true, "open", "closed");
+      new DeviceIoSnapshot(DeviceIoKind.DigitalInput, "input1", true, "open", "closed", Pending: false);
     var publisher = new FakePublisher();
 
     await Service(reader, sink, publisher).SweepCameraAsync(CameraId, default);

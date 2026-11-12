@@ -1,29 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
-import type { RelayMode } from '../dto/dtos'
-
-// ONVIF has no operation to read a relay's current logical (active/inactive) state — only its
-// configured Mode/DelayTime/IdleState (GetRelayOutputs never carries a live state field, see
-// RelayOutputSettings in onvif.xsd). So the displayed on/off state can't be reconciled against the
-// camera; it's tracked purely client-side: set optimistically the moment the command succeeds,
-// and for monostable relays auto-reverted after delayMs via a local timer that mirrors the
-// camera's own auto-revert, never re-fetched from the server.
-export function useRelayToggle(mode: RelayMode, delayMs: number) {
-  const [active, setActive] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-  }, [])
-
-  const applyCommandedState = (next: boolean) => {
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
-    setActive(next)
-    if (next && mode === 'monostable' && delayMs > 0) {
-      timerRef.current = setTimeout(() => setActive(false), delayMs)
-    }
-  }
-
-  return { active, applyCommandedState }
+// ONVIF has no operation to read a relay's current logical state — only its configured
+// Mode/DelayTime/IdleState. The state itself arrives from the camera through device events.
+//
+// The switch has no guess of its own: VmsOnvif is the one place that knows both the operator's
+// wish and the camera's report, and it answers with the wish until the camera confirms it. A local
+// guess is what used to flip a relay back on: it outlived the command, or a late event overwrote
+// the cache it was reading.
+export function useRelayToggle(reported: boolean | null = null) {
+  return { active: reported ?? false }
 }
 
 export async function setRelayOutputState(cameraId: string, token: string, active: boolean): Promise<void> {

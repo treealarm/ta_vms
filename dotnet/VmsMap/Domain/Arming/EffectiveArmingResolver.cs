@@ -13,6 +13,14 @@ namespace VmsMap.Domain.Arming
   public sealed record NodeArmingInfo(string ObjectId, bool Armed, string Source);
 
   /// <summary>
+  /// One device part whose arming is asked for: its node, and the source it belongs to. A list of
+  /// them is resolved in one pass, so a page of a hundred sensors does not cost a hundred round
+  /// trips to VmsCfg.
+  /// </summary>
+  public sealed record ArmingSubject(
+    string ObjectId, string SourceId, string PartKind, string PartToken);
+
+  /// <summary>
   /// Resolves the arming of a device node:
   /// <code>
   /// arm_mode = 'armed'    -> true
@@ -59,67 +67,170 @@ namespace VmsMap.Domain.Arming
       if (node is null)
         return null;
 
-      var cameraId = node.source_id;
-      var armMode = ArmInherit;
-
-      // Only an input has a configured mode; a relay's settings row is constrained to inherit, and
-      // a camera node has no part settings at all.
-      if (string.Equals(node.part_kind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal))
-      {
-        var settings = await _settings.FindAsync(cameraId, node.part_kind, node.part_token, ct);
-        armMode = settings?.ArmMode ?? ArmInherit;
-      }
-
-      if (string.Equals(armMode, ArmArmed, StringComparison.Ordinal))
-        return new NodeArmingInfo(objectId, true, Explicit);
-      if (string.Equals(armMode, ArmDisarmed, StringComparison.Ordinal))
-        return new NodeArmingInfo(objectId, false, Explicit);
-
-      if (await SpaceArmedAsync(cameraId, ct) is { } spaceArmed)
-        return new NodeArmingInfo(objectId, spaceArmed, Space);
-
-      var armed = await _cameraState.GetArmedAsync(cameraId, ct);
-      return new NodeArmingInfo(objectId, armed, Camera);
+      var resolved = await ResolveManyAsync(
+        [new ArmingSubject(objectId, node.source_id, node.part_kind, node.part_token)], ct);
+      return resolved.GetValueOrDefault(objectId);
     }
 
     /// <summary>
-    /// Walks up from the reference replica's space. The nearest explicit armed property wins, so a
-    /// disarmed floor inside an armed building is disarmed; a space with no property is skipped
-    /// rather than read as false.
+    /// The same scheme for a page of parts at once: the configured mode, then the nearest armed
+    /// property above the camera's reference replica, then the camera's own flag. Settings and
+    /// camera flags are read in bulk, and the tree is walked one level at a time for all cameras
+    /// together, so the cost is the tree's depth, not the page's length.
     /// </summary>
-    private async Task<bool?> SpaceArmedAsync(string cameraId, CancellationToken ct)
+    public async Task<Dictionary<string, NodeArmingInfo>> ResolveManyAsync(
+      IReadOnlyCollection<ArmingSubject> subjects, CancellationToken ct)
     {
-      var reference = await _db.CameraPlacements.AsNoTracking()
-        .Where(p => p.camera_id == cameraId && p.is_reference)
-        .Select(p => p.object_id)
-        .FirstOrDefaultAsync(ct);
+      var result = new Dictionary<string, NodeArmingInfo>(StringComparer.Ordinal);
+      if (subjects.Count == 0)
+        return result;
 
-      if (reference == Guid.Empty)
-        return null;
+      var cameraIds = subjects
+        .Select(s => s.SourceId)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+      var settings = await _settings.ListManyAsync(cameraIds, ct);
 
-      var current = await _db.Markers.AsNoTracking()
-        .Where(m => m.id == reference)
-        .Select(m => m.parent_id)
-        .FirstOrDefaultAsync(ct);
-
-      var visited = new HashSet<Guid>();
-      while (current is { } node && visited.Add(node))
+      // The mode each part is configured with. Only an input has one; a relay's settings row is
+      // constrained to inherit, and a camera node has no part settings at all.
+      var modes = new Dictionary<(string, string), string>();
+      foreach (var subject in subjects)
       {
-        var value = await _db.Properties.AsNoTracking()
-          .Where(p => p.object_id == node && p.prop_name == ArmedProperty)
-          .Select(p => p.str_val)
-          .FirstOrDefaultAsync(ct);
+        if (!string.Equals(subject.PartKind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal))
+          continue;
 
-        if (bool.TryParse(value, out var armed))
-          return armed;
-
-        current = await _db.Markers.AsNoTracking()
-          .Where(m => m.id == node)
-          .Select(m => m.parent_id)
-          .FirstOrDefaultAsync(ct);
+        var configured = settings.GetValueOrDefault(subject.SourceId)?.FirstOrDefault(s =>
+          string.Equals(s.Kind, subject.PartKind, StringComparison.Ordinal)
+          && string.Equals(s.Token, subject.PartToken, StringComparison.Ordinal));
+        if (configured is not null)
+          modes[(subject.SourceId, subject.PartToken)] = configured.ArmMode;
       }
 
-      return null;
+      var inheriting = new List<ArmingSubject>();
+      foreach (var subject in subjects)
+      {
+        var mode = modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmInherit;
+        if (string.Equals(mode, ArmArmed, StringComparison.Ordinal))
+          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit);
+        else if (string.Equals(mode, ArmDisarmed, StringComparison.Ordinal))
+          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, false, Explicit);
+        else
+          inheriting.Add(subject);
+      }
+
+      if (inheriting.Count == 0)
+        return result;
+
+      var inheritCameraIds = inheriting
+        .Select(s => s.SourceId)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+      var spaceArmed = await SpaceArmedManyAsync(inheritCameraIds, ct);
+
+      var needCamera = inheritCameraIds
+        .Where(id => spaceArmed.GetValueOrDefault(id) is null)
+        .ToList();
+      var cameraArmed = needCamera.Count == 0
+        ? new Dictionary<string, bool>(StringComparer.Ordinal)
+        : await _cameraState.GetArmedManyAsync(needCamera, ct);
+
+      foreach (var subject in inheriting)
+      {
+        if (spaceArmed.GetValueOrDefault(subject.SourceId) is { } armed)
+          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, armed, Space);
+        else
+          result[subject.ObjectId] = new NodeArmingInfo(
+            subject.ObjectId, cameraArmed.GetValueOrDefault(subject.SourceId), Camera);
+      }
+
+      return result;
+    }
+
+    /// <summary>
+    /// Walks up from each camera's reference replica. The nearest explicit armed property wins, so
+    /// a disarmed floor inside an armed building is disarmed; a space with no property is skipped
+    /// rather than read as false. One query per tree level covers every camera still looking.
+    /// </summary>
+    private async Task<Dictionary<string, bool?>> SpaceArmedManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+    {
+      var result = new Dictionary<string, bool?>(StringComparer.Ordinal);
+
+      var references = await _db.CameraPlacements.AsNoTracking()
+        .Where(p => cameraIds.Contains(p.camera_id) && p.is_reference)
+        .Select(p => new { p.camera_id, p.object_id })
+        .ToListAsync(ct);
+
+      // The walk starts at the replica's space, not at the replica itself: the picture is not a
+      // container and never carries the property.
+      var replicaIds = references.Select(r => r.object_id).Distinct().ToList();
+      var fronts = await _db.Markers.AsNoTracking()
+        .Where(m => replicaIds.Contains(m.id))
+        .Select(m => new { m.id, m.parent_id })
+        .ToListAsync(ct);
+      var parentOf = fronts
+        .Where(f => f.parent_id.HasValue)
+        .ToDictionary(f => f.id, f => f.parent_id!.Value);
+
+      // camera -> the node whose ancestors are still being read, and the nodes already visited.
+      var current = new Dictionary<string, Guid>(StringComparer.Ordinal);
+      var visited = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
+      foreach (var reference in references)
+      {
+        if (parentOf.TryGetValue(reference.object_id, out var space))
+        {
+          current.TryAdd(reference.camera_id, space);
+          visited[reference.camera_id] = [space];
+        }
+      }
+
+      while (current.Count > 0)
+      {
+        var level = current.Values.Distinct().ToList();
+        var values = await _db.Properties.AsNoTracking()
+          .Where(p => level.Contains(p.object_id) && p.prop_name == ArmedProperty)
+          .Select(p => new { p.object_id, p.str_val })
+          .ToListAsync(ct);
+        var byNode = values
+          .GroupBy(v => v.object_id)
+          .ToDictionary(g => g.Key, g => g.First().str_val);
+
+        foreach (var cameraId in current.Keys.ToList())
+        {
+          if (byNode.TryGetValue(current[cameraId], out var value)
+              && bool.TryParse(value, out var armed))
+          {
+            result[cameraId] = armed;
+            current.Remove(cameraId);
+          }
+        }
+
+        if (current.Count == 0)
+          break;
+
+        var stillLooking = current.Values.Distinct().ToList();
+        var links = await _db.Markers.AsNoTracking()
+          .Where(m => stillLooking.Contains(m.id))
+          .Select(m => new { m.id, m.parent_id })
+          .ToListAsync(ct);
+        var nextOf = links
+          .Where(l => l.parent_id.HasValue)
+          .ToDictionary(l => l.id, l => l.parent_id!.Value);
+
+        foreach (var cameraId in current.Keys.ToList())
+        {
+          var node = current[cameraId];
+          if (nextOf.TryGetValue(node, out var parent) && visited[cameraId].Add(parent))
+            current[cameraId] = parent;
+          else
+            current.Remove(cameraId); // the root, or a cycle the data should not have
+        }
+      }
+
+      foreach (var cameraId in cameraIds)
+        result.TryAdd(cameraId, null);
+
+      return result;
     }
 
     // Kept as constants rather than reaching into VmsCfg's rules: VmsMap must not link VmsCfg's

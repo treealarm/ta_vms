@@ -1300,6 +1300,34 @@ public class CameraStorage(
     return result is bool b && b;
   }
 
+  // The same flag for a page's worth of cameras. Only rows that exist are returned: a camera that
+  // has never been armed has no row, and its absence means disarmed, exactly as the single read
+  // says. Callers default the missing ones themselves.
+  public async Task<Dictionary<string, bool>> GetCameraArmedAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+  {
+    var ids = cameraIds
+      .Distinct(StringComparer.Ordinal)
+      .Select(id => Guid.TryParse(id, out var guid) ? guid : (Guid?)null)
+      .Where(guid => guid.HasValue)
+      .Select(guid => guid!.Value)
+      .Distinct()
+      .ToArray();
+    var result = new Dictionary<string, bool>(StringComparer.Ordinal);
+    if (ids.Length == 0)
+      return result;
+
+    await using var cmd = _dataSource.CreateCommand(
+      "SELECT camera_id::text, armed FROM camera_states WHERE camera_id = ANY($1::uuid[]);");
+    cmd.Parameters.AddWithValue(ids);
+
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    while (await reader.ReadAsync(ct))
+      result[reader.GetString(0)] = reader.GetBoolean(1);
+
+    return result;
+  }
+
   public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""

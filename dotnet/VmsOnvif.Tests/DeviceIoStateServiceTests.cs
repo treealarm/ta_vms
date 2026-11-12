@@ -15,8 +15,14 @@ public class DeviceIoStateServiceTests
 {
   private const string CameraId = "cam1";
 
-  private static DeviceIoStateService Service(FakeFactory factory, FakeConnections? connections = null) =>
-    new(connections ?? new FakeConnections(), factory, NullLogger<DeviceIoStateService>.Instance);
+  private static DeviceIoStateService Service(
+    FakeFactory factory,
+    FakeConnections? connections = null,
+    FakeCommander? commander = null,
+    FakeTime? time = null) =>
+    new(connections ?? new FakeConnections(), factory,
+        commander ?? new FakeCommander(), time ?? new FakeTime(),
+        NullLogger<DeviceIoStateService>.Instance);
 
   private static DeviceDescriptor Relay(string token, string? idleState = "closed") =>
     new(token, idleState);
@@ -357,6 +363,212 @@ public class DeviceIoStateServiceTests
     Assert.Equal(0, announced);
   }
 
+  // The operator's command is a wish, not a report: it is shown at once, because the camera may
+  // report its own change only on the next delivery of its subscription, but it is marked as
+  // unconfirmed until the camera says the relay is really in that state.
+  [Fact]
+  public async Task ACommandPublishesTheWishAsPending()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear(); // the subscription's Initialized replay
+
+    await Command(service, true);
+
+    var raised = Assert.Single(events);
+    Assert.True(raised.Active);
+    Assert.False(raised.Initialized);
+    Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+
+    var snapshot = service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1");
+    Assert.True(snapshot?.Pending);
+    Assert.True(snapshot?.LogicalState);
+  }
+
+  // The camera's own report is what ends the wish. It arrives with the value the wish asked for,
+  // so the screens keep the same state — only the pending mark changes.
+  [Fact]
+  public async Task AConfirmingReportClearsPendingWithoutASecondTransition()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await Command(service, true);
+    events.Clear();
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
+
+    var confirmed = Assert.Single(events);
+    Assert.True(confirmed.Active);
+    Assert.False(confirmed.Initialized);
+    Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+    Assert.False(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1")?.Pending);
+  }
+
+  // The subscription delivers on its own schedule, so a report can be older than the command that
+  // followed it. It must not undo the wish: that is what turned "off" back into "on".
+  [Fact]
+  public async Task AReportWithTheOldValueDoesNotUndoTheWish()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", true) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await Command(service, false);
+    events.Clear();
+    // The camera's event for the previous "on" arrives after the command to switch it off.
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
+    await WaitForDebounceAsync();
+
+    Assert.Empty(events);
+    Assert.False(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+    Assert.True(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1")?.Pending);
+  }
+
+  [Fact]
+  public async Task TheRetrySweepRepeatsAnUnconfirmedCommand()
+  {
+    var commander = new FakeCommander();
+    var time = new FakeTime();
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory, commander: commander, time: time);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Command(service, true);
+    Assert.Empty(commander.Sent);
+
+    // Not yet due.
+    await service.RetryPendingAsync(CancellationToken.None);
+    Assert.Empty(commander.Sent);
+
+    time.Advance(DeviceIoStateService.RetryInterval + TimeSpan.FromMilliseconds(100));
+    await service.RetryPendingAsync(CancellationToken.None);
+    Assert.Equal([(CameraId, "relay1", true)], commander.Sent);
+
+    time.Advance(DeviceIoStateService.RetryInterval);
+    await service.RetryPendingAsync(CancellationToken.None);
+    Assert.Equal(2, commander.Sent.Count);
+  }
+
+  [Fact]
+  public async Task AnUnconfirmedCommandIsGivenUpAfterItsLifetime()
+  {
+    var commander = new FakeCommander();
+    var time = new FakeTime();
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory, commander: commander, time: time);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await Command(service, true);
+    events.Clear();
+
+    time.Advance(DeviceIoStateService.ConfirmTimeout + TimeSpan.FromSeconds(1));
+    await service.RetryPendingAsync(CancellationToken.None);
+
+    // The camera's own state comes back, and the screens stop showing a wish that never came true.
+    var givenUp = Assert.Single(events);
+    Assert.False(givenUp.Active);
+    Assert.False(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+    Assert.False(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1")?.Pending);
+  }
+
+  // A relay the camera has never reported has no report to confirm against, but the wish is still
+  // held: the subscription this command just opened replays a snapshot taken *before* the command,
+  // and publishing the command once would let that snapshot undo it. The commanded value is what a
+  // camera that never speaks leaves behind when the wish expires — no rollback.
+  [Fact]
+  public async Task ACommandForARelayWithoutABaselineIsStillHeld()
+  {
+    var commander = new FakeCommander();
+    var time = new FakeTime();
+    var factory = new FakeFactory();
+    await using var service = Service(factory, commander: commander, time: time);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await Command(service, true);
+
+    var raised = Assert.Single(events);
+    Assert.True(raised.Active);
+    Assert.True(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1")?.Pending);
+
+    time.Advance(DeviceIoStateService.RetryInterval + TimeSpan.FromMilliseconds(100));
+    await service.RetryPendingAsync(CancellationToken.None);
+    Assert.Equal([(CameraId, "relay1", true)], commander.Sent);
+
+    // Nobody ever confirmed it; after the lifetime the wish goes, and the commanded value is what
+    // is left — the camera having said nothing is not evidence that the command failed.
+    events.Clear();
+    time.Advance(DeviceIoStateService.ConfirmTimeout);
+    await service.RetryPendingAsync(CancellationToken.None);
+
+    var cleared = Assert.Single(events);
+    Assert.True(cleared.Active);
+    Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+    Assert.False(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1")?.Pending);
+  }
+
+  // A monostable relay drops on the camera's own clock. The drop is not a refusal to obey: the
+  // wish lives past it, and only when it expires does the camera's own state go back on screen.
+  [Fact]
+  public async Task AMonostableRelaysOwnDropIsNotARefusal()
+  {
+    var time = new FakeTime();
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
+    await using var service = Service(factory, time: time);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    var lifetime = TimeSpan.FromSeconds(5) + DeviceIoStateService.MonostableGrace;
+    await service.SetDesiredStateAsync(
+      CameraId, DeviceIoKind.Relay, "relay1", true, lifetime);
+    events.Clear();
+
+    // The camera drops the coil by itself and reports "inactive"; the wish still stands.
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", false));
+    await WaitForDebounceAsync();
+    Assert.Empty(events);
+    Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+
+    time.Advance(lifetime + TimeSpan.FromMilliseconds(100));
+    await service.RetryPendingAsync(CancellationToken.None);
+
+    var dropped = Assert.Single(events);
+    Assert.False(dropped.Active);
+    Assert.False(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
+  }
+
+  // A relay the subscription has not reported is not confirmed against anything; its first
+  // Initialized report still brings it in as the camera says.
+  [Fact]
+  public async Task ACommandForAnUnknownRelayIsNotKept()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    events.Clear();
+
+    await service.SetDesiredStateAsync(
+      CameraId, DeviceIoKind.Relay, "relay9", true, DeviceIoStateService.ConfirmTimeout);
+
+    Assert.Empty(events);
+    Assert.Null(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay9"));
+  }
+
+  private static Task Command(DeviceIoStateService service, bool active) =>
+    service.SetDesiredStateAsync(
+      CameraId, DeviceIoKind.Relay, "relay1", active, DeviceIoStateService.ConfirmTimeout);
+
   private static ConcurrentQueue<DeviceEvent> Capture(DeviceIoStateService service)
   {
     var events = new ConcurrentQueue<DeviceEvent>();
@@ -367,6 +579,27 @@ public class DeviceIoStateServiceTests
   private static DeviceIoState State(
     DeviceIoKind kind, string token, bool logical, string operation = "Changed") =>
     new(kind, token, logical, kind == DeviceIoKind.Relay ? logical : null, operation, null);
+
+  private sealed class FakeCommander : IRelayCommander
+  {
+    public List<(string CameraId, string Token, bool Active)> Sent { get; } = [];
+
+    public Task SetRelayOutputStateAsync(string cameraId, string token, bool active, CancellationToken ct)
+    {
+      Sent.Add((cameraId, token, active));
+      return Task.CompletedTask;
+    }
+  }
+
+  /// <summary>A clock the test moves by hand, so retry intervals cost no real time.</summary>
+  private sealed class FakeTime : TimeProvider
+  {
+    private DateTimeOffset _now = new(2026, 11, 12, 12, 0, 0, TimeSpan.Zero);
+
+    public override DateTimeOffset GetUtcNow() => _now;
+
+    public void Advance(TimeSpan by) => _now += by;
+  }
 
   private sealed class FakeConnections(bool configured = true) : ICameraConnectionSource
   {

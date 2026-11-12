@@ -132,22 +132,29 @@ export type ReplicaRequest = {
   /** Where it is dropped on the parent canvas. */
   lat: number
   lon: number
+  /** The replica's own name; empty copies the owner's. */
+  name?: string
+  /** How the replica is drawn: a part's colour and caption, so it is not just a grey dot. */
+  visual?: MapVisual
 }
 
 /** A picture of a node on another canvas: `CreateReplica` makes the node, the figure gives it the
  *  place it was dropped at — a replica without a shape draws nothing. */
 export const createReplicaAt = createAsyncThunk(
   'mapEdits/createReplicaAt',
-  async ({ ownerId, parentId, lat, lon }: ReplicaRequest, api) => {
-    const marker = await mapApi.createReplica({ ownerId, parentId })
+  async ({ ownerId, parentId, lat, lon, name, visual }: ReplicaRequest, api) => {
+    const marker = await mapApi.createReplica({ ownerId, parentId, name })
 
     await mapApi.updateFigures([{
       id: marker.id,
       parentId,
       ownerId,
-      name: marker.name,
+      name: name || marker.name,
       geometry: { type: 'Point', coord: [{ lat, lon }] },
     }])
+
+    // The look travels on its own call, as the editor's node form writes it.
+    if (visual) await mapApi.updateVisual([{ ...visual, objectId: marker.id }])
 
     await api.dispatch(loadNodes([marker.id]))
     api.dispatch(canvasAdd({ canvasId: parentId, ids: [marker.id] }))

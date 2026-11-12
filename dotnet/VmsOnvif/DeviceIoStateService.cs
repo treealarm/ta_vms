@@ -63,7 +63,8 @@ public readonly record struct DeviceIoSnapshot(
   string Token,
   bool LogicalState,
   string? IdleState,
-  string? Contact);
+  string? Contact,
+  bool Pending);
 
 /// <summary>
 /// The camera's parts that were just forgotten, and therefore are no longer present. Published as
@@ -83,6 +84,15 @@ public interface IDeviceIoStateSink
   Task ReportDevicesAsync(string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices);
 
   DeviceIoSnapshot? TryGetSnapshot(string cameraId, DeviceIoKind kind, string token);
+}
+
+/// <summary>
+/// Asks a camera to drive one relay. The state service repeats a command until the camera's own
+/// report confirms it; the settings service is what actually speaks ONVIF.
+/// </summary>
+public interface IRelayCommander
+{
+  Task SetRelayOutputStateAsync(string cameraId, string token, bool active, CancellationToken ct);
 }
 
 /// <summary>
@@ -111,6 +121,15 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   /// <summary>Rapid flapping of one contact is one event, not a burst.</summary>
   public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(200);
 
+  // A command the camera has not confirmed is repeated on this interval...
+  public static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
+  // ...until this long after it was first sent, or after this many attempts.
+  public static readonly TimeSpan ConfirmTimeout = TimeSpan.FromSeconds(20);
+  public const int MaxAttempts = 10;
+  // A monostable relay drops on the camera's own clock; the wish must outlive that drop by a
+  // margin, so the drop itself is never mistaken for a refusal to obey.
+  public static readonly TimeSpan MonostableGrace = TimeSpan.FromSeconds(2);
+
   // Lazy so concurrent reports for one camera open exactly one subscription: ConcurrentDictionary
   // may build several candidates, but only the stored one is ever started.
   private readonly ConcurrentDictionary<string, Lazy<Task<Watch?>>> _watchers = new();
@@ -119,16 +138,24 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   public DeviceIoStateService(
     ICameraConnectionSource connections,
     IDeviceIoWatcherFactory factory,
+    IRelayCommander commander,
+    TimeProvider time,
     ILogger<DeviceIoStateService> logger)
   {
     _connections = connections;
     _factory = factory;
+    _commander = commander;
+    _time = time;
     _logger = logger;
   }
 
   private readonly ICameraConnectionSource _connections;
   private readonly IDeviceIoWatcherFactory _factory;
+  private readonly IRelayCommander _commander;
+  private readonly TimeProvider _time;
   private readonly ILogger<DeviceIoStateService> _logger;
+
+  private DateTimeOffset Now => _time.GetUtcNow();
 
   /// <summary>One transition of one part, ready to be published.</summary>
   public event Action<DeviceEvent>? DeviceEventRaised;
@@ -156,16 +183,108 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
 
   public DeviceIoSnapshot? TryGetSnapshot(string cameraId, DeviceIoKind kind, string token)
   {
-    if (TryGetLogicalState(cameraId, kind, token) is not { } logical)
+    if (!_watchers.TryGetValue(cameraId, out var lazy) || !lazy.IsValueCreated)
+      return null;
+    if (lazy.Value is not { IsCompletedSuccessfully: true } started
+        || started.Result is not { } watch
+        || !watch.TryGet(kind, token, out var state))
       return null;
 
     var idleState = IdleStateFor(cameraId, kind, token);
     return new DeviceIoSnapshot(
       kind,
       token,
-      logical,
+      state.LogicalState,
       idleState,
-      kind == DeviceIoKind.DigitalInput ? Contact(idleState, logical) : null);
+      kind == DeviceIoKind.DigitalInput ? Contact(idleState, state.LogicalState) : null,
+      watch.IsPending(kind, token));
+  }
+
+  /// <summary>
+  /// A relay command was accepted: record it as the operator's wish and announce it now. ONVIF has
+  /// no getter for a relay's state, and a camera may report the change only when its event
+  /// subscription next delivers one — a minute on some devices. Until the camera confirms it, the
+  /// wish is what every reader shows; the camera's report then takes over.
+  /// </summary>
+  public async Task SetDesiredStateAsync(
+    string cameraId, DeviceIoKind kind, string token, bool logical, TimeSpan lifetime)
+  {
+    // A part the camera's own list does not name is a caller's mistake, not a relay: recording a
+    // wish for it would put a state in front of the screens for something that does not exist.
+    if (!_presence.TryGetValue(cameraId, out var presence) || presence.Find(kind, token) is null)
+    {
+      _logger.LogDebug(
+        "No wish for camera {CameraId} {Kind}/{Token}: the camera's list does not name it",
+        cameraId, kind, token);
+      return;
+    }
+    if (!_watchers.TryGetValue(cameraId, out var lazy) || !lazy.IsValueCreated)
+    {
+      _logger.LogDebug(
+        "No wish for camera {CameraId} {Kind}/{Token}: no subscription to confirm it on",
+        cameraId, kind, token);
+      return;
+    }
+
+    Watch? watch;
+    try { watch = await lazy.Value; }
+    catch { return; }
+
+    watch?.SetDesiredState(kind, token, logical, lifetime);
+  }
+
+  /// <summary>
+  /// Repeats every unconfirmed command, and gives up on one the camera has had long enough to
+  /// obey: the camera's own report is published again, so the screens stop showing a wish that
+  /// never came true.
+  /// </summary>
+  public async Task RetryPendingAsync(CancellationToken ct)
+  {
+    foreach (var (cameraId, lazy) in _watchers)
+    {
+      if (!lazy.IsValueCreated || ct.IsCancellationRequested)
+        continue;
+
+      Watch? watch;
+      try { watch = await lazy.Value; }
+      catch { continue; }
+      if (watch is null)
+        continue;
+
+      foreach (var (key, desired) in watch.DesiredEntries())
+      {
+        if (ct.IsCancellationRequested)
+          return;
+
+        var now = Now;
+        if (now - desired.FirstSent >= desired.Lifetime || desired.Attempts >= MaxAttempts)
+        {
+          _logger.LogWarning(
+            "Camera {CameraId} did not confirm relay {Token} after {Attempts} attempt(s); showing its own state",
+            cameraId, key.Token, desired.Attempts);
+          watch.GiveUp(key);
+          continue;
+        }
+
+        if (now - desired.LastSent < RetryInterval)
+          continue;
+
+        watch.MarkRetried(key, now);
+        try
+        {
+          await _commander.SetRelayOutputStateAsync(cameraId, key.Token, desired.Logical, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+          return;
+        }
+        catch (Exception ex)
+        {
+          _logger.LogWarning(ex,
+            "Repeating relay {Token} of camera {CameraId} failed", key.Token, cameraId);
+        }
+      }
+    }
   }
 
   /// <summary>
@@ -385,7 +504,11 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
     private readonly DeviceIoStateService _owner;
     private readonly string _cameraId;
     private readonly IDeviceIoWatcher _watcher;
-    private readonly ConcurrentDictionary<(DeviceIoKind Kind, string Token), DeviceIoState> _states = new();
+    // What the camera itself last said. Nothing else writes here: a command is a wish, not a
+    // report, and mixing the two is what let a late event undo the operator's switch.
+    private readonly ConcurrentDictionary<(DeviceIoKind Kind, string Token), DeviceIoState> _reported = new();
+    // What the operator asked a relay to be, until the camera confirms it or the wish expires.
+    private readonly ConcurrentDictionary<(DeviceIoKind Kind, string Token), Desired> _desired = new();
     private readonly ConcurrentDictionary<(DeviceIoKind Kind, string Token), Published> _published = new();
     private readonly ConcurrentDictionary<(DeviceIoKind Kind, string Token), CancellationTokenSource> _debounce = new();
     private readonly object _gate = new();
@@ -398,15 +521,33 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
       _watcher.StateChanged += OnStateChanged;
       // The Initialized replay can arrive before the handler above is attached.
       foreach (var state in _watcher.States)
-        _states[(state.Kind, state.Token)] = state;
+        _reported[(state.Kind, state.Token)] = state;
     }
 
-    public bool TryGet(DeviceIoKind kind, string token, [NotNullWhen(true)] out DeviceIoState? state) =>
-      _states.TryGetValue((kind, token), out state);
+    /// <summary>
+    /// What the screens show: the wish while one is unconfirmed, the camera's report otherwise.
+    /// False when the camera has never said anything about the part.
+    /// </summary>
+    public bool TryGet(DeviceIoKind kind, string token, [NotNullWhen(true)] out DeviceIoState? state)
+    {
+      if (!_reported.TryGetValue((kind, token), out var reported))
+      {
+        state = null;
+        return false;
+      }
+
+      state = _desired.TryGetValue((kind, token), out var desired)
+        ? reported with { LogicalState = desired.Logical }
+        : reported;
+      return true;
+    }
+
+    public bool IsPending(DeviceIoKind kind, string token) => _desired.ContainsKey((kind, token));
 
     private void OnStateChanged(DeviceIoState state)
     {
-      _states[(state.Kind, state.Token)] = state;
+      var key = (state.Kind, state.Token);
+      _reported[key] = state;
 
       if (string.Equals(state.PropertyOperation, "Initialized", StringComparison.OrdinalIgnoreCase))
       {
@@ -414,7 +555,22 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
         return;
       }
 
-      var key = (state.Kind, state.Token);
+      if (_desired.TryGetValue(key, out var desired))
+      {
+        if (desired.Logical == state.LogicalState)
+        {
+          // The camera confirmed the command: the wish has done its work, and from now on the
+          // camera's own report is what the screens show.
+          _desired.TryRemove(key, out _);
+          Publish(state.Kind, state.Token, initialized: false);
+          return;
+        }
+
+        // The camera reporting the other value is not a change of mind: the event may be older
+        // than the command (the subscription delivers on its own schedule), and the wish stands
+        // until it is confirmed or expires.
+        return;
+      }
 
       // A repeat of the value the map already has is not a transition and costs nothing; the
       // subscription does replay the current value on reconnect.
@@ -422,6 +578,49 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
         return;
 
       DebouncePublish(state.Kind, state.Token);
+    }
+
+    /// <summary>
+    /// The operator set a relay: what it was told to be is what the screens show until the camera
+    /// reports that state. A relay the camera has never reported has no baseline to confirm
+    /// against, so the command is published once and not kept.
+    /// </summary>
+    public void SetDesiredState(DeviceIoKind kind, string token, bool logical, TimeSpan lifetime)
+    {
+      var key = (kind, token);
+      var now = _owner.Now;
+
+      // A camera that has never reported this relay still needs the wish held: the subscription a
+      // command opens replays an Initialized snapshot taken *before* the command, and publishing
+      // the command once lets that replay overwrite it — the switch comes back on right after
+      // being switched off. The commanded value stands in as the provisional report, so a camera
+      // that never says anything keeps it when the wish expires rather than rolling back.
+      if (!_reported.ContainsKey(key))
+        _reported[key] = new DeviceIoState(kind, token, logical, null, "Changed", now);
+
+      _desired[key] = new Desired(logical, now, now, Attempts: 1, lifetime);
+      _owner._logger.LogDebug(
+        "Relay {Token} of camera {CameraId}: wish {Logical} waits for the camera",
+        token, _cameraId, logical);
+      Publish(kind, token, initialized: false);
+    }
+
+    /// <summary>The unconfirmed wishes, for the retry sweep.</summary>
+    public IReadOnlyList<((DeviceIoKind Kind, string Token) Key, Desired Value)> DesiredEntries() =>
+      _desired.Select(pair => (pair.Key, pair.Value)).ToList();
+
+    /// <summary>Another attempt is about to be made; the clock restarts from now.</summary>
+    public void MarkRetried((DeviceIoKind Kind, string Token) key, DateTimeOffset now)
+    {
+      if (_desired.TryGetValue(key, out var desired))
+        _desired[key] = desired with { LastSent = now, Attempts = desired.Attempts + 1 };
+    }
+
+    /// <summary>The camera had long enough: drop the wish and show the camera's own state.</summary>
+    public void GiveUp((DeviceIoKind Kind, string Token) key)
+    {
+      if (_desired.TryRemove(key, out _))
+        Publish(key.Kind, key.Token, initialized: false);
     }
 
     // Flapping contacts are debounced per part: the last value within the window is what the map
@@ -447,7 +646,7 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
         }
 
         _debounce.TryRemove(new KeyValuePair<(DeviceIoKind, string), CancellationTokenSource>(key, cts));
-        if (!_states.ContainsKey(key))
+        if (!_reported.ContainsKey(key))
           return;
 
         Publish(kind, token, initialized: false);
@@ -462,7 +661,7 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
     /// </summary>
     public void RaisePolarityChanged(DeviceIoKind kind, string token, string? previousIdleState)
     {
-      if (!_states.TryGetValue((kind, token), out var state))
+      if (!_reported.TryGetValue((kind, token), out var state))
         return;
 
       var newContact = Contact(_owner.IdleStateFor(_cameraId, kind, token), state.LogicalState);
@@ -481,12 +680,19 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
       bool initialized,
       object? previous = null)
     {
-      if (!_states.TryGetValue((kind, token), out var state))
+      if (!_reported.TryGetValue((kind, token), out var reported))
         return;
 
+      // The wish, when there is one, is what the screens show; the camera's report is the
+      // fallback. This is the one place the two are put together, so every reader sees the same
+      // value by construction.
+      var desired = _desired.TryGetValue((kind, token), out var wish) ? wish : null;
+      var logical = desired?.Logical ?? reported.LogicalState;
+      var pending = desired is not null;
+
       var idleState = _owner.IdleStateFor(_cameraId, kind, token);
-      var contact = kind == DeviceIoKind.DigitalInput ? Contact(idleState, state.LogicalState) : null;
-      var active = kind == DeviceIoKind.Relay ? state.LogicalState : (bool?)null;
+      var contact = kind == DeviceIoKind.DigitalInput ? Contact(idleState, logical) : null;
+      var active = kind == DeviceIoKind.Relay ? logical : (bool?)null;
       var value = (object?)contact ?? active;
 
       var key = (kind, token);
@@ -494,16 +700,18 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
 
       lock (_gate)
       {
-        // A transition to the value already published is not a transition. A polarity change is
-        // the exception: its caller passes an explicit `previous` that differs.
-        if (!initialized && published is not null && published.Logical == state.LogicalState
-            && Equals(published.Value, value))
+        // A transition to the value already published is not a transition. A change of `pending`
+        // is the exception even when the value stays: the SSE stream must hear that the wish was
+        // confirmed (or given up), or the "waiting for the camera" mark would never clear. A
+        // polarity change is another: its caller passes an explicit `previous` that differs.
+        if (!initialized && published is not null && published.Logical == logical
+            && Equals(published.Value, value) && published.Pending == pending)
         {
           return;
         }
 
         var previousValue = previous ?? published?.Value;
-        _published[key] = new Published(state.LogicalState, value);
+        _published[key] = new Published(logical, value, pending);
 
         _owner.DeviceEventRaised?.Invoke(new DeviceEvent(
           _cameraId,
@@ -514,7 +722,7 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
           previousValue,
           PolarityKnown: kind == DeviceIoKind.Relay || idleState is not null,
           initialized,
-          DateTimeOffset.UtcNow));
+          _owner.Now));
       }
     }
 
@@ -524,12 +732,21 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
       foreach (var cts in _debounce.Values)
         cts.Cancel();
       _debounce.Clear();
-      _states.Clear();
+      _reported.Clear();
+      _desired.Clear();
       _published.Clear();
       return _watcher.DisposeAsync();
     }
 
-    private sealed record Published(bool Logical, object? Value);
+    private sealed record Published(bool Logical, object? Value, bool Pending);
+
+    /// <summary>A relay command that has not been confirmed yet.</summary>
+    public sealed record Desired(
+      bool Logical,
+      DateTimeOffset FirstSent,
+      DateTimeOffset LastSent,
+      int Attempts,
+      TimeSpan Lifetime);
   }
 
   /// <summary>

@@ -443,6 +443,10 @@ namespace VmsMap.Db
       if (tx is not null)
         await tx.CommitAsync(ct);
 
+      // The reference replica is where the camera's alarm row is mirrored, so a move or a new
+      // picture changes which space counts it even though no state changed.
+      await _mapUpdateService.RefreshPlacementMirrorsAsync([placement.CameraId]);
+
       await NotifyAsync(changed, [placement.CameraId], ct);
     }
 

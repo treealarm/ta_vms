@@ -25,6 +25,13 @@ namespace VmsMap.Clients
   {
     Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct);
     Task<DeviceSettingsInfo?> FindAsync(string cameraId, string kind, string token, CancellationToken ct);
+    /// <summary>
+    /// The settings of several cameras at once, for a list that shows a page of sensors. Cameras
+    /// with no configured part are present with an empty list, so a caller can tell "nothing
+    /// configured" from "not asked".
+    /// </summary>
+    Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct);
     void Invalidate(string cameraId);
   }
 
@@ -118,6 +125,75 @@ namespace VmsMap.Clients
       return settings.FirstOrDefault(s =>
         string.Equals(s.Kind, kind, StringComparison.Ordinal)
         && string.Equals(s.Token, token, StringComparison.Ordinal));
+    }
+
+    public async Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct)
+    {
+      var result = new Dictionary<string, IReadOnlyList<DeviceSettingsInfo>>(StringComparer.Ordinal);
+      var wanted = cameraIds.Distinct(StringComparer.Ordinal).ToList();
+      if (wanted.Count == 0)
+        return result;
+
+      await EnsureFreshAsync(ct);
+
+      var now = DateTime.UtcNow;
+      var missing = new List<string>();
+      foreach (var cameraId in wanted)
+      {
+        if (_cache.TryGetValue(cameraId, out var cached) && now - cached.LoadedAt < EntryTtl)
+          result[cameraId] = cached.Settings;
+        else
+          missing.Add(cameraId);
+      }
+
+      if (missing.Count == 0)
+        return result;
+
+      try
+      {
+        var options = new CallOptions(
+          deadline: DateTime.UtcNow.Add(CallTimeout), cancellationToken: ct);
+        var request = new ListDeviceSettingsForCamerasRequest();
+        request.CameraIds.AddRange(missing);
+        var response = await _cfg.ListDeviceSettingsForCamerasAsync(request, options);
+
+        var loaded = response.Settings
+          .Select(s => new DeviceSettingsInfo(
+            s.CameraId,
+            s.Kind,
+            s.Token,
+            s.Name,
+            s.ArmMode,
+            string.IsNullOrWhiteSpace(s.TriggerOn) ? null : s.TriggerOn,
+            s.AlarmEnabled))
+          .GroupBy(s => s.CameraId, StringComparer.Ordinal)
+          .ToDictionary(g => g.Key, g => (IReadOnlyList<DeviceSettingsInfo>)g.ToList(),
+            StringComparer.Ordinal);
+
+        // A camera the answer does not name has nothing configured; caching that also keeps the
+        // next page from asking for it again.
+        foreach (var cameraId in missing)
+        {
+          var settings = loaded.GetValueOrDefault(cameraId) ?? [];
+          _cache[cameraId] = new Entry(DateTime.UtcNow, settings);
+          result[cameraId] = settings;
+        }
+      }
+      catch (OperationCanceledException) when (ct.IsCancellationRequested)
+      {
+        throw;
+      }
+      catch (Exception ex)
+      {
+        _logger.LogWarning(ex,
+          "Reading device settings for {Count} cameras failed; using the cached copies",
+          missing.Count);
+        foreach (var cameraId in missing)
+          result[cameraId] = _cache.TryGetValue(cameraId, out var cached) ? cached.Settings : [];
+      }
+
+      return result;
     }
 
     public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);

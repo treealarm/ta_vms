@@ -19,23 +19,27 @@ type Snapshot = DeviceIoLiveState & { cameraId: string }
 
 const liveKey = (partKind: string, token: string) => `${partKind}:${token}`
 
+/** What the stream last said about one part: its value, and whether that value is still a wish. */
+type LiveValue = { active: boolean; pending: boolean }
+
 /**
  * Applies the live values heard so far to a fresh read. The read carries the camera's cached state
  * at the moment it was served; an update that arrived while it was in flight is newer, so the
- * buffered value wins.
+ * buffered value wins. The `pending` flag travels with the value, because a wish confirmed by the
+ * camera has the same value as one still waiting — only the flag tells them apart.
  */
 function withLive(
   relays: RelayOutputDto[],
   inputs: DigitalInputDto[],
-  live: Map<string, boolean>,
+  live: Map<string, LiveValue>,
 ): { relays: RelayOutputDto[]; inputs: DigitalInputDto[] } {
   const relay = (r: RelayOutputDto) => {
     const value = live.get(liveKey('relay', r.token))
-    return value === undefined ? r : { ...r, liveActive: value }
+    return value === undefined ? r : { ...r, liveActive: value.active, livePending: value.pending }
   }
   const input = (i: DigitalInputDto) => {
     const value = live.get(liveKey('digital_input', i.token))
-    return value === undefined ? i : { ...i, liveActive: value }
+    return value === undefined ? i : { ...i, liveActive: value.active }
   }
   return { relays: relays.map(relay), inputs: inputs.map(input) }
 }
@@ -58,13 +62,14 @@ export function useDeviceIoLive(
   const [version, setVersion] = useState(0)
   const reload = useCallback(() => setVersion((v) => v + 1), [])
   // Live values heard while the read is in flight, and after it, keyed by kind:token.
-  const live = useRef(new Map<string, boolean>())
+  const live = useRef(new Map<string, LiveValue>())
 
   useEffect(() => {
     // The snapshot in state may belong to the previous camera; the return guard below hides it
     // until this read answers, so there is nothing to reset here but the buffered live values.
     live.current = new Map()
     if (!enabled) return
+
 
     let cancelled = false
     const load = async () => {
@@ -106,13 +111,25 @@ export function useDeviceIoLive(
     // The callback closes over the camera this subscription was made for; a change of camera
     // unsubscribes it, so there is no stale-camera case to guard against.
     return deviceIoLiveClient.subscribe(cameraId, (update) => {
-      live.current.set(liveKey(update.partKind, update.token), update.logicalState)
+      live.current.set(liveKey(update.partKind, update.token), {
+        active: update.logicalState,
+        pending: update.pending === true,
+      })
       setSnapshot((prev) => {
         if (prev?.cameraId !== cameraId) return prev
         return { ...prev, ...withLive(prev.relays, prev.inputs, live.current) }
       })
     })
   }, [cameraId, enabled])
+
+  // The stream is best effort: a frame can be missed while the browser throttles a background tab,
+  // and nothing would ever correct the card. Coming back to the window is the moment to ask again.
+  useEffect(() => {
+    if (!enabled) return
+    const onFocus = () => setVersion((v) => v + 1)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [enabled])
 
   return enabled && snapshot?.cameraId === cameraId
     ? { ...snapshot, reload }

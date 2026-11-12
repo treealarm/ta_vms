@@ -86,6 +86,7 @@
     "nodes": "Nodes",
     "eventRouting": "Event routing",
     "map": "Map",
+    "control": "Control",
     "changePassword": "Change password",
     "deployment": "Deployment"
   },
@@ -755,6 +756,7 @@
     "deviceIoStateUnknown": "Unknown",
     "deviceIoActive": "Active",
     "deviceIoInactive": "Inactive",
+    "deviceIoWaiting": "Waiting for the camera…",
     "deviceIoRelayStateTip": "The state the camera reports for this relay. It comes from ONVIF property events and can lag a command.",
     "deviceIoInputStateTip": "The logical state the camera reports for this input.",
     "deviceIoArmModeLabel": "Arming",
@@ -773,6 +775,7 @@
     "deviceIoGuardOnZone": "On guard (zone)",
     "deviceIoGuardOffZone": "Off guard (zone)",
     "deviceIoGuardUnknown": "Guard state unknown",
+    "deviceIoGuardLabel": "Guard",
     "deviceIoGuardHint": "Disarming does not acknowledge or close an alarm that is already active.",
     "deviceIoNoControl": "No control right on this camera",
     "geoLocation": "Position (ONVIF)",
@@ -1401,6 +1404,7 @@
     "planTooLarge": "A plan image may not exceed {{mb}} MB",
     "planUnreadable": "This file is not an image the browser can read",
     "placeHint": "Click the map to place {{name}}",
+    "placePartHint": "Click the map to place {{name}} (a part of the device)",
     "landmarkModeHint": "Click the map to add a landmark",
     "planModeHint": "Drag ✥ to move the plan, ⟳ to turn it, ⤡ to resize it — or type its width",
     "cameras": "Cameras",
@@ -1418,7 +1422,8 @@
       "input": "digital input",
       "relay": "relay",
       "loading": "Reading the device's parts…",
-      "noParts": "This device declares no parts"
+      "noParts": "This device declares no parts",
+      "here": "placed here"
     },
     "notPlaced": "Not placed",
     "cameraHeight": "Height, m",
@@ -1605,5 +1610,34 @@
       "falseAlarm": "False alarm",
       "other": "Other"
     }
+  },
+  "control": {
+    "title": "Control",
+    "space": "Space",
+    "allSpaces": "All spaces",
+    "spaceHint": "The space and everything inside it.",
+    "kindAll": "All",
+    "kindCamera": "Cameras",
+    "kindSensor": "Sensors",
+    "kindRelay": "Relays",
+    "kindLabel": {
+      "camera": "Camera",
+      "digital_input": "Sensor",
+      "relay": "Relay"
+    },
+    "state": "State",
+    "stateOpen": "Open",
+    "stateClosed": "Closed",
+    "stateActive": "Active",
+    "stateInactive": "Inactive",
+    "stateUnknown": "Not reported yet",
+    "guard": "Guard",
+    "relay": "Relay",
+    "alarmEnabled": "This sensor raises an alarm.",
+    "empty": "Nothing to control in this space.",
+    "more": "Load more",
+    "loaded": "{{count}} shown",
+    "nothingSelected": "Select an object to see what you can do with it.",
+    "notConfigured": "This sensor has no settings yet: an administrator must configure it."
   }
 }

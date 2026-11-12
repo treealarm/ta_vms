@@ -206,6 +206,174 @@ namespace VmsMap.Db
       }
 
       await _db.SaveChangesAsync();
+
+      // The canonical tree ends at the server; the room a camera is drawn in hangs off its
+      // reference replica instead. Mirroring the camera's row onto that one replica is what lets
+      // the space count the alarm like any other child, without a row per picture.
+      await MirrorToReferenceReplicasAsync(updates);
+    }
+
+    /// <summary>
+    /// Copies the alarm row of every changed camera node onto its reference replica and recomputes
+    /// the spaces above it. Only the reference replica gets a row: the others answer through their
+    /// owner on read, and a row each would count the same camera again in every space it is drawn
+    /// in.
+    /// </summary>
+    private async Task MirrorToReferenceReplicasAsync(
+      IReadOnlyDictionary<Guid, (bool Alarm, int Children)> updates)
+    {
+      if (updates.Count == 0)
+        return;
+
+      var cameras = new Dictionary<Guid, Guid>(); // canonical node -> camera id
+      await using (var cmd = CreateCommand("""
+        SELECT dn.object_id, dn.source_id
+        FROM device_node dn
+        WHERE dn.object_id = ANY(@ids)
+          AND dn.source_kind = 'camera'
+          AND dn.part_kind = 'device';
+        """))
+      {
+        cmd.Parameters.Add(new NpgsqlParameter("ids", updates.Keys.ToArray()));
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+          cameras[reader.GetGuid(0)] = reader.GetGuid(1);
+      }
+
+      if (cameras.Count == 0)
+        return;
+
+      var parents = await WriteMirrorsAsync(cameras);
+      if (parents.Count > 0)
+        await RecomputeAsync(parents);
+    }
+
+    /// <summary>
+    /// Writes each camera's mirror onto its current reference replica and takes the row off every
+    /// other picture of that camera, answering the parents whose counters changed.
+    /// </summary>
+    private async Task<HashSet<Guid>> WriteMirrorsAsync(
+      IReadOnlyDictionary<Guid, Guid> cameras)
+    {
+      var replicas = new List<(Guid Id, Guid CameraId, bool IsReference, Guid? ParentId)>();
+      await using (var cmd = CreateCommand("""
+        SELECT p.object_id, p.camera_id, p.is_reference, o.parent_id
+        FROM camera_placement p
+        JOIN objects o ON o.id = p.object_id
+        WHERE p.camera_id = ANY(@cams);
+        """))
+      {
+        cmd.Parameters.Add(new NpgsqlParameter("cams", cameras.Values.Distinct().ToArray()));
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+          replicas.Add((
+            reader.GetGuid(0),
+            reader.GetGuid(1),
+            reader.GetBoolean(2),
+            reader.IsDBNull(3) ? null : reader.GetGuid(3)));
+        }
+      }
+
+      if (replicas.Count == 0)
+        return [];
+
+      var states = await QueryAlarmRowsAsync(cameras.Keys.ToList());
+      var byCamera = new Dictionary<Guid, (bool Alarm, int Children)>();
+      foreach (var (node, cameraId) in cameras)
+        byCamera[cameraId] = states.GetValueOrDefault(node);
+
+      var parents = new HashSet<Guid>();
+      var stale = new List<Guid>();
+
+      foreach (var replica in replicas)
+      {
+        if (replica.ParentId is { } parent)
+          parents.Add(parent);
+
+        var state = byCamera.GetValueOrDefault(replica.CameraId);
+
+        if (!replica.IsReference)
+        {
+          // A picture never keeps an alarm row of its own, whatever an earlier reference left on it.
+          stale.Add(replica.Id);
+          continue;
+        }
+
+        await using var cmd = CreateCommand("""
+          INSERT INTO alarm_states (id, alarm, children_alarms) VALUES (@id, @alarm, @children)
+          ON CONFLICT (id) DO UPDATE SET
+            alarm = EXCLUDED.alarm,
+            children_alarms = EXCLUDED.children_alarms
+          WHERE alarm_states.alarm IS DISTINCT FROM EXCLUDED.alarm
+             OR alarm_states.children_alarms IS DISTINCT FROM EXCLUDED.children_alarms;
+          """);
+        cmd.Parameters.Add(new NpgsqlParameter("id", replica.Id));
+        cmd.Parameters.Add(new NpgsqlParameter("alarm", state.Alarm));
+        cmd.Parameters.Add(new NpgsqlParameter("children", state.Children));
+        await cmd.ExecuteNonQueryAsync();
+      }
+
+      if (stale.Count > 0)
+      {
+        await using var cmd = CreateCommand(
+          "DELETE FROM alarm_states WHERE id = ANY(@ids);");
+        cmd.Parameters.Add(new NpgsqlParameter("ids", stale.ToArray()));
+        await cmd.ExecuteNonQueryAsync();
+      }
+
+      return parents;
+    }
+
+    /// <summary>
+    /// Re-mirrors the cameras after a placement moved its reference: the old picture's row goes,
+    /// the new one's appears, and both spaces recompute. Called by the placement write, where no
+    /// state changed — only where the camera is drawn.
+    /// </summary>
+    public async Task RefreshPlacementMirrorsAsync(IReadOnlyCollection<string> cameraIds)
+    {
+      if (!_db.Database.IsRelational())
+        return;
+
+      var ids = cameraIds
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(guid => guid.HasValue)
+        .Select(guid => guid!.Value)
+        .Distinct()
+        .ToList();
+      if (ids.Count == 0)
+        return;
+
+      var ownsTransaction = _db.Database.CurrentTransaction is null;
+      await using var tx = ownsTransaction
+        ? await _db.Database.BeginTransactionAsync()
+        : null;
+      await LockAggregationAsync();
+
+      var cameras = new Dictionary<Guid, Guid>();
+      await using (var cmd = CreateCommand("""
+        SELECT dn.object_id, dn.source_id
+        FROM device_node dn
+        WHERE dn.source_id = ANY(@cams)
+          AND dn.source_kind = 'camera'
+          AND dn.part_kind = 'device';
+        """))
+      {
+        cmd.Parameters.Add(new NpgsqlParameter("cams", ids.ToArray()));
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+          cameras[reader.GetGuid(0)] = reader.GetGuid(1);
+      }
+
+      if (cameras.Count > 0)
+      {
+        var parents = await WriteMirrorsAsync(cameras);
+        if (parents.Count > 0)
+          await RecomputeAsync(parents);
+      }
+
+      if (tx is not null)
+        await tx.CommitAsync();
     }
 
     // One row per closure node, not one per child: the aggregate runs over idx_objects_parent_id

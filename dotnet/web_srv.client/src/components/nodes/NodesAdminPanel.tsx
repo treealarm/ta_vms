@@ -8,7 +8,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { mapApi } from '../../api/mapApi'
+import { mapApi, mapLiveUrl } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
@@ -19,6 +19,8 @@ import { attachDeviceDiagram } from '../../store/mapEditsSlice'
 import { loadVisualStates } from '../../store/statesSlice'
 import { treeRows } from '../../map/nodeTree'
 import KindIcon from '../../map/KindIcon'
+import { useMapLive } from '../../hooks/useMapLive'
+import PartStateDot from '../objects/PartStateDot'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
 import CameraUnifiedCard from '../CameraUnifiedCard'
@@ -172,6 +174,22 @@ export default function NodesAdminPanel() {
     if (selectedId) void dispatch(loadVisualStates([selectedId]))
   }, [selectedId, dispatch])
 
+  // The tree reads its states once and would keep them forever: a relay switched from the Control
+  // panel has to change here too, without the reader reopening the row. The watch names every node
+  // the tree has loaded, the same way the map follows its canvas.
+  const loadedIds = useMemo(() => Object.keys(markers).sort(), [markers])
+  const liveUrl = useMemo(
+    () => (loadedIds.length > 0 ? mapLiveUrl({ ids: loadedIds }) : null),
+    [loadedIds],
+  )
+  useMapLive(liveUrl, (message) => {
+    if (message.action !== 'set_visual_states' && message.action !== 'set_ids2update') return
+    const changed = (message.items ?? [])
+      .map((item) => item.objectId)
+      .filter((id): id is string => !!id)
+    if (changed.length > 0) void dispatch(loadVisualStates(changed))
+  })
+
   const selectedCamera = selected?.cameraId ? camerasById[selected.cameraId] : undefined
   const reference = selected?.cameraId
     ? placements.find((placement) => placement.cameraId === selected.cameraId && placement.isReference)
@@ -245,6 +263,9 @@ export default function NodesAdminPanel() {
                     primaryTypographyProps={{ noWrap: true, variant: 'body2' }}
                     secondaryTypographyProps={{ noWrap: true, variant: 'caption' }}
                   />
+                  {marker.nodeKind === 'part' ? (
+                    <PartStateDot state={states[marker.id]} descriptions={descriptions} />
+                  ) : null}
                 </ListItemButton>
               )
             })}

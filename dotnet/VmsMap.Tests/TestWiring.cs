@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,7 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
 using VmsMap.Domain.Arming;
+using VmsMap.Domain.Control;
 
 namespace VmsMap.Tests;
 
@@ -25,6 +27,12 @@ internal sealed class NoDeviceSettings : IDeviceSettingsSource
     string cameraId, string kind, string token, CancellationToken ct) =>
     Task.FromResult<DeviceSettingsInfo?>(null);
 
+  public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+    Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
+      cameraIds.Distinct(StringComparer.Ordinal)
+        .ToDictionary(id => id, _ => (IReadOnlyList<DeviceSettingsInfo>)[], StringComparer.Ordinal));
+
   public void Invalidate(string cameraId) { }
 }
 
@@ -34,6 +42,12 @@ internal sealed class TestCameraState(bool armed = false) : ICameraStateSource
 
   public Task<bool> GetArmedAsync(string cameraId, CancellationToken ct) =>
     Task.FromResult(Armed);
+
+  public Task<IReadOnlyDictionary<string, bool>> GetArmedManyAsync(
+    IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+    Task.FromResult<IReadOnlyDictionary<string, bool>>(
+      cameraIds.Distinct(StringComparer.Ordinal)
+        .ToDictionary(id => id, _ => Armed, StringComparer.Ordinal));
 }
 
 internal static class TestWiring
@@ -50,8 +64,18 @@ internal static class TestWiring
         catalog ?? new AlwaysKnownCatalog(), geo, NullLogger<DeviceDiagramService>.Instance);
 
   public static EffectiveArmingResolver Arming(
-    VmsMapDbContext db, ICameraStateSource? cameraState = null) =>
-    new(db, new NoDeviceSettings(), cameraState ?? new TestCameraState());
+    VmsMapDbContext db, ICameraStateSource? cameraState = null,
+    IDeviceSettingsSource? settings = null) =>
+    new(db, settings ?? new NoDeviceSettings(), cameraState ?? new TestCameraState());
+
+  public static ControlObjectQuery ControlObjects(
+    VmsMapDbContext db, MapDb map, IRightsService? rights = null,
+    IDeviceSettingsSource? settings = null, ICameraStateSource? cameraState = null)
+  {
+    var states = cameraState ?? new TestCameraState();
+    return new(db, map, rights ?? new RightsService(db), settings ?? new NoDeviceSettings(),
+      states, Arming(db, states, settings));
+  }
 
   public static AlarmStore Alarms(
     VmsMapDbContext db, MapDb map, StatesUpdateService states, ICameraStateSource? cameraState = null)

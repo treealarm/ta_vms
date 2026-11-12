@@ -25,8 +25,11 @@ public class DeviceIoServiceImpl(
           IdleState = ParseIdleState(r.IdleState),
           DelayMs   = r.DelayMs,
         };
-        if (stateService.TryGetLogicalState(request.SourceId, DeviceIoKind.Relay, r.Token) is { } active)
-          relay.LiveActive = active;
+        if (stateService.TryGetSnapshot(request.SourceId, DeviceIoKind.Relay, r.Token) is { } state)
+        {
+          relay.LiveActive = state.LogicalState;
+          relay.Pending = state.Pending;
+        }
         return relay;
       }));
 
@@ -76,7 +79,33 @@ public class DeviceIoServiceImpl(
   {
     try
     {
-      await settingsService.SetRelayOutputStateAsync(request.SourceId, request.Token, request.Active, context.CancellationToken);
+      // The relay's configuration says how long a wish for it lives: a monostable relay drops on
+      // the camera's own clock, so a wish for one outlives that drop. Reading the list also opens
+      // the device subscription the camera's confirmation arrives on — a command sent before the
+      // subscription exists would be applied by the camera and never heard by anyone.
+      var relays = await settingsService.GetRelayOutputsAsync(request.SourceId, context.CancellationToken);
+      await stateService.ReportDevicesAsync(
+        request.SourceId,
+        DeviceIoKind.Relay,
+        relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList());
+
+      var relay = relays.FirstOrDefault(
+        r => string.Equals(r.Token, request.Token, StringComparison.Ordinal));
+      if (relay is null)
+        return Fail($"Camera '{request.SourceId}' has no relay output '{request.Token}'");
+
+      var lifetime = relay is { DelayMs: > 0 }
+          && string.Equals(relay.Mode, "monostable", StringComparison.OrdinalIgnoreCase)
+        ? TimeSpan.FromMilliseconds(relay.DelayMs) + DeviceIoStateService.MonostableGrace
+        : DeviceIoStateService.ConfirmTimeout;
+
+      // Record the wish first: a command that gets lost on the way must not leave the operator
+      // looking at a state nobody asked for. The service shows the wish until the camera reports
+      // it, and repeats it until the camera does or the wish expires.
+      await stateService.SetDesiredStateAsync(
+        request.SourceId, DeviceIoKind.Relay, request.Token, request.Active, lifetime);
+      await settingsService.SetRelayOutputStateAsync(
+        request.SourceId, request.Token, request.Active, context.CancellationToken);
       return Ok();
     }
     catch (Exception ex)
@@ -250,6 +279,7 @@ public class DeviceIoServiceImpl(
       LogicalState = snapshot.LogicalState,
       Initialized = initialized,
       ObservedAt = observedAt,
+      Pending = snapshot.Pending,
     };
     if (snapshot.Contact is { } contact)
       update.Contact = contact;

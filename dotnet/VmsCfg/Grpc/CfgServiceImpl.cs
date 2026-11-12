@@ -1035,6 +1035,19 @@ namespace VmsCfg
       return new GetCamStateResponse { Armed = armed };
     }
 
+    public override async Task<GetCamStatesResponse> GetCamStates(
+      GetCamStatesRequest request, ServerCallContext context)
+    {
+      var armed = await storage.GetCameraArmedAsync(request.CameraIds, context.CancellationToken);
+      var response = new GetCamStatesResponse();
+      response.States.AddRange(armed.Select(kv => new CameraArmState
+      {
+        CameraId = kv.Key,
+        Armed = kv.Value,
+      }));
+      return response;
+    }
+
     public override async Task<OperationStatus> SetCamState(
       SetCamStateRequest request, ServerCallContext context)
     {
@@ -1050,6 +1063,15 @@ namespace VmsCfg
       var response = new ListDeviceSettingsResponse();
       response.Settings.AddRange(
         await deviceStorage.ListAsync(request.CameraId, context.CancellationToken));
+      return response;
+    }
+
+    public override async Task<ListDeviceSettingsResponse> ListDeviceSettingsForCameras(
+      ListDeviceSettingsForCamerasRequest request, ServerCallContext context)
+    {
+      var response = new ListDeviceSettingsResponse();
+      response.Settings.AddRange(
+        await deviceStorage.ListManyAsync(request.CameraIds, context.CancellationToken));
       return response;
     }
 

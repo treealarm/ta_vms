@@ -82,10 +82,16 @@ service CfgService {
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
+  // The same armed flag for a set of cameras in one call: a list of a space's sensors asks for a
+  // page's worth at a time, not one round trip per camera.
+  rpc GetCamStates(GetCamStatesRequest) returns (GetCamStatesResponse);
 
   // What the operator says about a camera's digital inputs and relays. A part with no row keeps
   // the defaults: inherit the camera's arming, no alarm. These are configuration, not live state.
   rpc ListDeviceSettings(ListDeviceSettingsRequest) returns (ListDeviceSettingsResponse);
+  // The same rows for several cameras at once, for the operator's guarding list.
+  rpc ListDeviceSettingsForCameras(ListDeviceSettingsForCamerasRequest)
+      returns (ListDeviceSettingsResponse);
   rpc SetDeviceSettings(SetDeviceSettingsRequest) returns (OperationStatus);
 
   // Arm or disarm one of a camera's digital inputs, as the operator does from the camera card.
@@ -748,6 +754,19 @@ message GetCamStateResponse {
   bool armed = 1;
 }
 
+message GetCamStatesRequest {
+  repeated string camera_ids = 1;
+}
+
+message GetCamStatesResponse {
+  repeated CameraArmState states = 1;
+}
+
+message CameraArmState {
+  string camera_id = 1;
+  bool   armed     = 2;
+}
+
 message SetCamStateRequest {
   string camera_id = 1;
   bool   armed     = 2;
@@ -1025,6 +1044,10 @@ message ListDeviceSettingsRequest {
 message ListDeviceSettingsResponse {
   // Only the parts an administrator configured. A part with no row is not an error: it inherits.
   repeated DeviceSettings settings = 1;
+}
+
+message ListDeviceSettingsForCamerasRequest {
+  repeated string camera_ids = 1;
 }
 
 message SetDeviceSettingsRequest {

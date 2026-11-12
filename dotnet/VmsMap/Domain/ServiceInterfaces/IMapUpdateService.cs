@@ -12,5 +12,7 @@ namespace VmsMap.Domain
     public Task<FiguresDTO?> UpdateFigures(FiguresDTO statMarkers);
     // The subtree is deleted with the named nodes; returns the number of nodes removed.
     public Task<long> Delete(List<string> ids);
+    // A placement made some replica the reference: the alarm mirrors move with it.
+    public Task RefreshPlacementMirrorsAsync(IReadOnlyCollection<string> cameraIds);
   }
 }

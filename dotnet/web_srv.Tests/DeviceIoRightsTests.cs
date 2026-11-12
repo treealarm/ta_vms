@@ -14,9 +14,33 @@ namespace web_srv.Tests;
 
 // The gateway's one authorization boundary, and the row the operator's guard switch sits in it.
 // Inheriting `control` down the tree is VmsMap's answer and is tested there; this checks the
-// fail-closed contract of the filter and that every DeviceIo action declares what it needs.
+// fail-closed contract of the filter, that every DeviceIo action declares what it needs, and that
+// the control list is a self-filtering read rather than a per-camera check.
 public class DeviceIoRightsTests
 {
+  [Fact]
+  public void TheControlListFiltersItselfByViewLive()
+  {
+    var required = typeof(ControlController)
+      .GetMethod(nameof(ControlController.ListObjects))!
+      .GetCustomAttribute<RequiresRightAttribute>();
+
+    Assert.NotNull(required);
+    Assert.Equal(RightActions.ViewLive, required.Action);
+    // VmsMap filters the rows; without Action the filter would demand a cameraId the list has none of.
+    Assert.Equal(RightSource.Action, required.Source);
+  }
+
+  [Fact]
+  public async Task ASelfFilteringActionRunsWithoutACameraId()
+  {
+    var (result, executed) = await RunAsync(
+      allowed: false, Descriptor(nameof(Probe.Filtered)), cameraId: null);
+
+    Assert.True(executed);
+    Assert.Null(result);
+  }
+
   [Fact]
   public void ArmingASensorIsControl()
   {
@@ -65,6 +89,9 @@ public class DeviceIoRightsTests
 
     [RequiresRight(RightActions.Control)]
     public void Guided() { }
+
+    [RequiresRight(RightActions.ViewLive, Source = RightSource.Action)]
+    public void Filtered() { }
   }
 
   private sealed class FakeRights(bool allowed) : IRightsService

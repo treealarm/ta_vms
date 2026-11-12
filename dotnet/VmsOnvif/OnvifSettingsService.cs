@@ -10,7 +10,7 @@ namespace VmsOnvif;
 public sealed partial class OnvifSettingsService(
   CameraConnCache connCache,
   MetadataStateCache metadataStateCache,
-  ILogger<OnvifSettingsService> logger) : IDeviceIoReader
+  ILogger<OnvifSettingsService> logger) : IDeviceIoReader, IRelayCommander
 {
   private readonly ConcurrentDictionary<string, (Camera Cam, DateTime Created)> _cache = new();
   private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);

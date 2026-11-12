@@ -46,6 +46,14 @@ public class DeviceDiagramServiceTests
       Task.FromResult(Rows.FirstOrDefault(
         r => r.CameraId == cameraId && r.Kind == kind && r.Token == token));
 
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
+        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
+          id => id,
+          id => (IReadOnlyList<DeviceSettingsInfo>)Rows.Where(r => r.CameraId == id).ToList(),
+          StringComparer.Ordinal));
+
     public void Invalidate(string cameraId) { }
   }
 

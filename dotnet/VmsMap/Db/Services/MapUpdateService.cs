@@ -83,6 +83,9 @@ namespace VmsMap.Db
       return statMarkers;
     }
 
+    public Task RefreshPlacementMirrorsAsync(IReadOnlyCollection<string> cameraIds) =>
+      _statesUpdateService.RefreshPlacementMirrorsAsync(cameraIds);
+
     public async Task<long> Delete(List<string> ids)
     {
       var affected = new HashSet<string>();

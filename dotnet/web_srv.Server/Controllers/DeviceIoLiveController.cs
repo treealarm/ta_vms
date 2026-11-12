@@ -80,7 +80,8 @@ public class DeviceIoLiveController(ServerPairRegistry registry, IRightsService 
           update.LogicalState,
           update.HasContact ? update.Contact : null,
           update.Initialized,
-          update.ObservedAt);
+          update.ObservedAt,
+          update.Pending);
         await WriteRawAsync($"data: {JsonSerializer.Serialize(dto, JsonOptions)}\n\n", ct);
       }
     }
@@ -129,5 +130,6 @@ public class DeviceIoLiveController(ServerPairRegistry registry, IRightsService 
     bool LogicalState,
     string? Contact,
     bool Initialized,
-    string ObservedAt);
+    string ObservedAt,
+    bool Pending);
 }

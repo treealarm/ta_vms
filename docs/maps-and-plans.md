@@ -108,7 +108,12 @@ Conventions that hold everywhere:
   placed at all**: it exists as a canonical node the moment it is configured, and its parts —
   digital inputs and relays — are canonical nodes under it. That is the tree **Admin → Nodes**
   shows in full and **Admin → Maps → Devices** offers for placement; the map's **Nodes** tab shows
-  only what is drawn on the open space, pictures included.
+  only what is drawn on the open space, pictures included. **A part may be drawn too.** A digital
+  input or a relay placed from the palette is an ordinary replica of the part's node: a point on
+  the space, a name and a colour of its own, no placement row and no camera binding. It shows what
+  the owner reports and offers the same actions as the Control panel; it counts no alarm of its
+  own, because the room counts the alarm of the camera it stands in, once. Removing the picture
+  leaves the part; removing the camera takes the part and every picture of it.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
@@ -204,6 +209,83 @@ there is no `GetRelayState` at all.
   output, an input is a camera's input, and what changes one appears on the other through the
   events above.
 
+## Control surface
+
+The operator's **Control** tab (`/operator/control`) lists the objects an operator acts on in a
+space and keeps their actions beside the selected one: `GET api/control/objects?spaceId=&kind=&cameraId=&pageSize=&afterName=&afterId=`,
+backed by `MapService.ListControlObjects`. Three kinds share one row, and each answers with what
+its own action writes:
+
+- **camera** (`part_kind='device'`) — arming is the camera's own flag in VmsCfg
+  (`camera_states.armed`, `PUT api/cameras/{id}/state`), the same flag the camera card's guard
+  toggle writes. Its row never reads the zone scheme: that is what the camera's *sensors* inherit,
+  not what the camera is.
+- **digital input** — the effective arming of `EffectiveArmingResolver`, its configured mode and
+  alarm flag, and the contact the camera reports (`SENSOR_OPEN`/`SENSOR_CLOSED` on the part node).
+- **relay** — never armed: a relay is driven, not watched (the policy is recorded in
+  `docs/future_plans/20-zone-arming.md`). Its action is its state
+  (`POST api/DeviceIo/.../relay-outputs/{token}/state`), and its row shows what the camera reports
+  (`RELAY_ACTIVE`/`RELAY_INACTIVE`).
+
+**One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
+answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
+explicit `armed` property above the camera's **reference replica** (`space`), otherwise the camera's
+own armed flag (`camera`). `inherit` is the administrator's mode and is not an operator's command.
+The scheme is the same for one card and for a page of the panel — the page resolves in one pass,
+with the settings and the camera flags read in bulk.
+
+**The list is server-side.** It is the tree's own read, not a browser enumeration:
+
+- `space_id` covers the space **and everything under it**, which is the set the space's own `armed`
+  property reaches; an empty id asks for everything the caller may see. A zone will arrive as a
+  polygon in the same request, not as a second list.
+- `kind` narrows to `camera`, `digital_input` or `relay`; `camera_id` answers one device's objects
+  wherever they stand — the administrator's placement palette asks this way.
+- Each row is addressed by `source_kind`/`source_id`/`part_kind`/`part_token`, never by camera:
+  a fire panel and its loops will join the same list under a kind of their own.
+- Rows are filtered by the caller's `view_live` before the page is cut, and `can_control` says
+  whether an action may be used. The page is a keyset one — ordered by the object's name, `has_more`
+  plus a cursor, no total — because rights can hide rows and an offset would shift the list every
+  time somebody arms something.
+- A camera with no reference placement stands nowhere: a space filter leaves it out, the
+  unfiltered list still shows it.
+- No write path is added. The actions are the commands that already write — the camera flag, the
+  sensor's `SetDeviceArmMode`, the relay's state.
+
+**One object by any of its nodes.** `GET api/control/objects/{objectId}` answers the same row for a
+canonical node or a replica of it, resolving the replica through `objects.owner_id`. The operator
+map's inspector uses it, so selecting a sensor or a relay — a picture, a diagram region, or the node
+itself — offers the same actions as the panel. A node the caller may not see answers not-found,
+exactly as if it did not exist. A camera needs no such section there: its card arms it already, and
+a second switch would be two ways to say one thing.
+
+**Grouped by kind, and a relay is switched where it is listed.** In "All" the list is not one
+heap: cameras, sensors and relays are sections of their own, because a reader scans one kind at a
+time. A relay carries its switch in the list row as well as in the pane, with the state beside it;
+the panel re-reads its pages every few seconds, so a change the panel did not make — another
+operator, a rule — appears without an action.
+
+**A relay command is a wish until the camera confirms it.** ONVIF has no getter for a relay's state
+and a camera may report the change only when its event subscription next delivers one, a minute on
+some devices. VmsOnvif therefore keeps the commanded value apart from the camera's report and shows
+the wish until the camera says the same state; a report repeating an older value while the wish
+stands is not a transition and does not turn the switch back. The wish is repeated until the camera
+confirms it, and dropped after its lifetime (a monostable relay's `delayMs` plus a margin, otherwise
+20 s) with the camera's own report back on screen and a warning in the log. The card and the ONVIF
+settings pages mark a value that is still a wish; the Control list does not — VmsMap knows nothing
+of the wish and shows the value the command produced.
+
+**The tree reads a part's state, it does not drive it.** A part's row in the operator map's tree and
+in Admin → Nodes carries a state dot from the same `states` the Control panel reads, and no switch:
+one place drives a relay, and a second switch would be a second path that could disagree with the
+first. Admin → Nodes follows the map's watch stream, so a relay switched in the panel changes there
+without reopening the row.
+
+**The card keeps its switch.** The camera card's Device I/O overlay arms a sensor on a line of its
+own, under the caption "Guard", beside the effective state — not on the token line beside the live
+0/1, where it read as changing what the sensor says. Arming from the monitor is ordinary operator
+work; the panel is where a whole space is worked through.
+
 ## States, events and rights
 
 - **Every camera is a node from creation.** The adapter in `VmsMap/Adapter/` creates it from
@@ -218,6 +300,11 @@ there is no `GetRelayState` at all.
   sweep confirms the episode is over; `CONNECTED`/`DISCONNECTED` follow the open source outages in
   VmsFs. The alarm counters bubble up `alarm_states` in the same transaction. The event's id is the
   episode's `event_uuid`, so a redelivered message writes nothing twice.
+- **An alarm reaches the room the camera stands in.** The canonical tree ends at the server, so the
+  counters alone would stop above the camera. A camera whose row changes has that row mirrored onto
+  its **reference replica** — the picture on the floor plan — and the spaces above it recount; a
+  picture's row is never counted as a second alarm, and only the reference replica gets one. When a
+  placement moves the reference, the old picture's row goes and the new one's appears.
 - **Rights are rows on tree nodes** (`rights(object_id, subject, action)`), inherited downwards;
   `admin` bypasses them, and one open/enforced switch decides what a node with no rows means.
   VmsMap computes one user's effective set and applies it to every multi-node read; web_srv's
