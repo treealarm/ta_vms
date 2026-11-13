@@ -274,12 +274,10 @@ export default function ControlPanel() {
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', p: 2 }}>
-          {selected ? (
-            <ObjectControl key={selected.objectId} row={selected} onChanged={() => void reload()} heading />
-          ) : effectiveSpaceId ? (
-            // The space's own guard sits with the space, not with a row of the list: it reaches
-            // everything drawn under it, and nothing in the list stands in for it.
-            <Stack spacing={1.5}>
+          {/* The space's own guard heads the pane: it reaches every row below it, and nothing in
+              the list stands in for it. */}
+          {effectiveSpaceId && (
+            <Stack spacing={1} sx={{ pb: 2, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
               <Box>
                 <Typography variant="subtitle1" fontWeight={600}>
                   {spaces.find((s) => s.id === effectiveSpaceId)?.name ?? t('control.space')}
@@ -289,10 +287,10 @@ export default function ControlPanel() {
                 </Typography>
               </Box>
               <NodeGuard objectId={effectiveSpaceId} onChanged={() => void reload()} />
-              <Typography variant="body2" color="text.secondary">
-                {t('control.nothingSelected')}
-              </Typography>
             </Stack>
+          )}
+          {selected ? (
+            <ObjectControl key={selected.objectId} row={selected} onChanged={() => void reload()} heading />
           ) : (
             <Typography variant="body2" color="text.secondary">
               {t('control.nothingSelected')}
