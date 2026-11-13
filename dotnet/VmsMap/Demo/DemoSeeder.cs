@@ -341,33 +341,6 @@ namespace VmsMap.Demo
         Written(key);
       }
 
-      // ── A device's behaviour: the map's own, so the world installs it here ───────────────────
-      // The part's name is VmsCfg's; who decides its arming and what its contact means is the
-      // map's, and a copy anywhere else would be the second source this release removed. The
-      // part's node is ensured first: a camera the adapter has not reported yet still gets one.
-      foreach (var device in world.Devices)
-      {
-        if (!placedCameras.Contains(device.CameraKey))
-        {
-          if (!report.SkippedCameras.Contains(device.CameraKey))
-            report.SkippedCameras.Add(device.CameraKey);
-          continue;
-        }
-
-        var partId = await _deviceNodes.EnsureAsync(
-          DeviceObjectId.CameraSource, DemoIds.Camera(device.CameraKey),
-          device.PartKind, device.Token, ct);
-        if (partId is null)
-        {
-          if (!report.SkippedCameras.Contains(device.CameraKey))
-            report.SkippedCameras.Add(device.CameraKey);
-          continue;
-        }
-
-        await _deviceSettings.SetAsync(
-          partId, device.ArmMode, device.TriggerOn, device.AlarmEnabled, ct);
-      }
-
       // ── A device's diagram: under the camera's picture, made by the service that owns it ─────
       foreach (var diagram in world.DeviceDiagrams)
       {
@@ -506,6 +479,38 @@ namespace VmsMap.Demo
       await SaveRegistryAsync(world.Key, world.Version, ids.Where(pair => keep.Contains(pair.Key)), ct);
 
       if (tx is not null) await tx.CommitAsync(ct);
+
+      // ── A device's behaviour: the map's own, so the world installs it here ───────────────────
+      // The part's name is VmsCfg's; who decides its arming and what its contact means is the
+      // map's, and a copy anywhere else would be the second source this release removed.
+      //
+      // After the world's transaction, not inside it: ensuring a part's node is the node service's
+      // work and it opens a transaction of its own, which a connection already in one refuses. The
+      // world is complete without these rows — a part with none keeps the defaults — so a failure
+      // here costs the demo's arming until the next install, not half a world.
+      foreach (var device in world.Devices)
+      {
+        if (!placedCameras.Contains(device.CameraKey))
+        {
+          if (!report.SkippedCameras.Contains(device.CameraKey))
+            report.SkippedCameras.Add(device.CameraKey);
+          continue;
+        }
+
+        var partId = await _deviceNodes.EnsureAsync(
+          DeviceObjectId.CameraSource, DemoIds.Camera(device.CameraKey),
+          device.PartKind, device.Token, ct);
+        if (partId is null)
+        {
+          if (!report.SkippedCameras.Contains(device.CameraKey))
+            report.SkippedCameras.Add(device.CameraKey);
+          continue;
+        }
+
+        await _deviceSettings.SetAsync(
+          partId, device.ArmMode, device.TriggerOn, device.AlarmEnabled, ct);
+      }
+
       return report;
     }
 
