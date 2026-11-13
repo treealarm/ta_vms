@@ -1263,7 +1263,7 @@ def check_control_panel(vms):
     other = next((row for row in all_cameras if row.get("sourceId") == camera_id("sim-master2")), None)
     if check(other is not None, "sim-master2 has a camera row"):
         cid = camera_id('sim-master2')
-        before = vms.call("GET", f"/api/cameras/{cid}/state") or {}
+        before = camera_arm_state(vms, cid)
         try:
             # A command from the panel is an explicit decision: the mode becomes armed/disarmed.
             vms.call("PUT", f"/api/cameras/{cid}/state", {"armed": not before.get("armed")})
@@ -1271,7 +1271,7 @@ def check_control_panel(vms):
                 lambda: (control_object(vms, other["objectId"]) or {}).get("armed")
                 == (not before.get("armed")), 20)
             check(bool(flipped), "arming a camera from its row flips the flag the row shows")
-            decided = vms.call("GET", f"/api/cameras/{cid}/state") or {}
+            decided = camera_arm_state(vms, cid)
             check(decided.get("armMode") == ("armed" if decided.get("armed") else "disarmed"),
                   f"the command is explicit (has {decided.get('armMode')!r})")
         finally:
@@ -1801,7 +1801,9 @@ def reset_zone_arming(vms):
 
 
 def camera_arm_state(vms, cid):
-    return vms.call("GET", f"/api/cameras/{cid}/state") or {}
+    """The camera's own mode and its effective flag. The mode lives in VmsMap now, so it is read
+    from the settings endpoint rather than from the live state's flag alone."""
+    return vms.call("GET", f"/api/DeviceIo/cameras/{cid}/device-settings?partKind=device") or {}
 
 
 def set_camera_arm_mode(vms, cid, mode):

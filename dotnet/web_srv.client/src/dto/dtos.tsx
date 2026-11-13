@@ -1256,6 +1256,34 @@ export type CameraArmStateDto = {
   armMode?: CameraArmMode | null
 }
 
+/**
+ * The settings of a logical device object: the mode its arming is decided with and, for a digital
+ * input, the contact state that raises an alarm. `armed` and `armingSource` are what they resolve
+ * to right now, so the card can say "via the zone" without computing it.
+ */
+export type ObjectSettingsDto = {
+  objectId: string
+  sourceKind: string
+  sourceId: string
+  partKind: 'device' | 'digital_input' | 'relay' | string
+  partToken: string
+  armMode: CameraArmMode
+  armModes: CameraArmMode[]
+  triggerOn: 'open' | 'closed' | null
+  triggerModes: Array<'open' | 'closed'>
+  alarmEnabled: boolean
+  configured: boolean
+  armed: boolean
+  armingSource: ArmSource | ''
+  armingSourceObjectId: string
+}
+
+export type ObjectSettingsBody = {
+  armMode?: CameraArmMode
+  triggerOn?: 'open' | 'closed' | ''
+  alarmEnabled?: boolean
+}
+
 export type DeviceSettingsDto = {
   cameraId: string
   kind: 'digital_input' | 'relay'

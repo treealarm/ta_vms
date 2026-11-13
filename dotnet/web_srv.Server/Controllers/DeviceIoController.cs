@@ -223,6 +223,58 @@ public class DeviceIoController(
     });
   }
 
+  // ── The logical object's settings ─────────────────────────────────────────
+
+  // The card a camera's setup page and a part's row show: the arming mode and, for a digital
+  // input, the contact state that raises an alarm. Addressed by source and token because the form
+  // holds the camera, not the part's node id; `partKind=device` with an empty token is the camera.
+  [HttpGet("cameras/{cameraId}/device-settings")]
+  [RequiresRight(RightActions.ViewLive)]
+  public async Task<IActionResult> GetDeviceSettings(
+    string cameraId, [FromQuery] string partKind, [FromQuery] string? partToken, CancellationToken ct)
+  {
+    var response = await map.GetDeviceSettingsAsync(new MapProto.GetDeviceSettingsRequest
+    {
+      Key = PartKey(cameraId, partKind, partToken ?? string.Empty),
+    }, Options(ct));
+
+    return response.Found ? Ok(ToDeviceSettingsDto(response.Settings)) : NotFound();
+  }
+
+  [HttpPut("cameras/{cameraId}/device-settings")]
+  [RequiresRight(RightActions.Control)]
+  public async Task<IActionResult> SetDeviceSettings(
+    string cameraId, [FromQuery] string partKind, [FromQuery] string? partToken,
+    [FromBody] DeviceSettingsRuleBody body, CancellationToken ct)
+  {
+    var response = await map.SetDeviceSettingsAsync(new MapProto.SetDeviceSettingsRequest
+    {
+      Key = PartKey(cameraId, partKind, partToken ?? string.Empty),
+      ArmMode = body.ArmMode ?? string.Empty,
+      TriggerOn = body.TriggerOn ?? string.Empty,
+      AlarmEnabled = body.AlarmEnabled,
+      Caller = User.ToMapCaller(),
+    }, Options(ct));
+
+    return response.Found ? Ok(ToDeviceSettingsDto(response.Settings)) : NotFound();
+  }
+
+  private static ObjectSettingsDto ToDeviceSettingsDto(MapProto.DeviceSettingsView settings) => new(
+    settings.ObjectId,
+    settings.Key?.SourceKind ?? string.Empty,
+    settings.Key?.SourceId ?? string.Empty,
+    settings.Key?.PartKind ?? string.Empty,
+    settings.Key?.PartToken ?? string.Empty,
+    settings.ArmMode,
+    settings.ArmModes.ToList(),
+    string.IsNullOrWhiteSpace(settings.TriggerOn) ? null : settings.TriggerOn,
+    settings.TriggerModes.ToList(),
+    settings.AlarmEnabled,
+    settings.Configured,
+    settings.Arming?.Armed ?? false,
+    settings.Arming?.Source ?? string.Empty,
+    settings.Arming?.SourceObjectId ?? string.Empty);
+
   // ── Per-part settings ─────────────────────────────────────────────────────
 
   // The administrator's configuration of a part: its name, trigger and alarm flag, and the mode it
@@ -388,3 +440,4 @@ public record SetRelayStateBody(bool Active);
 public record SetRelaySettingsBody(string Mode, string IdleState, int DelayMs);
 public record SetIdleStateBody(string IdleState);
 public record SetArmModeBody(string? ArmMode);
+public record DeviceSettingsRuleBody(string? ArmMode, string? TriggerOn, bool AlarmEnabled);

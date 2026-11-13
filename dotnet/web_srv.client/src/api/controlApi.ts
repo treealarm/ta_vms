@@ -1,12 +1,12 @@
 import type {
   AcknowledgeZoneResultDto,
   ArmMode,
-  CameraArmMode,
-  CameraArmStateDto,
   ControlObjectCursorDto,
   ControlObjectDto,
   ControlObjectPageDto,
   NodeArmingDto,
+  ObjectSettingsBody,
+  ObjectSettingsDto,
 } from '../dto/dtos'
 import { apiFetch } from './apiFetch'
 import { requestJson } from './requestJson'
@@ -65,30 +65,45 @@ export async function getControlObject(objectId: string): Promise<ControlObjectD
   return JSON.parse(text) as ControlObjectDto
 }
 
-/** The camera's own armed flag — the same command the monitor card's guard toggle sends. */
-export async function setCameraArmed(cameraId: string, armed: boolean): Promise<void> {
-  await apiFetch(`/api/cameras/${encodeURIComponent(cameraId)}/state`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ armed }),
-  })
-}
-
-/** A camera's effective flag, and the mode it was decided with. */
-export async function getCameraArmState(cameraId: string): Promise<CameraArmStateDto> {
-  return apiFetch<CameraArmStateDto>(`/api/cameras/${encodeURIComponent(cameraId)}/state`)
-}
-
 /**
- * The administrator's setting: `inherit` hands the flag back to the zone the camera stands in, and
- * the map derives it from there. An operator's toggle stays the explicit command.
+ * The settings of the logical object a node stands for — the camera's or a sensor's arming mode
+ * and alarm rule. A replica resolves to its owner, so a picture on a plan answers the same.
  */
-export async function setCameraArmMode(cameraId: string, armMode: CameraArmMode): Promise<void> {
-  await apiFetch(`/api/cameras/${encodeURIComponent(cameraId)}/arm-mode`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ armMode }),
-  })
+export async function getNodeSettings(objectId: string): Promise<ObjectSettingsDto> {
+  return apiFetch<ObjectSettingsDto>(
+    `/api/control/objects/${encodeURIComponent(objectId)}/settings`)
+}
+
+export async function setNodeSettings(
+  objectId: string, body: ObjectSettingsBody,
+): Promise<ObjectSettingsDto> {
+  return apiFetch<ObjectSettingsDto>(
+    `/api/control/objects/${encodeURIComponent(objectId)}/settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+}
+
+/** The same settings for a card that holds the camera and the part token, not the node id. */
+export async function getDeviceSettings(
+  cameraId: string, partKind: string, partToken = '',
+): Promise<ObjectSettingsDto> {
+  const query = `partKind=${encodeURIComponent(partKind)}&partToken=${encodeURIComponent(partToken)}`
+  return apiFetch<ObjectSettingsDto>(
+    `/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/device-settings?${query}`)
+}
+
+export async function setDeviceSettings(
+  cameraId: string, partKind: string, partToken: string, body: ObjectSettingsBody,
+): Promise<ObjectSettingsDto> {
+  const query = `partKind=${encodeURIComponent(partKind)}&partToken=${encodeURIComponent(partToken)}`
+  return apiFetch<ObjectSettingsDto>(
+    `/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/device-settings?${query}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 }
 
 /**

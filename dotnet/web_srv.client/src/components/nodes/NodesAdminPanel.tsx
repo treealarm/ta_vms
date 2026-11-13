@@ -24,6 +24,7 @@ import PartStateDot from '../objects/PartStateDot'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
 import CameraUnifiedCard from '../CameraUnifiedCard'
+import NodeSettingsCard from '../objects/NodeSettingsCard'
 import NodeStateChips from '../objects/NodeStateChips'
 import DiagramViewer from '../diagrams/DiagramViewer'
 
@@ -360,6 +361,15 @@ export default function NodesAdminPanel() {
               {selectedCamera ? (
                 <Box sx={{ height: 340, border: 1, borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
                   <CameraUnifiedCard camera={selectedCamera} slotKey={`nodes:${selectedCamera.cameraId}`} />
+                </Box>
+              ) : null}
+
+              {/* The entity's own settings — the arming mode and, for an input, its alarm rule —
+                  wherever an administrator selected it. A relay or a space draws nothing. */}
+              {selectedCamera || isPart ? (
+                <Box>
+                  <Typography variant="subtitle2">{t('objectSettings.arming')}</Typography>
+                  <NodeSettingsCard nodeId={selected.id} />
                 </Box>
               ) : null}
 

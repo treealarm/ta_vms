@@ -18,7 +18,6 @@ import {
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
 import type {
-  DeviceArmMode,
   DeviceSettingsDto,
   DigitalInputDto,
   DigitalInputOptionsDto,
@@ -29,6 +28,7 @@ import type {
 } from '../dto/dtos'
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
 import { useDeviceIoLive } from '../hooks/useDeviceIoLive'
+import ObjectSettingsCard from './objects/ObjectSettingsCard'
 
 // ── Digital inputs ──────────────────────────────────────────────────────────
 
@@ -46,21 +46,6 @@ function DigitalInputRow({ cameraId, input, options, settings: saved, onSaved }:
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveOk, setSaveOk] = useState(false)
   const configurable = options?.idleStateConfigurable ?? false
-
-  // Arming and alarm settings live in VmsCfg, not in the camera: a missing row is the default
-  // (inherit the camera, no alarm), which is what the card starts from.
-  const [armMode, setArmMode] = useState<DeviceArmMode>(saved?.armMode ?? 'inherit')
-  const [alarmEnabled, setAlarmEnabled] = useState(saved?.alarmEnabled ?? false)
-  const [triggerOn, setTriggerOn] = useState<IdleState>(saved?.triggerOn ?? 'closed')
-  const [settingsSaving, setSettingsSaving] = useState(false)
-  const [settingsError, setSettingsError] = useState<string | null>(null)
-  const [settingsOk, setSettingsOk] = useState(false)
-
-  useEffect(() => {
-    setArmMode(saved?.armMode ?? 'inherit')
-    setAlarmEnabled(saved?.alarmEnabled ?? false)
-    setTriggerOn(saved?.triggerOn ?? 'closed')
-  }, [saved])
 
   // Unknown polarity is a warning, not a disabled control: the setting is stored, the alarm simply
   // cannot be raised until the camera says which contact is idle.
@@ -81,30 +66,6 @@ function DigitalInputRow({ cameraId, input, options, settings: saved, onSaved }:
       setSaveError(e instanceof Error ? e.message : String(e))
     } finally {
       setSaving(false)
-    }
-  }
-
-  const handleSaveSettings = async () => {
-    setSettingsSaving(true); setSettingsError(null); setSettingsOk(false)
-    try {
-      await apiFetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          kind: 'digital_input',
-          token: input.token,
-          name: saved?.name ?? '',
-          armMode,
-          triggerOn: alarmEnabled ? triggerOn : null,
-          alarmEnabled,
-        }),
-      })
-      setSettingsOk(true)
-      setTimeout(() => setSettingsOk(false), 3000)
-    } catch (e) {
-      setSettingsError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setSettingsSaving(false)
     }
   }
 
@@ -146,45 +107,13 @@ function DigitalInputRow({ cameraId, input, options, settings: saved, onSaved }:
         <Alert severity="warning" sx={{ py: 0 }}>{t('onvifSettings.deviceIoPolarityUnknown')}</Alert>
       )}
 
-      <Stack direction="row" alignItems="center" spacing={2} flexWrap="wrap" useFlexGap>
-        <TextField
-          select
-          size="small"
-          label={t('onvifSettings.deviceIoArmModeLabel')}
-          value={armMode}
-          onChange={(e) => setArmMode(e.target.value as DeviceArmMode)}
-          sx={{ minWidth: 160 }}
-        >
-          <MenuItem value="inherit">{t('onvifSettings.deviceIoArmInherit')}</MenuItem>
-          <MenuItem value="armed">{t('onvifSettings.deviceIoArmed')}</MenuItem>
-          <MenuItem value="disarmed">{t('onvifSettings.deviceIoDisarmed')}</MenuItem>
-        </TextField>
-        <Stack direction="row" alignItems="center" spacing={1}>
-          <Switch
-            checked={alarmEnabled}
-            onChange={(e) => setAlarmEnabled(e.target.checked)}
-            inputProps={{ 'aria-label': t('onvifSettings.deviceIoAlarmEnabled') }}
-          />
-          <Typography variant="body2">{t('onvifSettings.deviceIoAlarmEnabled')}</Typography>
-        </Stack>
-        <TextField
-          select
-          size="small"
-          label={t('onvifSettings.deviceIoTriggerOn')}
-          value={triggerOn}
-          disabled={!alarmEnabled}
-          onChange={(e) => setTriggerOn(e.target.value as IdleState)}
-          sx={{ minWidth: 140 }}
-        >
-          <MenuItem value="open">{t('onvifSettings.deviceIoTriggerOpen')}</MenuItem>
-          <MenuItem value="closed">{t('onvifSettings.deviceIoTriggerClosed')}</MenuItem>
-        </TextField>
-        <Button variant="contained" size="small" disabled={settingsSaving} onClick={() => void handleSaveSettings()}>
-          {settingsSaving ? <CircularProgress size={16} /> : t('onvifSettings.deviceIoSave')}
-        </Button>
-        {settingsOk && <Typography variant="body2" color="success.main">✓</Typography>}
-      </Stack>
-      {settingsError && <Alert severity="error" onClose={() => setSettingsError(null)}>{settingsError}</Alert>}
+      {/* Who decides this input's arming and what its contact means: one card for every logical
+          object, the same one the camera's own page shows. */}
+      <ObjectSettingsCard
+        cameraId={cameraId}
+        partKind="digital_input"
+        partToken={input.token}
+      />
       {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
     </Stack>
   )

@@ -8,7 +8,7 @@ import { setCameraSchedules } from '../store/scheduleSlice'
 import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
-import CameraArmingSection from './CameraArmingSection'
+import ObjectSettingsCard from './objects/ObjectSettingsCard'
 import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
@@ -342,7 +342,7 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
             {!isNew && (
               <>
                 <Divider />
-                <CameraArmingSection cameraId={cameraId} />
+                <ObjectSettingsCard cameraId={cameraId} partKind="device" />
               </>
             )}
 
