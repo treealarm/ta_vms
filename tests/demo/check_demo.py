@@ -1339,7 +1339,7 @@ def node_props(vms, object_id):
 
 
 def check_zone_arming(vms):
-    """Arming a space: one property on the floor's node, and every sensor under it answers.
+    """Arming a space: one row on the floor's node, and every sensor under it answers.
 
     The zone is not written onto the sensors — it is resolved for them — so this also proves the
     absence of a mirror, that an alarm names the zone it belongs to, and that disarming the zone

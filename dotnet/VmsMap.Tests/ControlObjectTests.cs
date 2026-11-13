@@ -296,12 +296,10 @@ public class ControlObjectTests
   public async Task TheEffectiveArmingComesFromTheSameSchemeAsTheCard()
   {
     var f = await CreateAsync();
-    f.Db.Properties.Add(new DBMarkerProp
+    f.Db.ObjectArming.Add(new DBObjectArming
     {
-      id = Guid.NewGuid(),
       object_id = Guid.Parse(f.SiteId),
-      prop_name = EffectiveArmingResolver.ArmedProperty,
-      str_val = "true",
+      armed = true,
     });
     await f.Db.SaveChangesAsync();
 

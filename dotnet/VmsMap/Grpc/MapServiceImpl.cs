@@ -13,6 +13,7 @@ using VmsMap.Adapter;
 using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using VmsMap.PubSub;
 using VmsMap.Watch;
 using MapProto = Vms.Map;
@@ -132,6 +133,13 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.OperationStatus> UpdateProperties(
       MapProto.ObjectPropertiesList request, ServerCallContext context)
     {
+      // Arming is the map's own state, not a property of an object: a property written here would
+      // be stored, shown to a reader and read by nobody, and it would skip the journal entry and
+      // the alarm re-check an arming change owes. `object_arming` is the one place that says it.
+      if (request.Objects.Any(item => item.Properties.Any(p => p.PropName == ArmMode.Armed)))
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, "arm a node with SetNodeArming; 'armed' is not a property"));
+
       await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
       foreach (var item in request.Objects)

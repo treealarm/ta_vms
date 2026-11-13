@@ -270,12 +270,10 @@ public class SensorAlarmTests
 
     if (armed)
     {
-      s.Db.Properties.Add(new DBMarkerProp
+      s.Db.ObjectArming.Add(new DBObjectArming
       {
-        id = Guid.NewGuid(),
         object_id = Guid.Parse(space.id!),
-        prop_name = ArmMode.ArmedProperty,
-        str_val = "true",
+        armed = true,
       });
     }
 
