@@ -321,6 +321,15 @@ export default function SpaceEditor({
       setDraftFootprint(null)
     })
 
+  // One ring is saved after another: leaving a latitude field and then a longitude one must not
+  // let the first answer land last and undo the second. The draft is shown at once, so the panel
+  // keeps what was just typed while the write travels.
+  const footprintSaves = useRef<Promise<unknown>>(Promise.resolve())
+  const commitFootprint = (of: SpaceDto, footprint: GeoPointDto[]) => {
+    setDraftFootprint(footprint)
+    footprintSaves.current = footprintSaves.current.then(() => saveFootprint(of, footprint))
+  }
+
   /** A new shape on the canvas: a node of its own, its geometry in the space's coordinates. */
   const createFigure = (points: GeoPointDto[], kind: 'point' | 'line' | 'polygon') => {
     if (!spaceId) return
@@ -613,12 +622,13 @@ export default function SpaceEditor({
     <FootprintPanel
       key={selectedNested.id}
       space={selectedNested}
+      points={draftFootprint ?? selectedNested.footprint}
+      onChangePoints={(points) => commitFootprint(selectedNested, points)}
       showLayer={space.kind === 'map'}
       onOpen={() => selectedNested.id && onOpenSpace(selectedNested.id)}
-      onRemoveFootprint={() => {
-        void saveFootprint(selectedNested, [])
-        setSelection(null)
-      }}
+      // The panel stays on an outline-less space: the pen above the map is how one is drawn, and
+      // the panel is where that is said.
+      onRemoveFootprint={() => commitFootprint(selectedNested, [])}
       onClose={() => setSelection(null)}
     />
   ) : selectedElement && selectedNode && openDiagramId ? (
@@ -862,7 +872,7 @@ export default function SpaceEditor({
             {selectedNested && mode === 'select' && (
               <FootprintEditor
                 footprint={draftFootprint ?? selectedNested.footprint}
-                onChange={(f, commit) => (commit ? void saveFootprint(selectedNested, f) : setDraftFootprint(f))}
+                onChange={(f, commit) => (commit ? commitFootprint(selectedNested, f) : setDraftFootprint(f))}
               />
             )}
             {here.map((stored) => {
