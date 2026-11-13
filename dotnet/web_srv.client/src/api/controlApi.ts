@@ -122,7 +122,8 @@ export async function getNodeArming(objectId: string): Promise<NodeArmingDto | n
 /**
  * The one write behind every guard switch. The answer is what the node resolves to afterwards:
  * disarming a sensor inside an armed zone leaves it on guard, and only the server knows that.
- * An operator never sends 'inherit' to a device part — that is the administrator's setting.
+ * All three modes are the operator's: an explicit on or off outranks the zone the node stands in,
+ * and `inherit` hands it back.
  */
 export async function setNodeArming(objectId: string, mode: ArmMode): Promise<NodeArmingDto> {
   return apiFetch<NodeArmingDto>(`/api/control/objects/${encodeURIComponent(objectId)}/arming`, {

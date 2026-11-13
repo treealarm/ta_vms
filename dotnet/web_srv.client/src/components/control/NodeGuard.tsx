@@ -24,8 +24,9 @@ const MODE_LABEL: Record<ArmMode, string> = {
 }
 
 /**
- * The guard switch of one node, whatever kind it is. Three modes for a container — armed, disarmed
- * and "follows its parent" — and two for a device, whose mode lives in VmsCfg.
+ * The guard switch of one node, whatever kind it is. Three modes for everyone — armed, disarmed and
+ * "inherit", which hands the node back to the container it stands in. An explicit on or off is the
+ * operator's own decision and outranks that container; `inherit` takes the override back.
  *
  * There is no optimistic toggle on purpose: the effective arming is a property of the whole
  * ancestor chain. A device left in `inherit` follows the zone it stands in; an explicit on or off

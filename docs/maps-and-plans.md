@@ -260,14 +260,17 @@ an input (`Inherit / Armed / Disarmed`, plus the alarm rule for an input), shown
 is selected — Admin → Nodes and the admin map's inspector (a camera or a part as its picture,
 resolved through its owner). The camera's page is about the hardware: its Main tab points there,
 and its Devices tab keeps the alarm rule beside the contact's polarity, because that is what the
-rule is about. The operator's switch stays a two-state command.
+rule is about. The operator's switch offers the same three modes: an explicit on or off is the
+operator's own decision and outranks the zone the device stands in, and `inherit` is how that
+override is taken back.
 
 **One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
 answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
 `object_arming` row above the camera's **reference replica** (`space`), otherwise the camera's own
 effective flag (`camera`). For a camera the walk ends at its own mode → zone → off: its flag is
 what the walk produces, so reading it back as an input would turn the derivation into a loop.
-`inherit` is the administrator's mode and is not an operator's command.
+`inherit` is a command like the other two — whoever sets an explicit mode can hand the node back
+to its container.
 For a container itself the walk starts at its own node (`explicit` / `inherited` / `none`), which is
 what the browser paints differently: green for armed here, purple for armed through an ancestor,
 grey for not armed. The scheme is the same for one card and for a page of the panel — the page

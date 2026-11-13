@@ -1668,7 +1668,7 @@
     "guardLoading": "Loading…",
     "guardNotANode": "This node no longer exists.",
     "guardNotArmable": "This node cannot be put on guard.",
-    "guardInherit": "Follows parent",
+    "guardInherit": "Inherit",
     "guardOn": "On guard",
     "guardOff": "Not on guard",
     "guardOnInherited": "On guard (via parent)",

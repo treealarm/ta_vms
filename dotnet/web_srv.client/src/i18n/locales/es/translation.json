@@ -1667,7 +1667,7 @@
     "guardLoading": "Cargando…",
     "guardNotANode": "Este nodo ya no existe.",
     "guardNotArmable": "Este nodo no se puede poner en guardia.",
-    "guardInherit": "Sigue al padre",
+    "guardInherit": "Heredar",
     "guardOn": "En guardia",
     "guardOff": "Sin guardia",
     "guardOnInherited": "En guardia (por el padre)",
