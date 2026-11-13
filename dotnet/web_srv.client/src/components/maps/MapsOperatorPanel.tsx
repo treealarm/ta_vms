@@ -33,7 +33,7 @@ import { enterZoom } from '../../map/zoomLevels'
 import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { ALARM_COLOR, ALARM_STATE, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
+import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import ObjectSearch from '../objects/ObjectSearch'
@@ -686,13 +686,6 @@ export default function MapsOperatorPanel() {
           />
         )}
       </Box>
-      {!diagramId && (
-        <StateLegend
-          ids={spaceData.markers.map((marker) => marker.id)}
-          states={statesById}
-          descriptions={descriptions}
-        />
-      )}
 
       <Snackbar
         open={!!notice}
@@ -750,42 +743,6 @@ export default function MapsOperatorPanel() {
           </DialogActions>
         </Dialog>
       )}
-    </Box>
-  )
-}
-
-/** What the colours on this canvas mean: the states its nodes carry, and the alarm colour. */
-function StateLegend({
-  ids, states, descriptions,
-}: {
-  ids: string[]
-  states: Record<string, { states?: string[] }>
-  descriptions: Record<string, { stateDescr?: string; stateColor?: string }>
-}) {
-  const { t } = useTranslation()
-  const used = new Set<string>()
-  for (const id of ids) {
-    for (const state of states[id]?.states ?? []) used.add(state)
-  }
-
-  const entries = [...used]
-    // The alarm dot below already stands for the ALARM state.
-    .filter((name) => name !== ALARM_STATE)
-    .map((name) => ({ name, description: descriptions[name] }))
-    .filter((entry) => entry.description)
-
-  return (
-    <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, flexWrap: 'wrap' }}>
-      {entries.map(({ name, description }) => (
-        <Box key={name} sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: description?.stateColor || 'text.disabled' }} />
-          <Typography variant="caption" color="text.secondary">{description?.stateDescr || name}</Typography>
-        </Box>
-      ))}
-      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-        <Box sx={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${ALARM_COLOR}` }} />
-        <Typography variant="caption" color="text.secondary">{t('maps.alarm')}</Typography>
-      </Box>
     </Box>
   )
 }

@@ -1490,7 +1490,6 @@
     "alarms": "Alarms",
     "alarmsHint": "Running now, and those that ended in the last {{minutes}} minutes",
     "noAlarms": "No alarms",
-    "alarm": "Alarm",
     "alarmSince": "since {{time}}",
     "alarmNow": "Alarm",
     "alarmEnded": "Alarm ended",

@@ -6,8 +6,8 @@ import {
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined'
 import SensorsOutlinedIcon from '@mui/icons-material/SensorsOutlined'
 import VideocamOutlinedIcon from '@mui/icons-material/VideocamOutlined'
-import LockOutlinedIcon from '@mui/icons-material/LockOutlined'
-import LockOpenOutlinedIcon from '@mui/icons-material/LockOpenOutlined'
+import ShieldIcon from '@mui/icons-material/Shield'
+import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined'
 import { useTranslation } from 'react-i18next'
 
 import { listControlObjects } from '../../api/controlApi'
@@ -240,8 +240,8 @@ export default function ControlPanel() {
                       />
                     ) : row.hasArming ? (
                       row.armed
-                        ? <LockOutlinedIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
-                        : <LockOpenOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
+                        ? <ShieldIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
+                        : <ShieldOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
                     ) : null}
                   </ListItemButton>
                 ))}
