@@ -122,6 +122,27 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void TheWorldInstallsTheSensorsBehaviourAndNotOnlyTheirNames()
+  {
+    // The routing rule watches sim-ptz's input: it must be armed on its own, because no zone is
+    // involved, and its contact that means "fired" is closed. The master's input is the operator's
+    // sensor — it follows its disarmed camera until somebody arms it from the card — and its rule
+    // is the same contact, so closing `loop` raises.
+    var placed = _world.Placements.Select(placement => placement.CameraId).ToHashSet();
+
+    var sensor = Assert.Single(_world.Devices, device => device.CameraKey == "sim-ptz");
+    Assert.Equal(("input", "armed", "closed", true),
+      (sensor.Token, sensor.ArmMode, sensor.TriggerOn, sensor.AlarmEnabled));
+
+    var master = Assert.Single(_world.Devices, device => device.CameraKey == "sim-master");
+    Assert.Equal(("input", "inherit", "closed", true),
+      (master.Token, master.ArmMode, master.TriggerOn, master.AlarmEnabled));
+
+    // A device the world did not place has no camera in the deployment to configure.
+    Assert.All(_world.Devices, device => Assert.Contains(device.CameraKey, placed));
+  }
+
+  [Fact]
   public void TheWorldCarriesTheLandmarksItsCamerasAreCalibratedOn()
   {
     // The points MarylandWorld marks with coloured blocks: five in the hall, five out on the lot,

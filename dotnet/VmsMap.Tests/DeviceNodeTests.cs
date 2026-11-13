@@ -96,7 +96,8 @@ public class DeviceNodeTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
-        new TestCatalog(), TestWiring.DeviceDiagrams(db, map, updates, geo)),
+        new TestCatalog(), TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
+        TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, new TestCameraState(cameraArmed)),
       TestWiring.NodeArming(db, map, cameraState: new TestCameraState(cameraArmed)),
       null!, // the settings card has its own tests

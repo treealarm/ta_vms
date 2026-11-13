@@ -92,6 +92,7 @@ public class MapServiceReadsTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, arming), TestWiring.NodeArming(db, map, cameraState: arming),
       null!, // the settings RPCs have their own tests

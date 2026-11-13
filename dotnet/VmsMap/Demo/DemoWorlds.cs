@@ -79,6 +79,20 @@ namespace VmsMap.Demo
     // blocks, on the floor of the hall and out on the lot. Their names are what an operator reads
     // — `L1 red` — plus the place they stand in, because the tree shows both sets side by side and
     // `L1 red` twice says nothing; their keys are what the marks and observations name.
+    // The behaviour of the demo's two sensors. A logical object's settings are the map's — the
+    // resolver, the alarm rule and the operator's list all read them there — so the world installs
+    // them; VmsCfg's half of the demo keeps only the parts' names. Both inputs idle open and the
+    // wire closes them, so the contact that raises is `closed`.
+    private static List<DemoDeviceSettings> DeviceSettings() =>
+    [
+      // sim-ptz's input is the sensor the routing rule watches: it is armed on its own, so a
+      // closed contact raises with no zone involved.
+      new("sim-ptz", "digital_input", "input", "armed", "closed", AlarmEnabled: true),
+      // The master's input is the operator's sensor: it follows its camera, which the demo leaves
+      // disarmed, so closing its relay raises only once somebody arms it from the card.
+      new("sim-master", "digital_input", "input", "inherit", "closed", AlarmEnabled: true),
+    ];
+
     private static List<DemoLandmark> Landmarks() =>
     [
       new("landmark/hall/l1", "L1 red (hall)", "space/building", 38.9929432, -76.9379225),
@@ -283,6 +297,7 @@ namespace VmsMap.Demo
         spaces,
         nodes,
         placements,
+        DeviceSettings(),
         Landmarks(),
         GroundMarks,
         PtzObservations,

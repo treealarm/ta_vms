@@ -75,6 +75,7 @@ public class CanvasQueryTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db), TestWiring.NodeArming(db, map),
       null!, // the settings card has its own tests
