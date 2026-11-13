@@ -4,10 +4,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 
 namespace VmsMap.Tests;
 
@@ -62,7 +64,10 @@ public class SensorAlarmTests
 
     return new Services(
       db, map, alarms,
-      new SensorAlarmService(db, source, TestWiring.Arming(db, arming), alarms),
+      // The resolver reads the same settings the rule does: an input's explicit mode must win over
+      // the zone in this path too.
+      new SensorAlarmService(db, source, TestWiring.Arming(db, arming, source), alarms, map,
+        NullLogger<SensorAlarmService>.Instance),
       arming, TestCameras.One, Token);
   }
 
@@ -180,7 +185,8 @@ public class SensorAlarmTests
     // The operator saves the input with the alarm off: the open row must not stay as if it were.
     var off = new Settings(new DeviceSettingsInfo(
       TestCameras.One, DeviceObjectId.DigitalInputPart, Token, "Door", "inherit", "closed", false));
-    var sensor = new SensorAlarmService(s.Db, off, TestWiring.Arming(s.Db, s.Arming), s.Alarms);
+    var sensor = new SensorAlarmService(s.Db, off, TestWiring.Arming(s.Db, s.Arming), s.Alarms, s.Map,
+        NullLogger<SensorAlarmService>.Instance);
 
     await sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
 
@@ -234,5 +240,147 @@ public class SensorAlarmTests
 
     await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "open");
     Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
+  }
+
+  // ── A zone ────────────────────────────────────────────────────────────────────────────────────
+
+  /// <summary>A space a camera's reference replica stands in, optionally armed. Arms the zone the
+  /// way the facade writes it, and answers the space's node id.</summary>
+  private static async Task<string> ZoneAsync(Services s, bool armed)
+  {
+    var space = new BaseMarkerDTO { id = Guid.NewGuid().ToString(), name = "Floor" };
+    await s.Map.UpdateHierarchyAsync([space]);
+
+    s.Db.Spaces.Add(new DBSpace { object_id = Guid.Parse(space.id!), kind = SpaceKinds.Map });
+
+    var replica = new BaseMarkerDTO
+    {
+      id = Guid.NewGuid().ToString(),
+      name = "Camera on the plan",
+      parent_id = space.id,
+      owner_id = CameraObjectId.For(s.CameraId),
+    };
+    await s.Map.UpdateHierarchyAsync([replica]);
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = Guid.Parse(replica.id!),
+      camera_id = s.CameraId,
+      is_reference = true,
+    });
+
+    if (armed)
+    {
+      s.Db.Properties.Add(new DBMarkerProp
+      {
+        id = Guid.NewGuid(),
+        object_id = Guid.Parse(space.id!),
+        prop_name = ArmMode.ArmedProperty,
+        str_val = "true",
+      });
+    }
+
+    await s.Db.SaveChangesAsync();
+    return space.id!;
+  }
+
+  private static async Task StoreContactAsync(Services s, Guid input, string state)
+  {
+    await s.Db.ObjectStates.AddAsync(new DBObjectState
+    {
+      id = input,
+      timestamp = DateTime.UtcNow,
+      states = [new DBObjectStateValue { id = Guid.NewGuid(), object_id = input, state = state }],
+    });
+    await s.Db.SaveChangesAsync();
+  }
+
+  [Fact]
+  public async Task ArmingAZoneRaisesForAContactAlreadyInItsTriggerPosition()
+  {
+    var s = Create(AlarmOn(TestCameras.One), armed: false);
+    var input = await DeviceAsync(s);
+    await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
+
+    // The zone is written after the contact closed while nothing was armed: no alarm so far.
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    Assert.Null(await Open(s.Db));
+
+    var space = await ZoneAsync(s, armed: true);
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+
+    var alarm = await Open(s.Db);
+    Assert.NotNull(alarm);
+    Assert.Equal(input, alarm!.object_id);
+    Assert.Equal(SensorAlarmService.ArmedWithActiveCondition,
+      (await s.Db.Events.SingleAsync(e => e.event_name == AlarmStore.RaisedEvent)).param1);
+  }
+
+  [Fact]
+  public async Task AZoneRaisesNothingForAContactAtRest()
+  {
+    var s = Create(AlarmOn(TestCameras.One), armed: false);
+    var input = await DeviceAsync(s);
+    await StoreContactAsync(s, input, SensorAlarmService.SensorOpen);
+
+    var space = await ZoneAsync(s, armed: true);
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+
+    Assert.Null(await Open(s.Db));
+  }
+
+  [Fact]
+  public async Task RepeatingTheZoneRecheckDoesNotDuplicateTheAlarm()
+  {
+    var s = Create(AlarmOn(TestCameras.One), armed: false);
+    var input = await DeviceAsync(s);
+    await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
+    var space = await ZoneAsync(s, armed: true);
+
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+
+    Assert.Single(await s.Db.Alarms.Where(a => a.status != AlarmStatus.Closed).ToListAsync());
+  }
+
+  [Fact]
+  public async Task AnExplicitlyDisarmedInputIgnoresItsArmedZone()
+  {
+    var settings = new DeviceSettingsInfo(
+      TestCameras.One, DeviceObjectId.DigitalInputPart, Token, "Door", "disarmed", "closed", true);
+    var s = Create(settings, armed: false);
+    var input = await DeviceAsync(s);
+    await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
+
+    var space = await ZoneAsync(s, armed: true);
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+
+    Assert.Null(await Open(s.Db));
+  }
+
+  [Fact]
+  public async Task AReturnedAlarmComesBackWhenTheZoneIsArmedWithTheContactClosedAgain()
+  {
+    var s = Create(AlarmOn(TestCameras.One), armed: true);
+    var input = await DeviceAsync(s);
+    await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
+
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    Assert.Equal(AlarmStatus.Active, (await Open(s.Db))!.status);
+
+    // The contact opens: the condition is gone, the row is a returned alarm.
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "open");
+    Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
+
+    // The camera is disarmed while the contact is closed again — nothing to raise — and then a zone
+    // is armed over it. The stored contact is the trigger position, so the re-check must fire.
+    s.Arming.Armed = false;
+
+    var space = await ZoneAsync(s, armed: true);
+    await s.Sensor.ReconcileSpaceAsync(space, default);
+
+    // The returned row is reactivated, not duplicated: the store's dedup key still holds it.
+    var alarm = await Open(s.Db);
+    Assert.Equal(AlarmStatus.Active, alarm!.status);
+    Assert.Single(await s.Db.Alarms.ToListAsync());
   }
 }

@@ -17,6 +17,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadSpaces } from '../../store/spatialSlice'
 import { treeOf } from '../maps/spatialUtils'
 import ObjectControl from './ObjectControl'
+import NodeGuard from './NodeGuard'
 
 const STORAGE_KEY = 'control.space'
 const PAGE_SIZE = 50
@@ -273,6 +274,21 @@ export default function ControlPanel() {
         </Box>
 
         <Box sx={{ flex: 1, minWidth: 0, overflowY: 'auto', p: 2 }}>
+          {/* The space's own guard heads the pane: it reaches every row below it, and nothing in
+              the list stands in for it. */}
+          {effectiveSpaceId && (
+            <Stack spacing={1} sx={{ pb: 2, mb: 2, borderBottom: 1, borderColor: 'divider' }}>
+              <Box>
+                <Typography variant="subtitle1" fontWeight={600}>
+                  {spaces.find((s) => s.id === effectiveSpaceId)?.name ?? t('control.space')}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {t('control.spaceGuardHint')}
+                </Typography>
+              </Box>
+              <NodeGuard objectId={effectiveSpaceId} onChanged={() => void reload()} />
+            </Stack>
+          )}
           {selected ? (
             <ObjectControl key={selected.objectId} row={selected} onChanged={() => void reload()} heading />
           ) : (

@@ -22,5 +22,10 @@ namespace VmsMap.Outbox
   {
     /// <summary>An event entered the journal and may start a subscription.</summary>
     public const string EventCreated = "map-event-created";
+
+    /// <summary>A container's arming changed and the sensors already in their trigger position
+    /// must be re-checked. Written in the same transaction as the property, so a crash between the
+    /// commit and the re-check loses nothing.</summary>
+    public const string ArmingChanged = "map-arming-changed";
   }
 }

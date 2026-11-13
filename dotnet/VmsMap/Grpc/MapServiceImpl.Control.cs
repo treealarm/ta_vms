@@ -93,6 +93,58 @@ namespace VmsMap.Grpc
         : new MapProto.GetControlObjectResponse { Found = true, Object = ToProto(row) };
     }
 
+    public override async Task<MapProto.GetNodeArmingResponse> SetNodeArming(
+      MapProto.SetNodeArmingRequest request, ServerCallContext context)
+    {
+      if (Utils.ConvertObjectIdToGuid(request.ObjectId) is null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "object_id must be a UUID"));
+
+      var caller = ToCaller(request.Caller);
+
+      try
+      {
+        var view = await _nodeArming.SetAsync(
+          request.ObjectId, request.Mode, caller.Username ?? string.Empty,
+          context.CancellationToken);
+
+        return ToArming(view!);
+      }
+      catch (VmsMap.Domain.Arming.ArmingException ex)
+      {
+        throw new RpcException(new Status(ex.Refusal switch
+        {
+          VmsMap.Domain.Arming.ArmingRefusal.NotFound => StatusCode.NotFound,
+          VmsMap.Domain.Arming.ArmingRefusal.InvalidRequest => StatusCode.InvalidArgument,
+          _ => StatusCode.FailedPrecondition,
+        }, ex.Message));
+      }
+    }
+
+    private static MapProto.GetNodeArmingResponse ToArming(VmsMap.Domain.Arming.NodeArmingView view)
+    {
+      var response = new MapProto.GetNodeArmingResponse
+      {
+        Found = view.Found,
+        Armable = view.Armable,
+        Configured = view.Configured,
+        Mode = view.Mode,
+      };
+      response.Modes.AddRange(view.Modes);
+
+      if (view.Arming is { } arming)
+      {
+        response.Arming = new MapProto.NodeArming
+        {
+          ObjectId = arming.ObjectId,
+          Armed = arming.Armed,
+          Source = arming.Source,
+          SourceObjectId = arming.SourceObjectId,
+        };
+      }
+
+      return response;
+    }
+
     private static MapProto.ControlObject ToProto(ControlObjectRow row) => new()
     {
       ObjectId = row.ObjectId,

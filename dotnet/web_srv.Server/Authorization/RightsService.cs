@@ -106,10 +106,13 @@ public sealed class RightsService : IRightsService
     if (rights.Mode == MapProto.RightsMode.Open)
       return RightsScope.Everything;
 
+    // Both ids a right row names: a camera's own id (the legacy camera endpoints speak in those)
+    // and the node's id (a space or a zone has no camera id at all). They live in different
+    // namespaces, so one set holds both; the caller's id is compared as it was given.
     var ids = rights.Nodes
-      .Where(n => !string.IsNullOrEmpty(n.CameraId)
-                  && n.Actions.Contains(action, StringComparer.Ordinal))
-      .Select(n => n.CameraId)
+      .Where(n => n.Actions.Contains(action, StringComparer.Ordinal))
+      .SelectMany(n => new[] { n.CameraId, n.ObjectId })
+      .Where(id => !string.IsNullOrEmpty(id))
       .ToHashSet(StringComparer.Ordinal);
 
     return RightsScope.Of(ids);

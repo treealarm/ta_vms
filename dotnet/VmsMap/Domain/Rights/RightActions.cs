@@ -49,10 +49,16 @@ namespace VmsMap.Domain
     private static readonly IReadOnlyList<string> PartActions =
       [View, Edit, ViewLive, Control, Acknowledge];
 
+    // A container is guarded as a whole. `control` on a floor or a zone is what permits putting it
+    // on guard, and it is deliberately not the same permission as controlling one camera: a
+    // camera endpoint still checks the camera's own id.
+    private static readonly IReadOnlyList<string> ContainerActions = [View, Edit, Control];
+
     public static IReadOnlyList<string> For(NodeKind kind) => kind switch
     {
       NodeKind.Camera => CameraActions,
       NodeKind.Part => PartActions,
+      NodeKind.Space or NodeKind.Figure or NodeKind.Object or NodeKind.Diagram => ContainerActions,
       _ => Common,
     };
 

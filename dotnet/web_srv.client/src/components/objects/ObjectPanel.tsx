@@ -12,12 +12,13 @@ import LoginIcon from '@mui/icons-material/Login'
 import { useTranslation } from 'react-i18next'
 import type { MapExtraProperty } from '../../dto/mapDtos'
 import type { ControlObjectDto, PtzGeoAimResultDto } from '../../dto/dtos'
-import { getControlObject } from '../../api/controlApi'
+import { getControlObject, getNodeArming } from '../../api/controlApi'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
 import CameraUnifiedCard from '../CameraUnifiedCard'
 import ObjectControl from '../control/ObjectControl'
+import NodeGuard from '../control/NodeGuard'
 import NodeIdentity from './NodeIdentity'
 import NodeStateChips from './NodeStateChips'
 
@@ -104,6 +105,22 @@ export default function ObjectPanel({
 
   // The answer must be this node's: a part selected before keeps its row until the next one lands.
   const controlRow = kind === 'part' && control?.nodeId === nodeId ? control.row : null
+
+  // A container — a space, a zone drawn on the map, a mnemonic — is guarded as a whole, and only
+  // when devices actually stand through it. A camera needs none of this: its card above already
+  // arms it, and a second switch would be two ways to say one thing.
+  const [arming, setArming] = useState<{ nodeId: string; armable: boolean } | null>(null)
+  useEffect(() => {
+    if (kind === 'part' || kind === 'camera') return
+
+    let cancelled = false
+    void getNodeArming(nodeId)
+      .then((answer) => { if (!cancelled) setArming({ nodeId, armable: answer?.armable ?? false }) })
+      .catch(() => { if (!cancelled) setArming(null) })
+    return () => { cancelled = true }
+  }, [kind, nodeId, controlNonce])
+
+  const guardable = arming?.nodeId === nodeId && arming.armable
 
   return (
     <Stack sx={{ width: 420, flexShrink: 0, borderLeft: 1, borderColor: 'divider', minHeight: 0 }}>
@@ -225,6 +242,12 @@ export default function ObjectPanel({
               row={controlRow}
               onChanged={() => setControlNonce((n) => n + 1)}
             />
+          </Section>
+        )}
+
+        {guardable && (
+          <Section title={t('control.title')}>
+            <NodeGuard objectId={nodeId} onChanged={() => setControlNonce((n) => n + 1)} />
           </Section>
         )}
 

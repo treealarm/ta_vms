@@ -434,6 +434,9 @@ export type MapAlarm = {
   canAck?: boolean
   objectName?: string
   cameraId?: string
+  /** The zone whose armed property settles this device's arming: the group its alarm belongs to.
+   * Empty while nothing above the device is armed. */
+  armingSourceObjectId?: string
 }
 
 /** The last row of the previous page: (time, id), as the branch that produced it orders them. */

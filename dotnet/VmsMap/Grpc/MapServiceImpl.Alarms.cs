@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using VmsMap.Adapter;
 using VmsMap.Db;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using MapProto = Vms.Map;
 
 namespace VmsMap.Grpc
@@ -121,6 +122,102 @@ namespace VmsMap.Grpc
         await ResolveAsync(outcome, ct), ToCaller(request.Caller), ct);
     }
 
+    // ── The zone's alarms ────────────────────────────────────────────────────────────────────────
+
+    public override async Task<MapProto.AcknowledgeSubtreeAlarmsResponse> AcknowledgeSubtreeAlarms(
+      MapProto.AcknowledgeSubtreeAlarmsRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      var caller = ToCaller(request.Caller);
+
+      if (Utils.ConvertObjectIdToGuid(request.ObjectId) is null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "object_id must be a UUID"));
+
+      var nodeId = request.ObjectId;
+      if (!await _rightsService.IsAllowedAsync(nodeId, RightActions.Acknowledge, caller, ct))
+        throw new RpcException(new Status(
+          StatusCode.PermissionDenied, "no 'acknowledge' right on the node"));
+
+      // An empty subtree (an unknown id) simply has no alarms: the same answer as a quiet zone.
+      var subtree = await _mapService.GetSubtreeIdsAsync([nodeId]);
+      var subtreeGuids = subtree
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(g => g.HasValue)
+        .Select(g => g!.Value)
+        .ToList();
+
+      // A device's canonical node hangs under its camera's server, not under the space the camera
+      // stands in: what a zone reaches is the devices whose **reference** replica stands inside it.
+      var cameraIds = subtreeGuids.Count == 0
+        ? []
+        : await _db.CameraPlacements.AsNoTracking()
+            .Where(p => p.is_reference && subtreeGuids.Contains(p.object_id))
+            .Select(p => p.camera_id)
+            .Distinct()
+            .ToListAsync(ct);
+      var deviceIds = cameraIds.Count == 0
+        ? []
+        : await _db.DeviceNodes.AsNoTracking()
+            .Where(n => n.source_kind == DeviceObjectId.CameraSource
+                        && cameraIds.Contains(n.source_id))
+            .Select(n => n.object_id)
+            .ToListAsync(ct);
+
+      // Open alarms are few — the condition leaving closes them — so the table is read once and
+      // filtered against that reach here, rather than pushing a hundred thousand ids into an IN.
+      var open = await _db.Alarms.AsNoTracking()
+        .Where(a => a.status != AlarmStatus.Closed)
+        .ToListAsync(ct);
+
+      var actor = ActorOf(caller);
+      var comment = NullIfEmpty(request.Comment);
+      var response = new MapProto.AcknowledgeSubtreeAlarmsResponse();
+
+      foreach (var alarm in open)
+      {
+        if (!subtree.Contains(Utils.ConvertGuidToObjectId(alarm.object_id))
+            && !deviceIds.Contains(alarm.object_id))
+        {
+          continue;
+        }
+
+        // The store keeps the one gate that matters: a live condition on an armed node is refused.
+        var outcome = await _alarmStore.AcknowledgeAsync(alarm.id, actor, comment, ct);
+        switch (outcome.Move)
+        {
+          case AlarmMove.Applied:
+            response.Acknowledged += 1;
+            break;
+          case AlarmMove.Unchanged:
+            response.Rejected.Add(new MapProto.AlarmRejection
+            {
+              AlarmId = alarm.id.ToString(),
+              Reason = "already_acknowledged",
+            });
+            break;
+          case AlarmMove.NotFound:
+            response.Rejected.Add(new MapProto.AlarmRejection
+            {
+              AlarmId = alarm.id.ToString(),
+              Reason = "not_found",
+            });
+            break;
+          default:
+            // Refused: either the row closed under us or its condition still holds on a guarded
+            // node. Asking the row is sturdier than reading the store's message text.
+            var fresh = await _alarmStore.FindAsync(alarm.id, ct);
+            response.Rejected.Add(new MapProto.AlarmRejection
+            {
+              AlarmId = alarm.id.ToString(),
+              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "armed",
+            });
+            break;
+        }
+      }
+
+      return response;
+    }
+
     // ── Internals ────────────────────────────────────────────────────────────────────────────────
 
     private delegate Task<List<DBAlarm>> PageReader(DateTime? after, Guid? afterId);
@@ -157,12 +254,13 @@ namespace VmsMap.Grpc
         .ToList();
 
       var meta = await MetadataAsync(visibleRows, ct);
+      var zones = await ArmingZonesAsync(visibleRows, ct);
 
       var result = new MapProto.AlarmPage { HasMore = hasMore };
       foreach (var row in visibleRows)
       {
         result.Alarms.Add(await ToAlarmAsync(
-          row, caller, ct, ackable.Contains(Utils.ConvertGuidToObjectId(row.object_id)), meta));
+          row, caller, ct, ackable.Contains(Utils.ConvertGuidToObjectId(row.object_id)), meta, zones));
       }
 
       if (hasMore && page.Count > 0)
@@ -211,7 +309,8 @@ namespace VmsMap.Grpc
       CallerContext caller,
       CancellationToken ct,
       bool? mayAcknowledge = null,
-      Dictionary<Guid, (string Name, string? CameraId)>? metadata = null)
+      Dictionary<Guid, (string Name, string? CameraId)>? metadata = null,
+      Dictionary<string, string>? armingZones = null)
     {
       var permitted = mayAcknowledge
         ?? await _rightsService.IsAllowedAsync(
@@ -264,7 +363,47 @@ namespace VmsMap.Grpc
         CanAck = canAck,
         ObjectName = name ?? string.Empty,
         CameraId = cameraId ?? string.Empty,
+        // The zone the alarm is accepted by: the node whose armed property settles this device's
+        // arming; empty while nothing above the device is armed.
+        ArmingSourceObjectId = armingZones?.GetValueOrDefault(
+          Utils.ConvertGuidToObjectId(alarm.object_id)) ?? string.Empty,
       };
+    }
+
+    /// <summary>The zone each alarm of a page belongs to: the node whose `armed` property settles the
+    /// device's arming, resolved for the whole page at once. Only a sensor inherits one — a camera
+    /// row answers with its own flag, and a retention alarm has no zone to belong to.</summary>
+    private async Task<Dictionary<string, string>> ArmingZonesAsync(
+      IReadOnlyCollection<DBAlarm> alarms, CancellationToken ct)
+    {
+      var result = new Dictionary<string, string>(StringComparer.Ordinal);
+      var objectIds = alarms.Select(a => a.object_id).Distinct().ToList();
+      if (objectIds.Count == 0)
+        return result;
+
+      var parts = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => objectIds.Contains(n.object_id)
+                    && n.part_kind == DeviceObjectId.DigitalInputPart)
+        .Select(n => new { n.object_id, n.source_id, n.part_kind, n.part_token })
+        .ToListAsync(ct);
+      if (parts.Count == 0)
+        return result;
+
+      var resolved = await _armingResolver.ResolveManyAsync(
+        parts.Select(p => new ArmingSubject(
+          Utils.ConvertGuidToObjectId(p.object_id), p.source_id, p.part_kind, p.part_token)).ToList(),
+        ct);
+
+      foreach (var arming in resolved.Values)
+      {
+        if (arming.Source == EffectiveArmingResolver.Space
+            && !string.IsNullOrEmpty(arming.SourceObjectId))
+        {
+          result[arming.ObjectId] = arming.SourceObjectId;
+        }
+      }
+
+      return result;
     }
 
     private async Task<DBAlarm> RequireVisibleAlarmAsync(

@@ -1313,6 +1313,121 @@ def check_control_panel(vms):
             set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
 
 
+def node_arming(vms, object_id):
+    """One node's guard state, as the operator's guard switch asks for it."""
+    try:
+        return vms.call("GET", f"/api/control/objects/{object_id}/arming")
+    except HttpError as e:
+        if e.status == 404:
+            return None
+        raise
+
+
+def set_node_arming(vms, object_id, mode):
+    """The one write behind every guard switch; answers what the node resolves to afterwards."""
+    return vms.call("PUT", f"/api/control/objects/{object_id}/arming", {"mode": mode})
+
+
+def acknowledge_zone(vms, object_id):
+    """Accepting a zone: every open alarm of the devices under it, with a result per alarm."""
+    return vms.call("POST", f"/api/control/objects/{object_id}/alarms/acknowledge",
+                    {"comment": "demo"})
+
+
+def node_props(vms, object_id):
+    return vms.call("GET", f"/api/map/objects/{object_id}/props") or {}
+
+
+def check_zone_arming(vms):
+    """Arming a space: one property on the floor's node, and every sensor under it answers.
+
+    The zone is not written onto the sensors — it is resolved for them — so this also proves the
+    absence of a mirror, that an alarm names the zone it belongs to, and that disarming the zone
+    keeps the alarm while letting the operator accept it.
+    """
+    print("Zone arming")
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if not check(floor is not None, f"the demo has the space {BUILDING_NAME!r}"):
+        return
+
+    node, parts = device_nodes(vms, ARMED_CAMERA)
+    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    if not check(part is not None, "the master sensor is a node under the camera"):
+        return
+
+    def row():
+        return digital_input_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+
+    # The previous step put the input back to its own camera's arming; the zone starts unset.
+    if not check(bool(wait_until(lambda: (row() or {}).get("armingSource") == "camera", 30)),
+                 "the master sensor starts following its camera, not a zone"):
+        return
+
+    initial = node_arming(vms, floor["id"])
+    if not check(initial is not None, "a space answers an arming read"):
+        return
+    check(initial.get("armable") is True, "a space a camera stands in may be armed")
+    check(initial.get("configured") is True, "a space needs no settings row to be armable")
+    check(initial.get("mode") == "inherit",
+          f"the floor starts following its parent (has {initial.get('mode')!r})")
+    check(initial.get("armed") is False, "the floor is not on guard")
+
+    set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+    settle_sensor(vms, part["id"])
+
+    try:
+        armed = set_node_arming(vms, floor["id"], "armed")
+        check(armed.get("mode") == "armed" and armed.get("armed") is True,
+              "arming the space writes its mode and answers the effective state")
+        check(armed.get("source") == "explicit", "the answer says the floor itself is armed")
+
+        follows = wait_until(
+            lambda: (row() or {}).get("armed") is True
+            and (row() or {}).get("armingSource") == "space", 30)
+        check(bool(follows), "the sensor under the floor is on guard through the space")
+
+        # The zone is resolved, not propagated: no property is written to the sensor's node.
+        props = node_props(vms, part["id"]).get("extraProps") or []
+        check(not any((p.get("propName") or "") == "armed" for p in props),
+              "the sensor's own node carries no armed property (no mirror)")
+
+        before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
+        set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, True)
+        wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is True, 40)
+        alarm = wait_until(lambda: active_alarm(vms, part["id"]), 40)
+        check(alarm is not None, "a contact that closes under an armed floor raises one alarm")
+        if alarm is not None:
+            check(alarm.get("armingSourceObjectId") == floor["id"],
+                  "the alarm names the zone its device is guarded by")
+            # False is omitted from the proto JSON, so an absent field is the refusal.
+            check(not alarm.get("canAck"),
+                  "it cannot be acknowledged while the floor is armed")
+
+            disarmed = set_node_arming(vms, floor["id"], "disarmed")
+            check(disarmed.get("armed") is False,
+                  "disarming the floor resolves its sensors off guard")
+            check(active_alarm(vms, part["id"]) is not None,
+                  "disarming closes no alarm: only the condition leaving does")
+
+            accepted = acknowledge_zone(vms, floor["id"])
+            check(accepted.get("acknowledged", 0) >= 1,
+                  f"accepting the zone acknowledges its open alarm (got {accepted!r})")
+            check(not any(r.get("reason") == "armed" for r in accepted.get("rejected") or []),
+                  "nothing is refused once the zone is off guard")
+
+        journal = [event for event in events_of(vms, floor["id"], "arming")
+                   if event.get("param0") and event.get("param1") == "armed"]
+        check(bool(journal), "the journal records who armed the floor and with which mode")
+        check(len(sensor_events(vms, part["id"], "closed")) >= len(before) + 1,
+              "exactly one new `sensor` front closed the contact")
+    finally:
+        set_node_arming(vms, floor["id"], "inherit")
+        set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+        wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)
+        wait_until(lambda: active_alarm(vms, part["id"]) is None, 40)
+
+
 def place_part_picture(vms, part_id, floor_id, name, lat, lon):
     """A part's replica on a plan, as the administrator places one: the node, its point, its look."""
     picture = vms.call("POST", "/api/map/admin/replicas", {
@@ -1672,6 +1787,15 @@ def check_cleanup(vms, sensor):
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), LAMP_RELAY_TOKEN, False)
     set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
 
+    # A run that died inside the zone step leaves its floor armed; the property is not the demo's
+    # and nothing else would clear it.
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if floor is not None and floor.get("id"):
+        try:
+            set_node_arming(vms, floor["id"], "inherit")
+        except HttpError:
+            pass
+
     row = sensor_settings(vms)
     if row:
         set_device_settings(vms, camera_id(SENSOR_CAMERA), {**row, "armMode": "armed"})
@@ -1854,6 +1978,7 @@ def main():
         check_provisioning(vms)
         check_operator_arming(vms)
         check_control_panel(vms)
+        check_zone_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

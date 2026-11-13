@@ -24,6 +24,7 @@ import { RECENT_ALARM_MINUTES } from '../../store/eventsSlice'
 import type { CameraPlacementDto } from '../../dto/dtos'
 import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
+import { acknowledgeZoneAlarms } from '../../api/controlApi'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
@@ -40,7 +41,7 @@ import ObjectSearch from '../objects/ObjectSearch'
 import DiagramViewer from '../diagrams/DiagramViewer'
 import StatesTable from '../events/StatesTable'
 import SpaceNav from './SpaceNav'
-import MapObjectList, { type MapObjectItem } from './MapObjectList'
+import MapObjectList, { type MapObjectItem, type MapObjectSection } from './MapObjectList'
 import { rootsOf, sharesGeometry } from './spatialUtils'
 import { useDeviceDiagramLink } from './useDeviceDiagram'
 
@@ -115,6 +116,8 @@ export default function MapsOperatorPanel() {
   const [alarmComment, setAlarmComment] = useState('')
   const [alarmReason, setAlarmReason] = useState<'false_alarm' | 'other'>('false_alarm')
   const [alarmError, setAlarmError] = useState<string | null>(null)
+  // The result of accepting a whole zone: counts and what was left, not one status.
+  const [zoneNotice, setZoneNotice] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null)
   const [alarmBusy, setAlarmBusy] = useState(false)
 
   const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
@@ -503,7 +506,7 @@ export default function MapsOperatorPanel() {
     alarm.raisedAt ? clock(alarm.raisedAt) : '',
   ].filter(Boolean).join(' · ')
 
-  const alarmItems: MapObjectItem[] = alarmRows.map((alarm) => {
+  const alarmItem = (alarm: MapAlarm): MapObjectItem => {
       const nodeId = alarm.objectId ?? ''
       const marker = markers[nodeId]
       const cameraId = alarm.cameraId || marker?.cameraId
@@ -527,22 +530,72 @@ export default function MapsOperatorPanel() {
           onClick: () => openAlarmDialog(alarm, 'acknowledge'),
         },
       }
+    }
+
+  // One section per zone: the node whose armed property settles each device's arming. An alarm
+  // whose device is guarded through no zone — by its own camera's flag, or by nothing — lands in
+  // the "not on guard" section, so the operator sees at a glance which alarms are found.
+  // Computed per render, not memoised: the component returns before its hooks when no space is
+  // open, and a page of alarms is small.
+  const alarmGroups: [string, MapAlarm[]][] = []
+  {
+    const groups = new Map<string, MapAlarm[]>()
+    for (const alarm of alarmRows) {
+      const zone = alarm.armingSourceObjectId ?? ''
+      const bucket = groups.get(zone)
+      if (bucket) bucket.push(alarm)
+      else groups.set(zone, [alarm])
+    }
+    alarmGroups.push(...[...groups.entries()].sort(
+      (a, b) => (a[0] === '' ? 1 : 0) - (b[0] === '' ? 1 : 0)))
+  }
+
+  const acknowledgeZone = async (zoneId: string) => {
+    try {
+      const result = await acknowledgeZoneAlarms(zoneId)
+      const accepted = t('control.acknowledgeAccepted', { count: result.acknowledged })
+      const left = t('control.acknowledgeRejected', { count: result.rejected.length })
+      setZoneNotice({
+        severity: result.rejected.length === 0 ? 'success' : 'warning',
+        text: result.rejected.length === 0 ? accepted : `${accepted} · ${left}`,
+      })
+      void dispatch(loadAlarms({}))
+    } catch (e) {
+      setZoneNotice({ severity: 'error', text: errorText(e) })
+    }
+  }
+
+  const alarmSections: MapObjectSection[] = alarmGroups.map(([zoneId, alarms]) => ({
+    title: zoneId
+      ? markers[zoneId]?.name || spaces.find((s) => s.id === zoneId)?.name || zoneId
+      : t('maps.alarmsUnguarded'),
+    hint: zoneId ? t('maps.alarmsZoneHint') : t('maps.alarmsUnguardedHint'),
+    action: zoneId
+      ? {
+          title: t('control.acknowledgeAll'),
+          label: t('control.acknowledgeAll'),
+          onClick: () => void acknowledgeZone(zoneId),
+        }
+      : undefined,
+    items: alarms.map(alarmItem),
+  }))
+
+  if (alarmSections.length === 0) {
+    alarmSections.push({
+      title: t('maps.alarms'),
+      hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
+      empty: t('maps.noAlarms'),
+      items: [],
     })
+  }
 
   if (alarmsMore) {
     // The list is a keyset page, not the whole history; older rows arrive on request.
-    alarmItems.push({
+    alarmSections[alarmSections.length - 1].items.push({
       key: 'alarms:more',
       primary: t('maps.tree.more'),
       onClick: () => void dispatch(loadAlarms({ more: true })),
     })
-  }
-
-  const alarmSection = {
-    title: t('maps.alarms'),
-    hint: t('maps.alarmsHint', { minutes: RECENT_ALARM_MINUTES }),
-    empty: t('maps.noAlarms'),
-    items: alarmItems,
   }
 
   return (
@@ -576,7 +629,7 @@ export default function MapsOperatorPanel() {
                 reveal={treeReveal}
               />
             ) : leftTab === 1 ? (
-              <MapObjectList sections={[alarmSection]} />
+              <MapObjectList sections={alarmSections} />
             ) : leftTab === 2 ? (
               <StatesTable ids={checkedIds} selectedId={selectedNodeId} onSelect={selectNode} />
             ) : (
@@ -743,6 +796,19 @@ export default function MapsOperatorPanel() {
           </DialogActions>
         </Dialog>
       )}
+
+      <Snackbar
+        open={zoneNotice !== null}
+        autoHideDuration={6000}
+        onClose={() => setZoneNotice(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {zoneNotice ? (
+          <Alert severity={zoneNotice.severity} onClose={() => setZoneNotice(null)} sx={{ fontSize: '0.85rem' }}>
+            {zoneNotice.text}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </Box>
   )
 }

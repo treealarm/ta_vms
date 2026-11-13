@@ -1133,7 +1133,11 @@ export type RelayOutputOptionsDto = {
 // idleState is null when the camera didn't report it at all. liveActive is the logical state the
 // camera last announced (Device/Trigger/DigitalInput), null until it has announced one.
 /** Where an input's effective arming came from: its own mode, an armed zone, or the camera. */
-export type ArmSource = 'explicit' | 'space' | 'camera'
+// Where an effective arming came from. A device answers "explicit" (its own mode or flag),
+// "space" (the zone above the camera's reference replica) or "camera" (the flag standing in for an
+// input). A container answers "explicit" (set on its own node), "inherited" (set on an ancestor)
+// or "none" (nobody above it is armed).
+export type ArmSource = 'explicit' | 'space' | 'camera' | 'inherited' | 'none'
 
 export type DigitalInputDto = {
   token: string
@@ -1193,6 +1197,32 @@ export type ControlObjectPageDto = {
   objects: ControlObjectDto[]
   hasMore: boolean
   next?: ControlObjectCursorDto | null
+}
+
+/** The three modes a node is written with; `inherit` is the absence of a property on a container. */
+export type ArmMode = 'inherit' | 'armed' | 'disarmed'
+
+/** What one node's guard switch needs. `mode` is what is set on the node itself, `armed`/`source`
+ * what it actually resolves to, and `sourceObjectId` names the zone that settled it. */
+export type NodeArmingDto = {
+  objectId: string
+  armable: boolean
+  configured: boolean
+  mode: ArmMode | ''
+  armed: boolean
+  source: ArmSource | ''
+  sourceObjectId: string
+  modes: ArmMode[]
+}
+
+export type AlarmRejectionDto = {
+  alarmId: string
+  reason: 'armed' | 'already_acknowledged' | 'closed' | 'not_found'
+}
+
+export type AcknowledgeZoneResultDto = {
+  acknowledged: number
+  rejected: AlarmRejectionDto[]
 }
 
 // Where the camera says it stands. found=false means it reports no location at all; an individual

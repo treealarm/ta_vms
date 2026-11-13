@@ -92,7 +92,43 @@ internal static class TestWiring
     VmsMapDbContext db, StatesUpdateService states, MapDb map, ICameraStateSource? cameraState = null,
     IDeviceSettingsSource? settings = null) =>
     new(db, settings ?? new NoDeviceSettings(), Arming(db, cameraState),
-        Alarms(db, map, states, cameraState));
+        Alarms(db, map, states, cameraState), map,
+        NullLogger<SensorAlarmService>.Instance);
+
+  public static NodeArmingService NodeArming(
+    VmsMapDbContext db, MapDb map, ICfgArmingWriter? writer = null,
+    ICameraStateSource? cameraState = null, IDeviceSettingsSource? settings = null)
+  {
+    var camera = cameraState ?? new TestCameraState();
+    var source = settings ?? new NoDeviceSettings();
+    return new(db, Arming(db, camera, source), source, camera, writer ?? new TestCfgArmingWriter(camera),
+      map, new EventsWriter(db, new EventsService(db, map)),
+      NullLogger<NodeArmingService>.Instance);
+  }
+
+  /// <summary>A stand-in for VmsCfg: it records the command, and keeps a camera's flag the way
+  /// VmsCfg would so the read that follows the write sees it.</summary>
+  internal sealed class TestCfgArmingWriter(ICameraStateSource? cameraState = null) : ICfgArmingWriter
+  {
+    public List<(string CameraId, string Token, string Mode)> PartModes { get; } = [];
+
+    public List<(string CameraId, bool Armed)> CameraFlags { get; } = [];
+
+    public Task SetPartArmModeAsync(
+      string cameraId, string token, string mode, CancellationToken ct)
+    {
+      PartModes.Add((cameraId, token, mode));
+      return Task.CompletedTask;
+    }
+
+    public Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
+    {
+      CameraFlags.Add((cameraId, armed));
+      if (cameraState is TestCameraState test)
+        test.Armed = armed;
+      return Task.CompletedTask;
+    }
+  }
 
   private sealed class AlwaysKnownCatalog : ICameraCatalog
   {
