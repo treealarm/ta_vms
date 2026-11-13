@@ -116,16 +116,15 @@ public class DeviceIoController(
     if (!string.IsNullOrEmpty(response.Error))
       return BadRequest(response.Error);
 
-    // Settings and effective arming are read tolerantly: the live list is what this endpoint is
-    // for, and a service that cannot answer leaves its fields null rather than failing the read.
-    var settings = await TryListSettingsAsync(cameraId, ct);
+    // The mode and the rule are the map's; the effective arming is resolved there too. Both are
+    // read tolerantly: the live list is what this endpoint is for, and a service that cannot
+    // answer leaves its fields null rather than failing the read.
     var canControl = await access.IsAllowedAsync(User, cameraId, RightActions.Control, ct);
 
     var rows = new List<object>();
     foreach (var input in response.Inputs)
     {
-      var settingsRow = settings?.FirstOrDefault(
-        s => s.Kind == DigitalInputKind && s.Token == input.Token);
+      var settingsRow = await TryMapSettingsAsync(cameraId, DigitalInputKind, input.Token, ct);
       var (armed, armingSource) = await TryArmingAsync(cameraId, input.Token, ct);
 
       rows.Add(new
@@ -312,8 +311,9 @@ public class DeviceIoController(
   public async Task<IActionResult> SetSettings(
     string cameraId, [FromBody] DeviceSettingsBody body, CancellationToken ct)
   {
-    // The name (and, for this release, the legacy mirror of the rule) is VmsCfg's row. Writing it
-    // first is also what makes the part "configured", which the map's settings require.
+    // The name is VmsCfg's row, and only the name: its arming and its rule are the map's, and
+    // VmsCfg refuses a request that still carries them. Writing it first is also what makes the
+    // part "configured", which the map's settings require.
     var response = await cfgClient.SetDeviceSettingsAsync(new SetDeviceSettingsRequest
     {
       Settings = new DeviceSettings
@@ -322,9 +322,6 @@ public class DeviceIoController(
         Kind = body.Kind,
         Token = body.Token,
         Name = body.Name ?? string.Empty,
-        ArmMode = body.ArmMode,
-        TriggerOn = body.TriggerOn ?? string.Empty,
-        AlarmEnabled = body.AlarmEnabled,
       },
     }, Options(ct));
     if (!response.Success)
@@ -371,20 +368,6 @@ public class DeviceIoController(
     PartToken = token,
   };
 
-  private async Task<List<DeviceSettings>?> TryListSettingsAsync(
-    string cameraId, CancellationToken ct)
-  {
-    try
-    {
-      var response = await cfgClient.ListDeviceSettingsAsync(
-        new ListDeviceSettingsRequest { CameraId = cameraId }, Options(ct));
-      return response.Settings.ToList();
-    }
-    catch (RpcException)
-    {
-      return null;
-    }
-  }
 
   // The effective arming of one part, as VmsMap resolves it. Addressed by source and token because
   // the card holds the camera, not the part's node id. An unanswered call is two nulls: the panel
