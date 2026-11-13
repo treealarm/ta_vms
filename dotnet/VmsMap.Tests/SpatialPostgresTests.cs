@@ -524,4 +524,37 @@ public class SpatialPostgresTests
     Assert.Empty(await test.Db.DeviceDiagrams.ToListAsync());
     Assert.False(await test.Db.Markers.AnyAsync(m => m.id == diagram || m.id == replica));
   }
+
+  // A logical object's behaviour is a typed row in the map, not a free-form property: the schema
+  // holds the vocabulary and the rule that an alarm needs a contact state to follow.
+  [Fact]
+  public async Task DeviceObjectSettingsAreTypedAndFollowTheirNode()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var node = Guid.NewGuid();
+    test.Db.Markers.Add(new DBMarker { id = node, name = "Camera" });
+    await test.Db.SaveChangesAsync();
+
+    var store = new VmsMap.Domain.Arming.DeviceObjectSettingsStore(test.Db);
+    await store.SetAsync(
+      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, "closed", true,
+      CancellationToken.None);
+
+    var read = await store.GetAsync(node.ToString(), CancellationToken.None);
+    Assert.Equal(VmsMap.Domain.Arming.ArmMode.Disarmed, read.Mode);
+    Assert.Equal("closed", read.TriggerOn);
+    Assert.True(read.AlarmEnabled);
+
+    // An alarm cannot follow a contact state that was never named.
+    await Assert.ThrowsAsync<DbUpdateException>(() => store.SetAsync(
+      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, null, true,
+      CancellationToken.None));
+
+    // Deleting the node takes its settings with it, through the schema's cascade.
+    await test.Db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM objects WHERE id = {node}");
+    Assert.False(await test.Db.DeviceObjectSettings.AnyAsync(r => r.object_id == node));
+  }
 }

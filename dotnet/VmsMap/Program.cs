@@ -153,6 +153,9 @@ builder.Services.AddScoped<DeviceEventTranslator>();
 builder.Services.AddScoped<SensorAlarmService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
+// The behaviour of a logical device object — its arming mode and its contact rule — kept in the
+// map, because the map is the only consumer.
+builder.Services.AddScoped<VmsMap.Domain.Arming.DeviceObjectSettingsStore>();
 builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 // The one write behind every guard switch: a device delegates to VmsCfg, a container keeps its
 // row in `object_arming`.

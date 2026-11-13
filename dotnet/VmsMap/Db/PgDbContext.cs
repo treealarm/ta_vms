@@ -26,6 +26,7 @@ namespace VmsMap.Db
     public DbSet<DBTrackPoint> Tracks { get; set; } = null!;
     public DbSet<DBMarkerProp> Properties { get; set; } = null!;
     public DbSet<DBObjectArming> ObjectArming { get; set; } = null!;
+    public DbSet<DBDeviceObjectSettings> DeviceObjectSettings { get; set; } = null!;
     public DbSet<DBMarker> Markers { get; set; } = null!;
     public DbSet<DBLevel> Levels { get; set; } = null!;
     public DbSet<DBRight> Rights { get; set; } = null!;
@@ -76,6 +77,7 @@ namespace VmsMap.Db
       ConfigureMarkers(modelBuilder);
       ConfigureProperties(modelBuilder);
       ConfigureObjectArming(modelBuilder);
+      ConfigureDeviceObjectSettings(modelBuilder);
       ConfigureTrackPoints(modelBuilder);
       ConfigureDiagramTypes(modelBuilder);
       ConfigureDeviceDiagrams(modelBuilder);
@@ -445,6 +447,17 @@ namespace VmsMap.Db
         entity.ToTable("object_arming");
         entity.HasKey(e => e.object_id);
         entity.Property(e => e.armed).IsRequired();
+      });
+    }
+
+    private void ConfigureDeviceObjectSettings(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBDeviceObjectSettings>(entity =>
+      {
+        entity.ToTable("device_object_settings");
+        entity.HasKey(e => e.object_id);
+        entity.Property(e => e.arm_mode).IsRequired();
+        entity.Property(e => e.alarm_enabled).IsRequired();
       });
     }
 
