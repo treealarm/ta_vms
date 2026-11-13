@@ -88,6 +88,26 @@ namespace VmsMap.Adapter
               cameras.Select(c => c.CameraId).ToHashSet(StringComparer.Ordinal), stoppingToken);
           }
 
+          // Once, before any flag is derived: the modes and alarm rules still living in VmsCfg's
+          // columns move into the map, so an explicitly armed camera is not mistaken for one that
+          // inherits its zone. A failure leaves the marker unset and the next start retries.
+          await using (var scope = _scopes.CreateAsyncScope())
+          {
+            try
+            {
+              var importer = scope.ServiceProvider.GetRequiredService<LegacyArmingImporter>();
+              await importer.EnsureImportedAsync(cameras, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+              return;
+            }
+            catch (Exception ex)
+            {
+              _logger.LogWarning(ex, "Importing the arming settings from VmsCfg failed");
+            }
+          }
+
           // A zone that was armed while this replica was down is written into the flags of the
           // cameras standing in it. Bounded by the zones that are set, not by the cameras.
           await using (var scope = _scopes.CreateAsyncScope())

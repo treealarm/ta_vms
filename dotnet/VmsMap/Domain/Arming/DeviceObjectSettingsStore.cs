@@ -107,6 +107,29 @@ namespace VmsMap.Domain.Arming
     }
 
     /// <summary>
+    /// Creates the object's row only if the map has none. The one-time import uses this: a row the
+    /// map already holds is a later decision and must not be overwritten by an old legacy value.
+    /// </summary>
+    public async Task SeedAsync(
+      string objectId, string mode, string? triggerOn, bool alarmEnabled, CancellationToken ct)
+    {
+      var guid = Utils.ConvertObjectIdToGuid(objectId)
+        ?? throw new ArgumentException($"'{objectId}' is not an object id", nameof(objectId));
+
+      if (await _db.DeviceObjectSettings.AnyAsync(r => r.object_id == guid, ct))
+        return;
+
+      _db.DeviceObjectSettings.Add(new DBDeviceObjectSettings
+      {
+        object_id = guid,
+        arm_mode = mode,
+        trigger_on = triggerOn,
+        alarm_enabled = alarmEnabled,
+      });
+      await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// The arming mode alone, leaving the alarm rule as it is: an operator's switch changes who
     /// decides the arming, not what the contact means.
     /// </summary>

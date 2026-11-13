@@ -163,6 +163,11 @@ builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
 // The administrator's card for a logical device object: its arming mode and its contact rule.
 builder.Services.AddScoped<VmsMap.Domain.Arming.IDeviceSettingsService,
   VmsMap.Domain.Arming.DeviceSettingsService>();
+// The one-time move of VmsCfg's arming columns into the map, marked in the shared state store.
+builder.Services.AddScoped<VmsMap.Adapter.LegacyArmingImporter>();
+builder.Services.AddSingleton<VmsMap.Adapter.ILegacyImportMarker>(sp =>
+  new VmsMap.Adapter.StateStoreImportMarker(
+    sp.GetRequiredService<DaprClient>(), stateStoreName));
 // The flag a zone implies, written back to VmsCfg for the cameras that inherit it: VmsOnvif and the
 // routing gateway read that flag and cannot see the map.
 builder.Services.AddScoped<VmsMap.Domain.Arming.CameraArmingReconciler>();
