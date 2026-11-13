@@ -133,6 +133,82 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
       response.Rejected.Select(r => new AlarmRejectionDto(r.AlarmId, r.Reason)).ToList()));
   }
 
+  // The settings of the logical object a node stands for: its arming mode and, for a digital
+  // input, the contact state that raises an alarm. Reading is a view of the node; writing is
+  // control, as every change of what the site does.
+  [HttpGet("objects/{objectId}/settings")]
+  [RequiresRight(RightActions.View, Name = "objectId")]
+  public async Task<IActionResult> GetSettings(string objectId, CancellationToken ct)
+  {
+    var key = await DeviceKeyAsync(objectId, ct);
+    if (key is null)
+      return NotFound();
+
+    var response = await map.GetDeviceSettingsAsync(
+      new MapProto.GetDeviceSettingsRequest { Key = key }, MapApi.Options(ct));
+
+    return response.Found ? Ok(ToSettingsDto(response.Settings)) : NotFound();
+  }
+
+  [HttpPut("objects/{objectId}/settings")]
+  [RequiresRight(RightActions.Control, Name = "objectId")]
+  public async Task<IActionResult> SetSettings(
+    string objectId, [FromBody] ObjectSettingsBody body, CancellationToken ct)
+  {
+    var key = await DeviceKeyAsync(objectId, ct);
+    if (key is null)
+      return NotFound();
+
+    var response = await map.SetDeviceSettingsAsync(
+      new MapProto.SetDeviceSettingsRequest
+      {
+        Key = key,
+        ArmMode = body.ArmMode ?? string.Empty,
+        TriggerOn = body.TriggerOn ?? string.Empty,
+        AlarmEnabled = body.AlarmEnabled,
+        Caller = User.ToMapCaller(),
+      },
+      MapApi.Options(ct));
+
+    return response.Found ? Ok(ToSettingsDto(response.Settings)) : NotFound();
+  }
+
+  // A replica resolves to the device it shows, so a picture on a plan and the canonical node
+  // answer the same settings.
+  private async Task<MapProto.DeviceSettingsKey?> DeviceKeyAsync(string objectId, CancellationToken ct)
+  {
+    var row = await map.GetControlObjectAsync(
+      new MapProto.GetControlObjectRequest { ObjectId = objectId, Caller = User.ToMapCaller() },
+      MapApi.Options(ct));
+
+    if (!row.Found || row.Object is not { } device || string.IsNullOrEmpty(device.SourceId))
+      return null;
+
+    return new MapProto.DeviceSettingsKey
+    {
+      SourceKind = device.SourceKind,
+      SourceId = device.SourceId,
+      PartKind = device.PartKind,
+      PartToken = device.PartToken,
+    };
+  }
+
+  private static ObjectSettingsDto ToSettingsDto(MapProto.DeviceSettingsView settings) => new(
+    settings.ObjectId,
+    settings.Key?.SourceKind ?? string.Empty,
+    settings.Key?.SourceId ?? string.Empty,
+    settings.Key?.PartKind ?? string.Empty,
+    settings.Key?.PartToken ?? string.Empty,
+    settings.ArmMode,
+    settings.ArmModes.ToList(),
+    string.IsNullOrWhiteSpace(settings.TriggerOn) ? null : settings.TriggerOn,
+    settings.TriggerModes.ToList(),
+    settings.AlarmEnabled,
+    settings.Configured,
+    settings.Arming?.Armed ?? false,
+    settings.Arming?.Source ?? string.Empty,
+    settings.Arming?.SourceObjectId ?? string.Empty);
+
   private static NodeArmingDto ToArmingDto(MapProto.GetNodeArmingResponse response) => new(
     response.Arming?.ObjectId ?? string.Empty,
     response.Armable,
@@ -161,6 +237,7 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
     row.HasArming,
     row.Armed,
     row.ArmingSource,
+    row.ArmingSourceObjectId,
     row.CanControl);
 }
 
@@ -182,12 +259,33 @@ public record ControlObjectDto(
   bool HasArming,
   bool Armed,
   string ArmingSource,
+  /// <summary>The node whose arming row settled it, when a zone did; empty otherwise.</summary>
+  string ArmingSourceObjectId,
   bool CanControl);
 
 public record ControlObjectPageDto(
   IReadOnlyList<ControlObjectDto> Objects,
   bool HasMore,
   ControlObjectCursorDto? Next);
+
+/// <summary>One logical device object's settings, as the administrator's card shows them.</summary>
+public record ObjectSettingsDto(
+  string ObjectId,
+  string SourceKind,
+  string SourceId,
+  string PartKind,
+  string PartToken,
+  string ArmMode,
+  IReadOnlyList<string> ArmModes,
+  string? TriggerOn,
+  IReadOnlyList<string> TriggerModes,
+  bool AlarmEnabled,
+  bool Configured,
+  bool Armed,
+  string ArmingSource,
+  string ArmingSourceObjectId);
+
+public record ObjectSettingsBody(string? ArmMode, string? TriggerOn, bool AlarmEnabled);
 
 public record ControlObjectCursorDto(string AfterName, string AfterId);
 

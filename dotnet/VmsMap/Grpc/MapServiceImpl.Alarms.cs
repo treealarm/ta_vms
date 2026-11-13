@@ -370,9 +370,9 @@ namespace VmsMap.Grpc
       };
     }
 
-    /// <summary>The zone each alarm of a page belongs to: the node whose `armed` property settles the
-    /// device's arming, resolved for the whole page at once. Only a sensor inherits one — a camera
-    /// row answers with its own flag, and a retention alarm has no zone to belong to.</summary>
+    /// <summary>The zone each alarm of a page belongs to: the node whose arming row settles the
+    /// device's arming, resolved for the whole page at once. A camera and a sensor answer the same
+    /// scheme; a retention alarm has no zone to belong to.</summary>
     private async Task<Dictionary<string, string>> ArmingZonesAsync(
       IReadOnlyCollection<DBAlarm> alarms, CancellationToken ct)
     {
@@ -381,9 +381,12 @@ namespace VmsMap.Grpc
       if (objectIds.Count == 0)
         return result;
 
+      // Cameras answer the same scheme as their sensors: an alarm on either belongs to the zone
+      // that settled it.
       var parts = await _db.DeviceNodes.AsNoTracking()
         .Where(n => objectIds.Contains(n.object_id)
-                    && n.part_kind == DeviceObjectId.DigitalInputPart)
+                    && (n.part_kind == DeviceObjectId.DigitalInputPart
+                        || n.part_kind == DeviceObjectId.DevicePart))
         .Select(n => new { n.object_id, n.source_id, n.part_kind, n.part_token })
         .ToListAsync(ct);
       if (parts.Count == 0)

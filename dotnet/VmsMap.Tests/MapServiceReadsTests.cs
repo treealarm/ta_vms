@@ -12,6 +12,7 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
 using MapProto = Vms.Map;
@@ -75,7 +76,7 @@ public class MapServiceReadsTests
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
     var notifier = new TestRightsNotifier();
-    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
     var arming = new TestCameraState();
     var alarms = TestWiring.Alarms(db, map, states, arming);
 
@@ -91,8 +92,10 @@ public class MapServiceReadsTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, arming), TestWiring.NodeArming(db, map, cameraState: arming),
+      null!, // the settings RPCs have their own tests
       TestWiring.ControlObjects(db, map, rights), alarms,
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);
@@ -645,8 +648,10 @@ public class MapServiceReadsTests
     Assert.True(alarm.CanAck);
     Assert.Equal("Camera ", alarm.ObjectName[..7]);
 
-    // Armed: the condition is live, so the acknowledgement is the store's to refuse.
+    // Armed: the condition is live, so the acknowledgement is the store's to refuse. The camera's
+    // own mode lives in the map.
     s.Arming.Armed = true;
+    await TestWiring.ObjectSettings(s.Db).SetModeAsync(node, ArmMode.Armed, default);
     pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
       Caller = Caller("alice"),

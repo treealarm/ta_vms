@@ -82,6 +82,10 @@ service CfgService {
 
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
+  rpc SetCamArmMode(SetCamArmModeRequest) returns (OperationStatus);
+  // The camera's effective flag, written by the map. The mode that decides it lives in VmsMap now,
+  // so this is a plain assignment: the caller has already resolved whether the camera is armed.
+  rpc SetCamArmed(SetCamArmedRequest) returns (SetCamArmedResponse);
   // The same armed flag for a set of cameras in one call: a list of a space's sensors asks for a
   // page's worth at a time, not one round trip per camera.
   rpc GetCamStates(GetCamStatesRequest) returns (GetCamStatesResponse);
@@ -751,7 +755,9 @@ message GetCamStateRequest {
 }
 
 message GetCamStateResponse {
-  bool armed = 1;
+  bool   armed    = 1;
+  // "inherit" | "armed" | "disarmed"; absent means "inherit".
+  string arm_mode = 2;
 }
 
 message GetCamStatesRequest {
@@ -765,11 +771,29 @@ message GetCamStatesResponse {
 message CameraArmState {
   string camera_id = 1;
   bool   armed     = 2;
+  string arm_mode  = 3;
 }
 
 message SetCamStateRequest {
   string camera_id = 1;
   bool   armed     = 2;
+}
+
+// The administrator's setting: what a camera is, before any operator command.
+message SetCamArmModeRequest {
+  string camera_id = 1;
+  string arm_mode  = 2;
+}
+
+// The camera's effective flag as the map resolved it — from a zone or from the camera's own mode.
+// The map is the only writer; VmsOnvif and web_srv read it, because they cannot see the map.
+message SetCamArmedRequest {
+  string camera_id = 1;
+  bool   armed     = 2;
+}
+
+message SetCamArmedResponse {
+  bool changed = 1;
 }
 
 message AnalyticsWatch {

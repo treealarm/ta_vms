@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Vms.Map;
 using VmsMap.Clients;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using VmsMap.PubSub;
 using NtsPoint = NetTopologySuite.Geometries.Point;
 using NtsPolygon = NetTopologySuite.Geometries.Polygon;
@@ -30,6 +31,7 @@ namespace VmsMap.Db
     private readonly IGeoService _geoService;
     private readonly ICameraCatalog _cameraCatalog;
     private readonly IMapConfigNotifier _notifier;
+    private readonly CameraArmingReconciler _arming;
 
     public SpatialDb(
       VmsMapDbContext db,
@@ -37,7 +39,8 @@ namespace VmsMap.Db
       IMapUpdateService mapUpdateService,
       IGeoService geoService,
       ICameraCatalog cameraCatalog,
-      IMapConfigNotifier notifier)
+      IMapConfigNotifier notifier,
+      CameraArmingReconciler arming)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _mapService = mapService ?? throw new ArgumentNullException(nameof(mapService));
@@ -45,6 +48,7 @@ namespace VmsMap.Db
       _geoService = geoService ?? throw new ArgumentNullException(nameof(geoService));
       _cameraCatalog = cameraCatalog ?? throw new ArgumentNullException(nameof(cameraCatalog));
       _notifier = notifier ?? throw new ArgumentNullException(nameof(notifier));
+      _arming = arming ?? throw new ArgumentNullException(nameof(arming));
     }
 
     // ── Spaces ────────────────────────────────────────────────────────────────
@@ -220,8 +224,26 @@ namespace VmsMap.Db
       if (tx is not null)
         await tx.CommitAsync(ct);
 
+      // The space is gone, and with it every zone the cameras in it stood in.
+      await _arming.ReconcileManyAsync(cameras, ct);
+
       await NotifyAsync([spaceId.ToString()], cameras, ct);
       return removed > 0;
+    }
+
+    /// <summary>
+    /// A node was moved in the tree, or its subtree changed hands: whatever stands under it may
+    /// have changed zones. Called after the caller's transaction commits, so the cameras are read
+    /// as they are now.
+    /// </summary>
+    public async Task ReconcileArmingAsync(
+      IReadOnlyCollection<string> objectIds, CancellationToken ct)
+    {
+      foreach (var objectId in objectIds.Distinct(StringComparer.Ordinal))
+      {
+        if (!string.IsNullOrEmpty(objectId))
+          await _arming.ReconcileSubtreeAsync(objectId, ct);
+      }
     }
 
     // ── Plan images ───────────────────────────────────────────────────────────
@@ -447,6 +469,10 @@ namespace VmsMap.Db
       // picture changes which space counts it even though no state changed.
       await _mapUpdateService.RefreshPlacementMirrorsAsync([placement.CameraId]);
 
+      // And it is where the camera stands for arming: a camera that moved into a zone is on guard
+      // there, one that moved out of it is not — the flag VmsCfg keeps has to say so.
+      await _arming.ReconcileAsync(placement.CameraId, ct);
+
       await NotifyAsync(changed, [placement.CameraId], ct);
     }
 
@@ -509,6 +535,10 @@ namespace VmsMap.Db
 
       if (tx is not null)
         await tx.CommitAsync(ct);
+
+      // The picture that went may have been the camera's reference: the zone it stood in no longer
+      // reaches it.
+      await _arming.ReconcileAsync(cameraId, ct);
 
       await NotifyAsync([row.object_id.ToString()], [cameraId], ct);
       return true;
@@ -1023,6 +1053,11 @@ namespace VmsMap.Db
         await _db.DeviceDiagramParts
           .Where(part => subtreeGuids.Contains(part.diagram_object_id))
           .ToListAsync(ct));
+      // The parts go first, in a statement of their own: PostgreSQL cascades them away with their
+      // diagram, and EF does not model that foreign key, so one batch may delete the diagram first
+      // — the parts' own delete then affects no row and throws a concurrency error.
+      await _db.SaveChangesAsync(ct);
+
       _db.DeviceDiagrams.RemoveRange(
         await _db.DeviceDiagrams
           .Where(diagram => subtreeGuids.Contains(diagram.object_id))

@@ -65,11 +65,12 @@ public class DemoSeederTests
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), geo);
     var updates = new MapUpdateService(map, tracks, states);
     var catalog = new TestCatalog(cameras);
-    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier(), TestWiring.CameraArming(db, map));
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
       new RightService(db), geo, new FileService(db), new VisualService(db), spatial, catalog,
+      TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
       TestWiring.DeviceDiagrams(db, map, updates, geo));
 
     return new Services(db, map, seeder, catalog);
@@ -80,6 +81,7 @@ public class DemoSeederTests
   private static DemoWorld World(
     IReadOnlyList<DemoNode>? nodes = null,
     IReadOnlyList<DemoPlacement>? placements = null,
+    IReadOnlyList<DemoDeviceSettings>? devices = null,
     IReadOnlyList<DemoLandmark>? landmarks = null,
     IReadOnlyList<DemoGroundMark>? groundMarks = null,
     IReadOnlyList<DemoPtzObservation>? ptzObservations = null) => new(
@@ -102,6 +104,7 @@ public class DemoSeederTests
       ],
       nodes ?? DefaultNodes(),
       placements ?? [],
+      devices ?? [],
       landmarks ?? [],
       groundMarks ?? [],
       ptzObservations ?? [],
@@ -222,6 +225,45 @@ public class DemoSeederTests
 
     Assert.Empty(placed.SkippedCameras);
     Assert.Single(await s.Db.CameraPlacements.ToListAsync());
+  }
+
+  [Fact]
+  public async Task TheWorldInstallsItsDevicesBehaviourOnThePartsNode()
+  {
+    // The map owns a logical object's settings, so the world writes them — not VmsCfg, whose half
+    // of the demo keeps the part's name only.
+    var s = Create("sim-master");
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      devices:
+      [
+        new DemoDeviceSettings("sim-master", "digital_input", "input", "armed", "closed",
+          AlarmEnabled: true),
+      ]);
+
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var partId = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, DemoIds.Camera("sim-master"), "digital_input", "input"));
+    var row = Assert.Single(await s.Db.DeviceObjectSettings.ToListAsync());
+    Assert.Equal(partId, row.object_id);
+    Assert.Equal("armed", row.arm_mode);
+    Assert.Equal("closed", row.trigger_on);
+    Assert.True(row.alarm_enabled);
+  }
+
+  [Fact]
+  public async Task ADeviceOfACameraTheDeploymentLacksIsSkipped()
+  {
+    var s = Create();
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      devices: [new DemoDeviceSettings("sim-master", "digital_input", "input", "armed")]);
+
+    var report = await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    Assert.Equal(["sim-master"], report.SkippedCameras);
+    Assert.Empty(await s.Db.DeviceObjectSettings.ToListAsync());
   }
 
   [Fact]

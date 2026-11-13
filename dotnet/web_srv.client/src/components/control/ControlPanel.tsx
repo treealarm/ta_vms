@@ -15,6 +15,7 @@ import { errorText } from '../../api/requestJson'
 import type { ControlObjectCursorDto, ControlObjectDto, ControlObjectKind } from '../../dto/dtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadSpaces } from '../../store/spatialSlice'
+import { guardInheritedColor } from '../../theme/ntTheme'
 import { treeOf } from '../maps/spatialUtils'
 import ObjectControl from './ObjectControl'
 import NodeGuard from './NodeGuard'
@@ -241,7 +242,15 @@ export default function ControlPanel() {
                       />
                     ) : row.hasArming ? (
                       row.armed
-                        ? <ShieldIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
+                        // Purple when a zone settled it, the same reading the inspector's guard
+                        // gives: a camera on guard through its floor is not painted as one that
+                        // was put on guard itself.
+                        ? <ShieldIcon
+                            fontSize="small"
+                            color="success"
+                            sx={row.armingSource === 'space' ? { color: guardInheritedColor } : undefined}
+                            titleAccess={t('control.guard')}
+                          />
                         : <ShieldOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
                     ) : null}
                   </ListItemButton>

@@ -26,35 +26,8 @@ public class EffectiveArmingTests
     DeviceNodeService Nodes,
     TestCameraState CameraState,
     EffectiveArmingResolver Resolver,
-    FakeSettings Settings,
+    DeviceObjectSettingsStore Store,
     string PartId);
-
-  private sealed class FakeSettings : IDeviceSettingsSource
-  {
-    public string? ArmMode { get; set; }
-
-    private DeviceSettingsInfo? Row => ArmMode is null
-      ? null
-      : new DeviceSettingsInfo(
-          CameraId, DeviceObjectId.DigitalInputPart, Token, "", ArmMode!, null, false);
-
-    public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<IReadOnlyList<DeviceSettingsInfo>>(Row is null ? [] : [Row]);
-
-    public Task<DeviceSettingsInfo?> FindAsync(
-      string cameraId, string kind, string token, CancellationToken ct) =>
-      Task.FromResult(Row);
-
-    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
-      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
-      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
-        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
-          id => id,
-          _ => (IReadOnlyList<DeviceSettingsInfo>)(Row is null ? [] : [Row]),
-          StringComparer.Ordinal));
-
-    public void Invalidate(string cameraId) { }
-  }
 
   private static async Task<Fixture> CreateAsync(bool cameraArmed = false)
   {
@@ -71,14 +44,14 @@ public class EffectiveArmingTests
     var updates = new MapUpdateService(map, tracks, states);
 
     var nodes = TestWiring.DeviceNodes(db, map, updates);
-    var settings = new FakeSettings();
+    var store = TestWiring.ObjectSettings(db);
     var cameraState = new TestCameraState(cameraArmed);
-    var resolver = new EffectiveArmingResolver(db, settings, cameraState);
+    var resolver = new EffectiveArmingResolver(db, store, cameraState);
 
     var partId = await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token, default);
 
-    return new Fixture(db, map, nodes, cameraState, resolver, settings, partId!);
+    return new Fixture(db, map, nodes, cameraState, resolver, store, partId!);
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -117,7 +90,7 @@ public class EffectiveArmingTests
   public async Task AnInputsOwnModeWinsOverEverythingElse()
   {
     var f = await CreateAsync(cameraArmed: false);
-    f.Settings.ArmMode = "armed";
+    await f.Store.SetAsync(f.PartId, ArmMode.Armed, null, false, default);
 
     var arming = await f.Resolver.ResolveAsync(f.PartId, default);
 
@@ -132,7 +105,7 @@ public class EffectiveArmingTests
     var f = await CreateAsync(cameraArmed: true);
     var space = await Node(f.Map, "Floor");
     await PlaceReferenceAsync(f, space.id!, space.id!, true);
-    f.Settings.ArmMode = "disarmed";
+    await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
 
     var arming = await f.Resolver.ResolveAsync(f.PartId, default);
 
@@ -197,6 +170,22 @@ public class EffectiveArmingTests
 
     Assert.True(arming!.Armed);
     Assert.Equal(EffectiveArmingResolver.Space, arming.Source);
+  }
+
+  [Fact]
+  public async Task ACamerasOwnModeComesFromTheMapAndWinsOverItsZone()
+  {
+    var f = await CreateAsync(cameraArmed: false);
+    var space = await Node(f.Map, "Floor");
+    await PlaceReferenceAsync(f, space.id!, space.id!, true);
+    await f.Store.SetAsync(
+      CameraObjectId.For(CameraId), ArmMode.Disarmed, null, false, default);
+
+    var arming = await f.Resolver.ResolveAsync(CameraObjectId.For(CameraId), default);
+
+    Assert.False(arming!.Armed);
+    Assert.Equal(EffectiveArmingResolver.Explicit, arming.Source);
+    Assert.Equal(ArmMode.Disarmed, arming.Mode);
   }
 
   [Fact]

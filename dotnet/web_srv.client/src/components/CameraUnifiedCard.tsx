@@ -192,7 +192,12 @@ export default function CameraUnifiedCard({
   const merged: CameraSetupDto = { ...camera, ...(cameraState ?? {}) }
 
   const isDisabled = merged.disabled === true
-  const effectiveArmed = pendingArmed !== null ? pendingArmed : (merged.armed ?? false)
+  // The armed flag arrives with the card's own state poll, not with the camera list. Until it
+  // does, the card would read "not on guard" — and a click on that would make an explicit command
+  // out of an unknown state, silently detaching a camera the zone had put on guard. So the guard
+  // stays shut until the first answer.
+  const armedKnown = merged.armed !== undefined && merged.armed !== null
+  const effectiveArmed = pendingArmed !== null ? pendingArmed : merged.armed === true
   // An open recording schedule window forces continuous recording on every stream, ahead of the
   // profile and of any manual or alarm override.
   const scheduleActive = merged.scheduleActive === true
@@ -712,18 +717,24 @@ export default function CameraUnifiedCard({
           {/* Armed gates both ONVIF events and video analytics now, so it's available for every
               camera — not just ONVIF-managed ones. */}
           <Tooltip
-            title={isDisabled ? t('cameraCard.cameraDisabledTip') : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))}
+            title={
+              !armedKnown
+                ? t('cameraCard.guardUnknownTip')
+                : isDisabled
+                  ? t('cameraCard.cameraDisabledTip')
+                  : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))
+            }
             placement="right"
           >
             <span>
               <IconButton
                 size="small"
-                disabled={pendingArmed !== null || isDisabled}
+                disabled={pendingArmed !== null || isDisabled || !armedKnown}
                 onClick={() => armDisarm(!effectiveArmed)}
                 sx={{
                   ...BTN_SX,
                   ...(effectiveArmed && !isDisabled ? { color: '#ff9800' } : {}),
-                  ...((pendingArmed !== null || isDisabled) ? { opacity: 0.35 } : {}),
+                  ...((pendingArmed !== null || isDisabled || !armedKnown) ? { opacity: 0.35 } : {}),
                 }}
               >
                 <SecurityIcon sx={{ fontSize: '0.95rem' }} />
@@ -985,7 +996,7 @@ export default function CameraUnifiedCard({
               <ToggleButtonGroup
                 value={effectiveArmed ? 'armed' : 'disarmed'}
                 exclusive
-                disabled={pendingArmed !== null || isDisabled}
+                disabled={pendingArmed !== null || isDisabled || !armedKnown}
                 onChange={(_, v) => v && armDisarm(v === 'armed')}
                 size="small" fullWidth
                 sx={{

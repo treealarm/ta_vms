@@ -2,23 +2,26 @@ using Vms.Cfg;
 
 namespace VmsCfg.Demo;
 
-/// The parts the demo configures. A part's name and arming are configuration like the wall, so they
-/// belong to VmsCfg's half of the demo, not to web_srv: the install is the same whether an
-/// administrator pressed the button or `DEMO_CONFIG` installed the world at startup.
+/// The parts the demo configures. A part's name is configuration like the wall, so it belongs to
+/// VmsCfg's half of the demo, not to web_srv: the install is the same whether an administrator
+/// pressed the button or `DEMO_CONFIG` installed the world at startup. What the part does — the
+/// mode its arming is decided with and the contact that alarms — is a logical object's setting and
+/// belongs to the map, which installs it as part of the same demo (`DemoWorlds` in VmsMap).
 public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier notifier)
 {
   /// What one install did, in the names the operator is told: parts it configured, cameras it could
   /// not because the deployment does not have them yet.
   public sealed record Plan(IReadOnlyList<string> Configured, IReadOnlyList<string> Skipped);
 
-  /// The contact that means "the relay fired", shared with the demo's routing rule so the arming and
-  /// the rule cannot drift apart.
+  /// The contact that means "the relay fired", shared with the demo's routing rule so the rule and
+  /// the input it watches cannot drift apart. The same contact is the map's half of the demo:
+  /// `DemoWorlds` in VmsMap installs both inputs' alarm rule with it.
   /// <para>
   /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay, and `sim-master`'s own input to its
   /// `loop` relay. Both inputs idle open, so an open circuit is idle and a closed one is active:
   /// that contact is closed. It is the polarity the trigger is set to, not a guess from the picture.
   /// </para>
-  public const string SensorTrigger = DeviceSettingsRules.TriggerClosed;
+  public const string SensorTrigger = "closed";
 
   public static DeviceSettings SensorSettings() => new()
   {
@@ -26,23 +29,17 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     Kind = DeviceSettingsRules.DigitalInput,
     Token = "input",
     Name = "Sensor",
-    ArmMode = DeviceSettingsRules.Armed,
-    TriggerOn = SensorTrigger,
-    AlarmEnabled = true,
   };
 
   /// The master's own input, wired to its `loop` relay in the simulator. It is the operator's
-  /// sensor: installed to inherit, so the camera — disarmed at install — leaves it off guard, and
-  /// it fires only once somebody arms it from the card and closes `loop`.
+  /// sensor, and the map installs it to inherit: the camera — disarmed at install — leaves it off
+  /// guard, and it fires only once somebody arms it from the card and closes `loop`.
   public static DeviceSettings MasterSensorSettings() => new()
   {
     CameraId = DemoCameraIds.For("sim-master"),
     Kind = DeviceSettingsRules.DigitalInput,
     Token = "input",
     Name = "Master sensor",
-    ArmMode = DeviceSettingsRules.Inherit,
-    TriggerOn = SensorTrigger,
-    AlarmEnabled = true,
   };
 
   /// The parts of the master. They are configured — not merely discovered — because a device's
@@ -55,19 +52,16 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     {
       CameraId = DemoCameraIds.For("sim-master"),
       Kind = DeviceSettingsRules.Relay, Token = "lamp", Name = "Lamp",
-      ArmMode = DeviceSettingsRules.Inherit,
     },
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
       Kind = DeviceSettingsRules.Relay, Token = "peer", Name = "Peer",
-      ArmMode = DeviceSettingsRules.Inherit,
     },
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
       Kind = DeviceSettingsRules.Relay, Token = "loop", Name = "Loop",
-      ArmMode = DeviceSettingsRules.Inherit,
     },
   ];
 

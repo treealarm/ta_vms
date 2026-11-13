@@ -6,15 +6,17 @@ using Vms.Cfg;
 namespace VmsMap.Clients
 {
   /// <summary>
-  /// The two arming columns VmsCfg owns: a digital input's arm_mode and a camera's flag. The map
-  /// delegates here rather than keeping a second copy of them — the device card reads the same
-  /// rows, and a promotion of some other placement must not start a race with this one.
+  /// The camera's effective flag, which is VmsCfg's own column: the one thing services near the
+  /// hardware read. The map is the only writer — the mode that decides the flag lives in the map,
+  /// and a digital input's behaviour never leaves it.
   /// </summary>
   public interface ICfgArmingWriter
   {
-    Task SetPartArmModeAsync(string cameraId, string token, string mode, CancellationToken ct);
-
-    Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct);
+    /// <summary>
+    /// Writes the flag the map resolved and answers whether a row changed. A no-op announces
+    /// nothing, which is what ends the round of "map writes, event arrives, map looks again".
+    /// </summary>
+    Task<bool> SetCamArmedAsync(string cameraId, bool armed, CancellationToken ct);
   }
 
   internal sealed class VmsCfgArmingWriter : ICfgArmingWriter
@@ -26,22 +28,13 @@ namespace VmsMap.Clients
       _cfg = cfg ?? throw new System.ArgumentNullException(nameof(cfg));
     }
 
-    // A refusal (an unknown token, a relay, an unconfigured input) travels as the RpcException
-    // VmsCfg raised: the operator sees "not found" or "failed precondition", not a generic error.
-    public async Task SetPartArmModeAsync(
-      string cameraId, string token, string mode, CancellationToken ct)
-    {
-      await _cfg.SetDeviceArmModeAsync(
-        new SetDeviceArmModeRequest { CameraId = cameraId, Token = token, ArmMode = mode },
-        cancellationToken: ct);
-    }
-
     // An assignment, not a toggle: writing the same flag twice leaves one flag.
-    public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
+    public async Task<bool> SetCamArmedAsync(string cameraId, bool armed, CancellationToken ct)
     {
-      await _cfg.SetCamStateAsync(
-        new SetCamStateRequest { CameraId = cameraId, Armed = armed },
+      var response = await _cfg.SetCamArmedAsync(
+        new SetCamArmedRequest { CameraId = cameraId, Armed = armed },
         cancellationToken: ct);
+      return response.Changed;
     }
   }
 }

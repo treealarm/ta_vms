@@ -61,7 +61,7 @@ public class SpatialDbTests
     var catalog = new FakeCatalog();
     var notifier = new RecordingNotifier();
 
-    return new Services(db, map, new SpatialDb(db, map, updates, geo, catalog, notifier), catalog, notifier);
+    return new Services(db, map, new SpatialDb(db, map, updates, geo, catalog, notifier, TestWiring.CameraArming(db, map)), catalog, notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()

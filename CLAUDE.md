@@ -223,6 +223,8 @@ When a service needs to react to a configuration change that originated in anoth
 
 **Rule:** VmsCfg is the single source of truth for all configuration (cameras, storages, recording profiles, MediaMTX servers, etc.). Any other service that caches or acts on this configuration must subscribe to change events published by VmsCfg, then fetch the updated data itself. The map's tree — spaces, plans, placements, landmarks and calibrations — is VmsMap's own and not VmsCfg configuration: its changes travel on `map-config-changed` (see "Maps & plans").
 
+**Exception: a logical device object's behaviour is VmsMap's.** The arming mode of a camera or a digital input (`inherit / armed / disarmed`) and an input's alarm rule (`trigger_on`, `alarm_enabled`) are not hardware configuration: the map is their only consumer — the arming resolver, the alarm rule and the operator's list read them, and the map derives the controller's decision from them. They live in `device_object_settings` in `ta_map`, and VmsCfg keeps only what services near the hardware read: the camera's **effective** `armed` flag, which the map writes. Do not add a second copy back to VmsCfg's `camera_states.arm_mode` or `device_settings`; the old columns there are a migration source for release D1 only and go away in D2 (`docs/future_plans/23-remove-vmscfg-legacy-arming.md`). The device's display name stays in `device_settings`: it is the device's identity, not its behaviour.
+
 **Pattern:**
 1. VmsCfg publishes an event to a topic (e.g. `server-config-changed`, `storage-config-changed`) after a write operation succeeds.
 2. The subscriber receives the event and invalidates its local cache or re-fetches the relevant slice of config from VmsCfg via gRPC.
@@ -497,8 +499,10 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   plus one `alarm` event (the event id is the episode's `event_uuid`, so a redelivery is a no-op);
   a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` come from VmsFs's
   open source outages — not from a MediaMTX path, which `video_srv` tears down when nobody watches.
-  `camera-state-changed` sets the camera's `armed` property. The alarm counters bubble up
-  `alarm_states` in the same transaction as the state write.
+  `camera-state-changed` re-derives a camera's arming and re-checks its sensors — it does not write
+  a property on the camera's node: the camera's mode is the map's row and its flag is VmsCfg's,
+  which the map writes. The alarm counters bubble up `alarm_states` in the same transaction as the
+  state write.
 - **A device's parts are nodes of the same device, and a node need not be placed.** A digital input
   or a relay is a canonical node under its camera (`device_node.part_kind`), created from
   `device-event`/`device-snapshot` and named by the settings that configure it; it has no geometry

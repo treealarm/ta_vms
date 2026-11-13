@@ -94,7 +94,7 @@ public class SpatialPostgresTests
 
     return new Services(
       dataSource, db, map, updates,
-      new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier), notifier);
+      new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier, TestWiring.CameraArming(db, map)), notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()
@@ -465,5 +465,96 @@ public class SpatialPostgresTests
     Assert.Empty(await test.Db.ObjectStates.Where(s => nodes.Contains(s.id)).ToListAsync());
     Assert.Empty(await test.Db.AlarmStates.Where(s => nodes.Contains(s.id)).ToListAsync());
     Assert.Empty(await test.Db.Events.Where(e => nodes.Contains(e.object_id)).ToListAsync());
+  }
+
+  // A picture with a device diagram under it is the ordinary state of a camera the demo installed.
+  // The schema cascades a diagram's parts away with the diagram, and EF does not model that foreign
+  // key: in one batch it may delete the diagram first, and the parts' own delete then affects no
+  // row and throws. Only PostgreSQL shows this, because the in-memory provider has no cascades.
+  [Fact]
+  public async Task RemovingAPictureTakesItsDiagramAndItsPartsWithoutTrippingTheCascade()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var cameraId = TestCameras.One;
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(cameraId, map.Id, reference: true), CancellationToken.None);
+
+    var picture = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == cameraId);
+    var diagram = Guid.Parse(DeviceObjectId.ForDeviceDiagram(
+      DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot));
+    var part = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+    var replica = Guid.NewGuid();
+
+    test.Db.Markers.AddRange(
+      new DBMarker { id = diagram, parent_id = picture.object_id, name = "Camera / rear panel" },
+      new DBMarker { id = part, parent_id = Guid.Parse(CameraObjectId.For(cameraId)), name = "Input 1" },
+      new DBMarker { id = replica, parent_id = diagram, owner_id = part, name = "Input 1" });
+    // The registry rows point at objects, and EF does not model that either: each step is saved
+    // once its parents are in the database.
+    await test.Db.SaveChangesAsync();
+
+    test.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = diagram,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = cameraId,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await test.Db.SaveChangesAsync();
+
+    test.Db.DeviceDiagramParts.Add(new DBDeviceDiagramPart
+    {
+      diagram_object_id = diagram,
+      region_key = "input",
+      part_object_id = part,
+      replica_object_id = replica,
+    });
+    await test.Db.SaveChangesAsync();
+
+    Assert.True(await test.Spatial.RemovePlacementAsync(
+      cameraId, Guid.Parse(map.Id), CancellationToken.None));
+
+    Assert.Empty(await test.Db.DeviceDiagramParts.ToListAsync());
+    Assert.Empty(await test.Db.DeviceDiagrams.ToListAsync());
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == diagram || m.id == replica));
+  }
+
+  // A logical object's behaviour is a typed row in the map, not a free-form property: the schema
+  // holds the vocabulary and the rule that an alarm needs a contact state to follow.
+  [Fact]
+  public async Task DeviceObjectSettingsAreTypedAndFollowTheirNode()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var node = Guid.NewGuid();
+    test.Db.Markers.Add(new DBMarker { id = node, name = "Camera" });
+    await test.Db.SaveChangesAsync();
+
+    var store = new VmsMap.Domain.Arming.DeviceObjectSettingsStore(test.Db);
+    await store.SetAsync(
+      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, "closed", true,
+      CancellationToken.None);
+
+    var read = await store.GetAsync(node.ToString(), CancellationToken.None);
+    Assert.Equal(VmsMap.Domain.Arming.ArmMode.Disarmed, read.Mode);
+    Assert.Equal("closed", read.TriggerOn);
+    Assert.True(read.AlarmEnabled);
+
+    // An alarm cannot follow a contact state that was never named.
+    await Assert.ThrowsAsync<DbUpdateException>(() => store.SetAsync(
+      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, null, true,
+      CancellationToken.None));
+
+    // Deleting the node takes its settings with it, through the schema's cascade.
+    await test.Db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM objects WHERE id = {node}");
+    Assert.False(await test.Db.DeviceObjectSettings.AnyAsync(r => r.object_id == node));
   }
 }

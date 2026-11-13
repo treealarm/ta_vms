@@ -22,12 +22,13 @@ public class SpaceArmingTests
 
   private sealed class FakeSettings : IDeviceSettingsSource
   {
-    public string? ArmMode { get; set; }
+    /// <summary>Whether the administrator gave the input a settings row at all.</summary>
+    public bool Configured { get; set; }
 
-    public DeviceSettingsInfo? Row => ArmMode is null
-      ? null
-      : new DeviceSettingsInfo(
-          CameraId, DeviceObjectId.DigitalInputPart, Token, "Door", ArmMode!, "closed", true);
+    public DeviceSettingsInfo? Row => Configured
+      ? new DeviceSettingsInfo(
+          CameraId, DeviceObjectId.DigitalInputPart, Token, "Door", ArmMode.Inherit, "closed", true)
+      : null;
 
     public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult<IReadOnlyList<DeviceSettingsInfo>>(Row is null ? [] : [Row!]);
@@ -55,9 +56,11 @@ public class SpaceArmingTests
     TestWiring.TestCfgArmingWriter Cfg,
     TestCameraState CameraState,
     FakeSettings Settings,
+    DeviceObjectSettingsStore ObjectSettings,
     string PartId);
 
-  private static async Task<Fixture> CreateAsync(bool cameraArmed = false, string? armMode = null)
+  private static async Task<Fixture> CreateAsync(
+    bool cameraArmed = false, string? armMode = null, string cameraMode = ArmMode.Inherit)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -72,15 +75,20 @@ public class SpaceArmingTests
     var updates = new MapUpdateService(map, tracks, states);
 
     var nodes = TestWiring.DeviceNodes(db, map, updates);
-    var settings = new FakeSettings { ArmMode = armMode };
-    var cameraState = new TestCameraState(cameraArmed);
+    var settings = new FakeSettings { Configured = armMode is not null };
+    var cameraState = new TestCameraState(cameraArmed, cameraMode);
     var cfg = new TestWiring.TestCfgArmingWriter(cameraState);
     var arming = TestWiring.NodeArming(db, map, cfg, cameraState, settings);
+    var objectSettings = TestWiring.ObjectSettings(db);
 
     var partId = await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token, default);
+    if (armMode is not null)
+      await objectSettings.SetModeAsync(partId!, armMode, default);
+    if (!string.Equals(cameraMode, ArmMode.Inherit, StringComparison.Ordinal))
+      await objectSettings.SetModeAsync(CameraObjectId.For(CameraId), cameraMode, default);
 
-    return new Fixture(db, map, nodes, arming, cfg, cameraState, settings, partId!);
+    return new Fixture(db, map, nodes, arming, cfg, cameraState, settings, objectSettings, partId!);
   }
 
   private static async Task<BaseMarkerDTO> NodeAsync(
@@ -238,7 +246,7 @@ public class SpaceArmingTests
   [Fact]
   public async Task ACameraPictureResolvesThroughItsOwner()
   {
-    var f = await CreateAsync(cameraArmed: true);
+    var f = await CreateAsync(cameraArmed: true, cameraMode: ArmMode.Armed);
     var space = await SpaceAsync(f, "Floor");
     var picture = await PlaceReferenceAsync(f, space.id!);
 
@@ -247,7 +255,22 @@ public class SpaceArmingTests
     Assert.True(view!.Found);
     Assert.True(view.Armable);
     Assert.True(view.Arming!.Armed);
-    Assert.Equal(EffectiveArmingResolver.Camera, view.Arming.Source);
+    Assert.Equal(EffectiveArmingResolver.Explicit, view.Arming.Source);
+    Assert.Equal(ArmMode.Armed, view.Mode);
+  }
+
+  [Fact]
+  public async Task ACameraOnInheritWithNoZoneIsOff()
+  {
+    var f = await CreateAsync(cameraArmed: true);
+    var space = await SpaceAsync(f, "Floor");
+    var picture = await PlaceReferenceAsync(f, space.id!);
+
+    var view = await f.Arming.GetAsync(picture, default);
+
+    Assert.False(view!.Arming!.Armed);
+    Assert.Equal(EffectiveArmingResolver.None, view.Arming.Source);
+    Assert.Equal(ArmMode.Inherit, view.Mode);
   }
 
   [Fact]
@@ -275,7 +298,7 @@ public class SpaceArmingTests
 
     await f.Arming.SetAsync(f.PartId, ArmMode.Armed, "danil", default);
 
-    Assert.Equal((CameraId, Token, ArmMode.Armed), Assert.Single(f.Cfg.PartModes));
+    Assert.Equal(ArmMode.Armed, (await f.ObjectSettings.GetAsync(f.PartId, default)).Mode);
     Assert.Single(await f.Db.Events.ToListAsync());
   }
 
@@ -307,7 +330,7 @@ public class SpaceArmingTests
     var refused = await Assert.ThrowsAsync<ArmingException>(() =>
       f.Arming.SetAsync(f.PartId, ArmMode.Armed, "danil", default));
     Assert.Equal(ArmingRefusal.NotConfigured, refused.Refusal);
-    Assert.Empty(f.Cfg.PartModes);
+    Assert.Equal(ArmMode.Inherit, (await f.ObjectSettings.GetAsync(f.PartId, default)).Mode);
   }
 
   [Fact]

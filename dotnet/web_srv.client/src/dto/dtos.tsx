@@ -1182,9 +1182,11 @@ export type ControlObjectDto = {
   configured: boolean
   /** Relays have no arming at all: their action is a state toggle, not a guard switch. */
   hasArming: boolean
-  /** What it resolves to right now. A camera answers with its own flag, a sensor with the scheme. */
+  /** What it resolves to right now: a camera and a sensor answer the same scheme. */
   armed: boolean
   armingSource: ArmSource | ''
+  /** The node whose arming row settled it, when a zone did; empty otherwise. */
+  armingSourceObjectId: string
   canControl: boolean
 }
 
@@ -1242,6 +1244,44 @@ export type DigitalInputOptionsDto = {
 // What the operator configured for one part. A missing row means the defaults: inherit the
 // camera's arming, no alarm. Arming fields are inputs-only — a relay is driven, not watched.
 export type DeviceArmMode = 'inherit' | 'armed' | 'disarmed'
+
+/**
+ * A camera's arming the way a sensor's is decided: `inherit` follows the zone the camera stands in,
+ * the other two are explicit. Its flag is what VmsOnvif and the routing gateway read.
+ */
+export type CameraArmMode = 'inherit' | 'armed' | 'disarmed'
+
+export type CameraArmStateDto = {
+  armed: boolean
+}
+
+/**
+ * The settings of a logical device object: the mode its arming is decided with and, for a digital
+ * input, the contact state that raises an alarm. `armed` and `armingSource` are what they resolve
+ * to right now, so the card can say "via the zone" without computing it.
+ */
+export type ObjectSettingsDto = {
+  objectId: string
+  sourceKind: string
+  sourceId: string
+  partKind: 'device' | 'digital_input' | 'relay' | string
+  partToken: string
+  armMode: CameraArmMode
+  armModes: CameraArmMode[]
+  triggerOn: 'open' | 'closed' | null
+  triggerModes: Array<'open' | 'closed'>
+  alarmEnabled: boolean
+  configured: boolean
+  armed: boolean
+  armingSource: ArmSource | ''
+  armingSourceObjectId: string
+}
+
+export type ObjectSettingsBody = {
+  armMode?: CameraArmMode
+  triggerOn?: 'open' | 'closed' | ''
+  alarmEnabled?: boolean
+}
 
 export type DeviceSettingsDto = {
   cameraId: string

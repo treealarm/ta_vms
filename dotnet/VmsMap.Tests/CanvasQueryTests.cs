@@ -63,7 +63,7 @@ public class CanvasQueryTests
     var tracks = new TracksUpdateService(map, trackService, geo);
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
-    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
 
     var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(
@@ -75,8 +75,10 @@ public class CanvasQueryTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
+        TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db), TestWiring.NodeArming(db, map),
+      null!, // the settings card has its own tests
       TestWiring.ControlObjects(db, map, rights),
       TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.

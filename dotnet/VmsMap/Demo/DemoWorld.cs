@@ -92,6 +92,17 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
+  /// The behaviour a demo installs for one part of a device: who decides its arming, and what its
+  /// contact means. The map owns this — a logical object's settings are not hardware configuration —
+  /// so the demo installs it here; the part's name stays VmsCfg's half of the demo.
+  public sealed record DemoDeviceSettings(
+    string CameraKey,
+    string PartKind,
+    string Token,
+    string ArmMode,
+    string? TriggerOn = null,
+    bool AlarmEnabled = false);
+
   /// A landmark a calibration is made against: a named, coloured point of the world a camera can
   /// see. It is a node of the space it stands in, and the marks and observations are made on it.
   public sealed record DemoLandmark(
@@ -142,6 +153,7 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoSpace> Spaces,
     IReadOnlyList<DemoNode> Nodes,
     IReadOnlyList<DemoPlacement> Placements,
+    IReadOnlyList<DemoDeviceSettings> Devices,
     IReadOnlyList<DemoLandmark> Landmarks,
     IReadOnlyList<DemoGroundMark> GroundMarks,
     IReadOnlyList<DemoPtzObservation> PtzObservations,

@@ -153,10 +153,24 @@ builder.Services.AddScoped<DeviceEventTranslator>();
 builder.Services.AddScoped<SensorAlarmService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
+// The behaviour of a logical device object — its arming mode and its contact rule — kept in the
+// map, because the map is the only consumer.
+builder.Services.AddScoped<VmsMap.Domain.Arming.DeviceObjectSettingsStore>();
 builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
-// The one write behind every guard switch: a device delegates to VmsCfg, a container keeps the
-// property on its node.
+// The one write behind every guard switch: a device delegates to VmsCfg, a container keeps its
+// row in `object_arming`.
 builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
+// The administrator's card for a logical device object: its arming mode and its contact rule.
+builder.Services.AddScoped<VmsMap.Domain.Arming.IDeviceSettingsService,
+  VmsMap.Domain.Arming.DeviceSettingsService>();
+// The one-time move of VmsCfg's arming columns into the map, marked in the shared state store.
+builder.Services.AddScoped<VmsMap.Adapter.LegacyArmingImporter>();
+builder.Services.AddSingleton<VmsMap.Adapter.ILegacyImportMarker>(sp =>
+  new VmsMap.Adapter.StateStoreImportMarker(
+    sp.GetRequiredService<DaprClient>(), stateStoreName));
+// The flag a zone implies, written back to VmsCfg for the cameras that inherit it: VmsOnvif and the
+// routing gateway read that flag and cannot see the map.
+builder.Services.AddScoped<VmsMap.Domain.Arming.CameraArmingReconciler>();
 builder.Services.AddSingleton<ICfgArmingWriter, VmsCfgArmingWriter>();
 // The operator's guarding list: a page of sensors with their effective arming, resolved in one
 // pass rather than one camera at a time.

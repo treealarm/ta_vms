@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using VmsLog;
 using VmsMap.Clients;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 
 namespace VmsMap.Adapter
 {
@@ -32,7 +33,6 @@ namespace VmsMap.Adapter
     private readonly DaprPublishSubscribeClient _pubSub;
     private readonly IServiceScopeFactory _scopes;
     private readonly ICameraCatalog _catalog;
-    private readonly ICameraStateSource _state;
     private readonly ILogger<CameraChangeSubscriber> _logger;
     private readonly CancellationTokenSource _cts = new();
 
@@ -46,13 +46,11 @@ namespace VmsMap.Adapter
       DaprPublishSubscribeClient pubSub,
       IServiceScopeFactory scopes,
       ICameraCatalog catalog,
-      ICameraStateSource state,
       ILogger<CameraChangeSubscriber> logger)
     {
       _pubSub = pubSub ?? throw new ArgumentNullException(nameof(pubSub));
       _scopes = scopes ?? throw new ArgumentNullException(nameof(scopes));
       _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-      _state = state ?? throw new ArgumentNullException(nameof(state));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -163,12 +161,12 @@ namespace VmsMap.Adapter
 
       try
       {
-        var armed = await _state.GetArmedAsync(cameraId, ct);
-
         using var scope = _scopes.CreateScope();
-        var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
-        await nodes.SetPropertyAsync(
-          cameraId, "armed", armed.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
+
+        // The mode may have changed to or from `inherit`; if it is `inherit` now, the flag belongs
+        // to the zone the camera stands in, and this is the one place that notices.
+        var cameras = scope.ServiceProvider.GetRequiredService<CameraArmingReconciler>();
+        await cameras.ReconcileAsync(cameraId, ct);
 
         // A camera that becomes armed with a sensor already in its trigger position must raise the
         // alarm now: its flag is what an input on `inherit` resolves to, and no settings event is
@@ -184,9 +182,9 @@ namespace VmsMap.Adapter
       }
       catch (Exception ex)
       {
-        // A state push is a convenience for the tree; retrying it forever would only delay the
-        // next message. The next change will carry the current value.
-        _logger.LogWarning(ex, "Map armed property push failed for camera '{CameraId}'", cameraId);
+        // Retrying a state push forever would only delay the next message; the next change, or the
+        // sweep at the next start, carries the same answer.
+        _logger.LogWarning(ex, "Deriving a camera's arming failed for '{CameraId}'", cameraId);
         return TopicResponseAction.Success;
       }
     }

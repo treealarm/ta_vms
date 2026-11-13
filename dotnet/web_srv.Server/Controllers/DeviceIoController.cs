@@ -2,6 +2,7 @@ using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
 using Vms.Onvif;
+using web_srv.Authentication;
 using web_srv.Authorization;
 using MapProto = Vms.Map;
 
@@ -115,16 +116,15 @@ public class DeviceIoController(
     if (!string.IsNullOrEmpty(response.Error))
       return BadRequest(response.Error);
 
-    // Settings and effective arming are read tolerantly: the live list is what this endpoint is
-    // for, and a service that cannot answer leaves its fields null rather than failing the read.
-    var settings = await TryListSettingsAsync(cameraId, ct);
+    // The mode and the rule are the map's; the effective arming is resolved there too. Both are
+    // read tolerantly: the live list is what this endpoint is for, and a service that cannot
+    // answer leaves its fields null rather than failing the read.
     var canControl = await access.IsAllowedAsync(User, cameraId, RightActions.Control, ct);
 
     var rows = new List<object>();
     foreach (var input in response.Inputs)
     {
-      var settingsRow = settings?.FirstOrDefault(
-        s => s.Kind == DigitalInputKind && s.Token == input.Token);
+      var settingsRow = await TryMapSettingsAsync(cameraId, DigitalInputKind, input.Token, ct);
       var (armed, armingSource) = await TryArmingAsync(cameraId, input.Token, ct);
 
       rows.Add(new
@@ -174,15 +174,15 @@ public class DeviceIoController(
   public async Task<IActionResult> SetDigitalInputArmMode(
     string cameraId, string token, [FromBody] SetArmModeBody body, CancellationToken ct)
   {
-    var response = await cfgClient.SetDeviceArmModeAsync(new SetDeviceArmModeRequest
+    // The mode is the map's row now; the map's facade refuses 'inherit' and a part with no node.
+    await map.SetDeviceArmingAsync(new MapProto.SetDeviceArmingRequest
     {
-      CameraId = cameraId,
-      Token = token,
-      // Missing is not "keep it": VmsCfg refuses an empty mode as InvalidArgument.
-      ArmMode = body.ArmMode ?? string.Empty,
+      Key = PartKey(cameraId, DigitalInputKind, token),
+      Mode = body.ArmMode ?? string.Empty,
+      Caller = User.ToMapCaller(),
     }, Options(ct));
 
-    return response.Success ? Ok() : BadRequest(response.Message);
+    return Ok();
   }
 
   [HttpPost("cameras/{cameraId}/digital-inputs/{token}/idle-state")]
@@ -222,6 +222,58 @@ public class DeviceIoController(
     });
   }
 
+  // ── The logical object's settings ─────────────────────────────────────────
+
+  // The card a camera's setup page and a part's row show: the arming mode and, for a digital
+  // input, the contact state that raises an alarm. Addressed by source and token because the form
+  // holds the camera, not the part's node id; `partKind=device` with an empty token is the camera.
+  [HttpGet("cameras/{cameraId}/device-settings")]
+  [RequiresRight(RightActions.ViewLive)]
+  public async Task<IActionResult> GetDeviceSettings(
+    string cameraId, [FromQuery] string partKind, [FromQuery] string? partToken, CancellationToken ct)
+  {
+    var response = await map.GetDeviceSettingsAsync(new MapProto.GetDeviceSettingsRequest
+    {
+      Key = PartKey(cameraId, partKind, partToken ?? string.Empty),
+    }, Options(ct));
+
+    return response.Found ? Ok(ToDeviceSettingsDto(response.Settings)) : NotFound();
+  }
+
+  [HttpPut("cameras/{cameraId}/device-settings")]
+  [RequiresRight(RightActions.Control)]
+  public async Task<IActionResult> SetDeviceSettings(
+    string cameraId, [FromQuery] string partKind, [FromQuery] string? partToken,
+    [FromBody] DeviceSettingsRuleBody body, CancellationToken ct)
+  {
+    var response = await map.SetDeviceSettingsAsync(new MapProto.SetDeviceSettingsRequest
+    {
+      Key = PartKey(cameraId, partKind, partToken ?? string.Empty),
+      ArmMode = body.ArmMode ?? string.Empty,
+      TriggerOn = body.TriggerOn ?? string.Empty,
+      AlarmEnabled = body.AlarmEnabled,
+      Caller = User.ToMapCaller(),
+    }, Options(ct));
+
+    return response.Found ? Ok(ToDeviceSettingsDto(response.Settings)) : NotFound();
+  }
+
+  private static ObjectSettingsDto ToDeviceSettingsDto(MapProto.DeviceSettingsView settings) => new(
+    settings.ObjectId,
+    settings.Key?.SourceKind ?? string.Empty,
+    settings.Key?.SourceId ?? string.Empty,
+    settings.Key?.PartKind ?? string.Empty,
+    settings.Key?.PartToken ?? string.Empty,
+    settings.ArmMode,
+    settings.ArmModes.ToList(),
+    string.IsNullOrWhiteSpace(settings.TriggerOn) ? null : settings.TriggerOn,
+    settings.TriggerModes.ToList(),
+    settings.AlarmEnabled,
+    settings.Configured,
+    settings.Arming?.Armed ?? false,
+    settings.Arming?.Source ?? string.Empty,
+    settings.Arming?.SourceObjectId ?? string.Empty);
+
   // ── Per-part settings ─────────────────────────────────────────────────────
 
   // The administrator's configuration of a part: its name, trigger and alarm flag, and the mode it
@@ -234,14 +286,23 @@ public class DeviceIoController(
     var response = await cfgClient.ListDeviceSettingsAsync(
       new ListDeviceSettingsRequest { CameraId = cameraId }, Options(ct));
 
-    return Ok(response.Settings.Select(s => new DeviceSettingsDto(
-      s.CameraId,
-      s.Kind,
-      s.Token,
-      s.Name,
-      s.ArmMode,
-      string.IsNullOrWhiteSpace(s.TriggerOn) ? null : s.TriggerOn,
-      s.AlarmEnabled)));
+    var rows = new List<DeviceSettingsDto>(response.Settings.Count);
+    foreach (var s in response.Settings)
+    {
+      // The name is the device's identity and stays in VmsCfg; the mode and the alarm rule are the
+      // map's, so a card never shows the legacy columns' stale values.
+      var own = await TryMapSettingsAsync(cameraId, s.Kind, s.Token, ct);
+      rows.Add(new DeviceSettingsDto(
+        s.CameraId,
+        s.Kind,
+        s.Token,
+        s.Name,
+        own?.ArmMode ?? "inherit",
+        string.IsNullOrWhiteSpace(own?.TriggerOn) ? null : own.TriggerOn,
+        own?.AlarmEnabled ?? false));
+    }
+
+    return Ok(rows);
   }
 
   // Writing a part's arming or alarm is control: it changes what the site does, not what is shown.
@@ -250,6 +311,9 @@ public class DeviceIoController(
   public async Task<IActionResult> SetSettings(
     string cameraId, [FromBody] DeviceSettingsBody body, CancellationToken ct)
   {
+    // The name is VmsCfg's row, and only the name: its arming and its rule are the map's, and
+    // VmsCfg refuses a request that still carries them. Writing it first is also what makes the
+    // part "configured", which the map's settings require.
     var response = await cfgClient.SetDeviceSettingsAsync(new SetDeviceSettingsRequest
     {
       Settings = new DeviceSettings
@@ -258,29 +322,52 @@ public class DeviceIoController(
         Kind = body.Kind,
         Token = body.Token,
         Name = body.Name ?? string.Empty,
+      },
+    }, Options(ct));
+    if (!response.Success)
+      return BadRequest(response.Message);
+
+    if (body.Kind == DigitalInputKind)
+    {
+      await map.SetDeviceSettingsAsync(new MapProto.SetDeviceSettingsRequest
+      {
+        Key = PartKey(cameraId, DigitalInputKind, body.Token),
         ArmMode = body.ArmMode,
         TriggerOn = body.TriggerOn ?? string.Empty,
         AlarmEnabled = body.AlarmEnabled,
-      },
-    }, Options(ct));
+        Caller = User.ToMapCaller(),
+      }, Options(ct));
+    }
 
-    return response.Success ? Ok() : BadRequest(response.Message);
+    return Ok();
   }
 
-  private async Task<List<DeviceSettings>?> TryListSettingsAsync(
-    string cameraId, CancellationToken ct)
+  /// <summary>The map's own settings for one part, or null when VmsMap cannot answer.</summary>
+  private async Task<MapProto.DeviceSettingsView?> TryMapSettingsAsync(
+    string cameraId, string kind, string token, CancellationToken ct)
   {
     try
     {
-      var response = await cfgClient.ListDeviceSettingsAsync(
-        new ListDeviceSettingsRequest { CameraId = cameraId }, Options(ct));
-      return response.Settings.ToList();
+      var response = await map.GetDeviceSettingsAsync(new MapProto.GetDeviceSettingsRequest
+      {
+        Key = PartKey(cameraId, kind, token),
+      }, Options(ct));
+      return response.Found ? response.Settings : null;
     }
     catch (RpcException)
     {
       return null;
     }
   }
+
+  private static MapProto.DeviceSettingsKey PartKey(string cameraId, string kind, string token) => new()
+  {
+    SourceKind = CameraSource,
+    SourceId = cameraId,
+    PartKind = kind,
+    PartToken = token,
+  };
+
 
   // The effective arming of one part, as VmsMap resolves it. Addressed by source and token because
   // the card holds the camera, not the part's node id. An unanswered call is two nulls: the panel
@@ -336,3 +423,4 @@ public record SetRelayStateBody(bool Active);
 public record SetRelaySettingsBody(string Mode, string IdleState, int DelayMs);
 public record SetIdleStateBody(string IdleState);
 public record SetArmModeBody(string? ArmMode);
+public record DeviceSettingsRuleBody(string? ArmMode, string? TriggerOn, bool AlarmEnabled);

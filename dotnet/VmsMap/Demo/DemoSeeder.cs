@@ -9,6 +9,7 @@ using Vms.Map;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 
 namespace VmsMap.Demo
 {
@@ -44,6 +45,8 @@ namespace VmsMap.Demo
     private readonly VisualService _visuals;
     private readonly SpatialDb _spatial;
     private readonly ICameraCatalog _cameras;
+    private readonly IDeviceNodeService _deviceNodes;
+    private readonly DeviceObjectSettingsStore _deviceSettings;
     private readonly IDeviceDiagramService _deviceDiagrams;
     // Only to remove the layers an older world wrote: the dictionary is the map's own now.
     private readonly ILevelService _levels;
@@ -61,6 +64,8 @@ namespace VmsMap.Demo
       VisualService visuals,
       SpatialDb spatial,
       ICameraCatalog cameras,
+      IDeviceNodeService deviceNodes,
+      DeviceObjectSettingsStore deviceSettings,
       IDeviceDiagramService deviceDiagrams)
     {
       _db = db;
@@ -74,6 +79,8 @@ namespace VmsMap.Demo
       _visuals = visuals;
       _spatial = spatial;
       _cameras = cameras;
+      _deviceNodes = deviceNodes;
+      _deviceSettings = deviceSettings;
       _deviceDiagrams = deviceDiagrams;
       _levels = levels;
     }
@@ -472,6 +479,38 @@ namespace VmsMap.Demo
       await SaveRegistryAsync(world.Key, world.Version, ids.Where(pair => keep.Contains(pair.Key)), ct);
 
       if (tx is not null) await tx.CommitAsync(ct);
+
+      // ── A device's behaviour: the map's own, so the world installs it here ───────────────────
+      // The part's name is VmsCfg's; who decides its arming and what its contact means is the
+      // map's, and a copy anywhere else would be the second source this release removed.
+      //
+      // After the world's transaction, not inside it: ensuring a part's node is the node service's
+      // work and it opens a transaction of its own, which a connection already in one refuses. The
+      // world is complete without these rows — a part with none keeps the defaults — so a failure
+      // here costs the demo's arming until the next install, not half a world.
+      foreach (var device in world.Devices)
+      {
+        if (!placedCameras.Contains(device.CameraKey))
+        {
+          if (!report.SkippedCameras.Contains(device.CameraKey))
+            report.SkippedCameras.Add(device.CameraKey);
+          continue;
+        }
+
+        var partId = await _deviceNodes.EnsureAsync(
+          DeviceObjectId.CameraSource, DemoIds.Camera(device.CameraKey),
+          device.PartKind, device.Token, ct);
+        if (partId is null)
+        {
+          if (!report.SkippedCameras.Contains(device.CameraKey))
+            report.SkippedCameras.Add(device.CameraKey);
+          continue;
+        }
+
+        await _deviceSettings.SetAsync(
+          partId, device.ArmMode, device.TriggerOn, device.AlarmEnabled, ct);
+      }
+
       return report;
     }
 

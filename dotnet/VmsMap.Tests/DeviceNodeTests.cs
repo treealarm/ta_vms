@@ -83,7 +83,7 @@ public class DeviceNodeTests
     var tracks = new TracksUpdateService(map, trackService, geo);
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
-    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
     var nodes = TestWiring.DeviceNodes(db, map, updates);
 
     var events = new EventsService(db, map);
@@ -96,9 +96,11 @@ public class DeviceNodeTests
       new DemoSeeder(
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial,
-        new TestCatalog(), TestWiring.DeviceDiagrams(db, map, updates, geo)),
+        new TestCatalog(), TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
+        TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, new TestCameraState(cameraArmed)),
       TestWiring.NodeArming(db, map, cameraState: new TestCameraState(cameraArmed)),
+      null!, // the settings card has its own tests
       TestWiring.ControlObjects(db, map, rights),
       TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.

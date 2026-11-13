@@ -216,10 +216,11 @@ space and keeps their actions beside the selected one: `GET api/control/objects?
 backed by `MapService.ListControlObjects`. Three kinds share one row, and each answers with what
 its own action writes:
 
-- **camera** (`part_kind='device'`) — arming is the camera's own flag in VmsCfg
-  (`camera_states.armed`, `PUT api/cameras/{id}/state`), the same flag the camera card's guard
-  toggle writes. Its row never reads the zone scheme: that is what the camera's *sensors* inherit,
-  not what the camera is.
+- **camera** (`part_kind='device'`) — arming answers the same scheme as a sensor: its own mode in
+  the map (`device_object_settings`, `inherit` by default), else the zone above its reference
+  replica, else off. An operator's toggle (`PUT api/cameras/{id}/state`, `SetDeviceArming`) is an
+  explicit command; who decides — the zone or the card — is the administrator's setting, and
+  `inherit` hands the flag back to the zone.
 - **digital input** — the effective arming of `EffectiveArmingResolver`, its configured mode and
   alarm flag, and the contact the camera reports (`SENSOR_OPEN`/`SENSOR_CLOSED` on the part node).
 - **relay** — never armed: a relay is driven, not watched. Its action is its state
@@ -241,10 +242,31 @@ an outbox row in one transaction; the outbox row is what makes `SensorAlarmServi
 sensors already in their trigger position, so a crash between the commit and the re-check loses
 nothing. Disarming closes no alarm — only the condition leaving does.
 
+**The effective flag is written back to VmsCfg.** `camera_states.armed` is read by services that
+cannot see the map — VmsOnvif's ONVIF retention gate and web_srv's live state — so the map writes
+the value the camera's mode or its zone implies: on a zone's change, when the camera's reference
+replica moves or goes, when a node is moved in the tree, when the camera's own state or settings
+change, and in a sweep at startup over the zones that are set. The map is the only writer and it
+writes for an explicit mode as well as an inherited one; the write happens only when the value
+differs (`UPDATE … WHERE armed IS DISTINCT FROM …`), so the event a write announces cannot feed
+itself.
+
+**The settings live on the node.** `device_object_settings` (VmsMap) holds the arming mode of every
+camera and input node and, for a digital input, `trigger_on`/`alarm_enabled`. The old columns —
+`camera_states.arm_mode` and the same three in VmsCfg's `device_settings` — are a migration source
+for this release only: the map's one-time import copies them before the first flag derivation, and
+VmsCfg refuses the writes. An administrator edits them through one card, the same for a camera and
+an input (`Inherit / Armed / Disarmed`, plus the alarm rule for an input), shown wherever the object
+is selected — Admin → Nodes, the camera's page, the input's row, the admin map's inspector (a
+camera or a part as its picture, resolved through its owner). The operator's switch stays a
+two-state command.
+
 **One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
 answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
 `object_arming` row above the camera's **reference replica** (`space`), otherwise the camera's own
-armed flag (`camera`). `inherit` is the administrator's mode and is not an operator's command.
+effective flag (`camera`). For a camera the walk ends at its own mode → zone → off: its flag is
+what the walk produces, so reading it back as an input would turn the derivation into a loop.
+`inherit` is the administrator's mode and is not an operator's command.
 For a container itself the walk starts at its own node (`explicit` / `inherited` / `none`), which is
 what the browser paints differently: green for armed here, purple for armed through an ancestor,
 grey for not armed. The scheme is the same for one card and for a page of the panel — the page

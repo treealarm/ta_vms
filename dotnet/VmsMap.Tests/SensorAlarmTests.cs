@@ -17,38 +17,13 @@ namespace VmsMap.Tests;
 // or a snapshot repairs a condition that is live while the alarm is missing.
 public class SensorAlarmTests
 {
-  private sealed class Settings(params DeviceSettingsInfo[] entries) : IDeviceSettingsSource
-  {
-    public List<DeviceSettingsInfo> Entries { get; } = [.. entries];
-
-    public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<IReadOnlyList<DeviceSettingsInfo>>(
-        Entries.Where(e => e.CameraId == cameraId).ToList());
-
-    public Task<DeviceSettingsInfo?> FindAsync(
-      string cameraId, string kind, string token, CancellationToken ct) =>
-      Task.FromResult(Entries.FirstOrDefault(e =>
-        e.CameraId == cameraId && e.Kind == kind && e.Token == token));
-
-    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
-      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
-      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
-        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
-          id => id,
-          id => (IReadOnlyList<DeviceSettingsInfo>)Entries
-            .Where(e => e.CameraId == id).ToList(),
-          StringComparer.Ordinal));
-
-    public void Invalidate(string cameraId) { }
-  }
-
   private sealed record Services(
     VmsMapDbContext Db, MapDb Map, AlarmStore Alarms, SensorAlarmService Sensor,
     TestCameraState Arming, string CameraId, string Token);
 
   private const string Token = "1";
 
-  private static Services Create(DeviceSettingsInfo? settings = null, bool armed = false)
+  private static Services Create(DBDeviceObjectSettings? settings = null, bool armed = false)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -59,14 +34,19 @@ public class SensorAlarmTests
     var stateService = new StateService(db);
     var states = new StatesUpdateService(stateService, map, db);
     var arming = new TestCameraState(armed);
-    var source = new Settings(settings is null ? [] : [settings]);
+    var store = TestWiring.ObjectSettings(db);
     var alarms = TestWiring.Alarms(db, map, states, arming);
+    if (settings is not null)
+    {
+      db.DeviceObjectSettings.Add(settings);
+      db.SaveChanges();
+    }
 
     return new Services(
       db, map, alarms,
       // The resolver reads the same settings the rule does: an input's explicit mode must win over
       // the zone in this path too.
-      new SensorAlarmService(db, source, TestWiring.Arming(db, arming, source), alarms, map,
+      new SensorAlarmService(db, store, TestWiring.Arming(db, arming, store), alarms, map,
         NullLogger<SensorAlarmService>.Instance),
       arming, TestCameras.One, Token);
   }
@@ -95,8 +75,15 @@ public class SensorAlarmTests
     return input;
   }
 
-  private static DeviceSettingsInfo AlarmOn(string cameraId, string triggerOn = "closed") =>
-    new(cameraId, DeviceObjectId.DigitalInputPart, Token, "Door", "inherit", triggerOn, true);
+  private static DBDeviceObjectSettings AlarmOn(string cameraId, string triggerOn = "closed") =>
+    new()
+    {
+      object_id = Guid.Parse(DeviceObjectId.For(
+        DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, Token)),
+      arm_mode = ArmMode.Inherit,
+      trigger_on = triggerOn,
+      alarm_enabled = true,
+    };
 
   private static Task<DBAlarm?> Open(VmsMapDbContext db) =>
     db.Alarms.AsNoTracking().Where(a => a.status != AlarmStatus.Closed)
@@ -164,10 +151,7 @@ public class SensorAlarmTests
   [Fact]
   public async Task ARelayNeverAlarms()
   {
-    var s = Create(
-      new DeviceSettingsInfo(
-        TestCameras.One, DeviceObjectId.RelayPart, Token, "Relay", "inherit", null, false),
-      armed: true);
+    var s = Create(armed: true);
     var input = await DeviceAsync(s);
 
     await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.RelayPart, Token, "closed");
@@ -183,12 +167,10 @@ public class SensorAlarmTests
     await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
 
     // The operator saves the input with the alarm off: the open row must not stay as if it were.
-    var off = new Settings(new DeviceSettingsInfo(
-      TestCameras.One, DeviceObjectId.DigitalInputPart, Token, "Door", "inherit", "closed", false));
-    var sensor = new SensorAlarmService(s.Db, off, TestWiring.Arming(s.Db, s.Arming), s.Alarms, s.Map,
-        NullLogger<SensorAlarmService>.Instance);
+    await TestWiring.ObjectSettings(s.Db).SetAsync(
+      input.ToString(), ArmMode.Inherit, "closed", false, default);
 
-    await sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
 
     Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
   }
@@ -343,8 +325,8 @@ public class SensorAlarmTests
   [Fact]
   public async Task AnExplicitlyDisarmedInputIgnoresItsArmedZone()
   {
-    var settings = new DeviceSettingsInfo(
-      TestCameras.One, DeviceObjectId.DigitalInputPart, Token, "Door", "disarmed", "closed", true);
+    var settings = AlarmOn(TestCameras.One);
+    settings.arm_mode = ArmMode.Disarmed;
     var s = Create(settings, armed: false);
     var input = await DeviceAsync(s);
     await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
