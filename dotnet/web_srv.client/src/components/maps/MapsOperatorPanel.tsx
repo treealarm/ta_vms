@@ -250,18 +250,17 @@ export default function MapsOperatorPanel() {
     setFocus(null)
   }
 
-  const open = (id: string) => {
-    openSpace(id)
-    setSelectedNodeId(null)
-    resetAim()
-  }
-
-  /** Opens the canvas a node belongs to and selects it; a camera is also brought into view. */
+  /**
+   * Selects the node a click landed on. A container is only selected: what an operator looks at
+   * on the map is a map, and entering a plan or a diagram is a move made deliberately, with the
+   * panel's Enter — a click that both selected and navigated was two things at once, and the map
+   * it opened could not say whether the plan on it was the one meant.
+   *
+   * A camera that really stands in another space is the exception: there the selection is a
+   * question about a place, and the place has to be shown for the answer to mean anything.
+   */
   const selectNode = (marker: MapMarker) => {
     resetAim()
-
-    if (marker.nodeKind === 'space') openSpace(marker.id)
-    if (marker.nodeKind === 'diagram') setDiagramId(marker.id)
 
     const cameraId = marker.cameraId
     if (cameraId) {
@@ -679,7 +678,20 @@ export default function MapsOperatorPanel() {
               {tracksSpaceId === space.id && tracks.length > 0 && (
                 <TracksLayer tracks={tracks} markers={markers} />
               )}
-              <Footprints nested={nested} alarmed={alarmed} levels={levels} zoomLevels={spaceZoomLevels} onPick={(s) => s.id && open(s.id)} />
+              {/* A plan picked on the map is selected, so its guard and its Enter are in the
+                  panel beside it; the outline is the zone, not a door. */}
+              <Footprints
+                nested={nested}
+                alarmed={alarmed}
+                levels={levels}
+                zoomLevels={spaceZoomLevels}
+                onPick={(s) => {
+                  if (!s.id) return
+                  const marker = markers[s.id]
+                  if (marker) selectNode(marker)
+                  else setSelectedNodeId(s.id)
+                }}
+              />
               {here.map((p) => {
                 const camera = camerasById[p.cameraId]
                 const node = nodeForPlacement(p)
