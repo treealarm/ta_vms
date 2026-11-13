@@ -94,6 +94,7 @@ public class MapServiceReadsTests
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, arming), TestWiring.NodeArming(db, map, cameraState: arming),
+      null!, // the settings RPCs have their own tests
       TestWiring.ControlObjects(db, map, rights), alarms,
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);

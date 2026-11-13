@@ -77,6 +77,7 @@ public class CanvasQueryTests
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db), TestWiring.NodeArming(db, map),
+      null!, // the settings card has its own tests
       TestWiring.ControlObjects(db, map, rights),
       TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.

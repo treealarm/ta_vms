@@ -122,6 +122,14 @@ service MapService {
   // token, because the card holds the device, not the part's node id. `source_kind` is "camera"
   // today; another kind of device hub joins the same registry under a kind of its own.
   rpc GetDevicePartArming(GetDevicePartArmingRequest) returns (GetDevicePartArmingResponse);
+  // The administrative settings of a logical device object: its arming mode and, for a digital
+  // input, the contact state that raises an alarm. The map owns them; `inherit` follows the zone
+  // the camera stands in.
+  rpc GetDeviceSettings(GetDeviceSettingsRequest) returns (GetDeviceSettingsResponse);
+  rpc SetDeviceSettings(SetDeviceSettingsRequest) returns (GetDeviceSettingsResponse);
+  // The operator's switch for a device addressed by its source, not by its node id: two modes, the
+  // same facade `SetNodeArming` is.
+  rpc SetDeviceArming(SetDeviceArmingRequest) returns (GetNodeArmingResponse);
   // The operator's control list: one page of the objects an operator acts on — cameras, digital
   // inputs and relays — filtered by the caller's `view_live` and addressed by source, not by
   // camera. `space_id` covers the space and everything under it — the same set a space's own
@@ -822,6 +830,56 @@ message GetDevicePartArmingResponse {
   // False while the part has no node yet: the adapter creates one from its first snapshot or event.
   bool found        = 1;
   NodeArming arming = 2;
+}
+
+// ── The settings of a logical device object ──────────────────────────────────────────────────
+
+// A device or one of its parts addressed the way a device card knows it. `source_kind` is
+// "camera" today; the token is empty for the camera itself.
+message DeviceSettingsKey {
+  string source_kind = 1;
+  string source_id   = 2;
+  string part_kind   = 3;  // "device" | "digital_input" | "relay"
+  string part_token  = 4;
+}
+
+message DeviceSettingsView {
+  string object_id = 1;
+  DeviceSettingsKey key = 2;
+  string arm_mode = 3;
+  repeated string arm_modes = 4;
+  string trigger_on = 5;
+  repeated string trigger_modes = 6;
+  bool alarm_enabled = 7;
+  // False for a digital input the administrator has not configured yet: its mode has nowhere to
+  // live in VmsCfg and no alarm rule can fire. Always true for a camera.
+  bool configured = 8;
+  // What the object resolves to right now, and from where — the zone a camera stands in or the
+  // object's own mode.
+  NodeArming arming = 9;
+}
+
+message GetDeviceSettingsRequest {
+  DeviceSettingsKey key = 1;
+}
+
+message GetDeviceSettingsResponse {
+  bool found = 1;
+  DeviceSettingsView settings = 2;
+}
+
+message SetDeviceSettingsRequest {
+  DeviceSettingsKey key = 1;
+  string arm_mode = 2;  // "inherit" | "armed" | "disarmed"
+  string trigger_on = 3;  // "open" | "closed"; empty when no alarm follows the contact
+  bool alarm_enabled = 4;
+  Caller caller = 5;  // for the journal
+}
+
+message SetDeviceArmingRequest {
+  DeviceSettingsKey key = 1;
+  string mode = 2;  // "armed" | "disarmed"; "inherit" is the administrator's setting
+  Caller caller = 3;
 }
 
 // ── The operator's control list ─────────────────────────────────────────────────────────────

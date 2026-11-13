@@ -51,6 +51,7 @@ namespace VmsMap.Grpc
     private readonly DemoSeeder _demoSeeder;
     private readonly VmsMap.Domain.Arming.EffectiveArmingResolver _armingResolver;
     private readonly VmsMap.Domain.Arming.NodeArmingService _nodeArming;
+    private readonly VmsMap.Domain.Arming.IDeviceSettingsService _deviceSettings;
     private readonly VmsMap.Domain.Control.ControlObjectQuery _controlObjects;
     private readonly AlarmStore _alarmStore;
     private readonly IDeviceDiagramService _deviceDiagrams;
@@ -80,6 +81,7 @@ namespace VmsMap.Grpc
       DemoSeeder demoSeeder,
       VmsMap.Domain.Arming.EffectiveArmingResolver armingResolver,
       VmsMap.Domain.Arming.NodeArmingService nodeArming,
+      VmsMap.Domain.Arming.IDeviceSettingsService deviceSettings,
       VmsMap.Domain.Control.ControlObjectQuery controlObjects,
       AlarmStore alarmStore,
       IDeviceDiagramService deviceDiagrams)
@@ -108,6 +110,7 @@ namespace VmsMap.Grpc
       _demoSeeder = demoSeeder;
       _armingResolver = armingResolver;
       _nodeArming = nodeArming;
+      _deviceSettings = deviceSettings;
       _controlObjects = controlObjects;
       _deviceDiagrams = deviceDiagrams;
       _alarmStore = alarmStore;

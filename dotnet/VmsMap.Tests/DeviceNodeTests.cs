@@ -99,6 +99,7 @@ public class DeviceNodeTests
         new TestCatalog(), TestWiring.DeviceDiagrams(db, map, updates, geo)),
       TestWiring.Arming(db, new TestCameraState(cameraArmed)),
       TestWiring.NodeArming(db, map, cameraState: new TestCameraState(cameraArmed)),
+      null!, // the settings card has its own tests
       TestWiring.ControlObjects(db, map, rights),
       TestWiring.Alarms(db, map, states),
       // The attach RPC is not exercised here; the diagram service has its own tests.

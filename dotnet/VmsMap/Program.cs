@@ -160,6 +160,9 @@ builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 // The one write behind every guard switch: a device delegates to VmsCfg, a container keeps its
 // row in `object_arming`.
 builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
+// The administrator's card for a logical device object: its arming mode and its contact rule.
+builder.Services.AddScoped<VmsMap.Domain.Arming.IDeviceSettingsService,
+  VmsMap.Domain.Arming.DeviceSettingsService>();
 // The flag a zone implies, written back to VmsCfg for the cameras that inherit it: VmsOnvif and the
 // routing gateway read that flag and cannot see the map.
 builder.Services.AddScoped<VmsMap.Domain.Arming.CameraArmingReconciler>();
