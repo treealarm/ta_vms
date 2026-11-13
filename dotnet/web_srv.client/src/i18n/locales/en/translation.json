@@ -154,7 +154,13 @@
     "tabDetections": "Detections",
     "tabTracking": "Tracking",
     "calibration": "Calibration",
-    "tabMaster": "Master"
+    "tabMaster": "Master",
+    "armMode": "Arm mode",
+    "armModeInherit": "From the zone",
+    "armModeArmed": "On guard",
+    "armModeDisarmed": "Not on guard",
+    "armModeHint": "Who decides this camera's arming",
+    "armModeEffects": "From the zone: an armed space this camera stands in puts it on guard, and its ONVIF events are kept. On guard / Not on guard: an explicit decision the zone does not override."
   },
   "cameraControl": {
     "showControls": "Show camera controls",

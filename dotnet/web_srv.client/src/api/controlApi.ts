@@ -1,6 +1,8 @@
 import type {
   AcknowledgeZoneResultDto,
   ArmMode,
+  CameraArmMode,
+  CameraArmStateDto,
   ControlObjectCursorDto,
   ControlObjectDto,
   ControlObjectPageDto,
@@ -69,6 +71,23 @@ export async function setCameraArmed(cameraId: string, armed: boolean): Promise<
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ armed }),
+  })
+}
+
+/** A camera's effective flag, and the mode it was decided with. */
+export async function getCameraArmState(cameraId: string): Promise<CameraArmStateDto> {
+  return apiFetch<CameraArmStateDto>(`/api/cameras/${encodeURIComponent(cameraId)}/state`)
+}
+
+/**
+ * The administrator's setting: `inherit` hands the flag back to the zone the camera stands in, and
+ * the map derives it from there. An operator's toggle stays the explicit command.
+ */
+export async function setCameraArmMode(cameraId: string, armMode: CameraArmMode): Promise<void> {
+  await apiFetch(`/api/cameras/${encodeURIComponent(cameraId)}/arm-mode`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ armMode }),
   })
 }
 

@@ -1243,6 +1243,17 @@ export type DigitalInputOptionsDto = {
 // camera's arming, no alarm. Arming fields are inputs-only — a relay is driven, not watched.
 export type DeviceArmMode = 'inherit' | 'armed' | 'disarmed'
 
+/**
+ * A camera's arming the way a sensor's is decided: `inherit` follows the zone the camera stands in,
+ * the other two are explicit. Its flag is what VmsOnvif and the routing gateway read.
+ */
+export type CameraArmMode = 'inherit' | 'armed' | 'disarmed'
+
+export type CameraArmStateDto = {
+  armed: boolean
+  armMode?: CameraArmMode | null
+}
+
 export type DeviceSettingsDto = {
   cameraId: string
   kind: 'digital_input' | 'relay'

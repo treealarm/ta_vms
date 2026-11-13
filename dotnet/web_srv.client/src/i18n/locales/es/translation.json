@@ -154,7 +154,13 @@
     "tabDetections": "Detecciones",
     "tabTracking": "Seguimiento",
     "calibration": "Calibración",
-    "tabMaster": "Maestra"
+    "tabMaster": "Maestra",
+    "armMode": "Modo de guardia",
+    "armModeInherit": "Desde la zona",
+    "armModeArmed": "En guardia",
+    "armModeDisarmed": "Sin guardia",
+    "armModeHint": "Quién decide la guardia de esta cámara",
+    "armModeEffects": "Desde la zona: un espacio en guardia donde está la cámara la pone en guardia y se retienen sus eventos ONVIF. En guardia / Sin guardia: una decisión explícita que la zona no anula."
   },
   "cameraControl": {
     "showControls": "Mostrar controles de cámara",

@@ -1,5 +1,5 @@
 ﻿import { useState } from 'react'
-import { Box, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { Box, Divider, FormControlLabel, MenuItem, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { useAppDispatch, useAppSelector } from '../store'
 import { addCamera, changeCameraParent, fetchCameraState, removeCamera } from '../store/liveSlice'
@@ -8,6 +8,7 @@ import { setCameraSchedules } from '../store/scheduleSlice'
 import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
+import CameraArmingSection from './CameraArmingSection'
 import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
@@ -335,6 +336,15 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               control={<Switch checked={disabled} onChange={(e) => setDisabled(e.target.checked)} color="warning" />}
               label={t('cameras.disabled')}
             />
+
+            {/* Who decides the camera's arming: the zone it stands in, or the card. It saves on
+                its own — the form's Apply is about the camera's setup, not its guard. */}
+            {!isNew && (
+              <>
+                <Divider />
+                <CameraArmingSection cameraId={cameraId} />
+              </>
+            )}
 
             <FieldHint hint={t('cameras.hasTelemetryHelper')}>
               <FormControlLabel
