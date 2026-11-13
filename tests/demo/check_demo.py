@@ -1262,17 +1262,21 @@ def check_control_panel(vms):
     all_cameras = control_objects(vms, kind="camera").get("objects") or []
     other = next((row for row in all_cameras if row.get("sourceId") == camera_id("sim-master2")), None)
     if check(other is not None, "sim-master2 has a camera row"):
-        before = vms.call("GET", f"/api/cameras/{camera_id('sim-master2')}/state") or {}
+        cid = camera_id('sim-master2')
+        before = vms.call("GET", f"/api/cameras/{cid}/state") or {}
         try:
-            vms.call("PUT", f"/api/cameras/{camera_id('sim-master2')}/state",
-                     {"armed": not before.get("armed")})
+            # A command from the panel is an explicit decision: the mode becomes armed/disarmed.
+            vms.call("PUT", f"/api/cameras/{cid}/state", {"armed": not before.get("armed")})
             flipped = wait_until(
                 lambda: (control_object(vms, other["objectId"]) or {}).get("armed")
                 == (not before.get("armed")), 20)
             check(bool(flipped), "arming a camera from its row flips the flag the row shows")
+            decided = vms.call("GET", f"/api/cameras/{cid}/state") or {}
+            check(decided.get("armMode") == ("armed" if decided.get("armed") else "disarmed"),
+                  f"the command is explicit (has {decided.get('armMode')!r})")
         finally:
-            vms.call("PUT", f"/api/cameras/{camera_id('sim-master2')}/state",
-                     {"armed": bool(before.get("armed"))})
+            vms.call("PUT", f"/api/cameras/{cid}/arm-mode",
+                     {"armMode": before.get("armMode") or "inherit"})
 
     # A relay's row follows what the camera reports, not only what was commanded.
     if relays:
@@ -1796,6 +1800,71 @@ def reset_zone_arming(vms):
             set_node_arming(vms, space["id"], "inherit")
 
 
+def camera_arm_state(vms, cid):
+    return vms.call("GET", f"/api/cameras/{cid}/state") or {}
+
+
+def set_camera_arm_mode(vms, cid, mode):
+    vms.call("PUT", f"/api/cameras/{cid}/arm-mode", {"armMode": mode})
+
+
+def check_camera_zone_arming(vms):
+    """A camera is armed the way a sensor is: its own mode, else the zone it stands in, else off.
+
+    The flag VmsOnvif and the routing gateway read is derived by the map, so this proves that write
+    lands too — and that the zone is not copied onto the camera: an explicit 'not on guard' still
+    wins while the space it stands in is armed.
+    """
+    print("Camera zone arming")
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if not check(floor is not None, f"the demo has the space {BUILDING_NAME!r}"):
+        return
+
+    camera = camera_id(ARMED_CAMERA)
+    node, _ = device_nodes(vms, ARMED_CAMERA)
+    if not check(node is not None, "the camera has a node in the logical tree"):
+        return
+
+    before = camera_arm_state(vms, camera)
+    try:
+        set_camera_arm_mode(vms, camera, "inherit")
+        check(bool(wait_until(
+            lambda: camera_arm_state(vms, camera).get("armMode") == "inherit", 30)),
+            "the camera follows its zone")
+        check(bool(wait_until(
+            lambda: camera_arm_state(vms, camera).get("armed") is False, 30)),
+            "with no space armed the derived flag is off")
+
+        set_node_arming(vms, floor["id"], "armed")
+        on_guard = wait_until(
+            lambda: camera_arm_state(vms, camera).get("armed") is True
+            and camera_arm_state(vms, camera).get("armMode") == "inherit", 40)
+        check(bool(on_guard),
+              "a camera standing in an armed space is on guard, and still inherits")
+
+        def row():
+            return control_object(vms, node["id"]) or {}
+
+        guarded = wait_until(
+            lambda: row().get("armed") is True and row().get("armingSource") == "space", 30)
+        check(bool(guarded), "the camera's row says it is guarded through the space")
+        check(row().get("armingSourceObjectId") == floor["id"],
+              "the row names the space that settled it")
+
+        # An explicit command is the operator's: the armed space does not override it.
+        vms.call("PUT", f"/api/cameras/{camera}/state", {"armed": False})
+        explicit = wait_until(
+            lambda: row().get("armed") is False and row().get("armingSource") == "explicit", 30)
+        check(bool(explicit), "an explicit 'not on guard' beats the armed space")
+        state = camera_arm_state(vms, camera)
+        check(state.get("armMode") == "disarmed",
+              f"and the command is explicit (has {state.get('armMode')!r})")
+    finally:
+        set_camera_arm_mode(vms, camera, before.get("armMode") or "inherit")
+        set_node_arming(vms, floor["id"], "inherit")
+
+
 def check_cleanup(vms, sensor):
     """Leaves the world as it was installed: relays off, each sensor back to its own mode."""
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
@@ -1995,6 +2064,7 @@ def main():
         check_operator_arming(vms)
         check_control_panel(vms)
         check_zone_arming(vms)
+        check_camera_zone_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
         sensor = check_sensor_in_the_tree(vms)

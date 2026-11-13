@@ -161,6 +161,7 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
     row.HasArming,
     row.Armed,
     row.ArmingSource,
+    row.ArmingSourceObjectId,
     row.CanControl);
 }
 
@@ -182,6 +183,8 @@ public record ControlObjectDto(
   bool HasArming,
   bool Armed,
   string ArmingSource,
+  /// <summary>The node whose arming row settled it, when a zone did; empty otherwise.</summary>
+  string ArmingSourceObjectId,
   bool CanControl);
 
 public record ControlObjectPageDto(

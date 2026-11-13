@@ -1182,9 +1182,11 @@ export type ControlObjectDto = {
   configured: boolean
   /** Relays have no arming at all: their action is a state toggle, not a guard switch. */
   hasArming: boolean
-  /** What it resolves to right now. A camera answers with its own flag, a sensor with the scheme. */
+  /** What it resolves to right now: a camera and a sensor answer the same scheme. */
   armed: boolean
   armingSource: ArmSource | ''
+  /** The node whose arming row settled it, when a zone did; empty otherwise. */
+  armingSourceObjectId: string
   canControl: boolean
 }
 
