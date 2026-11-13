@@ -66,17 +66,17 @@ public class ArmingPolicyTests
   }
 
   [Theory]
-  [InlineData(ArmMode.Armed, "true")]
-  [InlineData(ArmMode.Disarmed, "false")]
-  public void ModesAreStoredAsTheBooleanTheResolverParses(string mode, string stored)
+  [InlineData(ArmMode.Armed, true)]
+  [InlineData(ArmMode.Disarmed, false)]
+  public void ModesAreStoredAsTheBooleanTheResolverReads(string mode, bool stored)
   {
-    Assert.Equal(stored, ArmMode.PropertyValue(mode));
+    Assert.Equal(stored, ArmMode.Value(mode));
   }
 
   [Fact]
-  public void InheritIsStoredAsNoPropertyAtAll()
+  public void InheritIsStoredAsNoRowAtAll()
   {
-    Assert.Null(ArmMode.PropertyValue(ArmMode.Inherit));
+    Assert.Null(ArmMode.Value(ArmMode.Inherit));
     Assert.False(ArmMode.IsKnown("always"));
   }
 }

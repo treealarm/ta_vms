@@ -103,12 +103,10 @@ public class EffectiveArmingTests
 
     if (propertyValue is { } value)
     {
-      f.Db.Properties.Add(new DBMarkerProp
+      f.Db.ObjectArming.Add(new DBObjectArming
       {
-        id = Guid.NewGuid(),
         object_id = Guid.Parse(propertyOwnerId),
-        prop_name = EffectiveArmingResolver.ArmedProperty,
-        str_val = value ? "true" : "false",
+        armed = value,
       });
     }
 
@@ -175,12 +173,10 @@ public class EffectiveArmingTests
 
     // The building is armed; this floor is explicitly disarmed.
     await PlaceReferenceAsync(f, floor.id!, building.id!, true);
-    f.Db.Properties.Add(new DBMarkerProp
+    f.Db.ObjectArming.Add(new DBObjectArming
     {
-      id = Guid.NewGuid(),
       object_id = Guid.Parse(floor.id!),
-      prop_name = EffectiveArmingResolver.ArmedProperty,
-      str_val = "false",
+      armed = false,
     });
     await f.Db.SaveChangesAsync();
 

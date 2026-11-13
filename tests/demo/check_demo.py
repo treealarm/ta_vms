@@ -1339,7 +1339,7 @@ def node_props(vms, object_id):
 
 
 def check_zone_arming(vms):
-    """Arming a space: one property on the floor's node, and every sensor under it answers.
+    """Arming a space: one row on the floor's node, and every sensor under it answers.
 
     The zone is not written onto the sensors — it is resolved for them — so this also proves the
     absence of a mirror, that an alarm names the zone it belongs to, and that disarming the zone
@@ -1781,6 +1781,21 @@ def check_emit_loop(vms, sensor):
         vms.call("DELETE", f"/api/map/admin/event-subscriptions/{loop_id}")
 
 
+def reset_zone_arming(vms):
+    """The run starts from the world's own arming, not from a hand that used the panel earlier.
+
+    A demo space left armed makes every sensor under it answer through the zone, so the checks
+    about a sensor's own scheme (a camera's flag, an explicit mode) fail for a reason that is not
+    a defect. Only the world's spaces are touched: a space of the operator's own is theirs.
+    """
+    for space in spaces(vms):
+        if space.get("name") not in (MAP_NAME, BUILDING_NAME) or not space.get("id"):
+            continue
+        state = node_arming(vms, space["id"])
+        if state and state.get("mode") != "inherit":
+            set_node_arming(vms, space["id"], "inherit")
+
+
 def check_cleanup(vms, sensor):
     """Leaves the world as it was installed: relays off, each sensor back to its own mode."""
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
@@ -1913,6 +1928,7 @@ def main():
     # world, on an older one it brings it to the current version.
     print("Installing the demo world")
     report = install_demo(vms)
+    reset_zone_arming(vms)
     print(f"  ..    created {report.get('created')}, updated {report.get('updated')}, "
           f"removed {report.get('removed')}, wall {report.get('monitorCameras')}")
     if report.get("skippedCameras"):

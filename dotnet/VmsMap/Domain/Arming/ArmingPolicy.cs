@@ -11,19 +11,16 @@ namespace VmsMap.Domain.Arming
     public const string Armed = "armed";
     public const string Disarmed = "disarmed";
 
-    /// <summary>The property a container carries. `Inherit` is its absence.</summary>
-    public const string ArmedProperty = "armed";
-
     public static bool IsKnown(string? mode) =>
       string.Equals(mode, Inherit, StringComparison.Ordinal)
       || string.Equals(mode, Armed, StringComparison.Ordinal)
       || string.Equals(mode, Disarmed, StringComparison.Ordinal);
 
-    /// <summary>The property value for a mode, or null when the property has to be removed.</summary>
-    public static string? PropertyValue(string mode) => mode switch
+    /// <summary>What a container's row says for a mode, or null when it is left to its parent.</summary>
+    public static bool? Value(string mode) => mode switch
     {
-      Armed => "true",
-      Disarmed => "false",
+      Armed => true,
+      Disarmed => false,
       _ => null,
     };
   }

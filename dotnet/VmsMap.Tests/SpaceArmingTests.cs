@@ -121,12 +121,11 @@ public class SpaceArmingTests
     return replica.id!;
   }
 
-  private static async Task<string?> StoredPropertyAsync(Fixture f, string nodeId)
+  private static async Task<bool?> StoredArmingAsync(Fixture f, string nodeId)
   {
     var id = Guid.Parse(nodeId);
-    return (await f.Db.Properties.AsNoTracking()
-      .FirstOrDefaultAsync(p => p.object_id == id
-                                && p.prop_name == ArmMode.ArmedProperty))?.str_val;
+    return (await f.Db.ObjectArming.AsNoTracking()
+      .FirstOrDefaultAsync(a => a.object_id == id))?.armed;
   }
 
   [Fact]
@@ -138,7 +137,7 @@ public class SpaceArmingTests
     var view = await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
 
     // Not "armed": the resolver parses this value with bool.TryParse and would skip anything else.
-    Assert.Equal("true", await StoredPropertyAsync(f, space.id!));
+    Assert.True(await StoredArmingAsync(f, space.id!));
     Assert.True(view!.Arming!.Armed);
     Assert.Equal(EffectiveArmingResolver.Explicit, view.Arming.Source);
     Assert.Equal(ArmMode.Armed, view.Mode);
@@ -153,7 +152,7 @@ public class SpaceArmingTests
 
     await f.Arming.SetAsync(space.id!, ArmMode.Inherit, "danil", default);
 
-    Assert.Null(await StoredPropertyAsync(f, space.id!));
+    Assert.Null(await StoredArmingAsync(f, space.id!));
     var view = await f.Arming.GetAsync(space.id!, default);
     Assert.Equal(ArmMode.Inherit, view!.Mode);
     Assert.Equal(EffectiveArmingResolver.None, view.Arming!.Source);
@@ -321,7 +320,7 @@ public class SpaceArmingTests
       f.Arming.SetAsync(space.id!, "always", "danil", default));
 
     Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
-    Assert.Null(await StoredPropertyAsync(f, space.id!));
+    Assert.Null(await StoredArmingAsync(f, space.id!));
   }
 
   [Fact]
@@ -359,7 +358,7 @@ public class SpaceArmingTests
 
     await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, "danil", default);
 
-    Assert.Equal("false", await StoredPropertyAsync(f, space.id!));
+    Assert.False(await StoredArmingAsync(f, space.id!));
     Assert.Equal(
       ArmMode.Disarmed, Assert.Single(await f.Db.Events.ToListAsync()).param1);
   }

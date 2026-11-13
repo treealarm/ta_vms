@@ -25,6 +25,7 @@ namespace VmsMap.Db
     public DbSet<DBDiagramType> DiagramTypes { get; set; } = null!;
     public DbSet<DBTrackPoint> Tracks { get; set; } = null!;
     public DbSet<DBMarkerProp> Properties { get; set; } = null!;
+    public DbSet<DBObjectArming> ObjectArming { get; set; } = null!;
     public DbSet<DBMarker> Markers { get; set; } = null!;
     public DbSet<DBLevel> Levels { get; set; } = null!;
     public DbSet<DBRight> Rights { get; set; } = null!;
@@ -74,6 +75,7 @@ namespace VmsMap.Db
       ConfigureLevels(modelBuilder);
       ConfigureMarkers(modelBuilder);
       ConfigureProperties(modelBuilder);
+      ConfigureObjectArming(modelBuilder);
       ConfigureTrackPoints(modelBuilder);
       ConfigureDiagramTypes(modelBuilder);
       ConfigureDeviceDiagrams(modelBuilder);
@@ -433,6 +435,16 @@ namespace VmsMap.Db
         entity.Property(e => e.str_val);
         entity.Property(e => e.visual_type);
         entity.Property(e => e.object_id).IsRequired();
+      });
+    }
+
+    private void ConfigureObjectArming(ModelBuilder modelBuilder)
+    {
+      modelBuilder.Entity<DBObjectArming>(entity =>
+      {
+        entity.ToTable("object_arming");
+        entity.HasKey(e => e.object_id);
+        entity.Property(e => e.armed).IsRequired();
       });
     }
 
