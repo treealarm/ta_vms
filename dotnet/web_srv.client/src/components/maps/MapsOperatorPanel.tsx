@@ -250,13 +250,12 @@ export default function MapsOperatorPanel() {
     setFocus(null)
   }
 
-  const open = (id: string) => {
-    openSpace(id)
-    setSelectedNodeId(null)
-    resetAim()
-  }
-
-  /** Opens the canvas a node belongs to and selects it; a camera is also brought into view. */
+  /**
+   * Selects the node a tree row or a camera stands for, and opens the canvas it lives on: a tree is
+   * a way through the deployment, so its rows navigate as well as select. A camera that really
+   * stands in another space brings that space into view for the same reason — the selection is a
+   * question about a place, and the place has to be shown for the answer to mean anything.
+   */
   const selectNode = (marker: MapMarker) => {
     resetAim()
 
@@ -271,6 +270,15 @@ export default function MapsOperatorPanel() {
       if (placement) setFocus((f) => ({ lat: placement.lat, lon: placement.lon, seq: (f?.seq ?? 0) + 1 }))
     }
 
+    setSelectedNodeId(marker.id)
+  }
+
+  /**
+   * Selects a zone picked by its outline on the map, and nothing more: the outline is the zone, not
+   * a door, so the panel beside it carries the guard and the Enter that opens the plan.
+   */
+  const selectZone = (marker: MapMarker) => {
+    resetAim()
     setSelectedNodeId(marker.id)
   }
 
@@ -679,7 +687,20 @@ export default function MapsOperatorPanel() {
               {tracksSpaceId === space.id && tracks.length > 0 && (
                 <TracksLayer tracks={tracks} markers={markers} />
               )}
-              <Footprints nested={nested} alarmed={alarmed} levels={levels} zoomLevels={spaceZoomLevels} onPick={(s) => s.id && open(s.id)} />
+              {/* A plan picked on the map is selected, so its guard and its Enter are in the
+                  panel beside it; the outline is the zone, not a door. */}
+              <Footprints
+                nested={nested}
+                alarmed={alarmed}
+                levels={levels}
+                zoomLevels={spaceZoomLevels}
+                onPick={(s) => {
+                  if (!s.id) return
+                  const marker = markers[s.id]
+                  if (marker) selectZone(marker)
+                  else setSelectedNodeId(s.id)
+                }}
+              />
               {here.map((p) => {
                 const camera = camerasById[p.cameraId]
                 const node = nodeForPlacement(p)
