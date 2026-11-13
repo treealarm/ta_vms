@@ -611,6 +611,7 @@
     "bboxClose": "Hide analytics boxes",
     "armedTip": "Armed — click to disarm",
     "disarmedTip": "Disarmed — click to arm",
+    "guardUnknownTip": "Reading the camera's state — the guard is not usable yet",
     "controls": "Controls",
     "streamSection": "Stream",
     "modeSection": "Mode",

@@ -611,6 +611,7 @@
     "bboxClose": "Ocultar cajas de analítica",
     "armedTip": "Armado — clic para desarmar",
     "disarmedTip": "Desarmado — clic para armar",
+    "guardUnknownTip": "Leyendo el estado de la cámara — la guardia aún no se puede usar",
     "controls": "Controles",
     "streamSection": "Flujo",
     "modeSection": "Modo",
