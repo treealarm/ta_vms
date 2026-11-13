@@ -35,31 +35,29 @@ public class DemoInstallerTests
     Assert.Contains("\"raise_alarm\":false", subscription.Actions[0].Params);
   }
 
+  // This half of the demo writes the parts' names, which are their identity. The mode and the
+  // alarm rule are the map's and are installed by its world: a copy written here would be the
+  // second source this release removed.
   [Fact]
-  public void TheSensorSettingsAreWhatThePolicyAllows()
+  public void TheSensorsNameIsHereAndItsBehaviourIsTheMaps()
   {
-    var settings = DemoDevices.SensorSettings();
+    var sensor = DemoDevices.SensorSettings();
+    Assert.Null(DeviceSettingsRules.Validate(sensor));
+    Assert.Equal(DemoCameraIds.For("sim-ptz"), sensor.CameraId);
+    Assert.Equal("Sensor", sensor.Name);
+    Assert.Equal(DeviceSettingsRules.DigitalInput, sensor.Kind);
+    Assert.Equal("input", sensor.Token);
+    Assert.Empty(sensor.ArmMode);
+    Assert.Empty(sensor.TriggerOn);
+    Assert.False(sensor.AlarmEnabled);
 
-    Assert.Null(DeviceSettingsRules.Validate(settings));
-    Assert.Equal(DeviceSettingsRules.Armed, settings.ArmMode);
-    Assert.Equal(DemoDevices.SensorTrigger, settings.TriggerOn);
-    Assert.True(settings.AlarmEnabled);
-  }
-
-  // The operator's arming demo: an input that is configured, alarms on a closed contact, and
-  // starts out following a camera that is disarmed. If it were installed armed the switch would
-  // have nothing to do, and if it had no alarm the switch would mean nothing.
-  [Fact]
-  public void TheMasterSensorIsConfiguredToBeArmedFromTheCard()
-  {
-    var settings = DemoDevices.MasterSensorSettings();
-
-    Assert.Null(DeviceSettingsRules.Validate(settings));
-    Assert.Equal(DemoCameraIds.For("sim-master"), settings.CameraId);
-    Assert.Equal("Master sensor", settings.Name);
-    Assert.Equal(DeviceSettingsRules.Inherit, settings.ArmMode);
-    Assert.Equal(DemoDevices.SensorTrigger, settings.TriggerOn);
-    Assert.True(settings.AlarmEnabled);
+    // The operator's arming demo: the master's input is configured here and its behaviour — follow
+    // the camera, alarm on the closed contact — is the map's, under the same name.
+    var master = DemoDevices.MasterSensorSettings();
+    Assert.Null(DeviceSettingsRules.Validate(master));
+    Assert.Equal(DemoCameraIds.For("sim-master"), master.CameraId);
+    Assert.Equal("Master sensor", master.Name);
+    Assert.Empty(master.ArmMode);
     Assert.Contains(
       DemoDevices.MasterSettings(),
       s => s.Kind == DeviceSettingsRules.DigitalInput && s.Token == "input");
