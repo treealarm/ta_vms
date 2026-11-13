@@ -227,21 +227,24 @@ its own action writes:
   (`RELAY_ACTIVE`/`RELAY_INACTIVE`).
 
 **A container is guarded as a whole.** A space — or any node a camera's reference replica actually
-stands through — carries the same `armed` property, written by `SetNodeArming`
-(`PUT api/control/objects/{id}/arming`, modes `armed`/`disarmed`/`inherit`). The property is the
-boolean the resolver parses (`"true"`/`"false"`); `inherit` is its absence. The zone is **not**
+stands through — has a row in `object_arming`, written by `SetNodeArming`
+(`PUT api/control/objects/{id}/arming`, modes `armed`/`disarmed`/`inherit`). The row is the node's
+own decision (`armed` boolean); `inherit` is its absence. It is the map's typed state, not one of an
+object's free-form properties: a property was editable on the object's form, without the journal
+entry and the alarm re-check an arming change owes, and the migration
+(`0002_object_arming.sql`) moved every `properties.armed` row into it. The zone is **not**
 written onto the sensors: each one resolves it, and an alarm names the zone that settled its device
 (`armingSourceObjectId`). A container nothing stands through — a diagram of a camera's parts, a
 decorative figure, the server node — is not armable, because a property there would be read by
-nobody. Arming a container writes the property, the journal entry (`arming`, with the operator) and
+nobody. Arming a container writes the row, the journal entry (`arming`, with the operator) and
 an outbox row in one transaction; the outbox row is what makes `SensorAlarmService` re-check the
 sensors already in their trigger position, so a crash between the commit and the re-check loses
 nothing. Disarming closes no alarm — only the condition leaving does.
 
 **One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
 answer came from: the part's own `arm_mode` (`armed`/`disarmed` → `explicit`), otherwise the nearest
-explicit `armed` property above the camera's **reference replica** (`space`), otherwise the camera's
-own armed flag (`camera`). `inherit` is the administrator's mode and is not an operator's command.
+`object_arming` row above the camera's **reference replica** (`space`), otherwise the camera's own
+armed flag (`camera`). `inherit` is the administrator's mode and is not an operator's command.
 For a container itself the walk starts at its own node (`explicit` / `inherited` / `none`), which is
 what the browser paints differently: green for armed here, purple for armed through an ancestor,
 grey for not armed. The scheme is the same for one card and for a page of the panel — the page

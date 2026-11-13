@@ -153,20 +153,18 @@ namespace VmsMap.Domain.Arming
       Node node, string mode, string actor, CancellationToken ct)
     {
       var guid = Utils.ConvertObjectIdToGuid(node.CanonicalId)!.Value;
-      var stored = await _db.Properties.AsNoTracking()
-        .Where(p => p.object_id == guid && p.prop_name == ArmMode.ArmedProperty)
-        .Select(p => p.str_val)
+      var stored = await _db.ObjectArming.AsNoTracking()
+        .Where(a => a.object_id == guid)
+        .Select(a => new { a.armed })
         .FirstOrDefaultAsync(ct);
 
-      var value = ArmMode.PropertyValue(mode);
-      var changed = value is null
-        ? stored is not null
-        : !string.Equals(stored, value, StringComparison.OrdinalIgnoreCase);
+      var value = ArmMode.Value(mode);
+      var changed = value is null ? stored is not null : stored?.armed != value;
 
       await using var tx = await BeginTransactionAsync(ct);
 
       if (changed)
-        await WritePropertyAsync(node.CanonicalId, guid, value, ct);
+        await WriteArmingAsync(guid, value, ct);
 
       // The journal records the action, not the result: a repeated command that changed nothing is
       // still an operator's action and stays in the record (M2.4i).
@@ -195,34 +193,26 @@ namespace VmsMap.Domain.Arming
       }
     }
 
-    private async Task WritePropertyAsync(
-      string canonicalId, Guid guid, string? value, CancellationToken ct)
+    private async Task WriteArmingAsync(Guid guid, bool? armed, CancellationToken ct)
     {
-      if (value is not null)
-      {
-        await _mapService.UpdatePropNotDeleteAsync([
-          new ObjPropsDTO
-          {
-            id = canonicalId,
-            extra_props = [new ObjExtraPropertyDTO { prop_name = ArmMode.ArmedProperty, str_val = value }],
-          }
-        ]);
-        return;
-      }
+      var row = await _db.ObjectArming.FirstOrDefaultAsync(a => a.object_id == guid, ct);
 
-      // Inherit is the absence of the property: the resolver skips a value it cannot parse, and a
-      // reader must not see "follows its parent" as an explicit state.
-      var query = _db.Properties.Where(
-        p => p.object_id == guid && p.prop_name == ArmMode.ArmedProperty);
-      if (_db.Database.IsRelational())
+      if (armed is null)
       {
-        await query.ExecuteDeleteAsync(ct);
+        // Inherit is the absence of the row: a reader must not see "follows its parent" as an
+        // explicit state, and no row is what the resolver takes as "ask above".
+        if (row is not null) _db.ObjectArming.Remove(row);
+      }
+      else if (row is null)
+      {
+        _db.ObjectArming.Add(new DBObjectArming { object_id = guid, armed = armed.Value });
       }
       else
       {
-        _db.Properties.RemoveRange(await query.ToListAsync(ct));
-        await _db.SaveChangesAsync(ct);
+        row.armed = armed.Value;
       }
+
+      await _db.SaveChangesAsync(ct);
     }
 
     private Task WriteJournalAsync(
@@ -286,14 +276,14 @@ namespace VmsMap.Domain.Arming
       if (guid is null)
         return ArmMode.Inherit;
 
-      var value = await _db.Properties.AsNoTracking()
-        .Where(p => p.object_id == guid.Value && p.prop_name == ArmMode.ArmedProperty)
-        .Select(p => p.str_val)
+      var row = await _db.ObjectArming.AsNoTracking()
+        .Where(a => a.object_id == guid.Value)
+        .Select(a => new { a.armed })
         .FirstOrDefaultAsync(ct);
 
-      if (!bool.TryParse(value, out var armed))
+      if (row is null)
         return ArmMode.Inherit;
-      return armed ? ArmMode.Armed : ArmMode.Disarmed;
+      return row.armed ? ArmMode.Armed : ArmMode.Disarmed;
     }
 
     private async Task<Armability> ArmabilityAsync(Node node, CancellationToken ct)

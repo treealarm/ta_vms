@@ -47,9 +47,6 @@ namespace VmsMap.Domain.Arming
     /// <summary>Nothing above the container is set: it follows whoever is above it, and nobody is.</summary>
     public const string None = "none";
 
-    // The property an administrator puts on a space to arm it. The camera's own node carries the
-    // same property as a mirror of camera_states.armed; a space is not in camera_states.
-    public const string ArmedProperty = ArmMode.ArmedProperty;
 
     private readonly VmsMapDbContext _db;
     private readonly IDeviceSettingsSource _settings;
@@ -203,18 +200,15 @@ namespace VmsMap.Domain.Arming
       while (current.Count > 0)
       {
         var level = current.Values.Distinct().ToList();
-        var values = await _db.Properties.AsNoTracking()
-          .Where(p => level.Contains(p.object_id) && p.prop_name == ArmedProperty)
-          .Select(p => new { p.object_id, p.str_val })
+        var values = await _db.ObjectArming.AsNoTracking()
+          .Where(a => level.Contains(a.object_id))
+          .Select(a => new { a.object_id, a.armed })
           .ToListAsync(ct);
-        var byNode = values
-          .GroupBy(v => v.object_id)
-          .ToDictionary(g => g.Key, g => g.First().str_val);
+        var byNode = values.ToDictionary(v => v.object_id, v => v.armed);
 
         foreach (var cameraId in current.Keys.ToList())
         {
-          if (byNode.TryGetValue(current[cameraId], out var value)
-              && bool.TryParse(value, out var armed))
+          if (byNode.TryGetValue(current[cameraId], out var armed))
           {
             result[cameraId] = new SpaceAnswer(armed, current[cameraId]);
             current.Remove(cameraId);
@@ -272,14 +266,14 @@ namespace VmsMap.Domain.Arming
       var here = true;
       while (current is { } node && visited.Add(node))
       {
-        var value = await _db.Properties.AsNoTracking()
-          .Where(p => p.object_id == node && p.prop_name == ArmedProperty)
-          .Select(p => p.str_val)
+        var row = await _db.ObjectArming.AsNoTracking()
+          .Where(a => a.object_id == node)
+          .Select(a => new { a.armed })
           .FirstOrDefaultAsync(ct);
-        if (bool.TryParse(value, out var armed))
+        if (row is not null)
         {
           return new NodeArmingInfo(
-            objectId, armed, here ? Explicit : Inherited, Utils.ConvertGuidToObjectId(node));
+            objectId, row.armed, here ? Explicit : Inherited, Utils.ConvertGuidToObjectId(node));
         }
 
         current = (await _db.Markers.AsNoTracking()
