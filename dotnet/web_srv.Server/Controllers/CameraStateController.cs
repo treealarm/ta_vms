@@ -70,7 +70,10 @@ public class CameraStateController(
   };
 }
 
-/// <summary>`ArmMode` is empty on a write that only says armed or not: the operator's command.</summary>
-public record CamStateDto(bool Armed, string? ArmMode = null);
+/// <summary>
+/// The card's flag, and the operator's command. The mode behind it is not here: it is the map's
+/// row, read by the administrator's card from the settings endpoint rather than on every poll.
+/// </summary>
+public record CamStateDto(bool Armed);
 
 public record CamArmModeDto(string? ArmMode);

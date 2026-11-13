@@ -1253,7 +1253,6 @@ export type CameraArmMode = 'inherit' | 'armed' | 'disarmed'
 
 export type CameraArmStateDto = {
   armed: boolean
-  armMode?: CameraArmMode | null
 }
 
 /**
