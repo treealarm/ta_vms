@@ -137,6 +137,23 @@ public class DeviceSettingsServiceTests
   }
 
   [Fact]
+  public async Task SavingOnlyTheRuleLeavesTheModeAsItIs()
+  {
+    var f = await CreateAsync();
+    await f.Service.SetAsync(Input(), ArmMode.Armed, "open", true, "danil", default);
+
+    // The camera's Devices page edits the rule and says nothing about the mode, which is the
+    // object's own setting: an empty mode must not be read as "inherit" and undo it.
+    var view = await f.Service.SetAsync(Input(), string.Empty, "closed", true, "danil", default);
+
+    var partId = DeviceObjectId.For(
+      DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token);
+    Assert.Equal(ArmMode.Armed, view!.Mode);
+    Assert.Equal("closed", view.TriggerOn);
+    Assert.Equal(ArmMode.Armed, (await f.Store.GetAsync(partId, default)).Mode);
+  }
+
+  [Fact]
   public async Task AnUnconfiguredInputIsRefused()
   {
     var f = await CreateAsync(configured: false);

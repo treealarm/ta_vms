@@ -104,7 +104,8 @@ namespace VmsMap.Domain.Arming
     /// <summary>
     /// The administrator's save. The mode and the alarm rule are the map's rows; a camera's
     /// effective flag and an input's alarm are re-derived from them at once, so the operator's
-    /// panels never show the previous rule.
+    /// panels never show the previous rule. An empty mode leaves the mode as it is: a card that
+    /// only edits the rule must not write back a mode it read some time ago.
     /// </summary>
     public async Task<DeviceSettingsView?> SetAsync(
       DeviceSettingsKey key, string mode, string? triggerOn, bool alarmEnabled, string actor,
@@ -126,11 +127,12 @@ namespace VmsMap.Domain.Arming
 
       var before = await _settings.GetAsync(node, ct);
       var actorName = string.IsNullOrWhiteSpace(actor) ? NodeArmingService.SystemActor : actor.Trim();
+      var wanted = string.IsNullOrWhiteSpace(mode) ? before.Mode : mode;
 
       await using var tx = await BeginTransactionAsync(ct);
-      await _settings.SetAsync(node, mode, triggerOn, alarmEnabled, ct);
-      if (!string.Equals(before.Mode, mode, StringComparison.Ordinal))
-        await WriteJournalAsync(node, actorName, mode, ct);
+      await _settings.SetAsync(node, wanted, triggerOn, alarmEnabled, ct);
+      if (!string.Equals(before.Mode, wanted, StringComparison.Ordinal))
+        await WriteJournalAsync(node, actorName, wanted, ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
 
@@ -227,7 +229,9 @@ namespace VmsMap.Domain.Arming
         return $"source_kind must be '{DeviceSettingsKey.CameraSource}'";
       if (string.IsNullOrWhiteSpace(key.SourceId))
         return "source_id must not be empty";
-      if (!ArmMode.IsKnown(mode))
+      // Empty means "leave it alone": the administrator's card that edits only the alarm rule says
+      // nothing about the mode, and must not be able to undo a change made after it loaded.
+      if (!string.IsNullOrWhiteSpace(mode) && !ArmMode.IsKnown(mode))
         return "arm_mode must be 'inherit', 'armed' or 'disarmed'";
 
       if (key.IsCamera)
