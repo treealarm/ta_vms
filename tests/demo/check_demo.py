@@ -1423,8 +1423,11 @@ def check_zone_arming(vms):
         journal = [event for event in events_of(vms, floor["id"], "arming")
                    if event.get("param0") and event.get("param1") == "armed"]
         check(bool(journal), "the journal records who armed the floor and with which mode")
-        check(len(sensor_events(vms, part["id"], "closed")) >= len(before) + 1,
-              "exactly one new `sensor` front closed the contact")
+        # By id, not by count: the filter answers a page, so on a stack with a long history a new
+        # event pushes an old one out and the count would not move.
+        check(any(event["id"] not in before
+                  for event in sensor_events(vms, part["id"], "closed")),
+              "a new `sensor` front closed the contact")
     finally:
         set_node_arming(vms, floor["id"], "inherit")
         set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
