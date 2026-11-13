@@ -1487,6 +1487,9 @@
     "detections": "Detecciones",
     "detectionsHint": "Detecciones en vivo de las cámaras fijas calibradas sobre el suelo, donde están",
     "alarms": "Alarmas",
+    "alarmsUnguarded": "Sin guardia",
+    "alarmsUnguardedHint": "Nada por encima de estos dispositivos está en guardia.",
+    "alarmsZoneHint": "Aceptadas por esta zona.",
     "alarmsHint": "En curso y las terminadas en los últimos {{minutes}} minutos",
     "noAlarms": "Sin alarmas",
     "alarmSince": "desde las {{time}}",
@@ -1636,6 +1639,19 @@
     "more": "Cargar más",
     "loaded": "{{count}} mostrados",
     "nothingSelected": "Selecciona un objeto para ver qué puedes hacer con él.",
-    "notConfigured": "Este sensor aún no tiene configuración: un administrador debe configurarlo."
+    "notConfigured": "Este sensor aún no tiene configuración: un administrador debe configurarlo.",
+    "spaceGuardHint": "Todo lo que hay bajo este espacio sigue su guardia.",
+    "guardLoading": "Cargando…",
+    "guardNotANode": "Este nodo ya no existe.",
+    "guardNotArmable": "Este nodo no se puede poner en guardia.",
+    "guardInherit": "Sigue al padre",
+    "guardOn": "En guardia",
+    "guardOff": "Sin guardia",
+    "guardOnInherited": "En guardia (por el padre)",
+    "guardOffInherited": "Sin guardia (sigue al padre)",
+    "guardPending": "Guardando…",
+    "acknowledgeAll": "Aceptar todas",
+    "acknowledgeAccepted": "Aceptadas {{count}}",
+    "acknowledgeRejected": "{{count}} sin cambio"
   }
 }

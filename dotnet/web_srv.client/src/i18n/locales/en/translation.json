@@ -1488,6 +1488,9 @@
     "detections": "Detections",
     "detectionsHint": "Live detections of fixed cameras calibrated against the ground, where they stand",
     "alarms": "Alarms",
+    "alarmsUnguarded": "Not on guard",
+    "alarmsUnguardedHint": "Nothing above these devices is armed.",
+    "alarmsZoneHint": "Accepted by this zone.",
     "alarmsHint": "Running now, and those that ended in the last {{minutes}} minutes",
     "noAlarms": "No alarms",
     "alarmSince": "since {{time}}",
@@ -1637,6 +1640,19 @@
     "more": "Load more",
     "loaded": "{{count}} shown",
     "nothingSelected": "Select an object to see what you can do with it.",
-    "notConfigured": "This sensor has no settings yet: an administrator must configure it."
+    "notConfigured": "This sensor has no settings yet: an administrator must configure it.",
+    "spaceGuardHint": "Everything under this space follows its guard.",
+    "guardLoading": "Loading…",
+    "guardNotANode": "This node no longer exists.",
+    "guardNotArmable": "This node cannot be put on guard.",
+    "guardInherit": "Follows parent",
+    "guardOn": "On guard",
+    "guardOff": "Not on guard",
+    "guardOnInherited": "On guard (via parent)",
+    "guardOffInherited": "Not on guard (follows parent)",
+    "guardPending": "Saving…",
+    "acknowledgeAll": "Acknowledge all",
+    "acknowledgeAccepted": "Accepted {{count}}",
+    "acknowledgeRejected": "{{count}} left as they were"
   }
 }

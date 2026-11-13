@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react'
 import { Alert, Box, Chip, Stack, Switch, Tooltip, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
-import { setCameraArmed } from '../../api/controlApi'
-import { setDigitalInputArmMode } from '../../api/deviceIoApi'
+import { setNodeArming } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
 import RelaySwitch from './RelaySwitch'
-import type { ControlObjectDto } from '../../dto/dtos'
+import type { ControlObjectDto, NodeArmingDto } from '../../dto/dtos'
 
 type Props = {
   row: ControlObjectDto
@@ -18,32 +17,29 @@ type Props = {
 
 /**
  * What an operator can do with one object, and what it currently says. One component for the
- * Control panel and the map's inspector, so both act through the same three commands:
+ * Control panel and the map's inspector, so both act through the same commands:
  *
- *  - a camera's own armed flag (`PUT /api/cameras/{id}/state`),
- *  - a sensor's mode (`SetDeviceArmMode`) — only when an administrator configured the input,
+ *  - the guard switch of a camera or a sensor (`SetNodeArming`, the one facade — a camera
+ *    delegates to VmsCfg's flag and an input to its arm_mode),
  *  - a relay's state (VmsOnvif), which is never "arming": a relay is switched, not guarded.
  *
- * A click answers at once and is rolled back when the server refuses it; the next read replaces
- * the guess.
+ * A click is not painted optimistically: the effective arming is a property of the whole ancestor
+ * chain, so disarming a sensor inside an armed zone leaves it guarded, and only the server's
+ * answer says what really happened. The row is re-read after the answer lands.
  */
 export default function ObjectControl({ row, onChanged, heading = false }: Props) {
   const { t } = useTranslation()
-  const [optimistic, setOptimistic] = useState<boolean | null>(null)
+  const [applied, setApplied] = useState<NodeArmingDto | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // What the effective arming resolves to; a relay's state has a switch of its own (RelaySwitch).
-  const observed = row.armed
-  const value = optimistic ?? observed
+  const value = applied?.armed ?? row.armed
+  const source = applied?.source ?? row.armingSource
 
+  // A different object must not inherit the previous one's answer or error.
   useEffect(() => {
-    if (optimistic !== null && observed === optimistic) setOptimistic(null)
-  }, [observed, optimistic])
-
-  // A different object must not inherit the previous one's guess or error.
-  useEffect(() => {
-    setOptimistic(null)
+    setApplied(null)
     setError(null)
   }, [row.objectId])
 
@@ -51,16 +47,13 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
     const next = !value
     setPending(true)
     setError(null)
-    setOptimistic(next)
     try {
-      if (row.kind === 'camera')
-        await setCameraArmed(row.sourceId, next)
-      else
-        await setDigitalInputArmMode(row.sourceId, row.partToken, next ? 'armed' : 'disarmed')
+      const updated = await setNodeArming(row.objectId, next ? 'armed' : 'disarmed')
+      setApplied(updated)
       onChanged()
     } catch (e) {
       setError(errorText(e))
-      setOptimistic(null)
+      setApplied(null)
       onChanged()
     } finally {
       setPending(false)
@@ -68,9 +61,9 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
   }
 
   const armedLabel =
-    row.armingSource === 'space'
+    source === 'space'
       ? (value ? t('onvifSettings.deviceIoGuardOnZone') : t('onvifSettings.deviceIoGuardOffZone'))
-      : row.armingSource === 'camera'
+      : source === 'camera'
         ? (value ? t('onvifSettings.deviceIoGuardOnCamera') : t('onvifSettings.deviceIoGuardOffCamera'))
         : (value ? t('onvifSettings.deviceIoGuardOn') : t('onvifSettings.deviceIoGuardOff'))
 

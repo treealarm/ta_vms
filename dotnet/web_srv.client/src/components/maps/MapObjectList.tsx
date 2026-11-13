@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, IconButton, List, ListItemButton, ListItemText, TextField, Tooltip, Typography } from '@mui/material'
+import { Box, Button, IconButton, List, ListItemButton, ListItemText, TextField, Tooltip, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 export type MapObjectItem = {
@@ -24,6 +24,8 @@ export type MapObjectSection = {
   hint?: string
   /** Shown instead of the items when there are none at all (not when the filter hides them). */
   empty?: string
+  /** One action for the whole section, in its header — "accept every alarm of this zone". */
+  action?: { title: string; label: string; onClick: () => void; disabled?: boolean }
   items: MapObjectItem[]
 }
 
@@ -54,7 +56,16 @@ export default function MapObjectList({ sections }: { sections: MapObjectSection
         if (needle && shown.length === 0) return null
         return (
           <Box key={section.title}>
-            <Typography variant="subtitle2" sx={{ px: 1.5, pt: 1.5 }}>{section.title}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', px: 1.5, pt: 1.5, gap: 1 }}>
+              <Typography variant="subtitle2" sx={{ flex: 1 }}>{section.title}</Typography>
+              {section.action && (
+                <Tooltip title={section.action.title}>
+                  <Button size="small" disabled={section.action.disabled} onClick={section.action.onClick}>
+                    {section.action.label}
+                  </Button>
+                </Tooltip>
+              )}
+            </Box>
             {section.hint && (
               <Typography variant="caption" color="text.secondary" sx={{ px: 1.5, display: 'block' }}>{section.hint}</Typography>
             )}

@@ -1,4 +1,11 @@
-import type { ControlObjectCursorDto, ControlObjectDto, ControlObjectPageDto } from '../dto/dtos'
+import type {
+  AcknowledgeZoneResultDto,
+  ArmMode,
+  ControlObjectCursorDto,
+  ControlObjectDto,
+  ControlObjectPageDto,
+  NodeArmingDto,
+} from '../dto/dtos'
 import { apiFetch } from './apiFetch'
 import { requestJson } from './requestJson'
 
@@ -63,4 +70,48 @@ export async function setCameraArmed(cameraId: string, armed: boolean): Promise<
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ armed }),
   })
+}
+
+/**
+ * The guard state of any node — a sensor, a camera, a space or a zone. A container's answer names
+ * the zone that settled it, so the browser paints "on guard through a parent" differently from
+ * "set here"; it never computes the effective state itself.
+ */
+export async function getNodeArming(objectId: string): Promise<NodeArmingDto | null> {
+  const response = await fetch(`/api/control/objects/${encodeURIComponent(objectId)}/arming`)
+  if (response.status === 404) return null
+  const text = await response.text()
+  if (!response.ok) throw new Error(text || response.statusText)
+  return JSON.parse(text) as NodeArmingDto
+}
+
+/**
+ * The one write behind every guard switch. The answer is what the node resolves to afterwards:
+ * disarming a sensor inside an armed zone leaves it on guard, and only the server knows that.
+ * An operator never sends 'inherit' to a device part — that is the administrator's setting.
+ */
+export async function setNodeArming(objectId: string, mode: ArmMode): Promise<NodeArmingDto> {
+  return apiFetch<NodeArmingDto>(`/api/control/objects/${encodeURIComponent(objectId)}/arming`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode }),
+  })
+}
+
+/**
+ * Accepting a zone: every open alarm of the devices under it. Partial success is the norm — an
+ * alarm still on guard, or one another operator already dealt with, comes back as a rejection.
+ */
+export async function acknowledgeZoneAlarms(
+  objectId: string,
+  comment?: string,
+): Promise<AcknowledgeZoneResultDto> {
+  return apiFetch<AcknowledgeZoneResultDto>(
+    `/api/control/objects/${encodeURIComponent(objectId)}/alarms/acknowledge`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: comment ?? '' }),
+    },
+  )
 }
