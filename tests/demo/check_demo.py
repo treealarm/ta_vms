@@ -1400,7 +1400,8 @@ def check_zone_arming(vms):
         if alarm is not None:
             check(alarm.get("armingSourceObjectId") == floor["id"],
                   "the alarm names the zone its device is guarded by")
-            check(alarm.get("canAck") is False,
+            # False is omitted from the proto JSON, so an absent field is the refusal.
+            check(not alarm.get("canAck"),
                   "it cannot be acknowledged while the floor is armed")
 
             disarmed = set_node_arming(vms, floor["id"], "disarmed")

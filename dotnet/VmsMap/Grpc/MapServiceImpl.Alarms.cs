@@ -140,9 +140,31 @@ namespace VmsMap.Grpc
 
       // An empty subtree (an unknown id) simply has no alarms: the same answer as a quiet zone.
       var subtree = await _mapService.GetSubtreeIdsAsync([nodeId]);
+      var subtreeGuids = subtree
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(g => g.HasValue)
+        .Select(g => g!.Value)
+        .ToList();
+
+      // A device's canonical node hangs under its camera's server, not under the space the camera
+      // stands in: what a zone reaches is the devices whose **reference** replica stands inside it.
+      var cameraIds = subtreeGuids.Count == 0
+        ? []
+        : await _db.CameraPlacements.AsNoTracking()
+            .Where(p => p.is_reference && subtreeGuids.Contains(p.object_id))
+            .Select(p => p.camera_id)
+            .Distinct()
+            .ToListAsync(ct);
+      var deviceIds = cameraIds.Count == 0
+        ? []
+        : await _db.DeviceNodes.AsNoTracking()
+            .Where(n => n.source_kind == DeviceObjectId.CameraSource
+                        && cameraIds.Contains(n.source_id))
+            .Select(n => n.object_id)
+            .ToListAsync(ct);
 
       // Open alarms are few — the condition leaving closes them — so the table is read once and
-      // filtered against the subtree here, rather than pushing a hundred thousand ids into an IN.
+      // filtered against that reach here, rather than pushing a hundred thousand ids into an IN.
       var open = await _db.Alarms.AsNoTracking()
         .Where(a => a.status != AlarmStatus.Closed)
         .ToListAsync(ct);
@@ -153,8 +175,11 @@ namespace VmsMap.Grpc
 
       foreach (var alarm in open)
       {
-        if (!subtree.Contains(Utils.ConvertGuidToObjectId(alarm.object_id)))
+        if (!subtree.Contains(Utils.ConvertGuidToObjectId(alarm.object_id))
+            && !deviceIds.Contains(alarm.object_id))
+        {
           continue;
+        }
 
         // The store keeps the one gate that matters: a live condition on an armed node is refused.
         var outcome = await _alarmStore.AcknowledgeAsync(alarm.id, actor, comment, ct);

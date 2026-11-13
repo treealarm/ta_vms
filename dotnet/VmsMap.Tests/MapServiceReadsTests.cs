@@ -725,4 +725,58 @@ public class MapServiceReadsTests
       new TestContext()));
     Assert.Equal(StatusCode.PermissionDenied, error.StatusCode);
   }
+
+  // A device's canonical node hangs under its camera's server, never under the space the camera
+  // stands in: a zone reaches it through the camera's reference replica, not through the tree.
+  [Fact]
+  public async Task AcceptingAZoneReachesTheDevicesThatStandInIt()
+  {
+    var s = Create();
+
+    var space = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = space.ToString(), name = "Floor" }]);
+    s.Db.Spaces.Add(new DBSpace { object_id = space, kind = SpaceKinds.Map });
+
+    var cameraNode = Guid.NewGuid();
+    var part = Guid.NewGuid();
+    var cameraId = Guid.NewGuid().ToString();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = cameraNode.ToString(), name = "Camera" },
+      new BaseMarkerDTO { id = part.ToString(), parent_id = cameraNode.ToString(), name = "Door" },
+    ]);
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = cameraNode, source_kind = DeviceObjectId.CameraSource,
+      source_id = cameraId, part_kind = DeviceObjectId.DevicePart, part_token = string.Empty,
+    });
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = part, source_kind = DeviceObjectId.CameraSource,
+      source_id = cameraId, part_kind = DeviceObjectId.DigitalInputPart, part_token = "1",
+    });
+
+    var replica = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO
+    {
+      id = replica.ToString(), parent_id = space.ToString(),
+      owner_id = cameraNode.ToString(), name = "Camera on the plan",
+    }]);
+    s.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = replica, camera_id = cameraId, is_reference = true,
+    });
+    await s.Db.SaveChangesAsync();
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, "sensor:1"), default);
+
+    var result = await s.Grpc.AcknowledgeSubtreeAlarms(
+      new MapProto.AcknowledgeSubtreeAlarmsRequest
+      {
+        ObjectId = space.ToString(),
+        Caller = Caller("admin", "admin"),
+      },
+      new TestContext());
+
+    Assert.Equal(1, result.Acknowledged);
+    Assert.Empty(result.Rejected);
+  }
 }
