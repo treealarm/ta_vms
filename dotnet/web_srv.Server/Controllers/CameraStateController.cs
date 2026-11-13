@@ -18,10 +18,11 @@ public class CameraStateController(CfgService.CfgServiceClient cfgClient) : Cont
   {
     var resp = await cfgClient.GetCamStateAsync(
       new GetCamStateRequest { CameraId = cameraId }, Options(ct));
-    return Ok(new CamStateDto(resp.Armed));
+    return Ok(new CamStateDto(resp.Armed, resp.ArmMode));
   }
 
-  // Arming is a control action, not a viewing one.
+  // Arming is a control action, not a viewing one. An operator's command: the camera is armed or
+  // not, and that is an explicit decision the zone it stands in no longer overrides.
   [HttpPut("{cameraId}/state")]
   [RequiresRight(RightActions.Control)]
   public async Task<IActionResult> SetState(string cameraId, [FromBody] CamStateDto body, CancellationToken ct)
@@ -30,6 +31,19 @@ public class CameraStateController(CfgService.CfgServiceClient cfgClient) : Cont
       new SetCamStateRequest { CameraId = cameraId, Armed = body.Armed }, Options(ct));
     return Ok();
   }
+
+  // The administrator's setting: `inherit` hands the flag back to the zone the camera stands in.
+  [HttpPut("{cameraId}/arm-mode")]
+  [RequiresRight(RightActions.Control)]
+  public async Task<IActionResult> SetArmMode(string cameraId, [FromBody] CamArmModeDto body, CancellationToken ct)
+  {
+    await cfgClient.SetCamArmModeAsync(
+      new SetCamArmModeRequest { CameraId = cameraId, ArmMode = body.ArmMode ?? string.Empty }, Options(ct));
+    return Ok();
+  }
 }
 
-public record CamStateDto(bool Armed);
+/// <summary>`ArmMode` is empty on a write that only says armed or not: the operator's command.</summary>
+public record CamStateDto(bool Armed, string? ArmMode = null);
+
+public record CamArmModeDto(string? ArmMode);
