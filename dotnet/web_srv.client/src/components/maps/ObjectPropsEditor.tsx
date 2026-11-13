@@ -13,6 +13,7 @@ import { useAppDispatch } from '../../store'
 import { saveNodeDetails } from '../../store/mapEditsSlice'
 import DetailToolbar from '../settings/DetailToolbar'
 import NodeIdentity from '../objects/NodeIdentity'
+import NodeSettingsCard from '../objects/NodeSettingsCard'
 import PropertyValueField from './PropertyValueField'
 import { visualImageUrl } from '../../map/visualImage'
 import {
@@ -305,6 +306,11 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, showLa
             </TextField>
           </Stack>
         ))}
+
+        {/* A logical object's own settings — its arming mode and alarm rule — wherever an
+            administrator can select the device or one of its pictures. A space or a relay draws
+            nothing here. */}
+        <NodeSettingsCard nodeId={node.id} divider />
 
         <Button size="small" onClick={onClose} sx={{ alignSelf: 'flex-end' }}>{t('common.close')}</Button>
       </Box>
