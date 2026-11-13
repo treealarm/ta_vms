@@ -136,8 +136,36 @@ namespace VmsMap.Domain.Arming
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      // A camera's flag and an input's alarm follow from the settings at once; a failure here is
-      // reported but does not undo the save — the next snapshot, event or start repairs it.
+      await ReDeriveAsync(key, ct);
+      return await DescribeAsync(key, node, ct);
+    }
+
+    /// <summary>
+    /// The operator's switch, addressed by source: the mode, and everything the mode implies.
+    /// `inherit` is an operator's command like the other two — an explicit on or off outranks the
+    /// zone the device stands in, and handing the device back to that zone is the operator's
+    /// decision to reverse.
+    /// </summary>
+    public async Task<NodeArmingView?> SetArmingAsync(
+      DeviceSettingsKey key, string mode, string actor, CancellationToken ct)
+    {
+      var node = await FindNodeAsync(key, ct);
+      if (node is null)
+        throw new ArmingException(
+          "The part has no node in the tree yet: it appears with its first snapshot or event",
+          ArmingRefusal.NotFound);
+
+      var view = await _nodeArming.SetAsync(node, mode, actor, ct);
+      await ReDeriveAsync(key, ct);
+      return view;
+    }
+
+    /// <summary>
+    /// A camera's flag and an input's alarm follow from the mode at once; a failure here is
+    /// reported but does not undo the write — the next snapshot, event or start repairs it.
+    /// </summary>
+    private async Task ReDeriveAsync(DeviceSettingsKey key, CancellationToken ct)
+    {
       try
       {
         if (key.IsCamera)
@@ -149,21 +177,6 @@ namespace VmsMap.Domain.Arming
       {
         _logger.LogWarning(ex, "Applying the settings of '{SourceId}/{Token}' failed", key.SourceId, key.PartToken);
       }
-
-      return await DescribeAsync(key, node, ct);
-    }
-
-    /// <summary>The operator's switch, addressed by source: two modes, the map's facade writes the rest.</summary>
-    public async Task<NodeArmingView?> SetArmingAsync(
-      DeviceSettingsKey key, string mode, string actor, CancellationToken ct)
-    {
-      var node = await FindNodeAsync(key, ct);
-      if (node is null)
-        throw new ArmingException(
-          "The part has no node in the tree yet: it appears with its first snapshot or event",
-          ArmingRefusal.NotFound);
-
-      return await _nodeArming.SetAsync(node, mode, actor, ct);
     }
 
     /// <summary>The node the settings live on: the canonical camera or part, never a replica.</summary>

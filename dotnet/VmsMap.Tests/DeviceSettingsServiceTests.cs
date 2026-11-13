@@ -200,6 +200,22 @@ public class DeviceSettingsServiceTests
   }
 
   [Fact]
+  public async Task TheOperatorsSwitchTakesAnExplicitCameraBackToItsZone()
+  {
+    var f = await CreateAsync();
+    await f.Service.SetArmingAsync(Camera(), ArmMode.Armed, "danil", default);
+    Assert.True(f.CameraState.Armed);
+
+    // Inherit is an operator's command too: no zone is armed here, so the flag the services near
+    // the hardware read goes off at once rather than at the next sweep.
+    var view = await f.Service.SetArmingAsync(Camera(), ArmMode.Inherit, "danil", default);
+
+    Assert.Equal(ArmMode.Inherit, view!.Mode);
+    Assert.False(f.CameraState.Armed);
+    Assert.Contains((CameraId, false), f.Cfg.CameraFlags);
+  }
+
+  [Fact]
   public async Task TheOperatorSwitchWritesTheModeAndTheFlag()
   {
     var f = await CreateAsync();

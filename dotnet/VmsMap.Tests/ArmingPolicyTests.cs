@@ -9,16 +9,18 @@ namespace VmsMap.Tests;
 public class ArmingPolicyTests
 {
   [Fact]
-  public void ACameraAndAnInputTakeOperatorModesOnly()
+  public void ACameraAndAnInputTakeAllThreeModes()
   {
+    // The same three a container takes: an explicit on or off is a decision of the node's own and
+    // outranks the container it stands in, and `inherit` is how whoever made that decision takes
+    // it back. An operator's switch offering only two would leave no way back to the zone.
     foreach (var part in new[] { DeviceObjectId.DevicePart, DeviceObjectId.DigitalInputPart })
     {
       var armability = ArmingPolicy.ForPart(part, configured: true)!;
 
       Assert.True(armability.Armable);
-      Assert.Equal([ArmMode.Armed, ArmMode.Disarmed], armability.Modes);
-      // Inherit is the administrator's setting, not a command an operator sends.
-      Assert.False(armability.Accepts(ArmMode.Inherit));
+      Assert.Equal([ArmMode.Inherit, ArmMode.Armed, ArmMode.Disarmed], armability.Modes);
+      Assert.True(armability.Accepts(ArmMode.Inherit));
     }
   }
 

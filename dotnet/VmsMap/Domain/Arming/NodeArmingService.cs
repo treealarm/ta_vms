@@ -140,8 +140,9 @@ namespace VmsMap.Domain.Arming
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      // `inherit` is an administrator's setting: the reconciler derives the flag from the zone the
-      // camera stands in when the card saves it. The operator's switch only ever sends the other two.
+      // An explicit mode is the flag itself: the services near the hardware read it and cannot see
+      // the map. `inherit` has no value of its own — the caller (the settings facade) re-derives
+      // the flag from the zone the camera stands in.
       if (isCamera && !string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal))
       {
         await _cfg.SetCamArmedAsync(

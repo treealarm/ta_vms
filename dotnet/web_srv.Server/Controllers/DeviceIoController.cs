@@ -174,7 +174,9 @@ public class DeviceIoController(
   public async Task<IActionResult> SetDigitalInputArmMode(
     string cameraId, string token, [FromBody] SetArmModeBody body, CancellationToken ct)
   {
-    // The mode is the map's row now; the map's facade refuses 'inherit' and a part with no node.
+    // The mode is the map's row now; the map's facade takes all three and refuses a part with no
+    // node. `inherit` is the operator handing the input back to the camera (and the zone) it
+    // stands in.
     await map.SetDeviceArmingAsync(new MapProto.SetDeviceArmingRequest
     {
       Key = PartKey(cameraId, DigitalInputKind, token),

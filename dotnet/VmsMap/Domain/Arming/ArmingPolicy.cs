@@ -31,14 +31,20 @@ namespace VmsMap.Domain.Arming
     public static readonly IReadOnlyList<string> ContainerModes =
       [ArmMode.Inherit, ArmMode.Armed, ArmMode.Disarmed];
 
-    public static readonly IReadOnlyList<string> OperatorModes =
-      [ArmMode.Armed, ArmMode.Disarmed];
+    /// <summary>
+    /// Every node that takes part takes all three: `armed` and `disarmed` are a decision of its
+    /// own and outrank the container it stands in, `inherit` hands it back to that container. The
+    /// operator's switch offers the third for the same reason the administrator's card does — an
+    /// override has to be removable by whoever set it, and "return it to the zone" is a decision
+    /// about the object, not about the deployment.
+    /// </summary>
+    public static readonly IReadOnlyList<string> DeviceModes = ContainerModes;
 
     public static readonly Armability NotArmable = new(false, true, []);
 
     public static Armability Container() => new(true, true, ContainerModes);
 
-    public static Armability Device(bool configured) => new(true, configured, OperatorModes);
+    public static Armability Device(bool configured) => new(true, configured, DeviceModes);
 
     public bool Accepts(string mode) =>
       Armable && Modes.Contains(mode, StringComparer.Ordinal);
@@ -56,8 +62,8 @@ namespace VmsMap.Domain.Arming
   /// </para>
   /// <para>
   /// `Configured` is a second question: a digital input exists in the tree from the device's first
-  /// snapshot, but its mode lives in a VmsCfg settings row an administrator writes. Without one
-  /// there is nowhere to keep the mode and no alarm to raise.
+  /// snapshot, but its part is configured in VmsCfg — its name is there, its mode is the map's —
+  /// and until an administrator adds the row there is no alarm to raise.
   /// </para>
   /// </summary>
   public static class ArmingPolicy
