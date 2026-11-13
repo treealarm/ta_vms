@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, CircularProgress, List, ListItemButton, ListItemIcon, ListItemText,
+  Alert, Box, Button, Chip, CircularProgress, List, ListItemButton, ListItemIcon, ListItemText,
   ListSubheader, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
 import PowerOutlinedIcon from '@mui/icons-material/PowerOutlined'
@@ -17,7 +17,6 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import { loadSpaces } from '../../store/spatialSlice'
 import { treeOf } from '../maps/spatialUtils'
 import ObjectControl from './ObjectControl'
-import RelaySwitch from './RelaySwitch'
 
 const STORAGE_KEY = 'control.space'
 const PAGE_SIZE = 50
@@ -231,7 +230,14 @@ export default function ControlPanel() {
                       secondaryTypographyProps={{ noWrap: true }}
                     />
                     {row.kind === 'relay' ? (
-                      <RelaySwitch row={row} onChanged={() => void reload()} />
+                      // The list states what a relay says; the switch is the pane's, so a row
+                      // cannot be flipped while the operator is only scanning the space.
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        color={row.state === 'active' ? 'warning' : 'default'}
+                        label={row.state === 'active' ? t('control.stateActive') : t('control.stateInactive')}
+                      />
                     ) : row.hasArming ? (
                       row.armed
                         ? <LockOutlinedIcon fontSize="small" color="success" titleAccess={t('control.guard')} />
