@@ -66,7 +66,7 @@ public class CameraStatePostgresTests
     var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
 
     Assert.False(state.Armed);
-    Assert.Equal(DeviceSettingsRules.Inherit, state.ArmMode);
+    Assert.Equal(CameraArmingRules.Inherit, state.ArmMode);
   }
 
   [Fact]
@@ -91,7 +91,7 @@ public class CameraStatePostgresTests
     Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
     var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
     Assert.True(state.Armed);
-    Assert.Equal(DeviceSettingsRules.Disarmed, state.ArmMode);
+    Assert.Equal("disarmed", state.ArmMode);
     Assert.False(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
   }
 
@@ -107,7 +107,7 @@ public class CameraStatePostgresTests
     Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
     var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
     Assert.True(state.Armed);
-    Assert.Equal(DeviceSettingsRules.Inherit, state.ArmMode);
+    Assert.Equal(CameraArmingRules.Inherit, state.ArmMode);
 
     Assert.False(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
   }

@@ -11,6 +11,9 @@ namespace VmsCfg;
 /// </summary>
 public static class CameraArmingRules
 {
+  /// <summary>The mode an older release wrote on a camera that followed its zone.</summary>
+  public const string Inherit = "inherit";
+
   public static string? ValidateCameraId(string cameraId) =>
     Guid.TryParse(cameraId, out _) ? null : "camera_id must be a UUID";
 }
@@ -1317,7 +1320,7 @@ public class CameraStorage(
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     if (await reader.ReadAsync(ct))
       return new CameraArmStateRow(reader.GetBoolean(0), reader.GetString(1));
-    return new CameraArmStateRow(false, DeviceSettingsRules.Inherit);
+    return new CameraArmStateRow(false, CameraArmingRules.Inherit);
   }
 
   // The same state for a page's worth of cameras. Only rows that exist are returned: a camera that

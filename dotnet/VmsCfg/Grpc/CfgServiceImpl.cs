@@ -1111,11 +1111,20 @@ namespace VmsCfg
       return response;
     }
 
+    // The name is the part's identity and stays here. Its arming mode and its contact rule are a
+    // logical object's settings and belong to VmsMap, so a request that still carries them is
+    // refused rather than quietly mirrored: a second copy would be a second source of truth.
     public override async Task<OperationStatus> SetDeviceSettings(
       SetDeviceSettingsRequest request, ServerCallContext context)
     {
       if (request.Settings is null)
         return new OperationStatus { Success = false, Message = "settings must not be empty" };
+
+      if (!string.IsNullOrEmpty(request.Settings.ArmMode)
+          || !string.IsNullOrEmpty(request.Settings.TriggerOn)
+          || request.Settings.AlarmEnabled)
+        throw new RpcException(new Status(StatusCode.FailedPrecondition,
+          "A device object's arming and alarm rule belong to VmsMap; use its SetDeviceSettings"));
 
       var error = DeviceSettingsRules.Validate(request.Settings);
       if (error is not null)

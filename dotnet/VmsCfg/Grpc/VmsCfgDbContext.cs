@@ -321,7 +321,7 @@ public sealed class DbCameraState
   public string CameraId { get; set; } = string.Empty;
   public bool Armed { get; set; }
   /// <summary>The administrator's intent: `inherit` leaves the flag to the map's derivation.</summary>
-  public string ArmMode { get; set; } = DeviceSettingsRules.Inherit;
+  public string ArmMode { get; set; } = CameraArmingRules.Inherit;
 }
 
 public sealed class DbDeviceSettings
@@ -330,7 +330,7 @@ public sealed class DbDeviceSettings
   public string Kind { get; set; } = string.Empty;
   public string Token { get; set; } = string.Empty;
   public string Name { get; set; } = string.Empty;
-  public string ArmMode { get; set; } = DeviceSettingsRules.Inherit;
+  public string ArmMode { get; set; } = CameraArmingRules.Inherit;
   public string? TriggerOn { get; set; }
   public bool AlarmEnabled { get; set; }
 }
