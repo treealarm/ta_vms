@@ -25,8 +25,9 @@ type Props = {
  *  - a relay's state (VmsOnvif), which is never "arming": a relay is switched, not guarded.
  *
  * A click is not painted optimistically: the effective arming is a property of the whole ancestor
- * chain, so disarming a sensor inside an armed zone leaves it guarded, and only the server's
- * answer says what really happened. The row is re-read after the answer lands.
+ * chain. A device left in `inherit` follows its zone; an explicit on or off is the operator's own
+ * decision and outranks it, so a sensor switched off inside an armed zone really is off guard, and
+ * only the server's answer says what happened. The row is re-read after the answer lands.
  */
 export default function ObjectControl({ row, onChanged, heading = false }: Props) {
   const { t } = useTranslation()
