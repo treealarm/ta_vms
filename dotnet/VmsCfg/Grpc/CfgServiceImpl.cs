@@ -1057,47 +1057,20 @@ namespace VmsCfg
         throw new RpcException(new Status(StatusCode.InvalidArgument, error));
     }
 
-    public override async Task<OperationStatus> SetCamState(
-      SetCamStateRequest request, ServerCallContext context)
-    {
-      RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
-      try
-      {
-        await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
-      }
-      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
-      {
-        throw new RpcException(new Status(StatusCode.NotFound, "no such camera"));
-      }
+    // Refused on purpose: a camera's mode and the flag it implies belong to VmsMap now, which
+    // writes the flag through SetCamArmed and journals the decision. This remains only so an old
+    // caller gets a sentence instead of a silent second source of truth.
+    public override Task<OperationStatus> SetCamState(
+      SetCamStateRequest request, ServerCallContext context) =>
+      throw new RpcException(new Status(StatusCode.FailedPrecondition,
+        "A camera's arming is decided in VmsMap; use its SetDeviceArming"));
 
-      logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
-      NotifyCameraStateChanged(request.CameraId);
-      return new OperationStatus { Success = true };
-    }
-
-    // The administrator's setting, including `inherit`: the camera then follows the zone above its
-    // reference replica and the map derives the flag. The flag is left as it was until that
-    // derivation runs, which errs towards staying on guard.
-    public override async Task<OperationStatus> SetCamArmMode(
-      SetCamArmModeRequest request, ServerCallContext context)
-    {
-      RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
-      RequireCameraArming(CameraArmingRules.ValidateArmMode(request.ArmMode));
-      try
-      {
-        await storage.SetCameraArmModeAsync(
-          request.CameraId, request.ArmMode, context.CancellationToken);
-      }
-      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
-      {
-        throw new RpcException(new Status(StatusCode.NotFound, "no such camera"));
-      }
-
-      logger.LogInformation(
-        "Camera '{CameraId}' arm mode {ArmMode}", request.CameraId, request.ArmMode);
-      NotifyCameraStateChanged(request.CameraId);
-      return new OperationStatus { Success = true };
-    }
+    // Refused for the same reason as SetCamState: the mode is the map's row, and the map's
+    // SetDeviceSettings is where an administrator changes it.
+    public override Task<OperationStatus> SetCamArmMode(
+      SetCamArmModeRequest request, ServerCallContext context) =>
+      throw new RpcException(new Status(StatusCode.FailedPrecondition,
+        "A camera's arm mode belongs to VmsMap; use its SetDeviceSettings"));
 
     // The map's derived write. It answers whether anything changed, and only a change is announced:
     // that is what ends the round "the map writes, the event arrives, the map looks again".
@@ -1161,28 +1134,12 @@ namespace VmsCfg
     // The operator's arming switch on the camera card. Separate from SetDeviceSettings on purpose:
     // that one replaces the row wholesale, and a card holding a slightly stale copy would silently
     // undo an administrator's edit of the name, the trigger or the alarm flag.
-    public override async Task<OperationStatus> SetDeviceArmMode(
-      SetDeviceArmModeRequest request, ServerCallContext context)
-    {
-      var error = DeviceSettingsRules.ValidateArmCommand(
-        request.CameraId, request.Token, request.ArmMode);
-      if (error is not null)
-        throw new RpcException(new Status(StatusCode.InvalidArgument, error));
-
-      var changed = await deviceStorage.SetArmModeAsync(
-        request.CameraId, request.Token, request.ArmMode, context.CancellationToken);
-      if (!changed)
-        throw new RpcException(new Status(StatusCode.NotFound,
-          $"no digital input '{request.Token}' is configured for this camera"));
-
-      logger.LogInformation(
-        "Digital input {Token} of camera '{CameraId}' arm_mode={ArmMode}",
-        request.Token, request.CameraId, request.ArmMode);
-
-      // After the commit, as for a settings save: VmsMap re-reads it and reconciles the alarm.
-      await NotifyDeviceSettingsChangedAsync(request.CameraId, context.CancellationToken);
-      return new OperationStatus { Success = true };
-    }
+    // Refused for the same reason as the camera's: an input's mode is the map's row now, and the
+    // map's SetDeviceArming is the facade every guard switch uses.
+    public override Task<OperationStatus> SetDeviceArmMode(
+      SetDeviceArmModeRequest request, ServerCallContext context) =>
+      throw new RpcException(new Status(StatusCode.FailedPrecondition,
+        "A digital input's arming belongs to VmsMap; use its SetDeviceArming"));
 
     private Task NotifyDeviceSettingsChangedAsync(string cameraId, CancellationToken ct) =>
       deviceSettingsNotifier.NotifyAsync(cameraId, ct);

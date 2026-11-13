@@ -12,24 +12,6 @@ namespace VmsCfg.Tests;
 // only when VMS_CFG_TEST_DSN points at a scratch database.
 public class CameraArmingRulesTests
 {
-  [Theory]
-  [InlineData(DeviceSettingsRules.Inherit)]
-  [InlineData(DeviceSettingsRules.Armed)]
-  [InlineData(DeviceSettingsRules.Disarmed)]
-  public void EveryModeIsAccepted(string mode)
-  {
-    Assert.Null(CameraArmingRules.ValidateArmMode(mode));
-  }
-
-  [Theory]
-  [InlineData("")]
-  [InlineData("on")]
-  [InlineData("Armed")]
-  public void AnUnknownModeIsRefused(string mode)
-  {
-    Assert.NotNull(CameraArmingRules.ValidateArmMode(mode));
-  }
-
   [Fact]
   public void ACameraIdThatIsNotAUuidIsRefused()
   {
@@ -88,7 +70,7 @@ public class CameraStatePostgresTests
   }
 
   [Fact]
-  public async Task AnOperatorsCommandMakesTheModeExplicit()
+  public async Task TheMapWritesTheFlagWhateverTheLegacyModeSays()
   {
     var opened = await OpenAsync();
     if (opened is not { } o)
@@ -96,38 +78,21 @@ public class CameraStatePostgresTests
 
     await using var source = o.Source;
 
-    await o.Storage.SetCameraArmedAsync(o.CameraId, true, default);
-    var armed = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.True(armed.Armed);
-    Assert.Equal(DeviceSettingsRules.Armed, armed.ArmMode);
+    // A row the previous release left behind: an explicit mode, and the flag that matched it.
+    await using (var insert = source.CreateCommand("""
+      INSERT INTO camera_states (camera_id, armed, arm_mode) VALUES ($1::uuid, false, 'disarmed');
+      """))
+    {
+      insert.Parameters.AddWithValue(o.CameraId);
+      await insert.ExecuteNonQueryAsync();
+    }
 
-    await o.Storage.SetCameraArmedAsync(o.CameraId, false, default);
-    var disarmed = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.False(disarmed.Armed);
-    Assert.Equal(DeviceSettingsRules.Disarmed, disarmed.ArmMode);
-  }
-
-  [Fact]
-  public async Task TheAdministratorLeavesACameraToItsZoneAndTheMapFillsTheFlagIn()
-  {
-    var opened = await OpenAsync();
-    if (opened is not { } o)
-      return;
-
-    await using var source = o.Source;
-
-    await o.Storage.SetCameraArmedAsync(o.CameraId, true, default);
-    await o.Storage.SetCameraArmModeAsync(o.CameraId, DeviceSettingsRules.Inherit, default);
-
-    // The flag is left as it was until the map derives it: staying on guard is the safe answer.
-    var inherited = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.True(inherited.Armed);
-    Assert.Equal(DeviceSettingsRules.Inherit, inherited.ArmMode);
-
-    Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, false, default));
-    var derived = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.False(derived.Armed);
-    Assert.Equal(DeviceSettingsRules.Inherit, derived.ArmMode);
+    // The map has resolved the flag from the mode or the zone; VmsCfg no longer has a say.
+    Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
+    var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
+    Assert.True(state.Armed);
+    Assert.Equal(DeviceSettingsRules.Disarmed, state.ArmMode);
+    Assert.False(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
   }
 
   [Fact]
@@ -147,22 +112,4 @@ public class CameraStatePostgresTests
     Assert.False(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
   }
 
-  [Fact]
-  public async Task TheFlagIsWrittenForAnExplicitModeToo()
-  {
-    var opened = await OpenAsync();
-    if (opened is not { } o)
-      return;
-
-    await using var source = o.Source;
-
-    // The legacy operator write left an explicit mode behind; the map is the only writer of the
-    // flag now, and it has already resolved what the mode means.
-    await o.Storage.SetCameraArmedAsync(o.CameraId, false, default);
-
-    Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
-    var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.True(state.Armed);
-    Assert.Equal(DeviceSettingsRules.Disarmed, state.ArmMode);
-  }
 }

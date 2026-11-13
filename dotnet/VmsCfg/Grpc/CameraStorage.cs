@@ -6,21 +6,13 @@ using Vms.Cfg;
 namespace VmsCfg;
 
 /// <summary>
-/// What the camera arming surface accepts. The vocabulary is `device_settings`' own, so a mode
-/// means the same thing for a camera and for a sensor — `inherit` included.
+/// What the one remaining camera write accepts: the map's effective flag, which names a real
+/// camera. The mode and its vocabulary belong to VmsMap now.
 /// </summary>
 public static class CameraArmingRules
 {
-  private static readonly HashSet<string> ArmModes =
-    [DeviceSettingsRules.Inherit, DeviceSettingsRules.Armed, DeviceSettingsRules.Disarmed];
-
   public static string? ValidateCameraId(string cameraId) =>
     Guid.TryParse(cameraId, out _) ? null : "camera_id must be a UUID";
-
-  public static string? ValidateArmMode(string? armMode) =>
-    armMode is not null && ArmModes.Contains(armMode)
-      ? null
-      : "arm_mode must be 'inherit', 'armed' or 'disarmed'";
 }
 
 public class CameraStorage(
@@ -1355,44 +1347,6 @@ public class CameraStorage(
     return result;
   }
 
-  /// <summary>An operator's command: the camera is armed or not, and that is an explicit decision.</summary>
-  public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
-  {
-    await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed, arm_mode)
-      VALUES ($1::uuid, $2, CASE WHEN $2 THEN 'armed' ELSE 'disarmed' END)
-      ON CONFLICT (camera_id) DO UPDATE
-        SET armed = EXCLUDED.armed, arm_mode = EXCLUDED.arm_mode;
-      """);
-    cmd.Parameters.AddWithValue(cameraId);
-    cmd.Parameters.AddWithValue(armed);
-    await cmd.ExecuteNonQueryAsync(ct);
-  }
-
-  /// <summary>
-  /// An administrator's setting. An explicit mode is also the flag; `inherit` leaves the flag as it
-  /// is, for the map to derive from the zone the camera stands in.
-  /// </summary>
-  public async Task SetCameraArmModeAsync(string cameraId, string armMode, CancellationToken ct)
-  {
-    await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed, arm_mode) VALUES ($1::uuid, $2, $3)
-      ON CONFLICT (camera_id) DO UPDATE
-        SET arm_mode = EXCLUDED.arm_mode,
-            armed = CASE WHEN EXCLUDED.arm_mode = 'inherit'
-                         THEN camera_states.armed ELSE EXCLUDED.armed END;
-      """);
-    cmd.Parameters.AddWithValue(cameraId);
-    cmd.Parameters.AddWithValue(string.Equals(armMode, DeviceSettingsRules.Armed, StringComparison.Ordinal));
-    cmd.Parameters.AddWithValue(armMode);
-    await cmd.ExecuteNonQueryAsync(ct);
-  }
-
-  /// <summary>
-  /// The map's derived write: the flag a zone implies. It lands only while the camera is still
-  /// `inherit` and only when it differs, so an explicit decision is never overwritten and the
-  /// event the write announces cannot feed itself. Returns whether a row changed.
-  /// </summary>
   /// <summary>
   /// The camera's effective flag, for the services near the hardware. The map is the only writer:
   /// it resolved the flag from the camera's mode or the zone the camera stands in, so no mode

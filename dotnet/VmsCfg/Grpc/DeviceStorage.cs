@@ -71,17 +71,6 @@ public class DeviceStorage(IDbContextFactory<VmsCfgDbContext> dbFactory)
   // name, trigger or alarm flag over an administrator's concurrent save. Returns false when the
   // camera has no such digital input configured — the operator arms what was set up, and arming
   // never creates the row.
-  public async Task<bool> SetArmModeAsync(
-    string cameraId, string token, string armMode, CancellationToken ct)
-  {
-    await using var db = await dbFactory.CreateDbContextAsync(ct);
-    var affected = await db.Database.ExecuteSqlInterpolatedAsync($"""
-      UPDATE device_settings SET arm_mode = {armMode}
-      WHERE camera_id = {cameraId}::uuid AND kind = {DeviceSettingsRules.DigitalInput} AND token = {token};
-      """, ct);
-    return affected > 0;
-  }
-
   // An upsert, not an insert: saving the same part twice is how an operator edits it, and the
   // natural key (camera, kind, token) is what makes that idempotent.
   public async Task SetAsync(DeviceSettings settings, CancellationToken ct)
@@ -117,24 +106,6 @@ public static class DeviceSettingsRules
   private static readonly HashSet<string> Kinds = [DigitalInput, Relay];
   private static readonly HashSet<string> ArmModes = [Inherit, Armed, Disarmed];
   private static readonly HashSet<string> Triggers = [TriggerOpen, TriggerClosed];
-
-  /// <summary>
-  /// The first thing wrong with an operator's arming command, or null when it is valid. Only the
-  /// two modes an operator may write pass: 'inherit' is the administrator's setting, and a relay
-  /// is driven by a command of its own rather than armed.
-  /// </summary>
-  public static string? ValidateArmCommand(string cameraId, string token, string armMode)
-  {
-    if (!Guid.TryParse(cameraId, out _))
-      return "camera_id must be a UUID";
-    if (string.IsNullOrWhiteSpace(token))
-      return "token must not be empty";
-    if (armMode is Armed or Disarmed)
-      return null;
-    return armMode == Inherit
-      ? $"arm_mode '{Inherit}' is an administrator's setting, not an operator's command"
-      : $"arm_mode must be '{Armed}' or '{Disarmed}'";
-  }
 
   /// <summary>
   /// The first thing wrong with a settings row, or null when it is valid. The database repeats these

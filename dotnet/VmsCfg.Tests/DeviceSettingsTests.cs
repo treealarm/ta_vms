@@ -87,27 +87,6 @@ public class DeviceSettingsRulesTests
     Assert.NotNull(DeviceSettingsRules.Validate(settings));
   }
 
-  [Fact]
-  public void AnOperatorArmingCommandNeedsACameraAndAToken()
-  {
-    Assert.Null(DeviceSettingsRules.ValidateArmCommand(
-      Guid.NewGuid().ToString(), "input1", DeviceSettingsRules.Armed));
-    Assert.NotNull(DeviceSettingsRules.ValidateArmCommand(
-      "cam1", "input1", DeviceSettingsRules.Armed));
-    Assert.NotNull(DeviceSettingsRules.ValidateArmCommand(
-      Guid.NewGuid().ToString(), " ", DeviceSettingsRules.Armed));
-  }
-
-  [Fact]
-  public void AnOperatorCannotWriteInheritOrAnUnknownMode()
-  {
-    var cameraId = Guid.NewGuid().ToString();
-    Assert.NotNull(DeviceSettingsRules.ValidateArmCommand(
-      cameraId, "input1", DeviceSettingsRules.Inherit));
-    Assert.NotNull(DeviceSettingsRules.ValidateArmCommand(cameraId, "input1", "on"));
-    Assert.Null(DeviceSettingsRules.ValidateArmCommand(
-      cameraId, "input1", DeviceSettingsRules.Disarmed));
-  }
 }
 
 // The part of the table that only PostgreSQL can prove: the migration, the idempotent upsert, the
@@ -182,61 +161,6 @@ public class DeviceSettingsPostgresTests
     Assert.Equal(DeviceSettingsRules.Armed, row.ArmMode);
     Assert.Equal(DeviceSettingsRules.TriggerClosed, row.TriggerOn);
     Assert.True(row.AlarmEnabled);
-  }
-
-  [Fact]
-  public async Task ArmingChangesTheModeAndNothingElse()
-  {
-    var opened = await OpenAsync();
-    if (opened is not { } o)
-      return;
-
-    await using var source = o.Source;
-
-    await o.Storage.SetAsync(new DeviceSettings
-    {
-      CameraId = o.CameraId,
-      Kind = DeviceSettingsRules.DigitalInput,
-      Token = "input1",
-      Name = "Door contact",
-      ArmMode = DeviceSettingsRules.Inherit,
-      TriggerOn = DeviceSettingsRules.TriggerClosed,
-      AlarmEnabled = true,
-    }, default);
-
-    Assert.True(await o.Storage.SetArmModeAsync(
-      o.CameraId, "input1", DeviceSettingsRules.Armed, default));
-
-    var row = Assert.Single(await o.Storage.ListAsync(o.CameraId, default));
-    Assert.Equal(DeviceSettingsRules.Armed, row.ArmMode);
-    Assert.Equal("Door contact", row.Name);
-    Assert.Equal(DeviceSettingsRules.TriggerClosed, row.TriggerOn);
-    Assert.True(row.AlarmEnabled);
-  }
-
-  [Fact]
-  public async Task ArmingAPartNobodyConfiguredChangesNothing()
-  {
-    var opened = await OpenAsync();
-    if (opened is not { } o)
-      return;
-
-    await using var source = o.Source;
-
-    Assert.False(await o.Storage.SetArmModeAsync(
-      o.CameraId, "input1", DeviceSettingsRules.Armed, default));
-
-    await o.Storage.SetAsync(new DeviceSettings
-    {
-      CameraId = o.CameraId,
-      Kind = DeviceSettingsRules.Relay,
-      Token = "relay1",
-      ArmMode = DeviceSettingsRules.Inherit,
-    }, default);
-
-    // A relay is not armable: the row exists, but the update is scoped to digital inputs.
-    Assert.False(await o.Storage.SetArmModeAsync(
-      o.CameraId, "relay1", DeviceSettingsRules.Armed, default));
   }
 
   [Fact]
