@@ -257,7 +257,8 @@ camera and input node and, for a digital input, `trigger_on`/`alarm_enabled`. Th
 for this release only: the map's one-time import copies them before the first flag derivation, and
 VmsCfg refuses the writes. An administrator edits them through one card, the same for a camera and
 an input (`Inherit / Armed / Disarmed`, plus the alarm rule for an input), shown wherever the object
-is selected — Admin → Nodes, the camera's page, the input's row. The operator's switch stays a
+is selected — Admin → Nodes, the camera's page, the input's row, the admin map's inspector (a
+camera or a part as its picture, resolved through its owner). The operator's switch stays a
 two-state command.
 
 **One arming scheme.** `EffectiveArmingResolver` answers what a sensor resolves to, and where the
