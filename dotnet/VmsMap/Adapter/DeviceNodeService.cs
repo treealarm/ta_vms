@@ -354,17 +354,6 @@ namespace VmsMap.Adapter
       }
     }
 
-    /// <summary>Merges one property into the camera's node without dropping the others.</summary>
-    public Task SetPropertyAsync(
-      string cameraId, string name, string value, CancellationToken ct) =>
-      _mapService.UpdatePropNotDeleteAsync([
-        new ObjPropsDTO
-        {
-          id = CameraObjectId.For(cameraId),
-          extra_props = [new ObjExtraPropertyDTO { prop_name = name, str_val = value }],
-        }
-      ]);
-
     private async Task<string> EnsureServerAsync(string serverId, CancellationToken ct)
     {
       var id = ServerNodeId.For(serverId);

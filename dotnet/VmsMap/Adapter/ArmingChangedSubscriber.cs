@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using VmsLog;
+using VmsMap.Domain.Arming;
 using VmsMap.Outbox;
 
 namespace VmsMap.Adapter
@@ -76,6 +77,12 @@ namespace VmsMap.Adapter
       try
       {
         using var scope = _scopes.CreateScope();
+
+        // The zone's answer is now the cameras' flag as well: VmsOnvif and the routing gateway
+        // read that flag and cannot see the map.
+        var cameras = scope.ServiceProvider.GetRequiredService<CameraArmingReconciler>();
+        await cameras.ReconcileSubtreeAsync(changed.ObjectId!, ct);
+
         var alarms = scope.ServiceProvider.GetRequiredService<SensorAlarmService>();
         await alarms.ReconcileSpaceAsync(changed.ObjectId!, ct);
         return TopicResponseAction.Success;

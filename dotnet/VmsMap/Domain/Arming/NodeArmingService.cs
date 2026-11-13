@@ -238,12 +238,15 @@ namespace VmsMap.Domain.Arming
       {
         if (string.Equals(deviceKind, DeviceObjectId.DevicePart, StringComparison.Ordinal))
         {
-          var armed = await _cameraState.GetArmedAsync(node.SourceId, ct);
+          // A camera resolves like a sensor: its own mode, else the zone above its reference
+          // replica. Its flag is what the map derives from that, never an input to it.
+          var camera = await _arming.ResolveAsync(node.CanonicalId, ct)
+            ?? new NodeArmingInfo(node.CanonicalId, false, EffectiveArmingResolver.None);
           return new NodeArmingView(
             true, armability.Armable, armability.Configured,
-            armed ? ArmMode.Armed : ArmMode.Disarmed,
+            camera.Mode,
             armability.Modes,
-            new NodeArmingInfo(node.CanonicalId, armed, EffectiveArmingResolver.Camera));
+            camera);
         }
 
         if (!string.Equals(deviceKind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal))

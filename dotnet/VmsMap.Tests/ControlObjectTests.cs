@@ -65,14 +65,20 @@ public class ControlObjectTests
   {
     public Dictionary<string, bool> Armed { get; } = new(StringComparer.Ordinal);
 
-    public Task<bool> GetArmedAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult(Armed.GetValueOrDefault(cameraId));
+    /// <summary>Only the cameras a test names are set; the rest follow their zone.</summary>
+    public Dictionary<string, string> Modes { get; } = new(StringComparer.Ordinal);
 
-    public Task<IReadOnlyDictionary<string, bool>> GetArmedManyAsync(
+    public Task<CameraArmState?> GetStateAsync(string cameraId, CancellationToken ct) =>
+      Task.FromResult<CameraArmState?>(State(cameraId));
+
+    public Task<IReadOnlyDictionary<string, CameraArmState>> GetStatesAsync(
       IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
-      Task.FromResult<IReadOnlyDictionary<string, bool>>(
-        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
-          id => id, id => Armed.GetValueOrDefault(id), StringComparer.Ordinal));
+      Task.FromResult<IReadOnlyDictionary<string, CameraArmState>>(
+        cameraIds.Distinct(StringComparer.Ordinal)
+          .ToDictionary(id => id, State, StringComparer.Ordinal));
+
+    private CameraArmState State(string cameraId) =>
+      new(cameraId, Armed.GetValueOrDefault(cameraId), Modes.GetValueOrDefault(cameraId, "inherit"));
   }
 
   private static async Task<Fixture> CreateAsync()
@@ -125,7 +131,9 @@ public class ControlObjectTests
     await StateAsync(db, relayA, "RELAY_ACTIVE");
 
     cameraStates.Armed[CameraA] = false;
+    cameraStates.Modes[CameraA] = "disarmed";
     cameraStates.Armed[CameraB] = true;
+    cameraStates.Modes[CameraB] = "armed";
 
     return new Fixture(
       db, map, query, settings, cameraStates, site.id!, floor.id!, otherSite.id!,
@@ -402,7 +410,8 @@ public class ControlObjectTests
     Assert.False(a.Armed);
     Assert.True(b.Armed);
     Assert.False(c.Armed);
-    Assert.Equal(EffectiveArmingResolver.Camera, a.ArmingSource);
+    Assert.Equal(EffectiveArmingResolver.Explicit, a.ArmingSource);
+    Assert.Equal("disarmed", a.ArmMode);
     Assert.True(a.CanControl);
   }
 

@@ -252,27 +252,4 @@ public class DeviceNodeServiceTests
     Assert.Equal(DeviceObjectId.RelayPart,
       (await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(id!))).part_kind);
   }
-
-  [Fact]
-  public async Task TheArmedPropertyMergesWithTheOthers()
-  {
-    var s = Create();
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
-    var canonicalId = CameraObjectId.For(TestCameras.One);
-
-    await ((IMapService)s.Map).UpdatePropNotDeleteAsync([
-      new ObjPropsDTO
-      {
-        id = canonicalId,
-        extra_props = [new ObjExtraPropertyDTO { prop_name = "profile", str_val = "main" }],
-      }
-    ]);
-
-    await s.Nodes.SetPropertyAsync(TestCameras.One, "armed", "True", default);
-
-    var props = await ((IMapService)s.Map).GetPropAsync(canonicalId);
-    Assert.Equal(2, props.extra_props!.Count);
-    Assert.Contains(props.extra_props, p => p.prop_name == "armed" && p.str_val == "True");
-    Assert.Contains(props.extra_props, p => p.prop_name == "profile");
-  }
 }

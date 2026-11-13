@@ -63,7 +63,7 @@ public class CanvasQueryTests
     var tracks = new TracksUpdateService(map, trackService, geo);
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
-    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
 
     var events = new EventsService(db, map);
     var grpc = new MapServiceImpl(

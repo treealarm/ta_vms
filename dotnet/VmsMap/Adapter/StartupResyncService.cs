@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using VmsMap.Clients;
+using VmsMap.Domain.Arming;
 
 namespace VmsMap.Adapter
 {
@@ -85,6 +86,26 @@ namespace VmsMap.Adapter
             var nodes = scope.ServiceProvider.GetRequiredService<DeviceNodeService>();
             await nodes.RemoveUnknownAsync(
               cameras.Select(c => c.CameraId).ToHashSet(StringComparer.Ordinal), stoppingToken);
+          }
+
+          // A zone that was armed while this replica was down is written into the flags of the
+          // cameras standing in it. Bounded by the zones that are set, not by the cameras.
+          await using (var scope = _scopes.CreateAsyncScope())
+          {
+            try
+            {
+              var arming = scope.ServiceProvider.GetRequiredService<CameraArmingReconciler>();
+              await arming.SweepAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+              return;
+            }
+            catch (Exception ex)
+            {
+              // The cameras are in the tree either way; the next trigger writes the flags.
+              _logger.LogWarning(ex, "Deriving the arming of the cameras in armed zones failed");
+            }
           }
 
           _logger.LogInformation(

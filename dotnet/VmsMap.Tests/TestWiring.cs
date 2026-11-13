@@ -36,18 +36,21 @@ internal sealed class NoDeviceSettings : IDeviceSettingsSource
   public void Invalidate(string cameraId) { }
 }
 
-internal sealed class TestCameraState(bool armed = false) : ICameraStateSource
+internal sealed class TestCameraState(bool armed = false, string armMode = "inherit") : ICameraStateSource
 {
   public bool Armed { get; set; } = armed;
 
-  public Task<bool> GetArmedAsync(string cameraId, CancellationToken ct) =>
-    Task.FromResult(Armed);
+  /// <summary>Every camera answers the same mode: a test that needs two answers makes its own.</summary>
+  public string ArmMode { get; set; } = armMode;
 
-  public Task<IReadOnlyDictionary<string, bool>> GetArmedManyAsync(
+  public Task<CameraArmState?> GetStateAsync(string cameraId, CancellationToken ct) =>
+    Task.FromResult<CameraArmState?>(new CameraArmState(cameraId, Armed, ArmMode));
+
+  public Task<IReadOnlyDictionary<string, CameraArmState>> GetStatesAsync(
     IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
-    Task.FromResult<IReadOnlyDictionary<string, bool>>(
+    Task.FromResult<IReadOnlyDictionary<string, CameraArmState>>(
       cameraIds.Distinct(StringComparer.Ordinal)
-        .ToDictionary(id => id, _ => Armed, StringComparer.Ordinal));
+        .ToDictionary(id => id, id => new CameraArmState(id, Armed, ArmMode), StringComparer.Ordinal));
 }
 
 internal static class TestWiring
@@ -67,6 +70,15 @@ internal static class TestWiring
     VmsMapDbContext db, ICameraStateSource? cameraState = null,
     IDeviceSettingsSource? settings = null) =>
     new(db, settings ?? new NoDeviceSettings(), cameraState ?? new TestCameraState());
+
+  public static CameraArmingReconciler CameraArming(
+    VmsMapDbContext db, MapDb map, ICameraStateSource? cameraState = null,
+    ICfgArmingWriter? writer = null)
+  {
+    var state = cameraState ?? new TestCameraState();
+    return new(db, Arming(db, state), state, writer ?? new TestCfgArmingWriter(state), map,
+      NullLogger<CameraArmingReconciler>.Instance);
+  }
 
   public static ControlObjectQuery ControlObjects(
     VmsMapDbContext db, MapDb map, IRightsService? rights = null,
@@ -125,8 +137,26 @@ internal static class TestWiring
     {
       CameraFlags.Add((cameraId, armed));
       if (cameraState is TestCameraState test)
+      {
         test.Armed = armed;
+        test.ArmMode = armed ? "armed" : "disarmed";
+      }
       return Task.CompletedTask;
+    }
+
+    /// <summary>The derived writes, recorded the way VmsCfg records them: only a change counts.</summary>
+    public List<(string CameraId, bool Armed)> EffectiveFlags { get; } = [];
+
+    public Task<bool> SetCameraEffectiveArmedAsync(string cameraId, bool armed, CancellationToken ct)
+    {
+      if (cameraState is not TestCameraState test || test.ArmMode != "inherit")
+        return Task.FromResult(false);
+      if (test.Armed == armed)
+        return Task.FromResult(false);
+
+      test.Armed = armed;
+      EffectiveFlags.Add((cameraId, armed));
+      return Task.FromResult(true);
     }
   }
 

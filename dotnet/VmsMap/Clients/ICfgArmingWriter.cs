@@ -15,6 +15,13 @@ namespace VmsMap.Clients
     Task SetPartArmModeAsync(string cameraId, string token, string mode, CancellationToken ct);
 
     Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct);
+
+    /// <summary>
+    /// The flag the map derives for a camera that inherits its zone. It lands only while the camera
+    /// still inherits, and answers whether anything changed — a no-op announces nothing, which is
+    /// what ends the round of "map writes, event arrives, map looks again".
+    /// </summary>
+    Task<bool> SetCameraEffectiveArmedAsync(string cameraId, bool armed, CancellationToken ct);
   }
 
   internal sealed class VmsCfgArmingWriter : ICfgArmingWriter
@@ -42,6 +49,15 @@ namespace VmsMap.Clients
       await _cfg.SetCamStateAsync(
         new SetCamStateRequest { CameraId = cameraId, Armed = armed },
         cancellationToken: ct);
+    }
+
+    public async Task<bool> SetCameraEffectiveArmedAsync(
+      string cameraId, bool armed, CancellationToken ct)
+    {
+      var response = await _cfg.SetCamEffectiveArmingAsync(
+        new SetCamEffectiveArmingRequest { CameraId = cameraId, Armed = armed },
+        cancellationToken: ct);
+      return response.Changed;
     }
   }
 }

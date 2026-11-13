@@ -65,7 +65,7 @@ public class DemoSeederTests
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), geo);
     var updates = new MapUpdateService(map, tracks, states);
     var catalog = new TestCatalog(cameras);
-    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier(), TestWiring.CameraArming(db, map));
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,

@@ -37,6 +37,7 @@ namespace VmsMap.Domain.Control
     bool HasArming,
     bool Armed,
     string ArmingSource,
+    string ArmingSourceObjectId,
     bool CanControl)
   {
     public const string CameraPart = "device";
@@ -278,6 +279,7 @@ namespace VmsMap.Domain.Control
         false,
         false,
         string.Empty,
+        string.Empty,
         false);
 
       var complete = await CompleteAsync([row], caller, ct);
@@ -298,24 +300,16 @@ namespace VmsMap.Domain.Control
         .ToList();
       var settings = await _settings.ListManyAsync(cameraIds, ct);
 
-      var sensors = rows
-        .Where(r => string.Equals(r.PartKind, DigitalInputPart, StringComparison.Ordinal))
+      // Cameras and sensors resolve through one scheme: a camera's own mode, else the zone it
+      // stands in. One pass for the page.
+      var armables = rows
+        .Where(r => string.Equals(r.PartKind, DigitalInputPart, StringComparison.Ordinal)
+                    || string.Equals(r.PartKind, DevicePart, StringComparison.Ordinal))
         .Select(r => new ArmingSubject(r.ObjectId, r.SourceId, r.PartKind, r.PartToken))
         .ToList();
-      var arming = sensors.Count == 0
+      var arming = armables.Count == 0
         ? new Dictionary<string, NodeArmingInfo>(StringComparer.Ordinal)
-        : await _arming.ResolveManyAsync(sensors, ct);
-
-      // A camera's own flag, not the arming scheme: a space's armed property is a zone's, and a
-      // camera row must show what the camera itself says.
-      var cameraNodeIds = rows
-        .Where(r => string.Equals(r.PartKind, DevicePart, StringComparison.Ordinal))
-        .Select(r => r.SourceId)
-        .Distinct(StringComparer.Ordinal)
-        .ToList();
-      var cameraArmed = cameraNodeIds.Count == 0
-        ? new Dictionary<string, bool>(StringComparer.Ordinal)
-        : await _cameraState.GetArmedManyAsync(cameraNodeIds, ct);
+        : await _arming.ResolveManyAsync(armables, ct);
 
       var control = await _rights.AllowedAsync(
         rows.Select(r => r.ObjectId).ToList(), RightActions.Control, caller, ct);
@@ -332,12 +326,15 @@ namespace VmsMap.Domain.Control
 
         if (isCamera)
         {
+          var camera = arming.GetValueOrDefault(row.ObjectId);
           result.Add(row with
           {
             Configured = true,
             HasArming = true,
-            Armed = cameraArmed.GetValueOrDefault(row.SourceId),
-            ArmingSource = EffectiveArmingResolver.Camera,
+            ArmMode = camera?.Mode ?? Inherit,
+            Armed = camera?.Armed ?? false,
+            ArmingSource = camera?.Source ?? EffectiveArmingResolver.None,
+            ArmingSourceObjectId = camera?.SourceObjectId ?? string.Empty,
             CanControl = control.Contains(row.ObjectId),
           });
           continue;
@@ -352,6 +349,7 @@ namespace VmsMap.Domain.Control
           HasArming = isSensor,
           Armed = resolved?.Armed ?? false,
           ArmingSource = resolved?.Source ?? string.Empty,
+          ArmingSourceObjectId = resolved?.SourceObjectId ?? string.Empty,
           CanControl = control.Contains(row.ObjectId),
         });
       }
@@ -484,6 +482,7 @@ namespace VmsMap.Domain.Control
             false,
             false,
             string.Empty,
+            string.Empty,
             false));
         }
       }
@@ -569,6 +568,7 @@ namespace VmsMap.Domain.Control
           false,
           false,
           false,
+          string.Empty,
           string.Empty,
           false));
       }

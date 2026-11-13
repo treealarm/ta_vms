@@ -12,6 +12,7 @@ using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Demo;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 using VmsMap.Grpc;
 using VmsMap.PubSub;
 using MapProto = Vms.Map;
@@ -75,7 +76,7 @@ public class MapServiceReadsTests
     var updates = new MapUpdateService(map, tracks, states);
     var rights = new RightsService(db);
     var notifier = new TestRightsNotifier();
-    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier());
+    var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
     var arming = new TestCameraState();
     var alarms = TestWiring.Alarms(db, map, states, arming);
 
@@ -647,6 +648,7 @@ public class MapServiceReadsTests
 
     // Armed: the condition is live, so the acknowledgement is the store's to refuse.
     s.Arming.Armed = true;
+    s.Arming.ArmMode = ArmMode.Armed;
     pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
       Caller = Caller("alice"),

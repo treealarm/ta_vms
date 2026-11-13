@@ -127,6 +127,11 @@ namespace VmsMap.Grpc
       if (tx is not null)
         await tx.CommitAsync(context.CancellationToken);
 
+      // A node moved under another parent takes its subtree with it, and a camera standing in it
+      // may now be inside a zone — or outside one.
+      await _spatialDb.ReconcileArmingAsync(
+        updated.Select(o => o.id).ToList(), context.CancellationToken);
+
       return new MapProto.ObjectList { Objects = { updated.Select(ToProto) } };
     }
 

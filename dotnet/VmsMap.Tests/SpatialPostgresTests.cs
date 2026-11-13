@@ -94,7 +94,7 @@ public class SpatialPostgresTests
 
     return new Services(
       dataSource, db, map, updates,
-      new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier), notifier);
+      new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier, TestWiring.CameraArming(db, map)), notifier);
   }
 
   private static Space MapSpace(string name = "Main map") => new()

@@ -164,6 +164,7 @@ namespace VmsMap.Grpc
       HasArming = row.HasArming,
       Armed = row.Armed,
       ArmingSource = row.ArmingSource,
+      ArmingSourceObjectId = row.ArmingSourceObjectId,
       CanControl = row.CanControl,
     };
   }

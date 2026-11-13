@@ -57,7 +57,8 @@ public class SpaceArmingTests
     FakeSettings Settings,
     string PartId);
 
-  private static async Task<Fixture> CreateAsync(bool cameraArmed = false, string? armMode = null)
+  private static async Task<Fixture> CreateAsync(
+    bool cameraArmed = false, string? armMode = null, string cameraMode = ArmMode.Inherit)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -73,7 +74,7 @@ public class SpaceArmingTests
 
     var nodes = TestWiring.DeviceNodes(db, map, updates);
     var settings = new FakeSettings { ArmMode = armMode };
-    var cameraState = new TestCameraState(cameraArmed);
+    var cameraState = new TestCameraState(cameraArmed, cameraMode);
     var cfg = new TestWiring.TestCfgArmingWriter(cameraState);
     var arming = TestWiring.NodeArming(db, map, cfg, cameraState, settings);
 
@@ -238,7 +239,7 @@ public class SpaceArmingTests
   [Fact]
   public async Task ACameraPictureResolvesThroughItsOwner()
   {
-    var f = await CreateAsync(cameraArmed: true);
+    var f = await CreateAsync(cameraArmed: true, cameraMode: ArmMode.Armed);
     var space = await SpaceAsync(f, "Floor");
     var picture = await PlaceReferenceAsync(f, space.id!);
 
@@ -247,7 +248,22 @@ public class SpaceArmingTests
     Assert.True(view!.Found);
     Assert.True(view.Armable);
     Assert.True(view.Arming!.Armed);
-    Assert.Equal(EffectiveArmingResolver.Camera, view.Arming.Source);
+    Assert.Equal(EffectiveArmingResolver.Explicit, view.Arming.Source);
+    Assert.Equal(ArmMode.Armed, view.Mode);
+  }
+
+  [Fact]
+  public async Task ACameraOnInheritWithNoZoneIsOff()
+  {
+    var f = await CreateAsync(cameraArmed: true);
+    var space = await SpaceAsync(f, "Floor");
+    var picture = await PlaceReferenceAsync(f, space.id!);
+
+    var view = await f.Arming.GetAsync(picture, default);
+
+    Assert.False(view!.Arming!.Armed);
+    Assert.Equal(EffectiveArmingResolver.None, view.Arming.Source);
+    Assert.Equal(ArmMode.Inherit, view.Mode);
   }
 
   [Fact]

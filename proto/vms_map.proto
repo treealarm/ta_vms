@@ -872,11 +872,13 @@ message ControlObject {
   bool   configured    = 14;
   // Arming has no meaning for a relay: `has_arming` is false and the action is a state toggle.
   bool   has_arming    = 15;
-  // What it actually resolves to right now, and why. A camera answers with its own flag
-  // ("camera"); a sensor with the arming scheme ("explicit" | "space" | "camera").
+  // What it actually resolves to right now, and why: "explicit" | "space" | "camera" | "none".
+  // A camera and a sensor answer with the same scheme.
   bool   armed         = 16;
   string arming_source = 17;
   bool   can_control   = 18;
+  // The node whose row settled it, when the answer came from a zone; the panel groups by it.
+  string arming_source_object_id = 19;
 }
 
 message ListControlObjectsResponse {

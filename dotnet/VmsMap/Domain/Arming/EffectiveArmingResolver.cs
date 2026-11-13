@@ -13,7 +13,8 @@ namespace VmsMap.Domain.Arming
   /// names the node whose property settled it — the zone a browser groups alarms by — and is empty
   /// when the answer came from the part's own setting or the camera's flag.</summary>
   public sealed record NodeArmingInfo(
-    string ObjectId, bool Armed, string Source, string SourceObjectId = "");
+    string ObjectId, bool Armed, string Source, string SourceObjectId = "",
+    string Mode = ArmMode.Inherit);
 
   /// <summary>
   /// One device part whose arming is asked for: its node, and the source it belongs to. A list of
@@ -94,9 +95,12 @@ namespace VmsMap.Domain.Arming
         .Distinct(StringComparer.Ordinal)
         .ToList();
       var settings = await _settings.ListManyAsync(cameraIds, ct);
+      // The camera's mode rides the same bulk read as its flag: a camera node's mode is its own,
+      // and an input's is its settings row.
+      var states = await _cameraState.GetStatesAsync(cameraIds, ct);
 
-      // The mode each part is configured with. Only an input has one; a relay's settings row is
-      // constrained to inherit, and a camera node has no part settings at all.
+      // The mode each part is configured with. Only an input has a settings row; a relay's is
+      // constrained to inherit, and a camera's mode lives with its state.
       var modes = new Dictionary<(string, string), string>();
       foreach (var subject in subjects)
       {
@@ -113,11 +117,14 @@ namespace VmsMap.Domain.Arming
       var inheriting = new List<ArmingSubject>();
       foreach (var subject in subjects)
       {
-        var mode = modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmMode.Inherit;
+        var mode = string.Equals(subject.PartKind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
+          ? CameraMode(states, subject.SourceId)
+          : modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmMode.Inherit;
+
         if (string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal))
-          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit);
+          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit, string.Empty, mode);
         else if (string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
-          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, false, Explicit);
+          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, false, Explicit, string.Empty, mode);
         else
           inheriting.Add(subject);
       }
@@ -131,28 +138,43 @@ namespace VmsMap.Domain.Arming
         .ToList();
       var spaceArmed = await SpaceArmedManyAsync(inheritCameraIds, ct);
 
-      var needCamera = inheritCameraIds
-        .Where(id => spaceArmed.GetValueOrDefault(id) is null)
-        .ToList();
-      var cameraArmed = needCamera.Count == 0
-        ? new Dictionary<string, bool>(StringComparer.Ordinal)
-        : await _cameraState.GetArmedManyAsync(needCamera, ct);
-
       foreach (var subject in inheriting)
       {
         if (spaceArmed.GetValueOrDefault(subject.SourceId) is { } answer)
         {
           result[subject.ObjectId] = new NodeArmingInfo(
             subject.ObjectId, answer.Armed, Space, Utils.ConvertGuidToObjectId(answer.ObjectId));
+          continue;
         }
-        else
-        {
-          result[subject.ObjectId] = new NodeArmingInfo(
-            subject.ObjectId, cameraArmed.GetValueOrDefault(subject.SourceId), Camera);
-        }
+
+        // Nothing above the camera is set. A camera is then off: its own flag is the answer the
+        // map derives from this very walk, so reading it back would turn the derivation into a
+        // loop. A sensor under that camera still follows the flag, which is the camera's effective
+        // arming and not a second opinion.
+        result[subject.ObjectId] =
+          string.Equals(subject.PartKind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
+            ? new NodeArmingInfo(subject.ObjectId, false, None)
+            : new NodeArmingInfo(
+                subject.ObjectId, states.GetValueOrDefault(subject.SourceId)?.Armed ?? false, Camera);
       }
 
       return result;
+    }
+
+    /// <summary>The camera's own mode, `inherit` when it never had a state row.</summary>
+    private static string CameraMode(
+      IReadOnlyDictionary<string, CameraArmState> states, string cameraId) =>
+      states.GetValueOrDefault(cameraId)?.ArmMode ?? ArmMode.Inherit;
+
+    /// <summary>
+    /// What a zone puts a camera at: the nearest explicit row above its reference replica, or off
+    /// when nothing above it is set. This is the value the map writes into the camera's flag, so
+    /// the services that cannot see the map read the same answer.
+    /// </summary>
+    public async Task<bool> ZoneArmedAsync(string cameraId, CancellationToken ct)
+    {
+      var answers = await SpaceArmedManyAsync([cameraId], ct);
+      return answers.GetValueOrDefault(cameraId)?.Armed ?? false;
     }
 
     /// <summary>Where one camera's inherited answer came from: the armed value and the node that
