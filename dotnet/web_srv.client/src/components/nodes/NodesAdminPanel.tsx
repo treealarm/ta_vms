@@ -368,7 +368,7 @@ export default function NodesAdminPanel() {
                   wherever an administrator selected it. A relay or a space draws nothing. */}
               {selectedCamera || isPart ? (
                 <Box>
-                  <Typography variant="subtitle2">{t('objectSettings.arming')}</Typography>
+                  <Typography variant="subtitle2">{t('objectSettings.title')}</Typography>
                   <NodeSettingsCard nodeId={selected.id} />
                 </Box>
               ) : null}

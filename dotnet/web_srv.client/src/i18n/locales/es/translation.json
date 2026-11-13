@@ -157,6 +157,7 @@
     "tabMaster": "Maestra"
   },
   "objectSettings": {
+    "title": "Ajustes del objeto",
     "arming": "Modo de guardia",
     "inherit": "Heredar",
     "armed": "Armado",

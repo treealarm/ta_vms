@@ -164,6 +164,12 @@ export const ntTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundColor: panel.elevated,
+          // The label is always shrunk, so it is painted twice: as the floating label and inside
+          // the notch's legend, where it shows from under the label as a ghost copy of itself. The
+          // legend keeps its width — that width is the gap in the border — but not its text.
+          '& legend span': {
+            color: 'transparent',
+          },
           '& fieldset': {
             borderColor: panel.border,
           },

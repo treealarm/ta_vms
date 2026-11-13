@@ -157,6 +157,7 @@
     "tabMaster": "Master"
   },
   "objectSettings": {
+    "title": "Object settings",
     "arming": "Arming",
     "inherit": "Inherit",
     "armed": "Armed",
