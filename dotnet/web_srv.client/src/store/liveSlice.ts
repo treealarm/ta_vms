@@ -170,17 +170,19 @@ export const setCameraContinuousRecording = createAsyncThunk(
   }
 )
 
-// Arm/disarm plus the prealarm-baseline profile flip, used by the camera card --
-// the only place arming is offered, because that is where an operator can see the
-// video they are judging: arming puts non-recording streams on the
+// The prealarm-baseline profile flip that follows a camera being put on guard or taken off,
+// used by the camera card -- the only place arming is offered, because that is where an
+// operator can see the video they are judging: arming puts non-recording streams on the
 // prealarm profile (and disarming reverts prealarm back to off). Without a
 // baseline profile the stream pipeline is torn down whenever the alarm override
 // expires (recording off<->continuous flapping), which kills the MediaMTX push
 // mid-stream and the analytics RTSP reader with it.
-export const setArmedWithPrealarmBaseline = createAsyncThunk(
-  'live/setArmedWithPrealarmBaseline',
+//
+// `armed` is what the camera *resolves to*, not the mode that was written: an explicit on, an
+// inherited one, or a zone's are the same decision for the streams.
+export const applyPrealarmBaseline = createAsyncThunk(
+  'live/applyPrealarmBaseline',
   async ({ cameraId, armed }: { cameraId: string; armed: boolean }, { dispatch, getState }) => {
-    await dispatch(setArmed({ cameraId, armed }))
     const camera = (getState() as { live: LiveState }).live.cameraStatesById[cameraId]
     const isStreamRecording = (s: CameraStreamDto) =>
       (((s.overrideProfile ?? s.recordingProfile)?.mode) ?? 'off') !== 'off'

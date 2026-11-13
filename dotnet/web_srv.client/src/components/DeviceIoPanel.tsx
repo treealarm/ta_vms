@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { Alert, Box, CircularProgress, Stack, Switch, Tooltip, Typography } from '@mui/material'
+import { useState } from 'react'
+import { Alert, Box, CircularProgress, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import { setDigitalInputArmMode } from '../api/deviceIoApi'
-import type { DigitalInputDto, RelayOutputDto } from '../dto/dtos'
+import type { DeviceArmMode, DigitalInputDto, RelayOutputDto } from '../dto/dtos'
 import type { DeviceIoLiveState } from '../hooks/useDeviceIoLive'
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
 
@@ -67,38 +67,29 @@ function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: Rel
 }
 
 // A sensor row on the camera card: the contact it reports, and — on a line of its own, under the
-// caption "Guard" — the switch that arms it. Arming from the monitor is ordinary operator work;
-// the switch is kept off the token line because beside the live 0/1 it read as "change what the
-// sensor says". The switch is checked by what the arming resolves to, not by the configured mode:
-// 'inherit' under an armed camera means on guard, and showing that as off would be a lie.
+// caption "Guard" — the three-position control that decides its arming. Three, not a switch: an
+// explicit on or off is the operator's decision and outranks the camera (and the zone it stands
+// in), while `Inherit` hands the input back to them. The caption beside it is what the mode
+// actually resolves to, which is not the mode itself: `Inherit` under an armed camera is on guard.
 function DigitalInputRow({
   cameraId, input, onChanged,
 }: { cameraId: string; input: DigitalInputDto; onChanged: () => void }) {
   const { t } = useTranslation()
-  // The click answers at once; the next read replaces it, and a refusal drops it back to what the
-  // server still says, so the switch never keeps a promise the server did not make.
-  const [optimistic, setOptimistic] = useState<boolean | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (optimistic !== null && input.armed === optimistic) setOptimistic(null)
-  }, [input.armed, optimistic])
-
-  const armed = optimistic ?? input.armed
+  const armed = input.armed
   const showGuard = input.alarmEnabled === true
+  const mode = input.armMode ?? 'inherit'
 
-  const toggle = async () => {
-    const next = !(armed === true)
+  const apply = async (next: DeviceArmMode) => {
     setPending(true)
     setError(null)
-    setOptimistic(next)
     try {
-      await setDigitalInputArmMode(cameraId, input.token, next ? 'armed' : 'disarmed')
+      await setDigitalInputArmMode(cameraId, input.token, next)
       onChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
-      setOptimistic(null)
       onChanged()
     } finally {
       setPending(false)
@@ -113,13 +104,18 @@ function DigitalInputRow({
         ? (armed ? t('onvifSettings.deviceIoGuardOnCamera') : t('onvifSettings.deviceIoGuardOffCamera'))
         : (armed ? t('onvifSettings.deviceIoGuardOn') : t('onvifSettings.deviceIoGuardOff'))
 
-  const guardSwitch = (
-    <Switch
+  const guardSelect = (
+    <Select
       size="small"
-      checked={armed === true}
+      value={mode}
       disabled={pending || !input.canControl}
-      onChange={() => void toggle()}
-    />
+      onChange={(event) => void apply(event.target.value as DeviceArmMode)}
+      sx={{ minWidth: 104, fontSize: '0.75rem' }}
+    >
+      <MenuItem value="inherit">{t('objectSettings.inherit')}</MenuItem>
+      <MenuItem value="armed">{t('objectSettings.armed')}</MenuItem>
+      <MenuItem value="disarmed">{t('objectSettings.disarmed')}</MenuItem>
+    </Select>
   )
 
   return (
@@ -145,8 +141,8 @@ function DigitalInputRow({
           <Typography variant="caption" color="text.secondary">
             {t('onvifSettings.deviceIoGuardLabel')}
           </Typography>
-          {input.canControl ? guardSwitch : (
-            <Tooltip title={t('onvifSettings.deviceIoNoControl')}><span>{guardSwitch}</span></Tooltip>
+          {input.canControl ? guardSelect : (
+            <Tooltip title={t('onvifSettings.deviceIoNoControl')}><span>{guardSelect}</span></Tooltip>
           )}
           <Typography
             variant="caption"

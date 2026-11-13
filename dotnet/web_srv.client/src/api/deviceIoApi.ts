@@ -2,14 +2,15 @@ import { apiFetch } from './apiFetch'
 import type { DeviceArmMode } from '../dto/dtos'
 
 /**
- * Arm or disarm one configured digital input of a camera. Only the mode moves here — the name,
- * the trigger and the alarm flag are the administrator's settings, saved through
- * `PUT .../settings`. `inherit` is not an operator's command, so the type excludes it.
+ * The arming of one configured digital input: an explicit on or off, which outranks the camera
+ * and the zone it stands in, or `inherit`, which hands it back to them. Only the mode moves here —
+ * the name, the trigger and the alarm flag are the administrator's settings, saved through
+ * `PUT .../settings`.
  */
 export async function setDigitalInputArmMode(
   cameraId: string,
   token: string,
-  armMode: Extract<DeviceArmMode, 'armed' | 'disarmed'>,
+  armMode: DeviceArmMode,
 ): Promise<void> {
   await apiFetch(
     `/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/${encodeURIComponent(token)}/arm-mode`,

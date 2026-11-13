@@ -10,6 +10,8 @@ import {
   Chip,
   Divider,
   IconButton,
+  Menu,
+  MenuItem,
   Stack,
   ToggleButton,
   ToggleButtonGroup,
@@ -38,6 +40,7 @@ import {
   type MonitorKind,
   recordableStreams,
   streamSize,
+  type CameraArmMode,
   type CameraSetupDto,
   type CameraStreamDto,
 } from '../dto/dtos'
@@ -61,7 +64,9 @@ import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
 import { wallPlaylistRequestBounds } from '../utils/playlistUrl'
 import { selectWallSeekMs } from '../store/wallPlaybackSlice'
 import { useAppDispatch, useAppSelector } from '../store'
-import { fetchCameraState, setArmedWithPrealarmBaseline, setCameraContinuousRecording } from '../store/liveSlice'
+import { applyPrealarmBaseline, fetchCameraState, setCameraContinuousRecording } from '../store/liveSlice'
+import { getDeviceSettings, setDeviceSettings } from '../api/controlApi'
+import { errorText } from '../api/requestJson'
 import { setMonitorSlotStream } from '../store/monitorsSlice'
 import { copyToClipboard } from '../utils/copyToClipboard'
 import type { DrawableBox } from './bbox/bboxDraw'
@@ -184,7 +189,12 @@ export default function CameraUnifiedCard({
   const videoAreaRef = useRef<HTMLDivElement>(null)
 
   const [onvifRtsp, setOnvifRtsp] = useState('')
-  const [pendingArmed, setPendingArmed] = useState<boolean | null>(null)
+  // The camera's own arming mode and the menu it is chosen from. The mode is fetched only while
+  // the side panel or that menu is open: most tiles never show it, and a poll per live tile would
+  // be a round trip for a value nobody reads.
+  const [guardMode, setGuardMode] = useState<CameraArmMode | null>(null)
+  const [pendingGuard, setPendingGuard] = useState(false)
+  const [guardMenuAt, setGuardMenuAt] = useState<HTMLElement | null>(null)
   const [copied, setCopied] = useState(false)
   const [similarError, setSimilarError] = useState<string | null>(null)
   const [trackingError, setTrackingError] = useState<string | null>(null)
@@ -197,7 +207,7 @@ export default function CameraUnifiedCard({
   // out of an unknown state, silently detaching a camera the zone had put on guard. So the guard
   // stays shut until the first answer.
   const armedKnown = merged.armed !== undefined && merged.armed !== null
-  const effectiveArmed = pendingArmed !== null ? pendingArmed : merged.armed === true
+  const effectiveArmed = merged.armed === true
   // An open recording schedule window forces continuous recording on every stream, ahead of the
   // profile and of any manual or alarm override.
   const scheduleActive = merged.scheduleActive === true
@@ -208,11 +218,42 @@ export default function CameraUnifiedCard({
     const size = streamSize(s)
     return size ? `${s.streamName} ${size.width}×${size.height}` : s.streamName
   }
-  const armDisarm = (enabled: boolean) => {
+  // Three modes, not a switch: an explicit on or off is the operator's decision and outranks the
+  // zone the camera stands in, and `Inherit` hands it back to that zone. The mode is read while
+  // either the panel or the menu that writes it is open.
+  const guardOpen = panelOpen || guardMenuAt !== null
+  useEffect(() => {
+    if (!guardOpen) return
+    let live = true
+    const load = () => {
+      void getDeviceSettings(camera.cameraId, 'device', '')
+        .then((settings) => { if (live) setGuardMode(settings.armMode) })
+        .catch(() => { /* the control stays "unknown"; the server refuses a write it must */ })
+    }
+    load()
+    const timer = setInterval(load, 5000)
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [guardOpen, camera.cameraId])
+
+  const setGuard = async (next: CameraArmMode) => {
     if (isDisabled) return
-    setPendingArmed(enabled)
-    void dispatch(setArmedWithPrealarmBaseline({ cameraId: merged.cameraId, armed: enabled }))
-      .finally(() => setPendingArmed(null))
+    setPendingGuard(true)
+    setGuardMenuAt(null)
+    try {
+      const saved = await setDeviceSettings(camera.cameraId, 'device', '', { armMode: next })
+      setGuardMode(saved.armMode)
+      // The flag the strip paints follows the mode at once, not at the next poll; the streams
+      // follow the flag, whether the mode set it or the zone did.
+      await dispatch(fetchCameraState(camera.cameraId))
+      await dispatch(applyPrealarmBaseline({ cameraId: camera.cameraId, armed: saved.armed }))
+    } catch (e) {
+      setSimilarError(errorText(e))
+    } finally {
+      setPendingGuard(false)
+    }
   }
 
   const recordingMode = merged.recordingMode ?? 'off'
@@ -715,32 +756,49 @@ export default function CameraUnifiedCard({
           {(hasCellGroup || hasDeviceGroup) && <Divider sx={GROUP_DIVIDER_SX} />}
 
           {/* Armed gates both ONVIF events and video analytics now, so it's available for every
-              camera — not just ONVIF-managed ones. */}
+              camera — not just ONVIF-managed ones. The icon paints what the camera resolves to and
+              opens the three modes: a switch would have no third position, and `Inherit` is one. */}
           <Tooltip
             title={
               !armedKnown
                 ? t('cameraCard.guardUnknownTip')
                 : isDisabled
                   ? t('cameraCard.cameraDisabledTip')
-                  : (effectiveArmed ? t('cameraCard.armedTip') : t('cameraCard.disarmedTip'))
+                  : t('cameraCard.guardSection')
             }
             placement="right"
           >
             <span>
               <IconButton
                 size="small"
-                disabled={pendingArmed !== null || isDisabled || !armedKnown}
-                onClick={() => armDisarm(!effectiveArmed)}
+                disabled={isDisabled || !armedKnown || pendingGuard}
+                onClick={(event) => setGuardMenuAt(event.currentTarget)}
                 sx={{
                   ...BTN_SX,
                   ...(effectiveArmed && !isDisabled ? { color: '#ff9800' } : {}),
-                  ...((pendingArmed !== null || isDisabled || !armedKnown) ? { opacity: 0.35 } : {}),
+                  ...((isDisabled || !armedKnown || pendingGuard) ? { opacity: 0.35 } : {}),
                 }}
               >
                 <SecurityIcon sx={{ fontSize: '0.95rem' }} />
               </IconButton>
             </span>
           </Tooltip>
+          <Menu
+            anchorEl={guardMenuAt}
+            open={guardMenuAt !== null}
+            onClose={() => setGuardMenuAt(null)}
+          >
+            {(['inherit', 'armed', 'disarmed'] as CameraArmMode[]).map((mode) => (
+              <MenuItem
+                key={mode}
+                selected={guardMode === mode}
+                disabled={pendingGuard}
+                onClick={() => void setGuard(mode)}
+              >
+                {t(`objectSettings.${mode}`)}
+              </MenuItem>
+            ))}
+          </Menu>
 
           {/* Always rendered, even with nothing to record: hiding it reads as "this camera cannot
               be recorded at all", so it stays put and greys out with a tooltip that says why. */}
@@ -993,23 +1051,26 @@ export default function CameraUnifiedCard({
               <Typography component="span" sx={CAPTION_SX}>
                 {t('cameraCard.guardSection')} {t('cameraCard.cameraWide')}
               </Typography>
+              {/* Three positions, the mode the camera is written with — not the effective flag,
+                  which the caption under the icon says and which a zone may settle. */}
               <ToggleButtonGroup
-                value={effectiveArmed ? 'armed' : 'disarmed'}
+                value={guardMode ?? ''}
                 exclusive
-                disabled={pendingArmed !== null || isDisabled || !armedKnown}
-                onChange={(_, v) => v && armDisarm(v === 'armed')}
+                disabled={pendingGuard || isDisabled || guardMode === null}
+                onChange={(_, v: CameraArmMode | null) => v && void setGuard(v)}
                 size="small" fullWidth
                 sx={{
                   '& .MuiToggleButton-root': {
-                    flex: 1, py: 0.25, fontSize: '0.7rem',
+                    flex: 1, py: 0.25, fontSize: '0.65rem',
                     color: alpha(W, 0.6), borderColor: alpha(W, 0.2),
                     '&.Mui-selected': { color: W, bgcolor: alpha(W, 0.15), borderColor: alpha(W, 0.35) },
                   },
                   '& .MuiToggleButton-root[value="armed"].Mui-selected': { color: '#ff9800', borderColor: '#ff9800' },
                 }}
               >
-                <ToggleButton value="armed">{t('cameraCard.armedToggle')}</ToggleButton>
-                <ToggleButton value="disarmed">{t('cameraCard.disarmedToggle')}</ToggleButton>
+                <ToggleButton value="inherit">{t('objectSettings.inherit')}</ToggleButton>
+                <ToggleButton value="armed">{t('objectSettings.armed')}</ToggleButton>
+                <ToggleButton value="disarmed">{t('objectSettings.disarmed')}</ToggleButton>
               </ToggleButtonGroup>
             </Box>
 
