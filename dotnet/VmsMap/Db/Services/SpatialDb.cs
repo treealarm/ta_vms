@@ -1053,6 +1053,11 @@ namespace VmsMap.Db
         await _db.DeviceDiagramParts
           .Where(part => subtreeGuids.Contains(part.diagram_object_id))
           .ToListAsync(ct));
+      // The parts go first, in a statement of their own: PostgreSQL cascades them away with their
+      // diagram, and EF does not model that foreign key, so one batch may delete the diagram first
+      // — the parts' own delete then affects no row and throws a concurrency error.
+      await _db.SaveChangesAsync(ct);
+
       _db.DeviceDiagrams.RemoveRange(
         await _db.DeviceDiagrams
           .Where(diagram => subtreeGuids.Contains(diagram.object_id))

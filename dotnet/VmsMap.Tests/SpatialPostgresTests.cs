@@ -466,4 +466,62 @@ public class SpatialPostgresTests
     Assert.Empty(await test.Db.AlarmStates.Where(s => nodes.Contains(s.id)).ToListAsync());
     Assert.Empty(await test.Db.Events.Where(e => nodes.Contains(e.object_id)).ToListAsync());
   }
+
+  // A picture with a device diagram under it is the ordinary state of a camera the demo installed.
+  // The schema cascades a diagram's parts away with the diagram, and EF does not model that foreign
+  // key: in one batch it may delete the diagram first, and the parts' own delete then affects no
+  // row and throws. Only PostgreSQL shows this, because the in-memory provider has no cascades.
+  [Fact]
+  public async Task RemovingAPictureTakesItsDiagramAndItsPartsWithoutTrippingTheCascade()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var cameraId = TestCameras.One;
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(cameraId, map.Id, reference: true), CancellationToken.None);
+
+    var picture = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == cameraId);
+    var diagram = Guid.Parse(DeviceObjectId.ForDeviceDiagram(
+      DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot));
+    var part = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+    var replica = Guid.NewGuid();
+
+    test.Db.Markers.AddRange(
+      new DBMarker { id = diagram, parent_id = picture.object_id, name = "Camera / rear panel" },
+      new DBMarker { id = part, parent_id = Guid.Parse(CameraObjectId.For(cameraId)), name = "Input 1" },
+      new DBMarker { id = replica, parent_id = diagram, owner_id = part, name = "Input 1" });
+    // The registry rows point at objects, and EF does not model that either: each step is saved
+    // once its parents are in the database.
+    await test.Db.SaveChangesAsync();
+
+    test.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = diagram,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = cameraId,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await test.Db.SaveChangesAsync();
+
+    test.Db.DeviceDiagramParts.Add(new DBDeviceDiagramPart
+    {
+      diagram_object_id = diagram,
+      region_key = "input",
+      part_object_id = part,
+      replica_object_id = replica,
+    });
+    await test.Db.SaveChangesAsync();
+
+    Assert.True(await test.Spatial.RemovePlacementAsync(
+      cameraId, Guid.Parse(map.Id), CancellationToken.None));
+
+    Assert.Empty(await test.Db.DeviceDiagramParts.ToListAsync());
+    Assert.Empty(await test.Db.DeviceDiagrams.ToListAsync());
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == diagram || m.id == replica));
+  }
 }
