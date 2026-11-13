@@ -9,8 +9,11 @@ using VmsMap.Db;
 
 namespace VmsMap.Domain.Arming
 {
-  /// <summary>What a node's arming resolves to, and where the answer came from.</summary>
-  public sealed record NodeArmingInfo(string ObjectId, bool Armed, string Source);
+  /// <summary>What a node's arming resolves to, and where the answer came from. `SourceObjectId`
+  /// names the node whose property settled it — the zone a browser groups alarms by — and is empty
+  /// when the answer came from the part's own setting or the camera's flag.</summary>
+  public sealed record NodeArmingInfo(
+    string ObjectId, bool Armed, string Source, string SourceObjectId = "");
 
   /// <summary>
   /// One device part whose arming is asked for: its node, and the source it belongs to. A list of
@@ -39,10 +42,14 @@ namespace VmsMap.Domain.Arming
     public const string Explicit = "explicit";
     public const string Space = "space";
     public const string Camera = "camera";
+    /// <summary>A container took the answer from an ancestor rather than from itself.</summary>
+    public const string Inherited = "inherited";
+    /// <summary>Nothing above the container is set: it follows whoever is above it, and nobody is.</summary>
+    public const string None = "none";
 
     // The property an administrator puts on a space to arm it. The camera's own node carries the
     // same property as a mirror of camera_states.armed; a space is not in camera_states.
-    public const string ArmedProperty = "armed";
+    public const string ArmedProperty = ArmMode.ArmedProperty;
 
     private readonly VmsMapDbContext _db;
     private readonly IDeviceSettingsSource _settings;
@@ -109,10 +116,10 @@ namespace VmsMap.Domain.Arming
       var inheriting = new List<ArmingSubject>();
       foreach (var subject in subjects)
       {
-        var mode = modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmInherit;
-        if (string.Equals(mode, ArmArmed, StringComparison.Ordinal))
+        var mode = modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmMode.Inherit;
+        if (string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal))
           result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit);
-        else if (string.Equals(mode, ArmDisarmed, StringComparison.Ordinal))
+        else if (string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
           result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, false, Explicit);
         else
           inheriting.Add(subject);
@@ -136,25 +143,34 @@ namespace VmsMap.Domain.Arming
 
       foreach (var subject in inheriting)
       {
-        if (spaceArmed.GetValueOrDefault(subject.SourceId) is { } armed)
-          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, armed, Space);
+        if (spaceArmed.GetValueOrDefault(subject.SourceId) is { } answer)
+        {
+          result[subject.ObjectId] = new NodeArmingInfo(
+            subject.ObjectId, answer.Armed, Space, Utils.ConvertGuidToObjectId(answer.ObjectId));
+        }
         else
+        {
           result[subject.ObjectId] = new NodeArmingInfo(
             subject.ObjectId, cameraArmed.GetValueOrDefault(subject.SourceId), Camera);
+        }
       }
 
       return result;
     }
+
+    /// <summary>Where one camera's inherited answer came from: the armed value and the node that
+    /// carries it, so the caller can name the zone rather than only say "space".</summary>
+    private sealed record SpaceAnswer(bool Armed, Guid ObjectId);
 
     /// <summary>
     /// Walks up from each camera's reference replica. The nearest explicit armed property wins, so
     /// a disarmed floor inside an armed building is disarmed; a space with no property is skipped
     /// rather than read as false. One query per tree level covers every camera still looking.
     /// </summary>
-    private async Task<Dictionary<string, bool?>> SpaceArmedManyAsync(
+    private async Task<Dictionary<string, SpaceAnswer?>> SpaceArmedManyAsync(
       IReadOnlyCollection<string> cameraIds, CancellationToken ct)
     {
-      var result = new Dictionary<string, bool?>(StringComparer.Ordinal);
+      var result = new Dictionary<string, SpaceAnswer?>(StringComparer.Ordinal);
 
       var references = await _db.CameraPlacements.AsNoTracking()
         .Where(p => cameraIds.Contains(p.camera_id) && p.is_reference)
@@ -200,7 +216,7 @@ namespace VmsMap.Domain.Arming
           if (byNode.TryGetValue(current[cameraId], out var value)
               && bool.TryParse(value, out var armed))
           {
-            result[cameraId] = armed;
+            result[cameraId] = new SpaceAnswer(armed, current[cameraId]);
             current.Remove(cameraId);
           }
         }
@@ -233,10 +249,47 @@ namespace VmsMap.Domain.Arming
       return result;
     }
 
-    // Kept as constants rather than reaching into VmsCfg's rules: VmsMap must not link VmsCfg's
-    // assembly for three strings, and these are the wire values the contract names.
-    private const string ArmInherit = "inherit";
-    private const string ArmArmed = "armed";
-    private const string ArmDisarmed = "disarmed";
+    /// <summary>
+    /// The same question for a container — a space, or a zone drawn on the map. The walk starts at
+    /// the node itself: a container's own property is what an operator set, and an ancestor's is
+    /// what it follows.
+    /// </summary>
+    public async Task<NodeArmingInfo?> ResolveSpaceAsync(string objectId, CancellationToken ct)
+    {
+      var guid = Utils.ConvertObjectIdToGuid(objectId);
+      if (guid is null)
+        return null;
+
+      var start = await _db.Markers.AsNoTracking()
+        .FirstOrDefaultAsync(m => m.id == guid.Value, ct);
+      if (start is null)
+        return null;
+
+      // The tree's depth, not its size: one query per level, and a visited set in case the data
+      // ever holds a cycle.
+      var visited = new HashSet<Guid>();
+      Guid? current = start.id;
+      var here = true;
+      while (current is { } node && visited.Add(node))
+      {
+        var value = await _db.Properties.AsNoTracking()
+          .Where(p => p.object_id == node && p.prop_name == ArmedProperty)
+          .Select(p => p.str_val)
+          .FirstOrDefaultAsync(ct);
+        if (bool.TryParse(value, out var armed))
+        {
+          return new NodeArmingInfo(
+            objectId, armed, here ? Explicit : Inherited, Utils.ConvertGuidToObjectId(node));
+        }
+
+        current = (await _db.Markers.AsNoTracking()
+          .Where(m => m.id == node)
+          .Select(m => m.parent_id)
+          .FirstOrDefaultAsync(ct));
+        here = false;
+      }
+
+      return new NodeArmingInfo(objectId, false, None);
+    }
   }
 }

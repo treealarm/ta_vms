@@ -414,20 +414,10 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.GetNodeArmingResponse> GetNodeArming(
       MapProto.GetNodeArmingRequest request, ServerCallContext context)
     {
-      var arming = await _armingResolver.ResolveAsync(request.ObjectId, context.CancellationToken);
-      if (arming is null)
-        return new MapProto.GetNodeArmingResponse { Found = false };
-
-      return new MapProto.GetNodeArmingResponse
-      {
-        Found = true,
-        Arming = new MapProto.NodeArming
-        {
-          ObjectId = arming.ObjectId,
-          Armed = arming.Armed,
-          Source = arming.Source,
-        },
-      };
+      var view = await _nodeArming.GetAsync(request.ObjectId, context.CancellationToken);
+      return view is null
+        ? new MapProto.GetNodeArmingResponse { Found = false }
+        : ToArming(view);
     }
 
     public override async Task<MapProto.GetDevicePartArmingResponse> GetDevicePartArming(

@@ -170,6 +170,12 @@ namespace VmsMap.Adapter
         await nodes.SetPropertyAsync(
           cameraId, "armed", armed.ToString(System.Globalization.CultureInfo.InvariantCulture), ct);
 
+        // A camera that becomes armed with a sensor already in its trigger position must raise the
+        // alarm now: its flag is what an input on `inherit` resolves to, and no settings event is
+        // coming to re-check it.
+        var sensorAlarms = scope.ServiceProvider.GetRequiredService<SensorAlarmService>();
+        await sensorAlarms.ReconcileCameraAsync(cameraId, ct);
+
         return TopicResponseAction.Success;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)

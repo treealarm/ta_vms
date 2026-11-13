@@ -107,9 +107,17 @@ service MapService {
   // The alarm counters of the named nodes. An empty list asks for every alarmed node the caller
   // may see: the operator's alarm list is not a set of ids the browser already knows.
   rpc GetAlarmedStates(GetStatesRequest) returns (AlarmStateList);
-  // The effective arming of one device node: an input's own setting when it has one, otherwise the
-  // nearest armed property of the space the camera stands in, otherwise the camera's own arming.
+  // The effective arming of one node. For a device part: its own setting when it has one,
+  // otherwise the nearest armed property of the space the camera stands in, otherwise the
+  // camera's own arming. For a container (a space, or a zone drawn on the map): the nearest armed
+  // property of the node itself or an ancestor. `armable` says whether the node takes part in the
+  // arming scheme at all.
   rpc GetNodeArming(GetNodeArmingRequest) returns (GetNodeArmingResponse);
+  // The one write behind every guard switch. A device delegates to VmsCfg (the input's arm_mode,
+  // or the camera's flag); a container writes the `armed` property on its node and asks the map to
+  // re-check the sensors already in their trigger position. Answers what the node resolves to
+  // afterwards, so the browser never computes the effective state itself.
+  rpc SetNodeArming(SetNodeArmingRequest) returns (GetNodeArmingResponse);
   // The same answer for a device part addressed the way a device card knows it: by its source and
   // token, because the card holds the device, not the part's node id. `source_kind` is "camera"
   // today; another kind of device hub joins the same registry under a kind of its own.
@@ -135,6 +143,12 @@ service MapService {
   rpc AcknowledgeAlarm(AcknowledgeAlarmRequest) returns (Alarm);
   rpc CloseAlarm(CloseAlarmRequest) returns (Alarm);
   rpc RaiseAlarm(RaiseAlarmRequest) returns (Alarm);
+  // The operator accepts a whole zone: every open alarm of the devices under one node is
+  // acknowledged in one pass. Partial success is the norm, so the answer is per alarm rather than
+  // a single status: an alarm still on guard, or one another operator already dealt with, is
+  // reported and does not stop the rest.
+  rpc AcknowledgeSubtreeAlarms(AcknowledgeSubtreeAlarmsRequest)
+      returns (AcknowledgeSubtreeAlarmsResponse);
 
   rpc GetEventsByFilter(GetEventsByFilterRequest) returns (EventList);
   // One event by id. The event router trusts the journal, not the bus: map-event-created carries
@@ -755,13 +769,18 @@ message AlarmState {
   uint32 version = 4;
 }
 
-// What a device node's arming currently resolves to, and where the answer came from. `source` is
-// "explicit" for the part's own arm_mode, "space" for an armed property inherited from the space
-// of the camera's reference replica, and "camera" for the camera's own armed flag.
+// What a node's arming currently resolves to, and where the answer came from.
 message NodeArming {
   string object_id = 1;
   bool   armed     = 2;
+  // "explicit" for the node's own setting — the part's arm_mode, the camera's flag, or the
+  // container's own property; "space" for an armed property found above the camera's reference
+  // replica; "inherited" for one found above a container's own node; "camera" for the camera's
+  // flag standing in for a part with no answer of its own; "none" when nothing above is set.
   string source    = 3;
+  // The node whose property settled the answer — the zone a browser groups alarms by. Set when
+  // the answer came from a container's `armed` property, empty otherwise.
+  string source_object_id = 4;
 }
 
 message GetNodeArmingRequest {
@@ -769,9 +788,27 @@ message GetNodeArmingRequest {
 }
 
 message GetNodeArmingResponse {
-  // False when the id is not a device node; arming has no meaning for a space or a server.
+  // False when the id is not a node the caller can see.
   bool found        = 1;
   NodeArming arming = 2;
+  // Whether the node takes part in the arming scheme at all: a container that no camera stands
+  // through, a relay and a landmark do not. Kept apart from `configured`: a sensor the
+  // administrator has not configured yet is armable in kind but has nowhere to keep a mode.
+  bool armable      = 3;
+  bool configured   = 4;
+  // The mode written on the node itself: "armed" | "disarmed" | "inherit" | "" for a device whose
+  // mode lives in VmsCfg and is read separately.
+  string mode       = 5;
+  // The modes this node accepts. An operator never writes "inherit" to a device part: that is the
+  // administrator's setting, not a command.
+  repeated string modes = 6;
+}
+
+message SetNodeArmingRequest {
+  string object_id = 1;
+  string mode      = 2;  // "inherit" | "armed" | "disarmed"
+  // The operator, for the journal: the command carries no identity of its own.
+  Caller caller    = 3;
 }
 
 message GetDevicePartArmingRequest {
@@ -907,6 +944,10 @@ message Alarm {
   // The node's name and its camera id, so a list row needs no second read.
   string object_name = 22;
   string camera_id = 23;
+  // The zone the alarm is accepted by: the node whose armed property settles this device's
+  // effective arming, empty while the device is not on guard. The browser groups by it instead of
+  // guessing from the tree.
+  string arming_source_object_id = 24;
 }
 
 // A keyset position: the last row of the previous page. Open pages order by (raised_at, id), the
@@ -942,6 +983,28 @@ message AcknowledgeAlarmRequest {
   string id = 1;
   Caller caller = 2;
   string comment = 3;
+}
+
+// Every open alarm of the devices under one node — the operator's "accept the zone". The node may
+// be the zone itself or any ancestor of it.
+message AcknowledgeSubtreeAlarmsRequest {
+  string object_id = 1;
+  Caller caller    = 2;
+  string comment   = 3;
+}
+
+message AcknowledgeSubtreeAlarmsResponse {
+  int32 acknowledged = 1;
+  repeated AlarmRejection rejected = 2;
+}
+
+// Why one alarm of the subtree was left alone. The operation as a whole still succeeds: a zone's
+// alarms are not a transaction.
+message AlarmRejection {
+  string alarm_id = 1;
+  // "armed" (the condition still holds on a guarded node), "already_acknowledged", "closed",
+  // "not_found".
+  string reason   = 2;
 }
 
 // `reason` is "false_alarm" or "other": a manual close is only ever of an alarm whose condition is

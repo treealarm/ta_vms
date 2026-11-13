@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VmsMap.Clients;
 using VmsMap.Db;
 using VmsMap.Domain;
@@ -39,17 +40,23 @@ namespace VmsMap.Adapter
     private readonly IDeviceSettingsSource _settings;
     private readonly EffectiveArmingResolver _arming;
     private readonly AlarmStore _alarms;
+    private readonly IMapService _map;
+    private readonly ILogger<SensorAlarmService> _logger;
 
     public SensorAlarmService(
       VmsMapDbContext db,
       IDeviceSettingsSource settings,
       EffectiveArmingResolver arming,
-      AlarmStore alarms)
+      AlarmStore alarms,
+      IMapService map,
+      ILogger<SensorAlarmService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _settings = settings ?? throw new ArgumentNullException(nameof(settings));
       _arming = arming ?? throw new ArgumentNullException(nameof(arming));
       _alarms = alarms ?? throw new ArgumentNullException(nameof(alarms));
+      _map = map ?? throw new ArgumentNullException(nameof(map));
+      _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>The key one part's alarm is deduplicated by, whatever path raised it.</summary>
@@ -177,6 +184,58 @@ namespace VmsMap.Adapter
         await ReconcileAsync(
           node.object_id, cameraId, DeviceObjectId.DigitalInputPart, node.part_token,
           contact, ArmedWithActiveCondition, ct);
+      }
+    }
+
+    /// <summary>
+    /// The same rule over a whole zone: arming a floor or a building changes the effective arming
+    /// of every sensor whose camera's <b>reference</b> replica stands under it, and a contact
+    /// already in its trigger position must raise now. Only cameras that really stand here count —
+    /// a picture of the same camera on another plan has its own ancestors.
+    /// <para>
+    /// Disarming needs none of this: only the condition leaving closes an alarm.
+    /// </para>
+    /// </summary>
+    public async Task ReconcileSpaceAsync(string spaceId, CancellationToken ct)
+    {
+      var subtree = await _map.GetSubtreeIdsAsync([spaceId]);
+      if (subtree.Count == 0)
+        return;
+
+      var guids = subtree
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(g => g.HasValue)
+        .Select(g => g!.Value)
+        .ToList();
+
+      var cameraIds = await _db.CameraPlacements.AsNoTracking()
+        .Where(p => p.is_reference && guids.Contains(p.object_id))
+        .Select(p => p.camera_id)
+        .Distinct()
+        .ToListAsync(ct);
+
+      // One alarm at a time: the store takes the map's global locks, so a batch that keeps a
+      // hundred of them open would serialise the deployment against itself.
+      foreach (var chunk in cameraIds.Chunk(200))
+      {
+        foreach (var cameraId in chunk)
+        {
+          try
+          {
+            await ReconcileCameraAsync(cameraId, ct);
+          }
+          catch (OperationCanceledException) when (ct.IsCancellationRequested)
+          {
+            throw;
+          }
+          catch (Exception ex)
+          {
+            // One camera failing must not leave the rest of the zone unarmed in a browser that
+            // was told the zone is on guard; the next snapshot retries this one anyway.
+            _logger.LogWarning(ex,
+              "Re-checking the sensors of camera '{CameraId}' after a zone's arming failed", cameraId);
+          }
+        }
       }
     }
   }

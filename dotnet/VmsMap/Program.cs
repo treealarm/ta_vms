@@ -154,6 +154,10 @@ builder.Services.AddScoped<SensorAlarmService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
 builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
+// The one write behind every guard switch: a device delegates to VmsCfg, a container keeps the
+// property on its node.
+builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
+builder.Services.AddSingleton<ICfgArmingWriter, VmsCfgArmingWriter>();
 // The operator's guarding list: a page of sensors with their effective arming, resolved in one
 // pass rather than one camera at a time.
 builder.Services.AddScoped<VmsMap.Domain.Control.ControlObjectQuery>();
@@ -172,6 +176,9 @@ builder.Services.AddHostedService<RetentionEventSubscriber>();
 builder.Services.AddHostedService<EventSubscriptionsSubscriber>();
 // Device events, snapshots and the settings that name the parts.
 builder.Services.AddHostedService<DeviceEventSubscriber>();
+// A zone's arming changed: the sensors already at their trigger must raise now, from the outbox
+// row written in the same transaction as the property.
+builder.Services.AddHostedService<ArmingChangedSubscriber>();
 // Persisted detections become journal rows, but only while a subscription asks for them.
 builder.Services.AddHostedService<AnalyticsEventSubscriber>();
 // Event notification goes through a transactional outbox: the row is written with the event, so a

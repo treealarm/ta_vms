@@ -38,9 +38,10 @@ public sealed class MapGateway(MapService.MapServiceClient map) : IMapGateway
       deadline: DateTime.UtcNow.Add(CallTimeout),
       cancellationToken: ct);
 
-    // A space or a server has no arming of its own; a rule that asks about arming must not fire on
-    // an answer that does not exist.
-    return response.Found ? response.Arming.Armed : null;
+    // A relay, a landmark or a node with no arming of its own answers without a line; a rule that
+    // asks about arming must not fire on an answer that does not exist. A space or a zone answers
+    // with its effective arming, which is what an event on one should be judged by.
+    return response.Arming?.Armed;
   }
 
   public async Task EmitEventAsync(EmitEventCommand command, CancellationToken ct)
