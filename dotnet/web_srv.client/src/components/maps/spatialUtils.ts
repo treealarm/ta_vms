@@ -1,4 +1,4 @@
-import type { CameraPlacementDto, SpaceDto } from '../../dto/dtos'
+import type { CameraPlacementDto, GeoPointDto, SpaceDto } from '../../dto/dtos'
 
 const byOrder = (a: SpaceDto, b: SpaceDto) => a.ordinal - b.ordinal || a.name.localeCompare(b.name)
 
@@ -69,3 +69,21 @@ export function parseLatLon(text: string): { lat: number; lon: number } | null {
 }
 
 export const formatLatLon = (lat: number, lon: number) => `${lat.toFixed(6)}, ${lon.toFixed(6)}`
+
+/** One coordinate of a ring replaced; the other one keeps every digit it had. */
+export function withPointCoordinate(
+  points: GeoPointDto[], index: number, key: 'lat' | 'lon', value: number,
+): GeoPointDto[] {
+  return points.map((point, i) => (i === index ? { ...point, [key]: value } : point))
+}
+
+/**
+ * A corner added where dragging a midpoint adds one: in the middle of the closing edge, so the new
+ * corner sits on the outline and only has to be pulled out to where it belongs.
+ */
+export function withAddedPoint(points: GeoPointDto[]): GeoPointDto[] {
+  if (points.length === 0) return []
+  const last = points[points.length - 1]
+  const first = points[0]
+  return [...points, { lat: (last.lat + first.lat) / 2, lon: (last.lon + first.lon) / 2 }]
+}

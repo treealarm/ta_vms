@@ -4,9 +4,10 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import type { CameraPlacementDto, CameraSetupDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
+import type { CameraPlacementDto, CameraSetupDto, GeoPointDto, LandmarkDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import NodeIdentity from '../objects/NodeIdentity'
+import FootprintPoints from './FootprintPoints'
 import NumberField from './NumberField'
 import ZoomLevelField from './ZoomLevelField'
 import CameraUnifiedCard from '../CameraUnifiedCard'
@@ -195,14 +196,20 @@ export function LandmarkPanel({ landmark, showLayer, onChange, onRemove, onClose
 
 type FootprintProps = {
   space: SpaceDto
+  /** The ring as it stands, the vertex drag's draft included. */
+  points: GeoPointDto[]
+  /** The outline was changed by hand: a corner moved by its numbers, added or taken away. */
+  onChangePoints: (points: GeoPointDto[]) => void
   showLayer?: boolean
   onOpen: () => void
   onRemoveFootprint: () => void
   onClose: () => void
 }
 
-/** A nested space selected by its footprint on this one: open it, or reshape the outline on the map. */
-export function FootprintPanel({ space, showLayer, onOpen, onRemoveFootprint, onClose }: FootprintProps) {
+/** A nested space selected by its footprint on this one: open it, or reshape the outline. */
+export function FootprintPanel({
+  space, points, onChangePoints, showLayer, onOpen, onRemoveFootprint, onClose,
+}: FootprintProps) {
   const { t } = useTranslation()
   return (
     <Stack spacing={1.5} sx={{ p: 1.5 }}>
@@ -212,6 +219,8 @@ export function FootprintPanel({ space, showLayer, onOpen, onRemoveFootprint, on
       </Box>
       <Button variant="contained" size="small" onClick={onOpen}>{t('maps.openSpace')}</Button>
       <Typography variant="caption" color="text.secondary">{t('maps.footprintHint')}</Typography>
+      <Divider />
+      <FootprintPoints points={points} onChange={onChangePoints} />
       {showLayer ? (
         <>
           <Divider />
@@ -220,7 +229,16 @@ export function FootprintPanel({ space, showLayer, onOpen, onRemoveFootprint, on
       ) : null}
       <Divider />
       <Stack direction="row" spacing={1}>
-        <Button color="error" size="small" onClick={onRemoveFootprint}>{t('maps.removeFootprint')}</Button>
+        <Button
+          color="error"
+          size="small"
+          disabled={points.length === 0}
+          onClick={() => {
+            if (window.confirm(t('maps.confirmRemoveFootprint', { name: space.name }))) onRemoveFootprint()
+          }}
+        >
+          {t('maps.removeFootprint')}
+        </Button>
         <Button size="small" onClick={onClose} sx={{ ml: 'auto' }}>{t('common.close')}</Button>
       </Stack>
     </Stack>

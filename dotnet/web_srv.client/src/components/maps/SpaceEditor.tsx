@@ -12,6 +12,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import AdjustIcon from '@mui/icons-material/Adjust'
 import TimelineIcon from '@mui/icons-material/Timeline'
+import DrawIcon from '@mui/icons-material/Draw'
 import PentagonOutlinedIcon from '@mui/icons-material/PentagonOutlined'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -68,6 +69,10 @@ type Props = {
   initialNodeId?: string | null
   /** That node was picked out; the page drops its note of it. */
   onInitialNodeShown?: () => void
+  /** A nested plan whose outline was asked for from its own settings: picked, pen in hand. */
+  initialFootprintId?: string | null
+  /** That outline was picked out; the page drops its note of it. */
+  onInitialFootprintShown?: () => void
   /**
    * Moves the whole page to another space — the tree beside it follows. A node named with it is
    * selected there, so "show on map" crosses spaces without losing the object.
@@ -87,7 +92,8 @@ type Props = {
  * shared with the lists through `useEditorState`.
  */
 export default function SpaceEditor({
-  space, settings, initialCameraId, initialNodeId, onInitialNodeShown, onOpenSpace,
+  space, settings, initialCameraId, initialNodeId, onInitialNodeShown,
+  initialFootprintId, onInitialFootprintShown, onOpenSpace,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -121,6 +127,10 @@ export default function SpaceEditor({
   // on.
   const picking = !!pendingCameraId || !!pendingDiagramId || mode === 'landmark'
     || DRAW_MODES.includes(mode)
+  // The modes whose clicks build a run of points rather than one shape at one click.
+  const drawingPath = mode === 'line' || mode === 'polygon' || mode === 'footprint'
+  // A footprint and a polygon are rings; a line is not.
+  const drawingRing = mode === 'polygon' || mode === 'footprint'
   const mapData = useMapChildren(spaceId || null)
   const levels = useAppSelector((s) => s.levels.levels)
   const markersById = useAppSelector((s) => s.objects.markers)
@@ -212,9 +222,11 @@ export default function SpaceEditor({
   }, [levels.length, dispatch])
 
   const here = placements.filter((p) => p.spaceId === spaceId)
-  // The spaces whose footprint is on this canvas, wherever the tree holds them.
-  const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
-  const nested = spaces.filter((s) => !!s.id && onCanvas.has(s.id))
+  // A footprint is always drawn on its own parent's canvas — the server resolves it so — so the
+  // spaces nested here are the ones the tree puts here. Read from the space list rather than from
+  // the canvas, which is a picture of one moment: a plan created a second ago is outlined before
+  // any canvas read catches up with it.
+  const nested = spaces.filter((s) => !!s.id && s.parentId === spaceId)
   // The layer each footprint belongs to, from the space's own polygon in the canvas read.
   const spaceZoomLevels: Record<string, string | undefined> = {}
   for (const s of nested) {
@@ -319,6 +331,15 @@ export default function SpaceEditor({
       setDraftFootprint(null)
     })
 
+  // One ring is saved after another: leaving a latitude field and then a longitude one must not
+  // let the first answer land last and undo the second. The draft is shown at once, so the panel
+  // keeps what was just typed while the write travels.
+  const footprintSaves = useRef<Promise<unknown>>(Promise.resolve())
+  const commitFootprint = (of: SpaceDto, footprint: GeoPointDto[]) => {
+    setDraftFootprint(footprint)
+    footprintSaves.current = footprintSaves.current.then(() => saveFootprint(of, footprint))
+  }
+
   /** A new shape on the canvas: a node of its own, its geometry in the space's coordinates. */
   const createFigure = (points: GeoPointDto[], kind: 'point' | 'line' | 'polygon') => {
     if (!spaceId) return
@@ -356,6 +377,16 @@ export default function SpaceEditor({
     const clean = last && previous && last.lat === previous.lat && last.lon === previous.lon
       ? points.slice(0, -1)
       : points
+
+    // A footprint replaces the ring the selected plan has: fewer than three corners is not an
+    // outline the server would take, so the pen stays in hand and the hint counts the corners.
+    if (mode === 'footprint') {
+      if (!selectedNested || clean.length < 3) return
+      setDraftPoints(null)
+      setMode('select')
+      commitFootprint(selectedNested, clean)
+      return
+    }
 
     if (mode === 'line' && clean.length >= 2) createFigure(clean, 'line')
     else if (mode === 'polygon' && clean.length >= 3) createFigure(clean, 'polygon')
@@ -396,7 +427,7 @@ export default function SpaceEditor({
       createFigure([at], 'point')
       return
     }
-    if ((mode === 'line' || mode === 'polygon') && spaceId) {
+    if (drawingPath && spaceId) {
       setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
       return
     }
@@ -533,6 +564,8 @@ export default function SpaceEditor({
     : mode === 'point' ? t('maps.editor.pointHint')
     : mode === 'line' ? t('maps.editor.lineHint', { count: draftPoints?.length ?? 0 })
     : mode === 'polygon' ? t('maps.editor.polygonHint', { count: draftPoints?.length ?? 0 })
+    : mode === 'footprint'
+      ? t('maps.editor.footprintHint', { count: draftPoints?.length ?? 0, name: selectedNested?.name ?? '' })
     : null
 
   // Applied a single time: placements load after the editor mounts, so this waits for the
@@ -563,6 +596,19 @@ export default function SpaceEditor({
     onInitialNodeShown?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the canvas is rebuilt every render
   }, [initialNodeId, mapData])
+
+  // Arrived from a plan's own settings to give it an outline: the footprint is picked out with the
+  // pen ready, because a plan without one cannot be clicked on this map at all.
+  const initialFootprintApplied = useRef(false)
+  useEffect(() => {
+    if (initialFootprintApplied.current || !initialFootprintId) return
+    if (!nested.some((s) => s.id === initialFootprintId)) return
+    initialFootprintApplied.current = true
+    setSelection({ kind: 'footprint', id: initialFootprintId })
+    setMode('footprint')
+    onInitialFootprintShown?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `nested` is rebuilt every render
+  }, [initialFootprintId])
 
   const selectionPanel = selectedPlacement ? (() => {
     const reference = referenceOf(selectedPlacement.cameraId)
@@ -611,12 +657,13 @@ export default function SpaceEditor({
     <FootprintPanel
       key={selectedNested.id}
       space={selectedNested}
+      points={draftFootprint ?? selectedNested.footprint}
+      onChangePoints={(points) => commitFootprint(selectedNested, points)}
       showLayer={space.kind === 'map'}
       onOpen={() => selectedNested.id && onOpenSpace(selectedNested.id)}
-      onRemoveFootprint={() => {
-        void saveFootprint(selectedNested, [])
-        setSelection(null)
-      }}
+      // The panel stays on an outline-less space: the pen above the map is how one is drawn, and
+      // the panel is where that is said.
+      onRemoveFootprint={() => commitFootprint(selectedNested, [])}
       onClose={() => setSelection(null)}
     />
   ) : selectedElement && selectedNode && openDiagramId ? (
@@ -752,6 +799,9 @@ export default function SpaceEditor({
               setPendingDiagramId(null)
               setPendingPart(null)
               setDraftPoints(null)
+              // The pen draws a footprint from scratch: an unsaved draft from before would be
+              // drawn under the clicks and confuse which ring is being replaced.
+              if (v === 'footprint') setDraftFootprint(null)
             }}
           >
             <ToggleButton value="select"><Tooltip title={t('maps.modeSelect')}><PanToolIcon fontSize="small" /></Tooltip></ToggleButton>
@@ -759,6 +809,13 @@ export default function SpaceEditor({
             <ToggleButton value="point"><Tooltip title={t('maps.editor.modePoint')}><AdjustIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="line"><Tooltip title={t('maps.editor.modeLine')}><TimelineIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="polygon"><Tooltip title={t('maps.editor.modePolygon')}><PentagonOutlinedIcon fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="footprint" disabled={!selectedNested}>
+              <Tooltip title={selectedNested
+                ? t('maps.editor.modeFootprint')
+                : t('maps.editor.modeFootprintNeedsSelection')}>
+                <DrawIcon fontSize="small" />
+              </Tooltip>
+            </ToggleButton>
             <ToggleButton value="plan" disabled={!plan}><Tooltip title={t('maps.modePlan')}><CropRotateIcon fontSize="small" /></Tooltip></ToggleButton>
           </ToggleButtonGroup>
           <Tooltip title={t('maps.saveView')}>
@@ -780,7 +837,7 @@ export default function SpaceEditor({
               {t('common.cancel')}
             </Button>
           )}
-          {draftPoints && (mode === 'line' || mode === 'polygon') && (
+          {draftPoints && drawingPath && (
             <>
               <Button size="small" variant="outlined" onClick={finishDrawing}>{t('maps.editor.finish')}</Button>
               <Button size="small" onClick={() => setDraftPoints(null)}>{t('common.cancel')}</Button>
@@ -847,8 +904,8 @@ export default function SpaceEditor({
               interactive={!picking}
               onGeometryChange={handleGeometryChange}
             />
-            {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
-            {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
+            {draftPoints && <DrawingPreview points={draftPoints} closed={drawingRing} />}
+            {drawingPath && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
             <Footprints
               nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
               selectedId={selectionNodeId}
@@ -860,7 +917,7 @@ export default function SpaceEditor({
             {selectedNested && mode === 'select' && (
               <FootprintEditor
                 footprint={draftFootprint ?? selectedNested.footprint}
-                onChange={(f, commit) => (commit ? void saveFootprint(selectedNested, f) : setDraftFootprint(f))}
+                onChange={(f, commit) => (commit ? commitFootprint(selectedNested, f) : setDraftFootprint(f))}
               />
             )}
             {here.map((stored) => {

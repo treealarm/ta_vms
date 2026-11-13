@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, MenuItem, Stack, TextField } from '@mui/material'
+import { Alert, Box, Button, MenuItem, Stack, TextField } from '@mui/material'
+import DrawIcon from '@mui/icons-material/Draw'
 import { useMap, useMapEvents } from 'react-leaflet'
 import { useTranslation } from 'react-i18next'
 import type { GeoBoundsDto, SpaceDto, SpaceKind } from '../../dto/dtos'
@@ -21,6 +22,11 @@ type Props = {
   creating?: NewSpace
   onSaved: (space: SpaceDto, created: boolean) => void
   onRemoved: () => void
+  /**
+   * Takes the administrator to the parent's map with this plan's outline in hand — the way back
+   * for a plan whose outline was removed, since nothing on the map is left to click.
+   */
+  onDrawFootprint?: (space: SpaceDto) => void
 }
 
 const WORLD: GeoBoundsDto = { southWest: { lat: -60, lon: -170 }, northEast: { lat: 75, lon: 170 } }
@@ -61,7 +67,7 @@ function initialView(creating: NewSpace, real: boolean, footprint: { lat: number
  * Name and settings of one space. A new map is framed on a world map below the fields — what is in
  * view when it is added is what it opens on; a new plan is laid out in its own editor once it exists.
  */
-export function SpaceForm({ ref, space, creating, onSaved, onRemoved }: Props) {
+export function SpaceForm({ ref, space, creating, onSaved, onRemoved, onDrawFootprint }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const spaces = useAppSelector((st) => st.spatial.spaces)
@@ -194,6 +200,18 @@ export function SpaceForm({ ref, space, creating, onSaved, onRemoved }: Props) {
         {kind === 'plan' && real && (
           <TextField label={t('maps.elevation')} value={elevation} onChange={(e) => setElevation(e.target.value)} size="small" helperText={t('maps.elevationHint')} fullWidth />
         )}
+        {!isNew && space?.parentId && onDrawFootprint ? (
+          // Drawn on the parent's map, not here: the outline lives in the parent's coordinates.
+          // Applying first keeps a typed name or elevation from being thrown away by the jump.
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DrawIcon fontSize="small" />}
+            onClick={() => { void apply().then((ok) => { if (ok && space) onDrawFootprint(space) }) }}
+          >
+            {t('maps.drawFootprint')}
+          </Button>
+        ) : null}
         {picking && (
           <TextField
             label={t('maps.goToCoordinates')}

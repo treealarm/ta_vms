@@ -3,7 +3,7 @@ import type { GeoPointDto } from '../../dto/dtos'
 import type { MapFocus } from '../../map/SpaceCanvas'
 
 /** What the next click on the map does. */
-export type Mode = 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon'
+export type Mode = 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon' | 'footprint'
 
 /**
  * What is selected beside the map: a camera's placement, a landmark or a nested space's footprint
@@ -13,8 +13,11 @@ export type Selection =
   | { kind: 'camera' | 'landmark' | 'footprint' | 'node'; id: string }
   | null
 
-/** The modes that draw a shape click by click instead of acting on what is already there. */
-export const DRAW_MODES: Mode[] = ['point', 'line', 'polygon']
+/**
+ * The modes that draw a shape click by click instead of acting on what is already there. A
+ * footprint is drawn the same way, but what it draws is an outline of a space rather than a node.
+ */
+export const DRAW_MODES: Mode[] = ['point', 'line', 'polygon', 'footprint']
 
 /** A camera part picked from the palette: the next click on the map makes a replica of it. */
 export type PendingPart = {

@@ -6,6 +6,7 @@ import type {
   SpaceDto,
 } from '../dto/dtos'
 import { enc, errorText, jsonRequest as json, requestJson } from '../api/requestJson'
+import { refreshSpace } from './objectsSlice'
 
 /** The maps endpoints answer errors the same way every other gRPC proxy does; the helper is
  *  shared with the map API so there is one error-unwrapping rule. */
@@ -33,15 +34,38 @@ const initialState: SpatialState = {
 export const loadSpaces = createAsyncThunk('spatial/loadSpaces', () =>
   spatialRequest<SpaceDto[]>('/api/spatial/spaces'))
 
-export const upsertSpace = createAsyncThunk('spatial/upsertSpace', async (dto: SpaceDto, { dispatch }) => {
+/**
+ * The parents whose pages a write leaves stale: a space created, deleted, renamed or put under
+ * another parent changes what they list — a row in the tree, its footprint on the map. A view or a
+ * footprint changed in place does neither, so saving what the map is looking at costs no re-read.
+ *
+ * A re-parented space keeps the numbers it has: the server does not recompute a footprint into the
+ * new parent's frame, and nothing in the interface moves a space yet.
+ */
+export function parentsToRefresh(before: SpaceDto | undefined, after: SpaceDto | null): string[] {
+  const parentChanged = (before?.parentId ?? null) !== (after?.parentId ?? null)
+  const renamed = !!before && !!after && before.name !== after.name
+  if (!parentChanged && !renamed) return []
+  return [...new Set([before?.parentId, after?.parentId].filter((id): id is string => !!id))]
+}
+
+export const upsertSpace = createAsyncThunk('spatial/upsertSpace', async (dto: SpaceDto, api) => {
+  const before = dto.id
+    ? (api.getState() as { spatial: SpatialState }).spatial.spaces.find((s) => s.id === dto.id)
+    : undefined
   const space = await spatialRequest<SpaceDto>('/api/spatial/spaces', json('PUT', dto))
-  await dispatch(loadSpaces())
+  await api.dispatch(loadSpaces())
+  const stale = parentsToRefresh(before, space)
+  if (stale.length) await api.dispatch(refreshSpace(stale))
   return space
 })
 
-export const removeSpace = createAsyncThunk('spatial/removeSpace', async (spaceId: string, { dispatch }) => {
+export const removeSpace = createAsyncThunk('spatial/removeSpace', async (spaceId: string, api) => {
+  const before = (api.getState() as { spatial: SpatialState }).spatial.spaces.find((s) => s.id === spaceId)
   await spatialRequest(`/api/spatial/spaces/${enc(spaceId)}`, { method: 'DELETE' })
-  await Promise.all([dispatch(loadSpaces()), dispatch(loadPlacements())])
+  await Promise.all([api.dispatch(loadSpaces()), api.dispatch(loadPlacements())])
+  const stale = parentsToRefresh(before, null)
+  if (stale.length) await api.dispatch(refreshSpace(stale))
 })
 
 export type PlanUpload = {

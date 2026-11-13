@@ -94,7 +94,12 @@ export function Footprints({ nested, selectedId, alarmed, levels, zoomLevels, on
         <Popup position={choice.at} eventHandlers={{ remove: () => setChoice(null) }}>
           <List dense disablePadding sx={{ minWidth: 140 }}>
             {choice.spaces.map((s) => (
-              <ListItemButton key={s.id} onClick={() => { setChoice(null); onPick(s) }}>
+              // The click picks the plan, not the map under the popup: an editor with a tool in
+              // hand would otherwise take it as one more click of its own and drop the pick.
+              <ListItemButton
+                key={s.id}
+                onClick={(event) => { event.stopPropagation(); setChoice(null); onPick(s) }}
+              >
                 <ListItemText primary={s.name} />
               </ListItemButton>
             ))}
