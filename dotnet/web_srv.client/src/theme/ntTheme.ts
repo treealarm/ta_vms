@@ -17,6 +17,14 @@ const panel = {
   border: '#333333',
 } as const
 
+/**
+ * A guard an ancestor settled rather than the object itself. The map's convention is green for
+ * armed here, purple for armed through a parent, grey for not armed; the theme's `secondary` is a
+ * grey, so this cannot be it. One value for every guard in the UI, so a camera on guard through
+ * its zone and a floor on guard through its building read alike.
+ */
+export const guardInheritedColor = '#ab47bc'
+
 export const ntTheme = createTheme({
   palette: {
     mode: 'dark',

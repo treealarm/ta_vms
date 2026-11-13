@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { setNodeArming } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
+import { guardInheritedColor } from '../../theme/ntTheme'
 import RelaySwitch from './RelaySwitch'
 import type { ControlObjectDto, NodeArmingDto } from '../../dto/dtos'
 
@@ -131,7 +132,9 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
           ) : controlSwitch}
           <Typography
             variant="caption"
-            color={value ? 'success.main' : 'text.secondary'}
+            // Green when the object was put on guard here, purple when a zone settled it, grey when
+            // it is not on guard — the same reading the guard of a container gives.
+            color={!value ? 'text.secondary' : source === 'space' ? guardInheritedColor : 'success.main'}
             title={t('onvifSettings.deviceIoGuardHint')}
           >
             {armedLabel}

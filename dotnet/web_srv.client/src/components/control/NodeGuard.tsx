@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import { getNodeArming, setNodeArming } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
+import { guardInheritedColor } from '../../theme/ntTheme'
 import type { ArmMode, NodeArmingDto } from '../../dto/dtos'
 
 type Props = {
@@ -134,7 +135,7 @@ export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Pro
         <Typography
           variant="caption"
           // Green when set here, purple when an ancestor settled it, grey when nothing is armed.
-          color={!arming.armed ? 'text.secondary' : inherited ? 'secondary.main' : 'success.main'}
+          color={!arming.armed ? 'text.secondary' : inherited ? guardInheritedColor : 'success.main'}
         >
           {stateLabel}
         </Typography>
