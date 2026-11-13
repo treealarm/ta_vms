@@ -80,6 +80,7 @@ public sealed class VmsCfgDbContext(DbContextOptions<VmsCfgDbContext> options) :
       e.HasKey(x => x.CameraId);
       e.Property(x => x.CameraId).HasColumnName("camera_id").HasConversion(UuidText);
       e.Property(x => x.Armed).HasColumnName("armed");
+      e.Property(x => x.ArmMode).HasColumnName("arm_mode");
     });
 
     modelBuilder.Entity<DbDeviceSettings>(e =>
@@ -319,6 +320,8 @@ public sealed class DbCameraState
 {
   public string CameraId { get; set; } = string.Empty;
   public bool Armed { get; set; }
+  /// <summary>The administrator's intent: `inherit` leaves the flag to the map's derivation.</summary>
+  public string ArmMode { get; set; } = DeviceSettingsRules.Inherit;
 }
 
 public sealed class DbDeviceSettings

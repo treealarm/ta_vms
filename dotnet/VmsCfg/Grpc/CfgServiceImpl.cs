@@ -1031,30 +1031,93 @@ namespace VmsCfg
     public override async Task<GetCamStateResponse> GetCamState(
       GetCamStateRequest request, ServerCallContext context)
     {
-      var armed = await storage.GetCameraArmedAsync(request.CameraId, context.CancellationToken);
-      return new GetCamStateResponse { Armed = armed };
+      var state = await storage.GetCameraArmStateAsync(request.CameraId, context.CancellationToken);
+      return new GetCamStateResponse { Armed = state.Armed, ArmMode = state.ArmMode };
     }
 
     public override async Task<GetCamStatesResponse> GetCamStates(
       GetCamStatesRequest request, ServerCallContext context)
     {
-      var armed = await storage.GetCameraArmedAsync(request.CameraIds, context.CancellationToken);
+      var states = await storage.GetCameraArmStatesAsync(request.CameraIds, context.CancellationToken);
       var response = new GetCamStatesResponse();
-      response.States.AddRange(armed.Select(kv => new CameraArmState
+      response.States.AddRange(states.Select(kv => new CameraArmState
       {
         CameraId = kv.Key,
-        Armed = kv.Value,
+        Armed = kv.Value.Armed,
+        ArmMode = kv.Value.ArmMode,
       }));
       return response;
+    }
+
+    // The operator's command: armed or not, and that is an explicit decision the zone no longer
+    // overrides. A camera that does not exist is an answer, not a stored row.
+    private static void RequireCameraArming(string? error)
+    {
+      if (error is not null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument, error));
     }
 
     public override async Task<OperationStatus> SetCamState(
       SetCamStateRequest request, ServerCallContext context)
     {
-      await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
+      try
+      {
+        await storage.SetCameraArmedAsync(request.CameraId, request.Armed, context.CancellationToken);
+      }
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+      {
+        throw new RpcException(new Status(StatusCode.NotFound, "no such camera"));
+      }
+
       logger.LogInformation("Camera '{CameraId}' armed={Armed}", request.CameraId, request.Armed);
       NotifyCameraStateChanged(request.CameraId);
       return new OperationStatus { Success = true };
+    }
+
+    // The administrator's setting, including `inherit`: the camera then follows the zone above its
+    // reference replica and the map derives the flag. The flag is left as it was until that
+    // derivation runs, which errs towards staying on guard.
+    public override async Task<OperationStatus> SetCamArmMode(
+      SetCamArmModeRequest request, ServerCallContext context)
+    {
+      RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
+      RequireCameraArming(CameraArmingRules.ValidateArmMode(request.ArmMode));
+      try
+      {
+        await storage.SetCameraArmModeAsync(
+          request.CameraId, request.ArmMode, context.CancellationToken);
+      }
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+      {
+        throw new RpcException(new Status(StatusCode.NotFound, "no such camera"));
+      }
+
+      logger.LogInformation(
+        "Camera '{CameraId}' arm mode {ArmMode}", request.CameraId, request.ArmMode);
+      NotifyCameraStateChanged(request.CameraId);
+      return new OperationStatus { Success = true };
+    }
+
+    // The map's derived write. It answers whether anything changed, and only a change is announced:
+    // that is what ends the round "the map writes, the event arrives, the map looks again".
+    public override async Task<SetCamEffectiveArmingResponse> SetCamEffectiveArming(
+      SetCamEffectiveArmingRequest request, ServerCallContext context)
+    {
+      RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
+      bool changed;
+      try
+      {
+        changed = await storage.SetCameraEffectiveArmedAsync(
+          request.CameraId, request.Armed, context.CancellationToken);
+      }
+      catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+      {
+        throw new RpcException(new Status(StatusCode.NotFound, "no such camera"));
+      }
+
+      if (changed) NotifyCameraStateChanged(request.CameraId);
+      return new SetCamEffectiveArmingResponse { Changed = changed };
     }
 
     public override async Task<ListDeviceSettingsResponse> ListDeviceSettings(

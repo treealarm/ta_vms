@@ -5,6 +5,24 @@ using Vms.Cfg;
 
 namespace VmsCfg;
 
+/// <summary>
+/// What the camera arming surface accepts. The vocabulary is `device_settings`' own, so a mode
+/// means the same thing for a camera and for a sensor — `inherit` included.
+/// </summary>
+public static class CameraArmingRules
+{
+  private static readonly HashSet<string> ArmModes =
+    [DeviceSettingsRules.Inherit, DeviceSettingsRules.Armed, DeviceSettingsRules.Disarmed];
+
+  public static string? ValidateCameraId(string cameraId) =>
+    Guid.TryParse(cameraId, out _) ? null : "camera_id must be a UUID";
+
+  public static string? ValidateArmMode(string? armMode) =>
+    armMode is not null && ArmModes.Contains(armMode)
+      ? null
+      : "arm_mode must be 'inherit', 'armed' or 'disarmed'";
+}
+
 public class CameraStorage(
   NpgsqlDataSource dataSource,
   IDbContextFactory<VmsCfgDbContext> dbFactory,
@@ -1291,19 +1309,28 @@ public class CameraStorage(
     await cmd.ExecuteNonQueryAsync(ct);
   }
 
-  public async Task<bool> GetCameraArmedAsync(string cameraId, CancellationToken ct)
+  /// <summary>A camera's arming: the effective flag and the mode it was decided with.</summary>
+  public sealed record CameraArmStateRow(bool Armed, string ArmMode);
+
+  public async Task<bool> GetCameraArmedAsync(string cameraId, CancellationToken ct) =>
+    (await GetCameraArmStateAsync(cameraId, ct)).Armed;
+
+  /// <summary>A camera that never had a state row follows its zone — `inherit`, and off.</summary>
+  public async Task<CameraArmStateRow> GetCameraArmStateAsync(string cameraId, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand(
-      "SELECT armed FROM camera_states WHERE camera_id = $1::uuid;");
+      "SELECT armed, arm_mode FROM camera_states WHERE camera_id = $1::uuid;");
     cmd.Parameters.AddWithValue(cameraId);
-    var result = await cmd.ExecuteScalarAsync(ct);
-    return result is bool b && b;
+
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+    if (await reader.ReadAsync(ct))
+      return new CameraArmStateRow(reader.GetBoolean(0), reader.GetString(1));
+    return new CameraArmStateRow(false, DeviceSettingsRules.Inherit);
   }
 
-  // The same flag for a page's worth of cameras. Only rows that exist are returned: a camera that
-  // has never been armed has no row, and its absence means disarmed, exactly as the single read
-  // says. Callers default the missing ones themselves.
-  public async Task<Dictionary<string, bool>> GetCameraArmedAsync(
+  // The same state for a page's worth of cameras. Only rows that exist are returned: a camera that
+  // never had one follows its zone, exactly as the single read says. Callers default the missing.
+  public async Task<Dictionary<string, CameraArmStateRow>> GetCameraArmStatesAsync(
     IReadOnlyCollection<string> cameraIds, CancellationToken ct)
   {
     var ids = cameraIds
@@ -1313,30 +1340,72 @@ public class CameraStorage(
       .Select(guid => guid!.Value)
       .Distinct()
       .ToArray();
-    var result = new Dictionary<string, bool>(StringComparer.Ordinal);
+    var result = new Dictionary<string, CameraArmStateRow>(StringComparer.Ordinal);
     if (ids.Length == 0)
       return result;
 
     await using var cmd = _dataSource.CreateCommand(
-      "SELECT camera_id::text, armed FROM camera_states WHERE camera_id = ANY($1::uuid[]);");
+      "SELECT camera_id::text, armed, arm_mode FROM camera_states WHERE camera_id = ANY($1::uuid[]);");
     cmd.Parameters.AddWithValue(ids);
 
     await using var reader = await cmd.ExecuteReaderAsync(ct);
     while (await reader.ReadAsync(ct))
-      result[reader.GetString(0)] = reader.GetBoolean(1);
+      result[reader.GetString(0)] = new CameraArmStateRow(reader.GetBoolean(1), reader.GetString(2));
 
     return result;
   }
 
+  /// <summary>An operator's command: the camera is armed or not, and that is an explicit decision.</summary>
   public async Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed) VALUES ($1::uuid, $2)
-      ON CONFLICT (camera_id) DO UPDATE SET armed = EXCLUDED.armed;
+      INSERT INTO camera_states (camera_id, armed, arm_mode)
+      VALUES ($1::uuid, $2, CASE WHEN $2 THEN 'armed' ELSE 'disarmed' END)
+      ON CONFLICT (camera_id) DO UPDATE
+        SET armed = EXCLUDED.armed, arm_mode = EXCLUDED.arm_mode;
       """);
     cmd.Parameters.AddWithValue(cameraId);
     cmd.Parameters.AddWithValue(armed);
     await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// An administrator's setting. An explicit mode is also the flag; `inherit` leaves the flag as it
+  /// is, for the map to derive from the zone the camera stands in.
+  /// </summary>
+  public async Task SetCameraArmModeAsync(string cameraId, string armMode, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      INSERT INTO camera_states (camera_id, armed, arm_mode) VALUES ($1::uuid, $2, $3)
+      ON CONFLICT (camera_id) DO UPDATE
+        SET arm_mode = EXCLUDED.arm_mode,
+            armed = CASE WHEN EXCLUDED.arm_mode = 'inherit'
+                         THEN camera_states.armed ELSE EXCLUDED.armed END;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(string.Equals(armMode, DeviceSettingsRules.Armed, StringComparison.Ordinal));
+    cmd.Parameters.AddWithValue(armMode);
+    await cmd.ExecuteNonQueryAsync(ct);
+  }
+
+  /// <summary>
+  /// The map's derived write: the flag a zone implies. It lands only while the camera is still
+  /// `inherit` and only when it differs, so an explicit decision is never overwritten and the
+  /// event the write announces cannot feed itself. Returns whether a row changed.
+  /// </summary>
+  public async Task<bool> SetCameraEffectiveArmedAsync(string cameraId, bool armed, CancellationToken ct)
+  {
+    await using var cmd = _dataSource.CreateCommand("""
+      INSERT INTO camera_states (camera_id, armed, arm_mode) VALUES ($1::uuid, $2, 'inherit')
+      ON CONFLICT (camera_id) DO UPDATE
+        SET armed = EXCLUDED.armed
+        WHERE camera_states.arm_mode = 'inherit'
+          AND camera_states.armed IS DISTINCT FROM EXCLUDED.armed
+      RETURNING 1;
+      """);
+    cmd.Parameters.AddWithValue(cameraId);
+    cmd.Parameters.AddWithValue(armed);
+    return await cmd.ExecuteScalarAsync(ct) is not null;
   }
 
   // ── Analytics watches (1:1 per camera, mirrors onvif_event_subscription) ─
