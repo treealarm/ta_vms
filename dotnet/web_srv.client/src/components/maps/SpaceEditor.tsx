@@ -212,9 +212,11 @@ export default function SpaceEditor({
   }, [levels.length, dispatch])
 
   const here = placements.filter((p) => p.spaceId === spaceId)
-  // The spaces whose footprint is on this canvas, wherever the tree holds them.
-  const onCanvas = new Set(mapData.markers.filter((m) => m.nodeKind === 'space').map((m) => m.id))
-  const nested = spaces.filter((s) => !!s.id && onCanvas.has(s.id))
+  // A footprint is always drawn on its own parent's canvas — the server resolves it so — so the
+  // spaces nested here are the ones the tree puts here. Read from the space list rather than from
+  // the canvas, which is a picture of one moment: a plan created a second ago is outlined before
+  // any canvas read catches up with it.
+  const nested = spaces.filter((s) => !!s.id && s.parentId === spaceId)
   // The layer each footprint belongs to, from the space's own polygon in the canvas read.
   const spaceZoomLevels: Record<string, string | undefined> = {}
   for (const s of nested) {

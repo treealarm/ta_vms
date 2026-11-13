@@ -69,6 +69,25 @@ export const loadCanvas = createAsyncThunk('objects/loadCanvas', async (canvasId
 })
 
 /**
+ * The pages a write left stale, read again when they are already open. A page nobody has read is
+ * read fresh when someone opens it, so there is nothing to do for that one. A page that will not
+ * load is left as it was: the write succeeded, and its list is the next reader's problem rather
+ * than the form's.
+ */
+export const refreshSpace = createAsyncThunk(
+  'objects/refreshSpace',
+  async (parentIds: string[], api) => {
+    const { canvases, childrenByParent } = (api.getState() as { objects: ObjectsState }).objects
+    const reads: Promise<unknown>[] = []
+    for (const parentId of parentIds) {
+      if (canvases[parentId]?.loaded) reads.push(api.dispatch(loadCanvas(parentId)))
+      if (childrenByParent[parentId]?.loaded) reads.push(api.dispatch(loadChildren({ parentId })))
+    }
+    await Promise.allSettled(reads)
+  },
+)
+
+/**
  * The nodes with their geometry: markers for every id, figures for the ones that have a shape.
  * Two calls because a node without a figure still has a name, a parent and a camera id.
  */
