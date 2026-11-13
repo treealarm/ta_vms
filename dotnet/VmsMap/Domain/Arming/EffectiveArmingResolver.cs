@@ -50,11 +50,11 @@ namespace VmsMap.Domain.Arming
 
 
     private readonly VmsMapDbContext _db;
-    private readonly IDeviceSettingsSource _settings;
+    private readonly DeviceObjectSettingsStore _settings;
     private readonly ICameraStateSource _cameraState;
 
     public EffectiveArmingResolver(
-      VmsMapDbContext db, IDeviceSettingsSource settings, ICameraStateSource cameraState)
+      VmsMapDbContext db, DeviceObjectSettingsStore settings, ICameraStateSource cameraState)
     {
       _db = db;
       _settings = settings;
@@ -94,32 +94,18 @@ namespace VmsMap.Domain.Arming
         .Select(s => s.SourceId)
         .Distinct(StringComparer.Ordinal)
         .ToList();
-      var settings = await _settings.ListManyAsync(cameraIds, ct);
-      // The camera's mode rides the same bulk read as its flag: a camera node's mode is its own,
-      // and an input's is its settings row.
+      // The mode each object is configured with: the map's own row, keyed by the node. A camera
+      // node's mode is its own, as is an input's; a relay has no arming at all.
+      var settings = await _settings.GetManyAsync(
+        subjects.Select(s => s.ObjectId).ToList(), ct);
+      // The camera's effective flag is VmsCfg's, for the branch where nothing above the camera is
+      // set and a sensor follows the flag its camera carries.
       var states = await _cameraState.GetStatesAsync(cameraIds, ct);
-
-      // The mode each part is configured with. Only an input has a settings row; a relay's is
-      // constrained to inherit, and a camera's mode lives with its state.
-      var modes = new Dictionary<(string, string), string>();
-      foreach (var subject in subjects)
-      {
-        if (!string.Equals(subject.PartKind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal))
-          continue;
-
-        var configured = settings.GetValueOrDefault(subject.SourceId)?.FirstOrDefault(s =>
-          string.Equals(s.Kind, subject.PartKind, StringComparison.Ordinal)
-          && string.Equals(s.Token, subject.PartToken, StringComparison.Ordinal));
-        if (configured is not null)
-          modes[(subject.SourceId, subject.PartToken)] = configured.ArmMode;
-      }
 
       var inheriting = new List<ArmingSubject>();
       foreach (var subject in subjects)
       {
-        var mode = string.Equals(subject.PartKind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
-          ? CameraMode(states, subject.SourceId)
-          : modes.GetValueOrDefault((subject.SourceId, subject.PartToken)) ?? ArmMode.Inherit;
+        var mode = settings.GetValueOrDefault(subject.ObjectId)?.Mode ?? ArmMode.Inherit;
 
         if (string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal))
           result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit, string.Empty, mode);
@@ -160,11 +146,6 @@ namespace VmsMap.Domain.Arming
 
       return result;
     }
-
-    /// <summary>The camera's own mode, `inherit` when it never had a state row.</summary>
-    private static string CameraMode(
-      IReadOnlyDictionary<string, CameraArmState> states, string cameraId) =>
-      states.GetValueOrDefault(cameraId)?.ArmMode ?? ArmMode.Inherit;
 
     /// <summary>
     /// What a zone puts a camera at: the nearest explicit row above its reference replica, or off

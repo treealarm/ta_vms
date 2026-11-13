@@ -57,7 +57,7 @@ namespace VmsMap.Domain.Arming
     private readonly VmsMapDbContext _db;
     private readonly EffectiveArmingResolver _arming;
     private readonly IDeviceSettingsSource _settings;
-    private readonly ICameraStateSource _cameraState;
+    private readonly DeviceObjectSettingsStore _objectSettings;
     private readonly ICfgArmingWriter _cfg;
     private readonly IMapService _mapService;
     private readonly EventsWriter _events;
@@ -67,7 +67,7 @@ namespace VmsMap.Domain.Arming
       VmsMapDbContext db,
       EffectiveArmingResolver arming,
       IDeviceSettingsSource settings,
-      ICameraStateSource cameraState,
+      DeviceObjectSettingsStore objectSettings,
       ICfgArmingWriter cfg,
       IMapService mapService,
       EventsWriter events,
@@ -76,7 +76,7 @@ namespace VmsMap.Domain.Arming
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _arming = arming ?? throw new ArgumentNullException(nameof(arming));
       _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-      _cameraState = cameraState ?? throw new ArgumentNullException(nameof(cameraState));
+      _objectSettings = objectSettings ?? throw new ArgumentNullException(nameof(objectSettings));
       _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
       _mapService = mapService ?? throw new ArgumentNullException(nameof(mapService));
       _events = events ?? throw new ArgumentNullException(nameof(events));
@@ -129,24 +129,24 @@ namespace VmsMap.Domain.Arming
     private async Task SetDeviceAsync(
       Node node, string deviceKind, string mode, string actor, CancellationToken ct)
     {
-      // The network call comes first and outside any transaction: holding a local transaction
-      // across a call into another service would lock rows for as long as VmsCfg takes.
-      if (string.Equals(deviceKind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal))
-      {
-        await _cfg.SetPartArmModeAsync(node.SourceId, node.PartToken, mode, ct);
-        // The settings cache would otherwise answer the read below with the old mode.
-        _settings.Invalidate(node.SourceId);
-      }
-      else
-      {
-        await _cfg.SetCameraArmedAsync(
-          node.SourceId, string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal), ct);
-      }
+      var isCamera = string.Equals(deviceKind, DeviceObjectId.DevicePart, StringComparison.Ordinal);
 
+      // The mode is the map's own row, so the write and its journal are one transaction. A digital
+      // input has no other home; a camera's effective flag is written after it, because services
+      // near the hardware read that and cannot see the map.
       await using var tx = await BeginTransactionAsync(ct);
+      await _objectSettings.SetModeAsync(node.CanonicalId, mode, ct);
       await WriteJournalAsync(node.CanonicalId, actor, mode, ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
+
+      // `inherit` is an administrator's setting: the reconciler derives the flag from the zone the
+      // camera stands in when the card saves it. The operator's switch only ever sends the other two.
+      if (isCamera && !string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal))
+      {
+        await _cfg.SetCamArmedAsync(
+          node.SourceId, string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal), ct);
+      }
     }
 
     private async Task SetContainerAsync(
@@ -255,12 +255,11 @@ namespace VmsMap.Domain.Arming
           return new NodeArmingView(true, false, armability.Configured, string.Empty, [], null);
         }
 
-        var settings = await _settings.FindAsync(
-          node.SourceId, DeviceObjectId.DigitalInputPart, node.PartToken, ct);
+        var own = await _objectSettings.GetAsync(node.CanonicalId, ct);
         var resolved = await _arming.ResolveAsync(node.CanonicalId, ct);
         return new NodeArmingView(
           true, true, armability.Configured,
-          settings?.ArmMode ?? ArmMode.Inherit,
+          own.Mode,
           armability.Modes,
           resolved ?? new NodeArmingInfo(node.CanonicalId, false, EffectiveArmingResolver.None));
       }

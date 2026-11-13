@@ -646,9 +646,10 @@ public class MapServiceReadsTests
     Assert.True(alarm.CanAck);
     Assert.Equal("Camera ", alarm.ObjectName[..7]);
 
-    // Armed: the condition is live, so the acknowledgement is the store's to refuse.
+    // Armed: the condition is live, so the acknowledgement is the store's to refuse. The camera's
+    // own mode lives in the map.
     s.Arming.Armed = true;
-    s.Arming.ArmMode = ArmMode.Armed;
+    await TestWiring.ObjectSettings(s.Db).SetModeAsync(node, ArmMode.Armed, default);
     pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
       Caller = Caller("alice"),

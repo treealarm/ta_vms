@@ -1393,14 +1393,18 @@ public class CameraStorage(
   /// `inherit` and only when it differs, so an explicit decision is never overwritten and the
   /// event the write announces cannot feed itself. Returns whether a row changed.
   /// </summary>
+  /// <summary>
+  /// The camera's effective flag, for the services near the hardware. The map is the only writer:
+  /// it resolved the flag from the camera's mode or the zone the camera stands in, so no mode
+  /// condition belongs here — the legacy <c>arm_mode</c> column is a migration source, not a gate.
+  /// </summary>
   public async Task<bool> SetCameraEffectiveArmedAsync(string cameraId, bool armed, CancellationToken ct)
   {
     await using var cmd = _dataSource.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed, arm_mode) VALUES ($1::uuid, $2, 'inherit')
+      INSERT INTO camera_states (camera_id, armed) VALUES ($1::uuid, $2)
       ON CONFLICT (camera_id) DO UPDATE
         SET armed = EXCLUDED.armed
-        WHERE camera_states.arm_mode = 'inherit'
-          AND camera_states.armed IS DISTINCT FROM EXCLUDED.armed
+        WHERE camera_states.armed IS DISTINCT FROM EXCLUDED.armed
       RETURNING 1;
       """);
     cmd.Parameters.AddWithValue(cameraId);

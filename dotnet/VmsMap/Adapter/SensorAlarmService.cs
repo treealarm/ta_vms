@@ -37,7 +37,7 @@ namespace VmsMap.Adapter
     public const string SensorClosed = DeviceEventTranslator.SensorClosed;
 
     private readonly VmsMapDbContext _db;
-    private readonly IDeviceSettingsSource _settings;
+    private readonly DeviceObjectSettingsStore _settings;
     private readonly EffectiveArmingResolver _arming;
     private readonly AlarmStore _alarms;
     private readonly IMapService _map;
@@ -45,7 +45,7 @@ namespace VmsMap.Adapter
 
     public SensorAlarmService(
       VmsMapDbContext db,
-      IDeviceSettingsSource settings,
+      DeviceObjectSettingsStore settings,
       EffectiveArmingResolver arming,
       AlarmStore alarms,
       IMapService map,
@@ -82,12 +82,12 @@ namespace VmsMap.Adapter
         return;
 
       var dedupKey = DedupKey(DeviceObjectId.CameraSource, cameraId, partKind, token);
-      var settings = await _settings.FindAsync(cameraId, partKind, token, ct);
+      var settings = await _settings.GetAsync(Utils.ConvertGuidToObjectId(objectId), ct);
 
-      var alarmEnabled = settings is { AlarmEnabled: true } && settings.TriggerOn is not null;
+      var alarmEnabled = settings.AlarmEnabled && settings.TriggerOn is not null;
       var triggers = alarmEnabled
         && contact is not null
-        && string.Equals(contact, settings!.TriggerOn, StringComparison.Ordinal);
+        && string.Equals(contact, settings.TriggerOn, StringComparison.Ordinal);
 
       if (!triggers)
       {
@@ -143,10 +143,6 @@ namespace VmsMap.Adapter
     /// </summary>
     public async Task ReconcileCameraAsync(string cameraId, CancellationToken ct)
     {
-      var settings = await _settings.ListAsync(cameraId, ct);
-      if (settings.Count == 0)
-        return;
-
       var nodes = await _db.DeviceNodes.AsNoTracking()
         .Where(n => n.source_kind == DeviceObjectId.CameraSource
                     && n.source_id == cameraId
@@ -156,7 +152,18 @@ namespace VmsMap.Adapter
       if (nodes.Count == 0)
         return;
 
-      var ids = nodes.Select(n => n.object_id).ToList();
+      // A part with no alarm has nothing to reconcile: the default rule raises nothing, and the
+      // reconcile below would only return a condition that is already normal.
+      var settings = await _settings.GetManyAsync(
+        nodes.Select(n => Utils.ConvertGuidToObjectId(n.object_id)).ToList(), ct);
+      var withAlarm = nodes
+        .Where(n => settings[Utils.ConvertGuidToObjectId(n.object_id)] is
+          { AlarmEnabled: true, TriggerOn: not null })
+        .ToList();
+      if (withAlarm.Count == 0)
+        return;
+
+      var ids = withAlarm.Select(n => n.object_id).ToList();
       var stored = await _db.ObjectStates.AsNoTracking()
         .Where(s => ids.Contains(s.id))
         .Select(s => new { s.id, states = s.states.Select(v => v.state).ToList() })
@@ -165,15 +172,8 @@ namespace VmsMap.Adapter
         s => s.id,
         s => s.states.FirstOrDefault(st => st == SensorOpen || st == SensorClosed));
 
-      foreach (var node in nodes)
+      foreach (var node in withAlarm)
       {
-        // No row for this token means the defaults, and the default is "no alarm": the reconcile
-        // below would then return the condition to normal, which is right but pointless work.
-        if (!settings.Any(s =>
-              string.Equals(s.Kind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal)
-              && string.Equals(s.Token, node.part_token, StringComparison.Ordinal)))
-          continue;
-
         var contact = stateById.GetValueOrDefault(node.object_id) switch
         {
           SensorOpen => "open",

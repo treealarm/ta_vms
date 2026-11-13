@@ -92,6 +92,7 @@ namespace VmsMap.Domain.Control
     private readonly IMapService _map;
     private readonly IRightsService _rights;
     private readonly IDeviceSettingsSource _settings;
+    private readonly DeviceObjectSettingsStore _objectSettings;
     private readonly ICameraStateSource _cameraState;
     private readonly EffectiveArmingResolver _arming;
 
@@ -100,6 +101,7 @@ namespace VmsMap.Domain.Control
       IMapService map,
       IRightsService rights,
       IDeviceSettingsSource settings,
+      DeviceObjectSettingsStore objectSettings,
       ICameraStateSource cameraState,
       EffectiveArmingResolver arming)
     {
@@ -107,6 +109,7 @@ namespace VmsMap.Domain.Control
       _map = map;
       _rights = rights;
       _settings = settings;
+      _objectSettings = objectSettings;
       _cameraState = cameraState;
       _arming = arming;
     }
@@ -299,6 +302,10 @@ namespace VmsMap.Domain.Control
         .Distinct(StringComparer.Ordinal)
         .ToList();
       var settings = await _settings.ListManyAsync(cameraIds, ct);
+      // The row's own mode and alarm rule come from the map, where a device object's behaviour
+      // lives; the settings above only say whether an administrator configured the part at all.
+      var objectSettings = await _objectSettings.GetManyAsync(
+        rows.Select(r => r.ObjectId).ToList(), ct);
 
       // Cameras and sensors resolve through one scheme: a camera's own mode, else the zone it
       // stands in. One pass for the page.
@@ -323,6 +330,8 @@ namespace VmsMap.Domain.Control
         var configured = settings.GetValueOrDefault(row.SourceId)?.FirstOrDefault(s =>
           string.Equals(s.Kind, row.PartKind, StringComparison.Ordinal)
           && string.Equals(s.Token, row.PartToken, StringComparison.Ordinal));
+        var own = objectSettings.GetValueOrDefault(row.ObjectId)
+          ?? DeviceObjectSettings.Default(row.ObjectId);
 
         if (isCamera)
         {
@@ -343,8 +352,8 @@ namespace VmsMap.Domain.Control
         var resolved = isSensor ? arming.GetValueOrDefault(row.ObjectId) : null;
         result.Add(row with
         {
-          ArmMode = isSensor ? configured?.ArmMode ?? Inherit : string.Empty,
-          AlarmEnabled = configured?.AlarmEnabled ?? false,
+          ArmMode = isSensor ? own.Mode : string.Empty,
+          AlarmEnabled = isSensor && own.AlarmEnabled,
           Configured = configured is not null,
           HasArming = isSensor,
           Armed = resolved?.Armed ?? false,

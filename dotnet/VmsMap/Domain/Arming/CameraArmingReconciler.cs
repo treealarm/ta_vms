@@ -29,6 +29,7 @@ namespace VmsMap.Domain.Arming
   {
     private readonly VmsMapDbContext _db;
     private readonly EffectiveArmingResolver _arming;
+    private readonly DeviceObjectSettingsStore _settings;
     private readonly ICameraStateSource _cameraState;
     private readonly ICfgArmingWriter _cfg;
     private readonly IMapService _map;
@@ -37,6 +38,7 @@ namespace VmsMap.Domain.Arming
     public CameraArmingReconciler(
       VmsMapDbContext db,
       EffectiveArmingResolver arming,
+      DeviceObjectSettingsStore settings,
       ICameraStateSource cameraState,
       ICfgArmingWriter cfg,
       IMapService map,
@@ -44,26 +46,37 @@ namespace VmsMap.Domain.Arming
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _arming = arming ?? throw new ArgumentNullException(nameof(arming));
+      _settings = settings ?? throw new ArgumentNullException(nameof(settings));
       _cameraState = cameraState ?? throw new ArgumentNullException(nameof(cameraState));
       _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
       _map = map ?? throw new ArgumentNullException(nameof(map));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>Brings one camera's flag in line with its zone; answers whether it had to write.</summary>
+    /// <summary>
+    /// Brings one camera's flag in line with its own mode or with its zone; answers whether it had
+    /// to write. An explicit mode is the camera's decision and wins over the zone; only `inherit`
+    /// asks the zone.
+    /// </summary>
     public async Task<bool> ReconcileAsync(string cameraId, CancellationToken ct)
     {
       var state = await _cameraState.GetStateAsync(cameraId, ct);
-      if (state is not null && !string.Equals(state.ArmMode, ArmMode.Inherit, StringComparison.Ordinal))
-        return false;
+      var mode = (await _settings.GetAsync(CameraObjectId.For(cameraId), ct)).Mode;
 
-      var want = await _arming.ZoneArmedAsync(cameraId, ct);
+      var want = mode switch
+      {
+        ArmMode.Armed => true,
+        ArmMode.Disarmed => false,
+        _ => await _arming.ZoneArmedAsync(cameraId, ct),
+      };
       if (state?.Armed == want)
         return false;
 
-      var changed = await _cfg.SetCameraEffectiveArmedAsync(cameraId, want, ct);
+      var changed = await _cfg.SetCamArmedAsync(cameraId, want, ct);
       if (changed)
-        _logger.LogInformation("Camera '{CameraId}' armed={Armed} by the zone it stands in", cameraId, want);
+        _logger.LogInformation(
+          "Camera '{CameraId}' armed={Armed} by {Source}", cameraId, want,
+          string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal) ? "the zone it stands in" : "its own mode");
       return changed;
     }
 

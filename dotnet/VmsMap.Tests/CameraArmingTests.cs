@@ -33,6 +33,11 @@ public class CameraArmingTests
     var cameraState = new TestCameraState(false, cameraMode);
     var cfg = new TestWiring.TestCfgArmingWriter(cameraState);
     var reconciler = TestWiring.CameraArming(db, map, cameraState, cfg);
+    if (!string.Equals(cameraMode, ArmMode.Inherit, StringComparison.Ordinal))
+    {
+      await new DeviceObjectSettingsStore(db)
+        .SetModeAsync(CameraObjectId.For(CameraId), cameraMode, default);
+    }
 
     return new Fixture(db, map, reconciler, cameraState, cfg);
   }
@@ -83,7 +88,7 @@ public class CameraArmingTests
 
     Assert.True(await f.Reconciler.ReconcileAsync(CameraId, default));
     Assert.True(f.CameraState.Armed);
-    Assert.Contains((CameraId, true), f.Cfg.EffectiveFlags);
+    Assert.Contains((CameraId, true), f.Cfg.CameraFlags);
   }
 
   [Fact]
@@ -95,7 +100,7 @@ public class CameraArmingTests
 
     await f.Reconciler.ReconcileAsync(CameraId, default);
     Assert.False(await f.Reconciler.ReconcileAsync(CameraId, default));
-    Assert.Single(f.Cfg.EffectiveFlags);
+    Assert.Single(f.Cfg.CameraFlags);
   }
 
   [Fact]
@@ -111,14 +116,16 @@ public class CameraArmingTests
   }
 
   [Fact]
-  public async Task ACameraWithItsOwnModeIsLeftAlone()
+  public async Task AnExplicitModeWinsOverTheZone()
   {
     var f = await CreateAsync(cameraMode: ArmMode.Disarmed);
     var space = await SpaceAsync(f, "Floor", armed: true);
     await PlaceReferenceAsync(f, space);
+    f.CameraState.Armed = true; // as if the zone had put it on guard before the mode changed
 
-    Assert.False(await f.Reconciler.ReconcileAsync(CameraId, default));
-    Assert.Empty(f.Cfg.EffectiveFlags);
+    Assert.True(await f.Reconciler.ReconcileAsync(CameraId, default));
+    Assert.False(f.CameraState.Armed);
+    Assert.Contains((CameraId, false), f.Cfg.CameraFlags);
   }
 
   [Fact]

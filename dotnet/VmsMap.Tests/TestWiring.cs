@@ -66,27 +66,32 @@ internal static class TestWiring
     new(db, map, updates, new DiagramService(db), new NoDeviceSettings(),
         catalog ?? new AlwaysKnownCatalog(), geo, NullLogger<DeviceDiagramService>.Instance);
 
+  public static DeviceObjectSettingsStore ObjectSettings(VmsMapDbContext db) => new(db);
+
   public static EffectiveArmingResolver Arming(
     VmsMapDbContext db, ICameraStateSource? cameraState = null,
-    IDeviceSettingsSource? settings = null) =>
-    new(db, settings ?? new NoDeviceSettings(), cameraState ?? new TestCameraState());
+    DeviceObjectSettingsStore? objectSettings = null) =>
+    new(db, objectSettings ?? ObjectSettings(db), cameraState ?? new TestCameraState());
 
   public static CameraArmingReconciler CameraArming(
     VmsMapDbContext db, MapDb map, ICameraStateSource? cameraState = null,
     ICfgArmingWriter? writer = null)
   {
     var state = cameraState ?? new TestCameraState();
-    return new(db, Arming(db, state), state, writer ?? new TestCfgArmingWriter(state), map,
+    return new(db, Arming(db, state), ObjectSettings(db), state,
+      writer ?? new TestCfgArmingWriter(state), map,
       NullLogger<CameraArmingReconciler>.Instance);
   }
 
   public static ControlObjectQuery ControlObjects(
     VmsMapDbContext db, MapDb map, IRightsService? rights = null,
-    IDeviceSettingsSource? settings = null, ICameraStateSource? cameraState = null)
+    IDeviceSettingsSource? settings = null, ICameraStateSource? cameraState = null,
+    DeviceObjectSettingsStore? objectSettings = null)
   {
     var states = cameraState ?? new TestCameraState();
+    var own = objectSettings ?? ObjectSettings(db);
     return new(db, map, rights ?? new RightsService(db), settings ?? new NoDeviceSettings(),
-      states, Arming(db, states, settings));
+      own, states, Arming(db, states, own));
   }
 
   public static AlarmStore Alarms(
@@ -102,10 +107,13 @@ internal static class TestWiring
 
   public static SensorAlarmService SensorAlarms(
     VmsMapDbContext db, StatesUpdateService states, MapDb map, ICameraStateSource? cameraState = null,
-    IDeviceSettingsSource? settings = null) =>
-    new(db, settings ?? new NoDeviceSettings(), Arming(db, cameraState),
-        Alarms(db, map, states, cameraState), map,
-        NullLogger<SensorAlarmService>.Instance);
+    DeviceObjectSettingsStore? objectSettings = null)
+  {
+    var own = objectSettings ?? ObjectSettings(db);
+    return new(db, own, Arming(db, cameraState, own),
+      Alarms(db, map, states, cameraState), map,
+      NullLogger<SensorAlarmService>.Instance);
+  }
 
   public static NodeArmingService NodeArming(
     VmsMapDbContext db, MapDb map, ICfgArmingWriter? writer = null,
@@ -113,49 +121,26 @@ internal static class TestWiring
   {
     var camera = cameraState ?? new TestCameraState();
     var source = settings ?? new NoDeviceSettings();
-    return new(db, Arming(db, camera, source), source, camera, writer ?? new TestCfgArmingWriter(camera),
+    return new(db, Arming(db, camera), source, ObjectSettings(db),
+      writer ?? new TestCfgArmingWriter(camera),
       map, new EventsWriter(db, new EventsService(db, map)),
       NullLogger<NodeArmingService>.Instance);
   }
 
-  /// <summary>A stand-in for VmsCfg: it records the command, and keeps a camera's flag the way
-  /// VmsCfg would so the read that follows the write sees it.</summary>
+  /// <summary>A stand-in for VmsCfg: it records the flag the map writes, and keeps it so the read
+  /// that follows sees it. Only a change counts, as the real column reports.</summary>
   internal sealed class TestCfgArmingWriter(ICameraStateSource? cameraState = null) : ICfgArmingWriter
   {
-    public List<(string CameraId, string Token, string Mode)> PartModes { get; } = [];
-
     public List<(string CameraId, bool Armed)> CameraFlags { get; } = [];
 
-    public Task SetPartArmModeAsync(
-      string cameraId, string token, string mode, CancellationToken ct)
+    public Task<bool> SetCamArmedAsync(string cameraId, bool armed, CancellationToken ct)
     {
-      PartModes.Add((cameraId, token, mode));
-      return Task.CompletedTask;
-    }
+      if (cameraState is TestCameraState test && test.Armed == armed)
+        return Task.FromResult(false);
 
-    public Task SetCameraArmedAsync(string cameraId, bool armed, CancellationToken ct)
-    {
       CameraFlags.Add((cameraId, armed));
-      if (cameraState is TestCameraState test)
-      {
-        test.Armed = armed;
-        test.ArmMode = armed ? "armed" : "disarmed";
-      }
-      return Task.CompletedTask;
-    }
-
-    /// <summary>The derived writes, recorded the way VmsCfg records them: only a change counts.</summary>
-    public List<(string CameraId, bool Armed)> EffectiveFlags { get; } = [];
-
-    public Task<bool> SetCameraEffectiveArmedAsync(string cameraId, bool armed, CancellationToken ct)
-    {
-      if (cameraState is not TestCameraState test || test.ArmMode != "inherit")
-        return Task.FromResult(false);
-      if (test.Armed == armed)
-        return Task.FromResult(false);
-
-      test.Armed = armed;
-      EffectiveFlags.Add((cameraId, armed));
+      if (cameraState is TestCameraState state)
+        state.Armed = armed;
       return Task.FromResult(true);
     }
   }

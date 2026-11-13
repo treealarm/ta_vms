@@ -65,9 +65,6 @@ public class ControlObjectTests
   {
     public Dictionary<string, bool> Armed { get; } = new(StringComparer.Ordinal);
 
-    /// <summary>Only the cameras a test names are set; the rest follow their zone.</summary>
-    public Dictionary<string, string> Modes { get; } = new(StringComparer.Ordinal);
-
     public Task<CameraArmState?> GetStateAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult<CameraArmState?>(State(cameraId));
 
@@ -78,7 +75,7 @@ public class ControlObjectTests
           .ToDictionary(id => id, State, StringComparer.Ordinal));
 
     private CameraArmState State(string cameraId) =>
-      new(cameraId, Armed.GetValueOrDefault(cameraId), Modes.GetValueOrDefault(cameraId, "inherit"));
+      new(cameraId, Armed.GetValueOrDefault(cameraId), "inherit");
   }
 
   private static async Task<Fixture> CreateAsync()
@@ -96,10 +93,12 @@ public class ControlObjectTests
     var updates = new MapUpdateService(map, tracks, states);
     var nodes = TestWiring.DeviceNodes(db, map, updates);
     var settings = new FakeSettings();
+    var objectSettings = TestWiring.ObjectSettings(db);
     var cameraStates = new FakeCameraStates();
     var rights = new RightsService(db);
     var query = new ControlObjectQuery(
-      db, map, rights, settings, cameraStates, new EffectiveArmingResolver(db, settings, cameraStates));
+      db, map, rights, settings, objectSettings, cameraStates,
+      new EffectiveArmingResolver(db, objectSettings, cameraStates));
 
     var site = await Node(map, "Site");
     var floor = await Node(map, "First floor", parentId: site.id);
@@ -130,10 +129,15 @@ public class ControlObjectTests
     await StateAsync(db, partA, "SENSOR_CLOSED");
     await StateAsync(db, relayA, "RELAY_ACTIVE");
 
+    // The modes live in the map, keyed by the node; the flags are VmsCfg's.
+    await objectSettings.SetAsync(
+      CameraObjectId.For(CameraA), ArmMode.Disarmed, null, false, default);
+    await objectSettings.SetAsync(
+      CameraObjectId.For(CameraB), ArmMode.Armed, null, false, default);
+    await objectSettings.SetAsync(partA, ArmMode.Inherit, "closed", true, default);
+    await objectSettings.SetAsync(partC, ArmMode.Armed, "closed", true, default);
     cameraStates.Armed[CameraA] = false;
-    cameraStates.Modes[CameraA] = "disarmed";
     cameraStates.Armed[CameraB] = true;
-    cameraStates.Modes[CameraB] = "armed";
 
     return new Fixture(
       db, map, query, settings, cameraStates, site.id!, floor.id!, otherSite.id!,

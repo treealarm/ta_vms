@@ -106,6 +106,26 @@ namespace VmsMap.Domain.Arming
       await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// The arming mode alone, leaving the alarm rule as it is: an operator's switch changes who
+    /// decides the arming, not what the contact means.
+    /// </summary>
+    public async Task SetModeAsync(string objectId, string mode, CancellationToken ct)
+    {
+      var guid = Utils.ConvertObjectIdToGuid(objectId)
+        ?? throw new ArgumentException($"'{objectId}' is not an object id", nameof(objectId));
+
+      var row = await _db.DeviceObjectSettings
+        .FirstOrDefaultAsync(r => r.object_id == guid, ct);
+
+      if (row is null)
+        _db.DeviceObjectSettings.Add(new DBDeviceObjectSettings { object_id = guid, arm_mode = mode });
+      else
+        row.arm_mode = mode;
+
+      await _db.SaveChangesAsync(ct);
+    }
+
     private static DeviceObjectSettings ToInfo(string objectId, DBDeviceObjectSettings row) =>
       new(objectId, row.arm_mode, row.trigger_on, row.alarm_enabled);
   }

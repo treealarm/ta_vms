@@ -148,7 +148,7 @@ public class CameraStatePostgresTests
   }
 
   [Fact]
-  public async Task TheDerivedWriteCannotOverrideAnExplicitMode()
+  public async Task TheFlagIsWrittenForAnExplicitModeToo()
   {
     var opened = await OpenAsync();
     if (opened is not { } o)
@@ -156,29 +156,13 @@ public class CameraStatePostgresTests
 
     await using var source = o.Source;
 
+    // The legacy operator write left an explicit mode behind; the map is the only writer of the
+    // flag now, and it has already resolved what the mode means.
     await o.Storage.SetCameraArmedAsync(o.CameraId, false, default);
 
-    Assert.False(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
+    Assert.True(await o.Storage.SetCameraEffectiveArmedAsync(o.CameraId, true, default));
     var state = await o.Storage.GetCameraArmStateAsync(o.CameraId, default);
-    Assert.False(state.Armed);
+    Assert.True(state.Armed);
     Assert.Equal(DeviceSettingsRules.Disarmed, state.ArmMode);
-  }
-
-  [Fact]
-  public async Task TheDatabaseRefusesAFlagThatContradictsAnExplicitMode()
-  {
-    var opened = await OpenAsync();
-    if (opened is not { } o)
-      return;
-
-    await using var source = o.Source;
-    await using var command = source.CreateCommand("""
-      INSERT INTO camera_states (camera_id, armed, arm_mode)
-      VALUES ($1::uuid, false, 'armed');
-      """);
-    command.Parameters.AddWithValue(o.CameraId);
-
-    var error = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
-    Assert.Equal(PostgresErrorCodes.CheckViolation, error.SqlState);
   }
 }

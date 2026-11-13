@@ -1101,8 +1101,8 @@ namespace VmsCfg
 
     // The map's derived write. It answers whether anything changed, and only a change is announced:
     // that is what ends the round "the map writes, the event arrives, the map looks again".
-    public override async Task<SetCamEffectiveArmingResponse> SetCamEffectiveArming(
-      SetCamEffectiveArmingRequest request, ServerCallContext context)
+    public override async Task<SetCamArmedResponse> SetCamArmed(
+      SetCamArmedRequest request, ServerCallContext context)
     {
       RequireCameraArming(CameraArmingRules.ValidateCameraId(request.CameraId));
       bool changed;
@@ -1117,7 +1117,7 @@ namespace VmsCfg
       }
 
       if (changed) NotifyCameraStateChanged(request.CameraId);
-      return new SetCamEffectiveArmingResponse { Changed = changed };
+      return new SetCamArmedResponse { Changed = changed };
     }
 
     public override async Task<ListDeviceSettingsResponse> ListDeviceSettings(

@@ -83,7 +83,9 @@ service CfgService {
   rpc GetCamState(GetCamStateRequest) returns (GetCamStateResponse);
   rpc SetCamState(SetCamStateRequest) returns (OperationStatus);
   rpc SetCamArmMode(SetCamArmModeRequest) returns (OperationStatus);
-  rpc SetCamEffectiveArming(SetCamEffectiveArmingRequest) returns (SetCamEffectiveArmingResponse);
+  // The camera's effective flag, written by the map. The mode that decides it lives in VmsMap now,
+  // so this is a plain assignment: the caller has already resolved whether the camera is armed.
+  rpc SetCamArmed(SetCamArmedRequest) returns (SetCamArmedResponse);
   // The same armed flag for a set of cameras in one call: a list of a space's sensors asks for a
   // page's worth at a time, not one round trip per camera.
   rpc GetCamStates(GetCamStatesRequest) returns (GetCamStatesResponse);
@@ -783,14 +785,14 @@ message SetCamArmModeRequest {
   string arm_mode  = 2;
 }
 
-// The map's derived write: the flag a zone above the camera's reference replica implies. It only
-// lands while the camera is still `inherit`, so an explicit setting can never be overwritten.
-message SetCamEffectiveArmingRequest {
+// The camera's effective flag as the map resolved it — from a zone or from the camera's own mode.
+// The map is the only writer; VmsOnvif and web_srv read it, because they cannot see the map.
+message SetCamArmedRequest {
   string camera_id = 1;
   bool   armed     = 2;
 }
 
-message SetCamEffectiveArmingResponse {
+message SetCamArmedResponse {
   bool changed = 1;
 }
 
