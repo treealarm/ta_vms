@@ -251,16 +251,16 @@ export default function MapsOperatorPanel() {
   }
 
   /**
-   * Selects the node a click landed on. A container is only selected: what an operator looks at
-   * on the map is a map, and entering a plan or a diagram is a move made deliberately, with the
-   * panel's Enter — a click that both selected and navigated was two things at once, and the map
-   * it opened could not say whether the plan on it was the one meant.
-   *
-   * A camera that really stands in another space is the exception: there the selection is a
+   * Selects the node a tree row or a camera stands for, and opens the canvas it lives on: a tree is
+   * a way through the deployment, so its rows navigate as well as select. A camera that really
+   * stands in another space brings that space into view for the same reason — the selection is a
    * question about a place, and the place has to be shown for the answer to mean anything.
    */
   const selectNode = (marker: MapMarker) => {
     resetAim()
+
+    if (marker.nodeKind === 'space') openSpace(marker.id)
+    if (marker.nodeKind === 'diagram') setDiagramId(marker.id)
 
     const cameraId = marker.cameraId
     if (cameraId) {
@@ -270,6 +270,15 @@ export default function MapsOperatorPanel() {
       if (placement) setFocus((f) => ({ lat: placement.lat, lon: placement.lon, seq: (f?.seq ?? 0) + 1 }))
     }
 
+    setSelectedNodeId(marker.id)
+  }
+
+  /**
+   * Selects a zone picked by its outline on the map, and nothing more: the outline is the zone, not
+   * a door, so the panel beside it carries the guard and the Enter that opens the plan.
+   */
+  const selectZone = (marker: MapMarker) => {
+    resetAim()
     setSelectedNodeId(marker.id)
   }
 
@@ -688,7 +697,7 @@ export default function MapsOperatorPanel() {
                 onPick={(s) => {
                   if (!s.id) return
                   const marker = markers[s.id]
-                  if (marker) selectNode(marker)
+                  if (marker) selectZone(marker)
                   else setSelectedNodeId(s.id)
                 }}
               />
