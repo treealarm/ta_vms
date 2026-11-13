@@ -157,6 +157,7 @@
     "tabMaster": "Master"
   },
   "objectSettings": {
+    "armingElsewhere": "Arming is the object's setting, not the camera's: edit it in Admin → Nodes or on the map.",
     "title": "Object settings",
     "arming": "Arming",
     "inherit": "Inherit",

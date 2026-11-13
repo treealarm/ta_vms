@@ -107,12 +107,13 @@ function DigitalInputRow({ cameraId, input, options, settings: saved, onSaved }:
         <Alert severity="warning" sx={{ py: 0 }}>{t('onvifSettings.deviceIoPolarityUnknown')}</Alert>
       )}
 
-      {/* Who decides this input's arming and what its contact means: one card for every logical
-          object, the same one the camera's own page shows. */}
+      {/* What the contact means. The arming mode is the object's own setting and is edited where
+          the object is selected, not on the camera's hardware page. */}
       <ObjectSettingsCard
         cameraId={cameraId}
         partKind="digital_input"
         partToken={input.token}
+        showArming={false}
       />
       {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
     </Stack>

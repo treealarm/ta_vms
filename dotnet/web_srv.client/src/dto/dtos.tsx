@@ -1278,7 +1278,8 @@ export type ObjectSettingsDto = {
 }
 
 export type ObjectSettingsBody = {
-  armMode?: CameraArmMode
+  /** Empty leaves the mode as it is: a card that edits only the alarm rule sends nothing about it. */
+  armMode?: CameraArmMode | ''
   triggerOn?: 'open' | 'closed' | ''
   alarmEnabled?: boolean
 }

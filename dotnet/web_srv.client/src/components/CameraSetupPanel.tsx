@@ -8,7 +8,6 @@ import { setCameraSchedules } from '../store/scheduleSlice'
 import type { CameraSetupDto, CameraStorageAssignmentDto } from '../dto/dtos'
 import CameraStoragesControl from './CameraStoragesControl'
 import CameraSchedulesControl from './CameraSchedulesControl'
-import ObjectSettingsCard from './objects/ObjectSettingsCard'
 import CameraDetectionsSection from './CameraDetectionsSection'
 import CameraCalibrationSection from './CameraCalibrationSection'
 import CameraTrackingSection from './CameraTrackingSection'
@@ -337,12 +336,14 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
               label={t('cameras.disabled')}
             />
 
-            {/* Who decides the camera's arming: the zone it stands in, or the card. It saves on
-                its own — the form's Apply is about the camera's setup, not its guard. */}
+            {/* Arming is the object's setting, not the camera's: it is edited where the object is
+                selected. The camera's page stays about the hardware. */}
             {!isNew && (
               <>
                 <Divider />
-                <ObjectSettingsCard cameraId={cameraId} partKind="device" />
+                <Typography variant="caption" color="text.secondary">
+                  {t('objectSettings.armingElsewhere')}
+                </Typography>
               </>
             )}
 

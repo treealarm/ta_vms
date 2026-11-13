@@ -157,6 +157,7 @@
     "tabMaster": "Maestra"
   },
   "objectSettings": {
+    "armingElsewhere": "La guardia es un ajuste del objeto, no de la cámara: se edita en Admin → Nodos o en el mapa.",
     "title": "Ajustes del objeto",
     "arming": "Modo de guardia",
     "inherit": "Heredar",

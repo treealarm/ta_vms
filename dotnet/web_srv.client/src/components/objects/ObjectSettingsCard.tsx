@@ -18,12 +18,20 @@ type Props =
   /** A card that holds the camera and the part token, not the node id. */
   | { cameraId: string; partKind: 'device' | 'digital_input'; partToken?: string }
 
+type Flags = {
+  /**
+   * Whether the arming mode is this card's to edit. The camera's own page shows only the rule: who
+   * decides the arming is a setting of the object and is edited where the object is selected.
+   */
+  showArming?: boolean
+}
+
 /**
  * The settings of a logical device object: who decides its arming (`Inherit` follows the zone it
  * stands in) and, for a digital input, which contact state raises an alarm. The operator's switch
  * stays a two-state command; this is the administrator's card.
  */
-export default function ObjectSettingsCard(props: Props) {
+export default function ObjectSettingsCard(props: Props & Flags) {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<ObjectSettingsDto | null>(null)
   const [mode, setMode] = useState<CameraArmMode>('inherit')
@@ -67,8 +75,11 @@ export default function ObjectSettingsCard(props: Props) {
     setBusy(true)
     setError(null)
     try {
+      // An empty mode is "leave it alone": a card that shows only the rule says nothing about it,
+      // and the map must not read it as an instruction to write back what this card loaded.
+      const showArming = props.showArming ?? true
       const body: ObjectSettingsBody = {
-        armMode: mode,
+        armMode: showArming ? mode : '',
         triggerOn: settings?.partKind === 'digital_input' ? triggerOn : '',
         alarmEnabled: settings?.partKind === 'digital_input' ? alarmEnabled : false,
       }
@@ -93,22 +104,26 @@ export default function ObjectSettingsCard(props: Props) {
   const viaZone = settings.armed && settings.armingSource === 'space'
   const stateLabel = settings.armed ? t('objectSettings.armed') : t('objectSettings.disarmed')
 
+  const showArming = props.showArming ?? true
+
   return (
     <Stack spacing={1.5}>
-      <TextField
-        select
-        size="small"
-        label={t('objectSettings.arming')}
-        value={mode}
-        disabled={busy || !settings.configured && isInput}
-        onChange={(e) => setMode(e.target.value as CameraArmMode)}
-        helperText={t('objectSettings.inheritHint')}
-        sx={{ maxWidth: 280 }}
-      >
-        <MenuItem value="inherit">{t('objectSettings.inherit')}</MenuItem>
-        <MenuItem value="armed">{t('objectSettings.armed')}</MenuItem>
-        <MenuItem value="disarmed">{t('objectSettings.disarmed')}</MenuItem>
-      </TextField>
+      {showArming && (
+        <TextField
+          select
+          size="small"
+          label={t('objectSettings.arming')}
+          value={mode}
+          disabled={busy || !settings.configured && isInput}
+          onChange={(e) => setMode(e.target.value as CameraArmMode)}
+          helperText={t('objectSettings.inheritHint')}
+          sx={{ maxWidth: 280 }}
+        >
+          <MenuItem value="inherit">{t('objectSettings.inherit')}</MenuItem>
+          <MenuItem value="armed">{t('objectSettings.armed')}</MenuItem>
+          <MenuItem value="disarmed">{t('objectSettings.disarmed')}</MenuItem>
+        </TextField>
+      )}
 
       {isInput && (
         <>
