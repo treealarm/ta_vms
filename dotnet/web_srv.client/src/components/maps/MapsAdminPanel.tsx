@@ -42,6 +42,8 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
   // A node asked for on a space the editor is not on: the space opens and the node is picked out
   // there, so the reader arrives with the object rather than having to hunt for it again.
   const [pendingNode, setPendingNode] = useState<{ spaceId: string; nodeId: string } | null>(null)
+  // A plan asked for its outline from its own settings: the parent opens with the pen ready.
+  const [pendingFootprint, setPendingFootprint] = useState<{ spaceId: string; childId: string } | null>(null)
   const [creating, setCreating] = useState<NewSpace | null>(null)
   const [dictionariesOpen, setDictionariesOpen] = useState(false)
 
@@ -121,10 +123,25 @@ export default function MapsAdminPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHa
           <SpaceEditor
             key={`editor:${selected.space.id}`}
             space={selected.space}
-            settings={<SpaceForm ref={detailRef} key={detailKey} space={selected.space} onSaved={() => undefined} onRemoved={reset} />}
+            settings={(
+              <SpaceForm
+                ref={detailRef}
+                key={detailKey}
+                space={selected.space}
+                onSaved={() => undefined}
+                onRemoved={reset}
+                onDrawFootprint={(space) => {
+                  if (!space.id || !space.parentId) return
+                  setPendingFootprint({ spaceId: space.parentId, childId: space.id })
+                  select(space.parentId)
+                }}
+              />
+            )}
             initialCameraId={selected.space.id === wantedSpaceId ? wantedCameraId : null}
             initialNodeId={pendingNode && pendingNode.spaceId === selected.space.id ? pendingNode.nodeId : null}
             onInitialNodeShown={() => setPendingNode(null)}
+            initialFootprintId={pendingFootprint && pendingFootprint.spaceId === selected.space.id ? pendingFootprint.childId : null}
+            onInitialFootprintShown={() => setPendingFootprint(null)}
             onOpenSpace={openSpaceWithNode}
           />
         ) : (

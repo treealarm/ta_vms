@@ -1493,6 +1493,7 @@
     "lat": "Lat",
     "lon": "Lon",
     "confirmRemoveFootprint": "Remove the outline of \"{{name}}\"? The plan stays, but it is then reachable only from the tree.",
+    "drawFootprint": "Draw the outline on the parent's map",
     "alignOnMap": "Map underneath",
     "alignOnMapHint": "Show the real map under the plan while lining it up. Operators never see it.",
     "aimNoReference": "This camera has no real position on any map yet",

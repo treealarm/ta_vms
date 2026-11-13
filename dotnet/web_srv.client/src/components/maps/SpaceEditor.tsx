@@ -69,6 +69,10 @@ type Props = {
   initialNodeId?: string | null
   /** That node was picked out; the page drops its note of it. */
   onInitialNodeShown?: () => void
+  /** A nested plan whose outline was asked for from its own settings: picked, pen in hand. */
+  initialFootprintId?: string | null
+  /** That outline was picked out; the page drops its note of it. */
+  onInitialFootprintShown?: () => void
   /**
    * Moves the whole page to another space — the tree beside it follows. A node named with it is
    * selected there, so "show on map" crosses spaces without losing the object.
@@ -88,7 +92,8 @@ type Props = {
  * shared with the lists through `useEditorState`.
  */
 export default function SpaceEditor({
-  space, settings, initialCameraId, initialNodeId, onInitialNodeShown, onOpenSpace,
+  space, settings, initialCameraId, initialNodeId, onInitialNodeShown,
+  initialFootprintId, onInitialFootprintShown, onOpenSpace,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -591,6 +596,19 @@ export default function SpaceEditor({
     onInitialNodeShown?.()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the canvas is rebuilt every render
   }, [initialNodeId, mapData])
+
+  // Arrived from a plan's own settings to give it an outline: the footprint is picked out with the
+  // pen ready, because a plan without one cannot be clicked on this map at all.
+  const initialFootprintApplied = useRef(false)
+  useEffect(() => {
+    if (initialFootprintApplied.current || !initialFootprintId) return
+    if (!nested.some((s) => s.id === initialFootprintId)) return
+    initialFootprintApplied.current = true
+    setSelection({ kind: 'footprint', id: initialFootprintId })
+    setMode('footprint')
+    onInitialFootprintShown?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `nested` is rebuilt every render
+  }, [initialFootprintId])
 
   const selectionPanel = selectedPlacement ? (() => {
     const reference = referenceOf(selectedPlacement.cameraId)

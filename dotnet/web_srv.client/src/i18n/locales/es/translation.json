@@ -1492,6 +1492,7 @@
     "lat": "Lat",
     "lon": "Lon",
     "confirmRemoveFootprint": "¿Quitar el contorno de \"{{name}}\"? El plano queda, pero solo se llega a él desde el árbol.",
+    "drawFootprint": "Dibujar el contorno en el mapa del padre",
     "alignOnMap": "Mapa debajo",
     "alignOnMapHint": "Muestra el mapa real bajo el plano mientras se alinea. Los operadores nunca lo ven.",
     "aimNoReference": "Esta cámara aún no tiene posición real en ningún mapa",
