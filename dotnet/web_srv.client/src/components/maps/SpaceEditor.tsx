@@ -12,6 +12,7 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong'
 import AdjustIcon from '@mui/icons-material/Adjust'
 import TimelineIcon from '@mui/icons-material/Timeline'
+import DrawIcon from '@mui/icons-material/Draw'
 import PentagonOutlinedIcon from '@mui/icons-material/PentagonOutlined'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
@@ -121,6 +122,10 @@ export default function SpaceEditor({
   // on.
   const picking = !!pendingCameraId || !!pendingDiagramId || mode === 'landmark'
     || DRAW_MODES.includes(mode)
+  // The modes whose clicks build a run of points rather than one shape at one click.
+  const drawingPath = mode === 'line' || mode === 'polygon' || mode === 'footprint'
+  // A footprint and a polygon are rings; a line is not.
+  const drawingRing = mode === 'polygon' || mode === 'footprint'
   const mapData = useMapChildren(spaceId || null)
   const levels = useAppSelector((s) => s.levels.levels)
   const markersById = useAppSelector((s) => s.objects.markers)
@@ -368,6 +373,16 @@ export default function SpaceEditor({
       ? points.slice(0, -1)
       : points
 
+    // A footprint replaces the ring the selected plan has: fewer than three corners is not an
+    // outline the server would take, so the pen stays in hand and the hint counts the corners.
+    if (mode === 'footprint') {
+      if (!selectedNested || clean.length < 3) return
+      setDraftPoints(null)
+      setMode('select')
+      commitFootprint(selectedNested, clean)
+      return
+    }
+
     if (mode === 'line' && clean.length >= 2) createFigure(clean, 'line')
     else if (mode === 'polygon' && clean.length >= 3) createFigure(clean, 'polygon')
     else setDraftPoints(null)
@@ -407,7 +422,7 @@ export default function SpaceEditor({
       createFigure([at], 'point')
       return
     }
-    if ((mode === 'line' || mode === 'polygon') && spaceId) {
+    if (drawingPath && spaceId) {
       setDraftPoints((previous) => (previous ? [...previous, at] : [at]))
       return
     }
@@ -544,6 +559,8 @@ export default function SpaceEditor({
     : mode === 'point' ? t('maps.editor.pointHint')
     : mode === 'line' ? t('maps.editor.lineHint', { count: draftPoints?.length ?? 0 })
     : mode === 'polygon' ? t('maps.editor.polygonHint', { count: draftPoints?.length ?? 0 })
+    : mode === 'footprint'
+      ? t('maps.editor.footprintHint', { count: draftPoints?.length ?? 0, name: selectedNested?.name ?? '' })
     : null
 
   // Applied a single time: placements load after the editor mounts, so this waits for the
@@ -764,6 +781,9 @@ export default function SpaceEditor({
               setPendingDiagramId(null)
               setPendingPart(null)
               setDraftPoints(null)
+              // The pen draws a footprint from scratch: an unsaved draft from before would be
+              // drawn under the clicks and confuse which ring is being replaced.
+              if (v === 'footprint') setDraftFootprint(null)
             }}
           >
             <ToggleButton value="select"><Tooltip title={t('maps.modeSelect')}><PanToolIcon fontSize="small" /></Tooltip></ToggleButton>
@@ -771,6 +791,13 @@ export default function SpaceEditor({
             <ToggleButton value="point"><Tooltip title={t('maps.editor.modePoint')}><AdjustIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="line"><Tooltip title={t('maps.editor.modeLine')}><TimelineIcon fontSize="small" /></Tooltip></ToggleButton>
             <ToggleButton value="polygon"><Tooltip title={t('maps.editor.modePolygon')}><PentagonOutlinedIcon fontSize="small" /></Tooltip></ToggleButton>
+            <ToggleButton value="footprint" disabled={!selectedNested}>
+              <Tooltip title={selectedNested
+                ? t('maps.editor.modeFootprint')
+                : t('maps.editor.modeFootprintNeedsSelection')}>
+                <DrawIcon fontSize="small" />
+              </Tooltip>
+            </ToggleButton>
             <ToggleButton value="plan" disabled={!plan}><Tooltip title={t('maps.modePlan')}><CropRotateIcon fontSize="small" /></Tooltip></ToggleButton>
           </ToggleButtonGroup>
           <Tooltip title={t('maps.saveView')}>
@@ -792,7 +819,7 @@ export default function SpaceEditor({
               {t('common.cancel')}
             </Button>
           )}
-          {draftPoints && (mode === 'line' || mode === 'polygon') && (
+          {draftPoints && drawingPath && (
             <>
               <Button size="small" variant="outlined" onClick={finishDrawing}>{t('maps.editor.finish')}</Button>
               <Button size="small" onClick={() => setDraftPoints(null)}>{t('common.cancel')}</Button>
@@ -859,8 +886,8 @@ export default function SpaceEditor({
               interactive={!picking}
               onGeometryChange={handleGeometryChange}
             />
-            {draftPoints && <DrawingPreview points={draftPoints} closed={mode === 'polygon'} />}
-            {(mode === 'line' || mode === 'polygon') && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
+            {draftPoints && <DrawingPreview points={draftPoints} closed={drawingRing} />}
+            {drawingPath && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
             <Footprints
               nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
               selectedId={selectionNodeId}
