@@ -624,8 +624,8 @@ def check_types(vms):
 
     panel = types.get("Camera rear panel", {})
     panel_regions = {r.get("regionKey") for r in panel.get("regions") or []}
-    check({"input", "lamp", "peer", "loop"} == panel_regions,
-          f"Camera rear panel offers its four sockets (has {sorted(panel_regions)})")
+    check({"input", "lamp", "peer", "loop", "button"} == panel_regions,
+          f"Camera rear panel offers its five sockets (has {sorted(panel_regions)})")
     check(panel.get("sourceKind") == "camera" and panel.get("autoAttach") is True,
           "the panel is a template that attaches itself to its model")
     bindings = {r.get("regionKey"): (r.get("part") or {}) for r in panel.get("regions") or []}

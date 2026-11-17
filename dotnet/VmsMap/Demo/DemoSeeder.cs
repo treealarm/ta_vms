@@ -450,6 +450,13 @@ namespace VmsMap.Demo
 
         await _geo.RemoveAsync([diagramId]);
 
+        // The service names a device's diagram `<camera> / <type>` when it makes the node and keeps
+        // whatever name it finds afterwards — a template change is not a rename. The camera is the
+        // world's to name, though, and a camera this world renamed (`OnvifSim cam1` became `cam1`)
+        // would leave yesterday's name on the diagram hanging under its picture. Only the part
+        // before the service's separator is the camera's; the rest is the type's and stays.
+        await RenameDeviceDiagramAsync(diagramId, diagram.CameraKey, ct);
+
         // The thumbnail the map draws when it offers a link into the diagram: the paper it opens on
         // is the same picture.
         var picture = world.Files.Single(file => file.Key == diagram.VisualKey);
@@ -711,6 +718,34 @@ namespace VmsMap.Demo
     {
       var slash = logicalKey.IndexOf('/');
       return slash < 0 ? logicalKey : logicalKey[..slash];
+    }
+
+    /// The camera's name at the head of its diagram's name, as `DeviceDiagramService.CreateAsync`
+    /// writes it. The separator is that service's; this only reads what it wrote.
+    private const string DiagramNameSeparator = " / ";
+
+    private async Task RenameDeviceDiagramAsync(string diagramId, string cameraKey, CancellationToken ct)
+    {
+      if (!Guid.TryParse(diagramId, out var id)) return;
+      var marker = await _db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == id, ct);
+      var camera = await _cameras.GetAsync(DemoIds.Camera(cameraKey), ct);
+      if (marker is null || camera?.Name is not { Length: > 0 } cameraName) return;
+
+      var separator = marker.name.IndexOf(DiagramNameSeparator, StringComparison.Ordinal);
+      if (separator <= 0 || marker.name.StartsWith(cameraName + DiagramNameSeparator, StringComparison.Ordinal))
+        return;
+
+      // The whole row, not just the name: a hierarchy write takes the parent and the owner it is
+      // given, so leaving them out would orphan the node it is renaming.
+      await _updates.UpdateObjects([
+        new BaseMarkerDTO
+        {
+          id = diagramId,
+          parent_id = marker.parent_id is { } parent ? Utils.ConvertGuidToObjectId(parent) : null,
+          owner_id = marker.owner_id is { } owner ? Utils.ConvertGuidToObjectId(owner) : null,
+          name = cameraName + marker.name[separator..],
+        },
+      ]);
     }
 
     // ── Registry ────────────────────────────────────────────────────────────────────────────
