@@ -39,8 +39,8 @@ namespace VmsMap.Db
     /// <summary>
     /// Serialises tree changes for the whole deployment. A cycle is a property of the tree, not of
     /// one node, so the lock cannot be keyed by node; tree writes are configuration changes, not a
-    /// hot path, which is what makes one key affordable. Taken after the alarm lock: the writer
-    /// that recomputes alarms takes them in that order.
+    /// hot path, which is what makes one key affordable. It is taken last: a writer that also
+    /// recomputes alarms has already taken the alarm lock by then.
     /// </summary>
     public static Task AcquireHierarchyAsync(VmsMapDbContext db, CancellationToken ct = default) =>
       AcquireAsync(db, Hierarchy, ct);
@@ -107,7 +107,7 @@ namespace VmsMap.Db
       if (!db.Database.IsRelational())
         return;
 
-      // The name is one of the two constants above, never anything built from input; the
+      // The name is one of the constants above, never anything built from input; the
       // parameter keeps the statement from being assembled by interpolation.
       await db.Database.ExecuteSqlInterpolatedAsync(
         $"SELECT pg_advisory_xact_lock(hashtext({name}));", ct);
