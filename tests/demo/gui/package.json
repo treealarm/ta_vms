@@ -1,0 +1,12 @@
+{
+  "name": "demo-gui-check",
+  "private": true,
+  "description": "Acceptance through the browser: the thin layer check_demo.py cannot see.",
+  "type": "commonjs",
+  "scripts": {
+    "check": "node check_gui.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}
