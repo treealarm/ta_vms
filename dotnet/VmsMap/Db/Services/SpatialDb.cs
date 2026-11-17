@@ -430,13 +430,20 @@ namespace VmsMap.Db
       if (target is null)
       {
         // A picture of its own on this canvas, under whatever container the administrator gave it;
-        // the placement editor creates a node per space, not per camera.
+        // the placement editor creates a node per space, not per camera. It is named after the
+        // camera it is a picture of and its own number — `cam1 rep1` — and the server picks the
+        // number, so a client cannot guess one another client already took.
+        var replicaNames = await _db.Markers.AsNoTracking()
+          .Where(m => m.owner_id == canonicalId)
+          .Select(m => m.name)
+          .ToListAsync(ct);
+
         await _mapService.UpdateHierarchyAsync([new BaseMarkerDTO
         {
           id = replicaId.ToString(),
           parent_id = spaceId.ToString(),
           owner_id = canonicalId.ToString(),
-          name = camera.Name,
+          name = ReplicaNames.Next(camera.Name, replicaNames),
         }]);
 
         target = new DBCameraPlacement

@@ -81,6 +81,7 @@ public class DemoSeederTests
   private static DemoWorld World(
     IReadOnlyList<DemoNode>? nodes = null,
     IReadOnlyList<DemoPlacement>? placements = null,
+    IReadOnlyList<DemoPartReplica>? partReplicas = null,
     IReadOnlyList<DemoDeviceSettings>? devices = null,
     IReadOnlyList<DemoLandmark>? landmarks = null,
     IReadOnlyList<DemoGroundMark>? groundMarks = null,
@@ -104,6 +105,7 @@ public class DemoSeederTests
       ],
       nodes ?? DefaultNodes(),
       placements ?? [],
+      partReplicas ?? [],
       devices ?? [],
       landmarks ?? [],
       groundMarks ?? [],
@@ -250,6 +252,42 @@ public class DemoSeederTests
     Assert.Equal("armed", row.arm_mode);
     Assert.Equal("closed", row.trigger_on);
     Assert.True(row.alarm_enabled);
+  }
+
+  [Fact]
+  public async Task APartReplicaIsANodeOfThePartAndLeavesWithTheWorld()
+  {
+    // A part placed on a canvas is a replica of the part's canonical node — the row an
+    // administrator's placement writes — with a point of its own and no camera placement. The
+    // second install updates that row instead of adding another, and removing the world takes it.
+    var s = Create("sim-master");
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      partReplicas:
+      [
+        new DemoPartReplica("object/part-button", "sim-master", "relay", "button", "space/map",
+          "relay4 rep1", 39.05, -76.95, "#26a69a"),
+      ]);
+
+    var first = await s.Seeder.InstallAsync(world, CancellationToken.None);
+    Assert.Empty(first.SkippedCameras);
+
+    var partId = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, DemoIds.Camera("sim-master"), "relay", "button"));
+    var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == partId);
+    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
+    Assert.Equal(DemoIds.For("object/part-button"), picture.id);
+    Assert.Equal(mapSpace.id, picture.parent_id);
+    Assert.Equal("relay4 rep1", picture.name);
+    Assert.Empty(await s.Db.CameraPlacements.AsNoTracking()
+      .Where(placement => placement.object_id == picture.id).ToListAsync());
+
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+    var again = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == partId);
+    Assert.Equal(picture.id, again.id);
+
+    await s.Seeder.RemoveAsync(Key, CancellationToken.None);
+    Assert.Empty(await s.Db.Markers.AsNoTracking().Where(m => m.owner_id == partId).ToListAsync());
   }
 
   [Fact]

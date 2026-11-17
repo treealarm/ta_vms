@@ -404,8 +404,10 @@ public class SpatialDbTests
     Assert.True(remaining.is_reference);
     Assert.False(await test.Db.Markers.AnyAsync(m => m.id == picture.object_id));
 
-    // Both the canonical node and the reference replica are named after the camera.
-    Assert.Equal(2, await test.Db.Markers.CountAsync(m => m.name == $"Camera {TestCameras.One}"));
+    // The canonical node keeps the camera's own name; the picture left is named after it and its
+    // own number.
+    Assert.Equal(1, await test.Db.Markers.CountAsync(m => m.name == $"Camera {TestCameras.One}"));
+    Assert.Equal(1, await test.Db.Markers.CountAsync(m => m.name == $"Camera {TestCameras.One} rep1"));
   }
 
   [Fact]

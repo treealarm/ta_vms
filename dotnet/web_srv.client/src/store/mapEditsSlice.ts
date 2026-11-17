@@ -132,9 +132,10 @@ export type ReplicaRequest = {
   /** Where it is dropped on the parent canvas. */
   lat: number
   lon: number
-  /** The replica's own name; empty copies the owner's. */
+  /** The replica's own name; empty lets the server name it `<owner> rep<N>`. */
   name?: string
-  /** How the replica is drawn: a part's colour and caption, so it is not just a grey dot. */
+  /** How the replica is drawn: a part's colour and caption, so it is not just a grey dot. A
+   *  caption of its own is used as given; without one the replica's name is the caption. */
   visual?: MapVisual
 }
 
@@ -154,7 +155,9 @@ export const createReplicaAt = createAsyncThunk(
     }])
 
     // The look travels on its own call, as the editor's node form writes it.
-    if (visual) await mapApi.updateVisual([{ ...visual, objectId: marker.id }])
+    if (visual) {
+      await mapApi.updateVisual([{ text: marker.name, ...visual, objectId: marker.id }])
+    }
 
     await api.dispatch(loadNodes([marker.id]))
     api.dispatch(canvasAdd({ canvasId: parentId, ids: [marker.id] }))

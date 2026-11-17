@@ -498,8 +498,19 @@ public class MapServiceReadsTests
 
     Assert.NotEqual(camera.id, replica.Id);
     Assert.Equal(camera.id, replica.OwnerId);
+    // Unnamed, the replica is named by its owner and its own number — the number the server picks.
+    Assert.Equal("Camera rep1", replica.Name);
     var props = await s.Map.GetPropAsync(replica.Id);
     Assert.Contains(props.extra_props!, p => p.prop_name == "model" && p.str_val == "X");
+
+    var second = await s.Grpc.CreateReplica(new MapProto.CreateReplicaRequest
+    {
+      OwnerId = camera.id,
+      ParentId = building.id,
+      Name = "My picture",
+      Caller = Caller("alice"),
+    }, new TestContext());
+    Assert.Equal("My picture", second.Name);
 
     await Assert.ThrowsAsync<RpcException>(() =>
       s.Grpc.CreateReplica(new MapProto.CreateReplicaRequest

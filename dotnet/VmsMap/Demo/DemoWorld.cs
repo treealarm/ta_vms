@@ -92,6 +92,21 @@ namespace VmsMap.Demo
     double RangeM = 30,
     bool IsReference = true);
 
+  /// A part of a device placed on a canvas as a replica, as an administrator places one from the
+  /// palette: an ordinary node whose owner is the part's canonical node, with a point and a look of
+  /// its own. It carries no camera placement and no state — acting on the picture acts on the part.
+  public sealed record DemoPartReplica(
+    string Key,
+    string CameraKey,
+    string PartKind,
+    string Token,
+    string SpaceKey,
+    string Name,
+    double Lat,
+    double Lon,
+    string Color,
+    string? ZoomLevel = null);
+
   /// The behaviour a demo installs for one part of a device: who decides its arming, and what its
   /// contact means. The map owns this — a logical object's settings are not hardware configuration —
   /// so the demo installs it here; the part's name stays VmsCfg's half of the demo.
@@ -153,6 +168,7 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoSpace> Spaces,
     IReadOnlyList<DemoNode> Nodes,
     IReadOnlyList<DemoPlacement> Placements,
+    IReadOnlyList<DemoPartReplica> PartReplicas,
     IReadOnlyList<DemoDeviceSettings> Devices,
     IReadOnlyList<DemoLandmark> Landmarks,
     IReadOnlyList<DemoGroundMark> GroundMarks,

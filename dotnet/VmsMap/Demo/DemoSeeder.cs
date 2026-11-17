@@ -108,6 +108,32 @@ namespace VmsMap.Demo
     {
       var report = new DemoReport { Key = world.Key, Version = world.Version };
 
+      void Skip(string cameraKey)
+      {
+        if (!report.SkippedCameras.Contains(cameraKey)) report.SkippedCameras.Add(cameraKey);
+      }
+
+      // ── Parts a replica stands on: their canonical nodes come first ─────────────────────────
+      // A replica's owner is the part's own node, and the device-node service creates it in a
+      // transaction of its own — which a connection already in one refuses. So it is asked before
+      // the world's transaction opens. A part whose camera this deployment does not have is
+      // reported and skipped with its picture; the next install picks it up.
+      var replicaOwners = new Dictionary<string, string>(StringComparer.Ordinal);
+      foreach (var replica in world.PartReplicas)
+      {
+        var cameraId = DemoIds.Camera(replica.CameraKey);
+        if (await _cameras.GetAsync(cameraId, ct) is null)
+        {
+          Skip(replica.CameraKey);
+          continue;
+        }
+
+        var partId = await _deviceNodes.EnsureAsync(
+          DeviceObjectId.CameraSource, cameraId, replica.PartKind, replica.Token, ct);
+        if (partId is null) Skip(replica.CameraKey);
+        else replicaOwners[replica.Key] = partId;
+      }
+
       await using var tx = await BeginAsync(ct);
       await LockAsync(ct);
 
@@ -291,7 +317,7 @@ namespace VmsMap.Demo
           // Kept in the registry if it was there: whatever placement the camera still has was put
           // there by an earlier install, and a removal must find it.
           if (registered.TryGetValue(key, out var earlier)) ids[key] = earlier;
-          report.SkippedCameras.Add(placement.CameraId);
+          Skip(placement.CameraId);
           continue;
         }
 
@@ -341,14 +367,54 @@ namespace VmsMap.Demo
         Written(key);
       }
 
+      // ── A part's picture: an ordinary node whose owner is the part ──────────────────────────
+      // Written the way an administrator places one from the palette — the node, its point and its
+      // look — so a replica made by the world and one made by hand are the same row shape. It
+      // carries no camera placement and no state of its own: acting on the picture acts on the part.
+      foreach (var replica in world.PartReplicas)
+      {
+        if (!replicaOwners.TryGetValue(replica.Key, out var ownerId)) continue;
+
+        var id = IdOf(replica.Key);
+        var parentId = Required(replica.SpaceKey).ToString();
+
+        await _updates.UpdateObjects([
+          new BaseMarkerDTO
+          {
+            id = id.ToString(),
+            parent_id = parentId,
+            owner_id = ownerId,
+            name = replica.Name,
+          }]);
+
+        await _geo.CreateGeo([new FigureGeoDTO
+        {
+          id = id.ToString(),
+          parent_id = parentId,
+          name = replica.Name,
+          geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = replica.Lat, Lon = replica.Lon }),
+          zoom_level = replica.ZoomLevel,
+        }]);
+
+        await _visuals.UpdateListAsync([new VisualDTO
+        {
+          object_id = id.ToString(),
+          color = replica.Color,
+          text = replica.Name,
+        }]);
+
+        ids[replica.Key] = id;
+        keep.Add(replica.Key);
+        Written(replica.Key);
+      }
+
       // ── A device's diagram: under the camera's picture, made by the service that owns it ─────
       foreach (var diagram in world.DeviceDiagrams)
       {
         if (!placedCameras.Contains(diagram.CameraKey))
         {
           // The device is not in this deployment: the diagram would draw nothing and say nothing.
-          if (!report.SkippedCameras.Contains(diagram.CameraKey))
-            report.SkippedCameras.Add(diagram.CameraKey);
+          Skip(diagram.CameraKey);
           continue;
         }
 
@@ -410,8 +476,7 @@ namespace VmsMap.Demo
         if (!placedCameras.Contains(group.Key))
         {
           // A mark for a camera the world never placed is a camera this install cannot show either.
-          if (!report.SkippedCameras.Contains(group.Key))
-            report.SkippedCameras.Add(group.Key);
+          Skip(group.Key);
           continue;
         }
 
@@ -429,8 +494,7 @@ namespace VmsMap.Demo
       {
         if (!placedCameras.Contains(group.Key))
         {
-          if (!report.SkippedCameras.Contains(group.Key))
-            report.SkippedCameras.Add(group.Key);
+          Skip(group.Key);
           continue;
         }
 
@@ -485,15 +549,15 @@ namespace VmsMap.Demo
       // map's, and a copy anywhere else would be the second source this release removed.
       //
       // After the world's transaction, not inside it: ensuring a part's node is the node service's
-      // work and it opens a transaction of its own, which a connection already in one refuses. The
+      // work and it opens a transaction of its own, which a connection already in one refuses. (The
+      // nodes a replica stands on were ensured before the transaction for the same reason.) The
       // world is complete without these rows — a part with none keeps the defaults — so a failure
       // here costs the demo's arming until the next install, not half a world.
       foreach (var device in world.Devices)
       {
         if (!placedCameras.Contains(device.CameraKey))
         {
-          if (!report.SkippedCameras.Contains(device.CameraKey))
-            report.SkippedCameras.Add(device.CameraKey);
+          Skip(device.CameraKey);
           continue;
         }
 
@@ -502,8 +566,7 @@ namespace VmsMap.Demo
           device.PartKind, device.Token, ct);
         if (partId is null)
         {
-          if (!report.SkippedCameras.Contains(device.CameraKey))
-            report.SkippedCameras.Add(device.CameraKey);
+          Skip(device.CameraKey);
           continue;
         }
 

@@ -23,14 +23,14 @@ public class DemoWorldTests
     Assert.Equal(map.Key, building.ParentKey);
     // The building is the real one, named by its floor: its footprint is the 19-corner outline of
     // Biomolecular Sciences, the same the simulator builds its prism from.
-    Assert.Equal("First floor", building.Name);
+    Assert.Equal("plan1", building.Name);
     Assert.Equal(19, building.Footprint?.Count);
     Assert.NotNull(building.Plan);
 
     // The floor is the room: no plan is nested in it, and the hall pair stands on the floor's own
     // plan. What stands in the room is one diagram of the floor — its four racks are regions of it.
     var diagram = Assert.Single(_world.Nodes, node => node.Key == "object/floor-layout");
-    Assert.Equal("First floor Diagram", diagram.Name);
+    Assert.Equal("diag1", diagram.Name);
     Assert.Equal(building.Key, diagram.ParentKey);
     Assert.Equal("type/floor-layout", diagram.TypeKey);
     Assert.NotNull(diagram.At);
@@ -79,7 +79,7 @@ public class DemoWorldTests
     });
 
     var thirdPortOfTheFirstSwitch = ports.Single(port => port.Key == "object/port-rack-a-01-1-03");
-    Assert.Equal("Port 3", thirdPortOfTheFirstSwitch.Name);
+    Assert.Equal("port3", thirdPortOfTheFirstSwitch.Name);
     Assert.Equal("port-3", thirdPortOfTheFirstSwitch.RegionKey);
     Assert.Equal("object/switch-rack-a-01-1", thirdPortOfTheFirstSwitch.ParentKey);
   }
@@ -153,13 +153,14 @@ public class DemoWorldTests
 
     Assert.Equal(5, hall.Count);
     Assert.Equal(5, road.Count);
-    Assert.Equal(["L1 red (hall)", "L2 yellow (hall)", "L3 blue (hall)", "L4 white (hall)", "L5 purple (hall)"],
+    Assert.Equal(["L1 red", "L2 yellow", "L3 blue", "L4 white", "L5 purple"],
       hall.Select(landmark => landmark.Name));
-    // The two sets are drawn in one tree, one under the map and one under the plan: a name that
-    // both share reads as two identical rows.
+    // The two sets are drawn in one tree, one under the map and one under the plan. A name is a
+    // type and a number and carries no place, so `L1 red` appears twice — once per space, which is
+    // where the operator reads it, and never twice under the same parent.
     Assert.Equal(
       _world.Landmarks.Count,
-      _world.Landmarks.Select(landmark => landmark.Name).Distinct(StringComparer.Ordinal).Count());
+      _world.Landmarks.Select(landmark => (landmark.SpaceKey, landmark.Name)).Distinct().Count());
     Assert.All(_world.Landmarks, landmark => Assert.Equal(0, landmark.HeightM));
 
     // The hall's L1 is world (-10.6, -71.6), the first of the blocks the simulator stands there.
@@ -215,12 +216,37 @@ public class DemoWorldTests
     Assert.True(panel.AutoAttach);
 
     var bindings = panel.Regions.ToDictionary(region => region.Key, region => region.Part);
-    Assert.Equal(4, bindings.Count);
+    Assert.Equal(5, bindings.Count);
     Assert.All(bindings.Values, part => Assert.Equal("token", part!.MatchBy));
     Assert.Equal("digital_input", bindings["input"]!.PartKind);
     Assert.Equal("relay", bindings["lamp"]!.PartKind);
     Assert.Equal("relay", bindings["peer"]!.PartKind);
     Assert.Equal("relay", bindings["loop"]!.PartKind);
+    Assert.Equal("relay", bindings["button"]!.PartKind);
+  }
+
+  [Fact]
+  public void TheMastersFourthRelayStandsOnTheMapAsAReplica()
+  {
+    // A part placed by hand and a part the world places are the same row: a node whose owner is
+    // the part's canonical node, standing in a space with a point of its own. The name carries the
+    // owner's and its own number, as an administrator's placement would.
+    var replica = Assert.Single(_world.PartReplicas);
+    Assert.Equal(("sim-master", "relay", "button", "space/umd"),
+      (replica.CameraKey, replica.PartKind, replica.Token, replica.SpaceKey));
+    Assert.Equal("relay4 rep1", replica.Name);
+    Assert.StartsWith("relay4 rep", replica.Name);
+
+    var space = _world.Spaces.Single(candidate => candidate.Key == replica.SpaceKey);
+    Assert.InRange(replica.Lat, space.South, space.North);
+    Assert.InRange(replica.Lon, space.West, space.East);
+
+    // The panel the replica sits on has a terminal for it, and that terminal is bound to the relay
+    // by the token the simulator reports.
+    var panel = _world.Types.Single(type => type.Key == "type/camera-rear-panel");
+    var region = Assert.Single(panel.Regions, candidate => candidate.Part?.MatchValue == replica.Token);
+    Assert.Equal(("relay", replica.PartKind), (region.Part!.PartKind, replica.PartKind));
+    Assert.Equal(region.Geometry, DemoArt.CameraPanelSocket(replica.Token));
   }
 
   [Fact]
@@ -230,7 +256,7 @@ public class DemoWorldTests
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(21, _world.Version);
+    Assert.Equal(22, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
     Assert.Equal("space/building", hall.SpaceKey);
@@ -283,6 +309,13 @@ public class DemoWorldTests
 
     Assert.Contains(_world.Rights, right =>
       right.NodeKey == "space/umd" && right.Subject == "user" && right.Action == RightActions.View);
+
+    // The operator acts too: `control` on the floor, the space the master's reference replica
+    // stands in — a right on the map above it does not reach a device's node.
+    Assert.Contains(_world.Rights, right =>
+      right.NodeKey == "space/building" && right.Subject == "user" && right.Action == RightActions.Control);
+    Assert.DoesNotContain(_world.Rights, right =>
+      right.NodeKey == "space/umd" && right.Action == RightActions.Control);
   }
 
   [Fact]
