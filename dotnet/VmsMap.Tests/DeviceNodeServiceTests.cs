@@ -37,7 +37,7 @@ public class DeviceNodeServiceTests
     var states = new StatesUpdateService(new StateService(db), map, db);
     var levels = new LevelService(db);
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), new GeoService(db, levels));
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
 
     return new Services(db, map,
       TestWiring.DeviceNodes(db, map, updates, new FrontDoorCatalog()));
@@ -101,6 +101,12 @@ public class DeviceNodeServiceTests
     var space = await Node(s.Map, "Building");
     var container = await Node(s.Map, "Car park", space.id);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+
+    // A picture names its original, and the original exists: every writer (a placement, the
+    // adapter) creates the canonical node first.
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = canonicalId.ToString(), name = "Camera" }
+    ]);
 
     // The camera is drawn in a container on the building's canvas; that is a replica of it.
     var replicaId = Guid.NewGuid();

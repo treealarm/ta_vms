@@ -100,7 +100,7 @@ public class DeviceEventWriterTests
     var statesUpdate = new StatesUpdateService(stateService, map, db);
     var levels = new LevelService(db);
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), new GeoService(db, levels));
-    var updates = new MapUpdateService(map, tracks, statesUpdate);
+    var updates = new MapUpdateService(db, map, tracks, statesUpdate);
     var nodes = TestWiring.DeviceNodes(db, map, updates);
 
     var sensorAlarms = TestWiring.SensorAlarms(db, statesUpdate, map);

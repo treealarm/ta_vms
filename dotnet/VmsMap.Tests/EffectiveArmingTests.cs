@@ -41,7 +41,7 @@ public class EffectiveArmingTests
     var states = new StatesUpdateService(stateService, map, db);
     var levels = new LevelService(db);
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), new GeoService(db, levels));
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
 
     var nodes = TestWiring.DeviceNodes(db, map, updates);
     var store = TestWiring.ObjectSettings(db);

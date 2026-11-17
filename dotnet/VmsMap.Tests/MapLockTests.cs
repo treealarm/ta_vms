@@ -55,6 +55,20 @@ public class MapLockTests
   }
 
   [Fact]
+  public void TheHierarchyLockIsTakenOnlyWhereTheTreeIsWritten()
+  {
+    // The tree is read and written in MapDb; a second writer taking the hierarchy lock elsewhere
+    // would be a second lock order to reason about.
+    var offenders = Sources()
+      .Where(f => File.ReadAllText(f).Contains("AcquireHierarchyAsync", StringComparison.Ordinal))
+      .Select(Path.GetFileName)
+      .Where(name => name != "MapDb.cs" && name != "MapLocks.cs")
+      .ToList();
+
+    Assert.Empty(offenders);
+  }
+
+  [Fact]
   public void TheDemoSeederTakesTheMapLocksBeforeItWrites()
   {
     // The install writes the same object, state and alarm rows as the device path, and that path

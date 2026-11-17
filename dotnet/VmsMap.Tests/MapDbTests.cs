@@ -263,4 +263,189 @@ public class MapDbTests
     Assert.Equal("#ff0000", loaded[node.id!].color);
     Assert.Equal(90, loaded[node.id!].rotation_deg);
   }
+
+  // ── Tree invariants ───────────────────────────────────────────────────────────────────────
+
+  [Fact]
+  public async Task AnOriginalWithPicturesCannotBecomeAPicture()
+  {
+    var (db, map) = CreateDb();
+
+    var original = new BaseMarkerDTO { name = "Camera" };
+    var other = new BaseMarkerDTO { name = "Other camera" };
+    await map.UpdateHierarchyAsync([original, other]);
+    await map.UpdateHierarchyAsync([new BaseMarkerDTO { name = "Camera", owner_id = original.id }]);
+
+    // A picture of a picture would make everything that resolves an owner in one hop -- states,
+    // values, camera id, node kind, rights -- answer with what the new owner does not have.
+    original.owner_id = other.id;
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([original]));
+
+    Assert.Null((await db.Markers.AsNoTracking()
+      .SingleAsync(m => m.id == Guid.Parse(original.id!))).owner_id);
+  }
+
+  [Fact]
+  public async Task ANodeWithAMissingParentIsRefused()
+  {
+    var (db, map) = CreateDb();
+
+    var orphan = new BaseMarkerDTO { name = "Orphan", parent_id = Guid.NewGuid().ToString() };
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([orphan]));
+    Assert.Empty(await db.Markers.ToListAsync());
+
+    // A move to a node that does not exist is refused too, and the node stays where it was.
+    var node = new BaseMarkerDTO { name = "Building" };
+    await map.UpdateHierarchyAsync([node]);
+    node.parent_id = Guid.NewGuid().ToString();
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([node]));
+    Assert.Null((await db.Markers.AsNoTracking()
+      .SingleAsync(m => m.id == Guid.Parse(node.id!))).parent_id);
+  }
+
+  [Fact]
+  public async Task AReplicaWhoseOwnerDoesNotExistIsRefused()
+  {
+    var (db, map) = CreateDb();
+
+    var replica = new BaseMarkerDTO
+    {
+      name = "Camera",
+      owner_id = Guid.NewGuid().ToString(),
+    };
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([replica]));
+    Assert.Empty(await db.Markers.ToListAsync());
+  }
+
+  [Fact]
+  public async Task AParentAndAnOwnerCreatedInTheSameWriteAreAllowed()
+  {
+    var (db, map) = CreateDb();
+
+    var parentId = Guid.NewGuid().ToString();
+    var originalId = Guid.NewGuid().ToString();
+    var pictureId = Guid.NewGuid().ToString();
+
+    await map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = parentId, name = "Building" },
+      new BaseMarkerDTO { id = originalId, parent_id = parentId, name = "Camera" },
+      new BaseMarkerDTO
+      {
+        id = pictureId,
+        parent_id = parentId,
+        owner_id = originalId,
+        name = "Camera picture",
+      },
+    ]);
+
+    Assert.Equal(3, await db.Markers.CountAsync());
+  }
+
+  [Fact]
+  public async Task RenamingANodeWithAnAlreadyDanglingParentStillWorks()
+  {
+    var (db, map) = CreateDb();
+
+    // Nothing checks the parents already stored: they may predate the rule, and a rename must not
+    // be the thing that fails on them.
+    var node = Guid.NewGuid();
+    var dangling = Guid.NewGuid();
+    db.Markers.Add(new DBMarker
+    {
+      id = node,
+      parent_id = dangling,
+      name = "Legacy",
+    });
+    await db.SaveChangesAsync();
+
+    await map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = node.ToString(), parent_id = dangling.ToString(), name = "Renamed" }]);
+
+    var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == node);
+    Assert.Equal("Renamed", stored.name);
+  }
+
+  [Fact]
+  public async Task AMapCannotBeMovedUnderAnotherNode()
+  {
+    var (db, map) = CreateDb();
+
+    var building = new BaseMarkerDTO { name = "Building" };
+    await map.UpdateHierarchyAsync([building]);
+
+    var spaceId = Guid.NewGuid();
+    db.Markers.Add(new DBMarker { id = spaceId, name = "Main map" });
+    db.Spaces.Add(new DBSpace { object_id = spaceId, kind = SpaceKinds.Map });
+    await db.SaveChangesAsync();
+
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = spaceId.ToString(), parent_id = building.id, name = "Main map" }]));
+
+    Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == spaceId)).parent_id);
+  }
+
+  [Fact]
+  public async Task APlanMustStandInsideASpace()
+  {
+    var (db, map) = CreateDb();
+
+    var building = new BaseMarkerDTO { name = "Building" };
+    await map.UpdateHierarchyAsync([building]);
+
+    var mapId = Guid.NewGuid();
+    var planId = Guid.NewGuid();
+    db.Markers.AddRange(
+      new DBMarker { id = mapId, name = "Main map" },
+      new DBMarker { id = planId, name = "Floor" });
+    db.Spaces.Add(new DBSpace { object_id = mapId, kind = SpaceKinds.Map });
+    db.Spaces.Add(new DBSpace { object_id = planId, kind = SpaceKinds.Plan });
+    await db.SaveChangesAsync();
+
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = planId.ToString(), parent_id = building.id, name = "Floor" }]));
+    Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == planId)).parent_id);
+
+    // The model's own shape is allowed: a plan lies in a space.
+    await map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = planId.ToString(), parent_id = mapId.ToString(), name = "Floor" }]);
+    Assert.Equal(mapId, (await db.Markers.AsNoTracking().SingleAsync(m => m.id == planId)).parent_id);
+  }
+
+  [Fact]
+  public async Task ACameraNodeStaysOutOfSpaces()
+  {
+    var (db, map) = CreateDb();
+
+    var server = new BaseMarkerDTO { name = "srv" };
+    await map.UpdateHierarchyAsync([server]);
+
+    var spaceId = Guid.NewGuid();
+    db.Markers.Add(new DBMarker { id = spaceId, name = "Main map" });
+    db.Spaces.Add(new DBSpace { object_id = spaceId, kind = SpaceKinds.Map });
+
+    var cameraId = Guid.Parse(CameraObjectId.For(TestCameras.One));
+    db.Markers.Add(new DBMarker
+    {
+      id = cameraId,
+      parent_id = Guid.Parse(server.id!),
+      name = "Camera",
+    });
+    db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = cameraId,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DevicePart,
+    });
+    await db.SaveChangesAsync();
+
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = spaceId.ToString(), name = "Camera" }]));
+    Assert.Equal(Guid.Parse(server.id!),
+      (await db.Markers.AsNoTracking().SingleAsync(m => m.id == cameraId)).parent_id);
+
+    // Under the server is where it stands.
+    await map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = server.id, name = "Camera" }]);
+  }
 }

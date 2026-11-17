@@ -404,6 +404,15 @@ namespace VmsMap.Db
       if (selfParented is not null)
         throw new ArgumentException($"Node '{selfParented.id}' cannot be its own parent");
 
+      // The tree is read and written here, so one deployment-wide lock covers both: two opposite
+      // moves -- A under B and B under A -- otherwise each pass their own cycle check and commit a
+      // loop the alarm and rights walks cannot leave. A caller that already opened a transaction
+      // owns it and the lock lives to its end; a caller that did not gets one here, because an
+      // advisory transaction lock taken outside a transaction lives only for its own statement.
+      var ownsTransaction = _db.Database.IsRelational() && _db.Database.CurrentTransaction is null;
+      await using var tx = ownsTransaction ? await _db.Database.BeginTransactionAsync() : null;
+      await MapLocks.AcquireHierarchyAsync(_db);
+
       var ids = updatedList
         .Select(u => Utils.ConvertObjectIdToGuid(u.id))
         .Where(g => g.HasValue)
@@ -441,10 +450,84 @@ namespace VmsMap.Db
         dbUpdated.Add(item, dbObj);
       }
 
+      var batchIds = dbUpdated.Values.Select(v => v.id).ToHashSet();
+
+      // A parent must exist: it may be a row already in the tree or one this call creates in the
+      // same batch. The tree has no foreign key on parent_id, so nothing else would stop a node
+      // hanging under a UUID that names nothing. An unchanged parent is not re-checked, so a
+      // rename of a node whose parent is already dangling still works.
+      var referencedParents = dbUpdated.Values
+          .Where(v => v.parent_id.HasValue
+                      && !batchIds.Contains(v.parent_id.Value)
+                      && !(existingEntities.TryGetValue(v.id, out var before)
+                           && before.parent_id == v.parent_id))
+          .Select(v => v.parent_id!.Value)
+          .Distinct()
+          .ToList();
+      if (referencedParents.Count > 0)
+      {
+        var existingParents = (await _db.Markers.AsNoTracking()
+            .Where(m => referencedParents.Contains(m.id))
+            .Select(m => m.id)
+            .ToListAsync())
+          .ToHashSet();
+        var missing = referencedParents.FirstOrDefault(id => !existingParents.Contains(id));
+        if (missing != Guid.Empty)
+          throw new ArgumentException(
+              $"Parent node '{Utils.ConvertGuidToObjectId(missing)}' does not exist");
+      }
+
+      // A move under the node's own descendant would close a loop the alarm and rights walks cannot
+      // leave; whatever rearranges the tree -- the editor's "move to" among them -- is refused here,
+      // before any tracked row is touched. The rules about which kind may stand under which are
+      // checked in the same place, so a typed node cannot be moved past its own model either.
+      var moves = dbUpdated
+          .Where(kvp => existingEntities.TryGetValue(kvp.Value.id, out var before)
+                        && before.parent_id != kvp.Value.parent_id)
+          .ToDictionary(kvp => kvp.Value.id, kvp => kvp.Value.parent_id);
+      if (moves.Count > 0)
+      {
+        await TreeRules.ValidateMovesAsync(_db, moves, existingEntities);
+        await EnsureNoCycleAsync(moves);
+      }
+
+      // An original keeps its own rows: a node that already has pictures cannot become a picture
+      // itself. Every read that answers through an owner resolves it in one hop, so a picture of a
+      // picture would show what its owner does not have, and the original's own values would stop
+      // being reachable. Rewriting the group is not done here -- that changes what nobody asked for.
+      var demotions = dbUpdated
+          .Where(kvp => kvp.Value.owner_id.HasValue
+                        && existingEntities.TryGetValue(kvp.Value.id, out var before)
+                        && before.owner_id != kvp.Value.owner_id)
+          .Select(kvp => kvp.Value)
+          .ToList();
+      if (demotions.Count > 0)
+      {
+        var demotedIds = demotions.Select(v => v.id).ToList();
+        var pictures = await _db.Markers.AsNoTracking()
+          .Where(m => m.owner_id.HasValue && demotedIds.Contains(m.owner_id.Value))
+          .Select(m => m.owner_id!.Value)
+          .Distinct()
+          .ToListAsync();
+        pictures.AddRange(dbUpdated.Values
+          .Where(v => v.owner_id.HasValue && demotedIds.Contains(v.owner_id.Value))
+          .Select(v => v.owner_id!.Value));
+
+        var first = pictures.FirstOrDefault();
+        if (first != Guid.Empty)
+        {
+          var node = demotions.First(v => v.id == first);
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(first)}' has pictures and cannot become a copy " +
+              $"of '{Utils.ConvertGuidToObjectId(node.owner_id!.Value)}'");
+        }
+      }
+
       // A picture is a picture of an original, never of another picture: every read that answers
       // through an owner -- states, values, camera id, node kind, rights -- resolves it in one hop,
       // so the end of a chain would answer nothing. A replica dropped from another replica's
       // canvas is stored as a replica of the node both show, and the DTO carries that back.
+      var batchOwners = dbUpdated.ToDictionary(kvp => kvp.Value.id, kvp => kvp.Value.owner_id);
       foreach (var kvp in dbUpdated.Where(kvp => kvp.Value.owner_id.HasValue))
       {
         var ownerId = kvp.Value.owner_id!.Value;
@@ -454,23 +537,13 @@ namespace VmsMap.Db
         if (existingEntities.TryGetValue(kvp.Value.id, out var before) && before.owner_id == ownerId)
           continue;
 
-        var original = await ResolveOwnerAsync(ownerId, kvp.Value.id);
+        var original = await ResolveOwnerAsync(ownerId, kvp.Value.id, batchOwners);
         if (original == ownerId)
           continue;
 
         kvp.Value.owner_id = original;
         kvp.Key.owner_id = Utils.ConvertGuidToObjectId(original);
       }
-
-      // A move under the node's own descendant would close a loop the alarm and rights walks cannot
-      // leave; whatever rearranges the tree -- the editor's "move to" among them -- is refused here,
-      // before any tracked row is touched.
-      var moves = dbUpdated
-          .Where(kvp => existingEntities.TryGetValue(kvp.Value.id, out var before)
-                        && before.parent_id != kvp.Value.parent_id)
-          .ToDictionary(kvp => kvp.Value.id, kvp => kvp.Value.parent_id);
-      if (moves.Count > 0)
-        await EnsureNoCycleAsync(moves);
 
       // Nodes whose parent changes also change the canvas their figure is drawn on.
       var moved = new List<Guid>();
@@ -543,13 +616,19 @@ namespace VmsMap.Db
       {
         pair.Key.id = Utils.ConvertGuidToObjectId(pair.Value.id);
       }
+
+      if (tx is not null)
+        await tx.CommitAsync();
     }
 
 
     /// The node an owner must name: the one that keeps its own rows. A replica's owner is followed
     /// to the end of the chain, and a node that would own itself, or a chain that returns to where
-    /// it started, is refused rather than written.
-    private async Task<Guid> ResolveOwnerAsync(Guid ownerId, Guid nodeId)
+    /// it started, is refused rather than written. An owner that is neither stored nor created by
+    /// this same call is refused too: "no row" used to mean both "an original" and "nothing there",
+    /// and a replica of nothing is a node whose states and values can never be read.
+    private async Task<Guid> ResolveOwnerAsync(
+      Guid ownerId, Guid nodeId, IReadOnlyDictionary<Guid, Guid?> batchOwners)
     {
       var visited = new HashSet<Guid>();
       var current = ownerId;
@@ -564,10 +643,24 @@ namespace VmsMap.Db
           throw new ArgumentException(
               $"Node '{Utils.ConvertGuidToObjectId(ownerId)}' belongs to an owner cycle");
 
-        var next = await _db.Markers.AsNoTracking()
-            .Where(m => m.id == current)
-            .Select(m => m.owner_id)
-            .FirstOrDefaultAsync();
+        Guid? next;
+        if (batchOwners.TryGetValue(current, out var batchOwner))
+        {
+          next = batchOwner;
+        }
+        else
+        {
+          var stored = await _db.Markers.AsNoTracking()
+              .Where(m => m.id == current)
+              .Select(m => new { m.owner_id })
+              .FirstOrDefaultAsync();
+
+          if (stored is null)
+            throw new ArgumentException(
+                $"Owner node '{Utils.ConvertGuidToObjectId(current)}' does not exist");
+
+          next = stored.owner_id;
+        }
 
         if (next is null)
           return current;

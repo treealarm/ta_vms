@@ -217,12 +217,12 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.OperationStatus> DeleteObjects(
       MapProto.ObjectIds request, ServerCallContext context)
     {
-      await using var tx = await BeginTransactionAsync(context.CancellationToken);
-
-      var removed = await _mapUpdateService.Delete(request.Ids.ToList());
-
-      if (tx is not null)
-        await tx.CommitAsync(context.CancellationToken);
+      // The same removal a space, a landmark or a camera's picture takes: side rows, device
+      // diagrams, the alarms above and the cameras that stood in the subtree all leave with the
+      // nodes. The removal owns its own transaction, so the notification and the arming reconcile
+      // happen after the commit rather than inside it.
+      var removed = await _spatialDb.RemoveSubtreeAsync(
+        request.Ids.ToList(), context.CancellationToken);
 
       return new MapProto.OperationStatus
       {
