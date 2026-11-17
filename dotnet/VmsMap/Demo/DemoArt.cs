@@ -32,22 +32,24 @@ namespace VmsMap.Demo
     // A plan is drawn in degrees, so a size in metres comes from this, at the latitude it stands at.
     private const double EarthRadiusM = 6378137.0;
 
-    // The four sockets of the rear panel, left to right.
+    // The sockets of the rear panel, left to right: the sensor and the four relays, in token order.
     private static readonly (string Key, string Label)[] PanelSockets =
     [
       ("input", "INPUT"),
       ("lamp", "LAMP"),
       ("peer", "PEER"),
       ("loop", "LOOP"),
+      ("button", "BUTTON"),
     ];
 
     // The terminal block the camera's cable ends in: one screw terminal per part, left to right.
     // The drawing and the regions come from the same numbers, so a replica sits on its terminal.
+    // Five terminals fill the block the way four used to — 0.655 to 0.935 of its width.
     private const double TerminalTop = 0.55;
-    private const double TerminalWidth = 0.0625;
+    private const double TerminalWidth = 0.05;
     private const double TerminalHeight = 0.12;
     private const double TerminalFirstLeft = 0.655;
-    private const double TerminalStep = 0.0725;
+    private const double TerminalStep = 0.0575;
 
     /// The terminal of the camera's rear panel a part is wired to; its region is the same
     /// rectangle, so a replica placed there sits exactly on the screw terminal.
@@ -211,7 +213,9 @@ namespace VmsMap.Demo
         svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"3\" fill=\"#0d151d\" stroke=\"#54718b\" stroke-width=\"2\"/>");
         svg.Append($"<circle cx=\"{N(x + w / 2)}\" cy=\"{N(y + h / 2 - 4)}\" r=\"9\" fill=\"#223141\" stroke=\"#9fb6cb\" stroke-width=\"1.5\"/>");
         svg.Append($"<line x1=\"{N(x + w / 2)}\" y1=\"{N(y + h / 2 - 12)}\" x2=\"{N(x + w / 2)}\" y2=\"{N(y + h / 2 + 4)}\" stroke=\"#9fb6cb\" stroke-width=\"2\"/>");
-        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y + h + 20)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"12\" fill=\"#9fb6cb\">{label}</text>");
+        // Smaller than the terminal's own width: five labels stand a socket apart, and the longest
+        // of them must not run into the one beside it.
+        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y + h + 20)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"10\" fill=\"#9fb6cb\">{label}</text>");
       }
 
       return Close(svg);

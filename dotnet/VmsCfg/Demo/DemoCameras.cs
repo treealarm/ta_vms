@@ -4,8 +4,8 @@ using Vms.Cfg;
 namespace VmsCfg.Demo;
 
 /// <summary>
-/// One of the demo world's cameras as OnvifSim publishes it: the world's name for it, the name the
-/// web shows, its ONVIF port and whether it has a PTZ head.
+/// One of the demo world's cameras as OnvifSim publishes it: the world's id for it, the name the
+/// world and the web give it, its ONVIF port and whether it has a PTZ head.
 /// </summary>
 public sealed record DemoCameraSetup(
   string Name, string Title, int OnvifPort, bool HasTelemetry, bool GeoFromDevice)
@@ -21,7 +21,9 @@ public sealed record DemoCameraSetup(
     var camera = new CameraSetup
     {
       CameraId = CameraId,
-      Name = $"OnvifSim {Title}",
+      // The simulator's own name for the camera: a name is a type and a number, and our tree
+      // mirrors the world it watches rather than inventing a second name for it.
+      Name = Title,
       ServerId = serverId,
       OnvifConn = new OnvifConnection
       {
@@ -69,16 +71,17 @@ public sealed class DemoCameras(CameraConfigService config, ILogger<DemoCameras>
   private const int FirstOnvifPort = 8101;
   public const string ProfileToken = "Profile_2";
 
-  // The world's cameras, in MarylandWorld's order — the ONVIF port is the base plus that index.
-  // The titles are the models' names, so the web shows what the simulator calls them. The last
-  // column marks the camera on the car, which takes its place from the device.
+  // The world's cameras, in MarylandWorld's order — the ONVIF port is the base plus that index,
+  // and so is the number in the name. The titles are the world's names, so the web shows what the
+  // simulator calls them. The last column marks the camera on the car, which takes its place from
+  // the device.
   private static readonly (string Name, string Title, bool Ptz, bool GeoFromDevice)[] World =
   [
-    ("sim-master", "Main room master", false, false),
-    ("sim-ptz", "Main room slave (PTZ)", true, false),
-    ("sim-master2", "Building master 2", false, false),
-    ("sim-ptz2", "Campus slave 2 (PTZ)", true, false),
-    ("sim-vehicle", "Vehicle camera", false, true),
+    ("sim-master", "cam1", false, false),
+    ("sim-ptz", "cam2", true, false),
+    ("sim-master2", "cam3", false, false),
+    ("sim-ptz2", "cam4", true, false),
+    ("sim-vehicle", "cam5", false, true),
   ];
 
   /// <summary>What an install writes, without touching the database.</summary>

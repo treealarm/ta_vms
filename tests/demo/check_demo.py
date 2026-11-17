@@ -30,10 +30,10 @@ from simapi import Sim  # noqa: E402
 from vmsapi import Vms  # noqa: E402
 
 DEMO_KEY = "umd-datacenter"
-MAP_NAME = "UMD Data Center (demo)"
-BUILDING_NAME = "First floor"
+MAP_NAME = "map1"
+BUILDING_NAME = "plan1"
 # The diagram standing on that plan: the same room as a schematic, with the racks drawn in it.
-LAYOUT_NAME = "First floor Diagram"
+LAYOUT_NAME = "diag1"
 # The world names its cameras; VmsCfg keys them by UUID, the same deterministic id the seeder
 # derives (DemoIds.Camera — a UUIDv5 of the demo namespace and "camera/<name>").
 DEMO_CAMERA_NAMESPACE = uuid.UUID("0f3c1a52-6f5b-4a0e-9a19-3a8a5a4b7c11")
@@ -427,28 +427,28 @@ def walk_the_world(vms):
     # An administrator may draw something else on the same diagram, so the world's racks are what
     # is checked for, not the absence of anything else.
     layout_racks = children(vms, layout["id"])
-    expected_racks = {f"Rack A-{index:02}" for index in range(1, 5)}
+    expected_racks = {f"rack{index}" for index in range(1, 5)}
     drawn = {r.get("name") for r in layout_racks}
     check(expected_racks <= drawn,
-          f"the floor diagram shows Rack A-01 … A-04 (got {sorted(drawn)})")
+          f"the floor diagram shows rack1 … rack4 (got {sorted(drawn)})")
 
-    rack = by_name(vms, layout_racks, "Rack A-01")
+    rack = by_name(vms, layout_racks, "rack1")
     if not check(rack is not None and rack.get("nodeKind") == "diagram",
-                 "the floor diagram holds Rack A-01 as a mnemoscheme"):
+                 "the floor diagram holds rack1 as a mnemoscheme"):
         return None
 
     switches = children(vms, rack["id"])
-    check(len(switches) == 6, f"Rack A-01 takes a switch in each of its six slots (got {len(switches)})")
+    check(len(switches) == 6, f"rack1 takes a switch in each of its six slots (got {len(switches)})")
 
-    computer = by_name(vms, switches, "Switch A-01 U1")
+    computer = by_name(vms, switches, "switch1")
     if not check(computer is not None and computer.get("nodeKind") == "diagram",
-                 "Rack A-01 holds Switch A-01 U1"):
+                 "rack1 holds switch1"):
         return None
 
     ports = children(vms, computer["id"])
-    check(len(ports) == 8, f"Switch A-01 U1 holds 8 ports (got {len(ports)})")
-    port = by_name(vms, ports, "Port 3")
-    check(port is not None, "Port 3 is among them")
+    check(len(ports) == 8, f"switch1 holds 8 ports (got {len(ports)})")
+    port = by_name(vms, ports, "port3")
+    check(port is not None, "port3 is among them")
 
     return {
         "map": demo_map, "building": building, "layout": layout,
@@ -516,8 +516,8 @@ def check_positions(vms, world):
     # Every rack fills a region of the floor's schematic, and keeps a canvas of its own inside it.
     # The children come back unordered; the rack's own name says which region it fills. Anything
     # else on the diagram is an administrator's, not the world's, and is left alone.
-    for rack in [r for r in world["layout_racks"] if (r.get("name") or "").startswith("Rack A-")]:
-        index = int(rack["name"].rsplit("-", 1)[1])
+    for rack in [r for r in world["layout_racks"] if (r.get("name") or "").startswith("rack")]:
+        index = int(rack["name"][len("rack"):])
         placed = diagrams.get(rack["id"], {})
         check(placed.get("regionId") == f"rack-{index}",
               f"{rack['name']} fills the floor diagram's rack-{index} region")
@@ -530,7 +530,7 @@ def check_positions(vms, world):
           "the switch keeps its own 600-wide canvas beside the region")
 
     port = diagrams.get(world["port"]["id"], {})
-    check(port.get("regionId") == "port-3", "Port 3 sits in the switch's port-3 region")
+    check(port.get("regionId") == "port-3", "port3 sits in the switch's port-3 region")
 
 
 def check_device_diagram(vms, world):
@@ -576,10 +576,10 @@ def check_device_diagram(vms, world):
     replicas = [row for row in content.get("children") or [] if row.get("id") in rows]
 
     regions = {rows[row["id"]].get("regionId") for row in replicas}
-    check(regions == {"input", "lamp", "peer", "loop"},
-          f"the panel's four sockets hold a replica each (has {sorted(regions)})")
+    check(regions == {"input", "lamp", "peer", "loop", "button"},
+          f"the panel's five sockets hold a replica each (has {sorted(regions)})")
 
-    peer = next((part for part in parts if part.get("name") == "Peer"), None)
+    peer = next((part for part in parts if part.get("name") == "relay2"), None)
     replica = next((row for row in replicas if row.get("ownerId") == (peer or {}).get("id")), None)
     if not check(replica is not None, "the peer socket shows the peer relay"):
         return
@@ -624,8 +624,8 @@ def check_types(vms):
 
     panel = types.get("Camera rear panel", {})
     panel_regions = {r.get("regionKey") for r in panel.get("regions") or []}
-    check({"input", "lamp", "peer", "loop"} == panel_regions,
-          f"Camera rear panel offers its four sockets (has {sorted(panel_regions)})")
+    check({"input", "lamp", "peer", "loop", "button"} == panel_regions,
+          f"Camera rear panel offers its five sockets (has {sorted(panel_regions)})")
     check(panel.get("sourceKind") == "camera" and panel.get("autoAttach") is True,
           "the panel is a template that attaches itself to its model")
     bindings = {r.get("regionKey"): (r.get("part") or {}) for r in panel.get("regions") or []}
@@ -863,12 +863,12 @@ def check_port_not_alarmed(vms, world):
     """
     port_id = world["port"]["id"]
     states = states_of(vms, [port_id]).get(port_id) or []
-    check("CONNECTED" in states, f"Port 3 is CONNECTED (has {states})")
+    check("CONNECTED" in states, f"port3 is CONNECTED (has {states})")
     check(not {"DISCONNECTED", "ALARM"} & set(states),
-          f"Port 3 carries no alarm state (has {states})")
+          f"port3 carries no alarm state (has {states})")
 
     alarmed_ids = {row.get("id") for row in alarmed(vms)}
-    check(port_id not in alarmed_ids, "Port 3 is not among the alarmed nodes")
+    check(port_id not in alarmed_ids, "port3 is not among the alarmed nodes")
 
 
 def check_no_camera_replica(vms):
@@ -947,7 +947,7 @@ def sensor_part(vms):
     """The sensor node under sim-ptz: created by the adapter from the settings the demo wrote."""
     def find():
         _, parts = device_nodes(vms, SENSOR_CAMERA)
-        return next((part for part in parts if part.get("name") == "Sensor"), None)
+        return next((part for part in parts if part.get("name") == "sensor2"), None)
 
     return wait_until(find, 30)
 
@@ -998,7 +998,7 @@ def check_operator_arming(vms):
         return
 
     node, parts = device_nodes(vms, ARMED_CAMERA)
-    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    part = next((candidate for candidate in parts if candidate.get("name") == "sensor1"), None)
     if not check(part is not None, "the master sensor is a node under the camera"):
         return
     ancestors = ancestor_chain(vms, part)
@@ -1111,7 +1111,7 @@ def check_control_panel(vms):
     """The operator's Control tab: a space's objects, paged, with what each one resolves to.
 
     The demo has two configured sensors on the first floor, two cameras standing there and
-    sim-master's three relays. The check proves the server filters by space, kind and camera,
+    sim-master's four relays. The check proves the server filters by space, kind and camera,
     pages by keyset, resolves a node id (or a picture of it) to the object, and reads the arming
     and the live state the same way the camera card does.
     """
@@ -1125,7 +1125,7 @@ def check_control_panel(vms):
         return
 
     sensors = control_objects(vms, floor["id"], kind="digital_input").get("objects") or []
-    check(sorted(row.get("name") for row in sensors) == ["Master sensor", "Sensor"],
+    check(sorted(row.get("name") for row in sensors) == ["sensor1", "sensor2"],
           f"the floor lists its two configured sensors (has {[r.get('name') for r in sensors]!r})")
     check(all(row.get("kind") == "digital_input" and row.get("sourceKind") == "camera"
               and row.get("partToken") == ARMED_TOKEN for row in sensors),
@@ -1243,7 +1243,7 @@ def check_control_panel(vms):
 
     # The inspector's lookup: a node id is the object, and a picture of a camera is still the camera.
     node, parts = device_nodes(vms, ARMED_CAMERA)
-    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    part = next((candidate for candidate in parts if candidate.get("name") == "sensor1"), None)
     if check(part is not None, "the master sensor has a node of its own"):
         row = control_object(vms, part["id"])
         check(row is not None and row.get("objectId") == part["id"]
@@ -1317,6 +1317,94 @@ def check_control_panel(vms):
             set_device_settings(vms, camera_id(ARMED_CAMERA), {**restore, "armMode": "inherit"})
 
 
+def check_map_relay(vms):
+    """The master's fourth relay stands on the map itself, and the operator switches it there.
+
+    The picture is the world's own, not an administrator's: a replica of the part's node, placed on
+    the map by the demo and named by the server. Acting on it acts on the relay, and that relay
+    closes the same sensor `relay3` does — two relays, one input, one alarm.
+    """
+    print("The relay on the map")
+
+    site = next((space for space in spaces(vms) if space.get("name") == MAP_NAME), None)
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if not check(site is not None and floor is not None, "the demo has its map and its plan"):
+        return
+
+    _, parts = device_nodes(vms, ARMED_CAMERA)
+    relay = next((candidate for candidate in parts if candidate.get("name") == "relay4"), None)
+    sensor = next((candidate for candidate in parts if candidate.get("name") == "sensor1"), None)
+    if not check(relay is not None and sensor is not None,
+                 "sim-master carries relay4 and its sensor"):
+        return
+
+    picture = next((kid for kid in children(vms, site["id"])
+                    if kid.get("ownerId") == relay["id"]), None)
+    if not check(picture is not None, "the world places relay4 on the map as a replica"):
+        return
+    check(picture.get("name") == "relay4 rep1",
+          f"the picture carries the relay's name and its own number (has {picture.get('name')!r})")
+    check(picture.get("parentId") == site["id"] and not picture.get("cameraId"),
+          "a part's picture is not a camera placement")
+    check(picture.get("nodeKind") == "part", "the map reads the picture as part of the device")
+
+    through = control_object(vms, picture["id"])
+    check(through is not None and through.get("objectId") == relay["id"]
+          and through.get("kind") == "relay" and through.get("partToken") == "button"
+          and through.get("sourceId") == camera_id(ARMED_CAMERA),
+          "the inspector's read of the picture answers the relay")
+    check(bool(through and through.get("canControl")),
+          "the operator may act on the relay from the map")
+
+    # A picture dropped without a name is named by the server: the owner and the next free number.
+    # The world's own picture already took `rep1`.
+    unnamed = vms.call("POST", "/api/map/admin/replicas",
+                       {"ownerId": relay["id"], "parentId": floor["id"]}) or {}
+    check(unnamed.get("name") == "relay4 rep2",
+          f"an unnamed picture is named by its owner and the next number (has {unnamed.get('name')!r})")
+    if unnamed.get("id"):
+        vms.call("DELETE", "/api/map/admin/objects", {"ids": [unnamed["id"]]})
+
+    def switch(token, active):
+        set_relay(vms, camera_id(ARMED_CAMERA), token, active)
+
+    try:
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "armed")
+        switch("button", False)
+        switch(ARMED_RELAY_TOKEN, False)
+        settle_sensor(vms, sensor["id"])
+        armed = wait_until(
+            lambda: (digital_input_row(vms, ARMED_CAMERA, ARMED_TOKEN) or {}).get("armed") is True, 30)
+        if not check(bool(armed), "the operator's sensor is on guard"):
+            return
+
+        switch("button", True)
+        check(bool(wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is True, 40)),
+              "switching relay4 closes the sensor")
+        check(wait_until(lambda: active_alarm(vms, sensor["id"]), 30) is not None,
+              "the closed sensor raises the alarm the map shows")
+
+        switch("button", False)
+        check(bool(wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)),
+              "switching it back opens the sensor again")
+        check(bool(wait_until(lambda: active_alarm(vms, sensor["id"]) is None, 40)),
+              "the alarm returns when the contact does")
+
+        # The relay the demo already had reaches the same input: two relays, one sensor.
+        switch(ARMED_RELAY_TOKEN, True)
+        check(bool(wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is True, 40)),
+              "relay3 closes the same sensor relay4 closed")
+        check(wait_until(lambda: active_alarm(vms, sensor["id"]), 30) is not None,
+              "and raises the same alarm")
+        switch(ARMED_RELAY_TOKEN, False)
+        check(bool(wait_until(lambda: active_alarm(vms, sensor["id"]) is None, 40)),
+              "opening relay3 returns it")
+    finally:
+        switch("button", False)
+        switch(ARMED_RELAY_TOKEN, False)
+        set_arm_mode(vms, ARMED_CAMERA, ARMED_TOKEN, "inherit")
+
+
 def node_arming(vms, object_id):
     """One node's guard state, as the operator's guard switch asks for it."""
     try:
@@ -1356,7 +1444,7 @@ def check_zone_arming(vms):
         return
 
     node, parts = device_nodes(vms, ARMED_CAMERA)
-    part = next((candidate for candidate in parts if candidate.get("name") == "Master sensor"), None)
+    part = next((candidate for candidate in parts if candidate.get("name") == "sensor1"), None)
     if not check(part is not None, "the master sensor is a node under the camera"):
         return
 
@@ -2068,6 +2156,7 @@ def main():
         check_provisioning(vms)
         check_operator_arming(vms)
         check_control_panel(vms)
+        check_map_relay(vms)
         check_zone_arming(vms)
         check_camera_zone_arming(vms)
         print("The device's own diagram")

@@ -326,11 +326,23 @@ namespace VmsMap.Grpc
       if (!await _rightsService.IsAllowedAsync(request.ParentId, RightActions.Edit, caller, ct))
         throw new RpcException(new Status(StatusCode.PermissionDenied, "No edit right on the parent"));
 
+      // An unnamed replica is named by its owner and its own number, and the server picks the
+      // number — `cam1 rep1` — so two callers cannot give two pictures the same name.
+      var name = request.Name;
+      if (string.IsNullOrWhiteSpace(name))
+      {
+        var replicaNames = await _db.Markers.AsNoTracking()
+          .Where(m => m.owner_id == Utils.ConvertObjectIdToGuid(request.OwnerId))
+          .Select(m => m.name)
+          .ToListAsync(ct);
+        name = ReplicaNames.Next(owner.name, replicaNames);
+      }
+
       var dto = new BaseMarkerDTO
       {
         parent_id = request.ParentId,
         owner_id = request.OwnerId,
-        name = string.IsNullOrWhiteSpace(request.Name) ? owner.name : request.Name,
+        name = name,
       };
 
       await using var tx = _db.Database.IsRelational()

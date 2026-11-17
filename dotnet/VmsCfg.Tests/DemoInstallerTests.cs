@@ -44,7 +44,7 @@ public class DemoInstallerTests
     var sensor = DemoDevices.SensorSettings();
     Assert.Null(DeviceSettingsRules.Validate(sensor));
     Assert.Equal(DemoCameraIds.For("sim-ptz"), sensor.CameraId);
-    Assert.Equal("Sensor", sensor.Name);
+    Assert.Equal("sensor2", sensor.Name);
     Assert.Equal(DeviceSettingsRules.DigitalInput, sensor.Kind);
     Assert.Equal("input", sensor.Token);
     Assert.Empty(sensor.ArmMode);
@@ -56,7 +56,7 @@ public class DemoInstallerTests
     var master = DemoDevices.MasterSensorSettings();
     Assert.Null(DeviceSettingsRules.Validate(master));
     Assert.Equal(DemoCameraIds.For("sim-master"), master.CameraId);
-    Assert.Equal("Master sensor", master.Name);
+    Assert.Equal("sensor1", master.Name);
     Assert.Empty(master.ArmMode);
     Assert.Contains(
       DemoDevices.MasterSettings(),
@@ -95,7 +95,7 @@ public class DemoInstallerTests
     var camera = DemoCameras.Plan()[1].ToProto("host.docker.internal", "vms");
 
     Assert.Equal(DemoCameraIds.For("sim-ptz"), camera.CameraId);
-    Assert.Equal("OnvifSim Main room slave (PTZ)", camera.Name);
+    Assert.Equal("cam2", camera.Name);
     Assert.Equal("vms", camera.ServerId);
     Assert.Equal("host.docker.internal", camera.OnvifConn.Ip);
     Assert.Equal(8102, camera.OnvifConn.Port);

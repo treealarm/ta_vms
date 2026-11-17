@@ -1055,12 +1055,13 @@ def check_maryland(world):
     assert len(route) >= 20, f"{DEMO_VEHICLE_ID} has no ring to drive, only {len(route)} points"
     assert car.get("return") == "loop", f"{DEMO_VEHICLE_ID} does not come round the block again"
 
-    # The master's three relays show every kind of link a relay can have: one lights a lamp, one
-    # drives the slave camera's sensor, and one drives a sensor of the master itself. A lamp is an
-    # actuator of the world, not a part of a camera.
+    # The master's four relays show every kind of link a relay can have: one lights a lamp, one
+    # drives the slave camera's sensor, and two drive a sensor of the master itself — the demo needs
+    # either of them to raise the same alarm. A lamp is an actuator of the world, not a part of a
+    # camera.
     master = cameras["master"]
     relays = {relay["token"] for relay in master.get("relayOutputs", [])}
-    assert {"lamp", "peer", "loop"} <= relays, f"master has no relays to wire, only {relays}"
+    assert {"lamp", "peer", "loop", "button"} <= relays, f"master has no relays to wire, only {relays}"
     assert any(device["token"] == "input" for device in master.get("digitalInputs", [])), \
         "master has no 'input' sensor"
     ptz = cameras["ptz"]
@@ -1079,6 +1080,8 @@ def check_maryland(world):
         "no wire runs from master's 'peer' relay to ptz's sensor"
     assert wired("loop", inputCameraId="master", inputToken="input"), \
         "no wire runs from master's 'loop' relay to the master's own sensor"
+    assert wired("button", inputCameraId="master", inputToken="input"), \
+        "no wire runs from master's 'button' relay to the master's own sensor"
     # The car carries no device: a wire to it would move with it, and every camera that saw the wire
     # would redraw at every frame of the drive.
     assert not vehicle.get("relayOutputs") and not vehicle.get("digitalInputs"), \

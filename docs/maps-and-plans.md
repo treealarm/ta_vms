@@ -113,7 +113,10 @@ Conventions that hold everywhere:
   the space, a name and a colour of its own, no placement row and no camera binding. It shows what
   the owner reports and offers the same actions as the Control panel; it counts no alarm of its
   own, because the room counts the alarm of the camera it stands in, once. Removing the picture
-  leaves the part; removing the camera takes the part and every picture of it.
+  leaves the part; removing the camera takes the part and every picture of it. **A replica is named
+  after its owner and its own number** — `cam1 rep1`, `relay4 rep1` — and the server picks the
+  number, so no client can guess one another has taken; a name the caller gives is kept as it is.
+  A world that writes its own replicas writes their names too.
 - **Positions are WGS84 plus a height in metres above the floor of their space** — never above sea
   level. Height above the ground is `space.elevation_m + height_m`; elevation matters only where
   coordinates are real, so a camera upstairs and one in the yard agree on heights.
@@ -361,11 +364,11 @@ An empty installation shows an empty map. An optional demo world, `umd-datacente
 Center"), fills it with a fictional data centre so the product can be looked at — and checked
 without a browser — right after an install.
 
-**What it contains.** A map named `UMD Data Center (demo)` over the real campus of the University of
-Maryland; the first floor of **Biomolecular Sciences** as a plan — named `First floor`, its footprint
+**What it contains.** A map named `map1` over the real campus of the University of
+Maryland; the first floor of **Biomolecular Sciences** as a plan — named `plan1`, its footprint
 the building's own 19-corner outline, the one OnvifSim builds its prism from, with the doorway cut in
 its north wall. The floor is the room: no plan of a room is nested in it, and the hall pair stands on
-its plan directly. What stands in the room is one diagram, `First floor Diagram` — a schematic of
+its plan directly. What stands in the room is one diagram, `diag1` — a schematic of
 the floor with its four racks in regions of its type, each opening on its own canvas — four racks,
 every slot of every rack filled with a switch and every switch carrying its eight ports. The third
 port of the first switch of the first rack is `CONNECTED`: the demo writes no
@@ -399,12 +402,20 @@ shows the camera's readings while owning none of them; a removal takes them away
 
 **The camera's own diagram.** The same floor carries the indoor master's device diagram: the
 `Camera rear panel` template — the camera's body, lens and cable, and the terminal block its parts
-are wired to — with the relay and input replicas in its four regions. It is not a world node like
+are wired to — with the relay and input replicas in its five regions. It is not a world node like
 the readings replica: `DemoSeeder` asks the device-diagram service for it, exactly as the
 administrator's button in Admin → Maps does, so the demo ships the service's own object, placed on
 the floor beside the camera under the name of the device and its template. Its marker is a thumbnail
 of that same picture. Removing the demo removes it with the world and the next install makes it
 again.
+
+**A part on the map.** The map carries one replica the world places itself: the indoor master's
+fourth relay, `relay4 rep1`. It closes the same sensor `relay3` does in the simulator, so either of
+them raises what the input raises, and it stands on the map rather than in the camera's diagram
+because that is where an operator switches it — the inspector resolves the picture to the relay and
+offers the switch, as the Control panel does. The demo grants `control` to the `user` role on the
+floor (`space/building`), which is where a device's rights are anchored; a right on the map above it
+would not reach the device's node.
 
 **The world is code.** `dotnet/VmsMap/Demo/DemoWorlds.cs` builds it from loops and constants;
 `DemoWorld.cs` is the description (spaces, types and their regions, nodes, levels, camera

@@ -24,22 +24,24 @@ public class DemoSeederTests
   private sealed class TestCatalog : ICameraCatalog
   {
     // The demo world names its cameras; VmsCfg keys them by id. The fake catalogue holds ids, the
-    // way the real one does.
-    private readonly HashSet<string> _known;
+    // way the real one does, and the names an administrator may rename them to.
+    private readonly Dictionary<string, string> _known;
 
     public TestCatalog(params string[] known) =>
-      _known = new HashSet<string>(known.Select(DemoIds.Camera), StringComparer.Ordinal);
+      _known = known.ToDictionary(DemoIds.Camera, id => "Camera " + id, StringComparer.Ordinal);
 
     /// A camera the installation provisions after the demo was installed once.
-    public void Add(string cameraName) => _known.Add(DemoIds.Camera(cameraName));
+    public void Add(string cameraName) =>
+      _known.TryAdd(DemoIds.Camera(cameraName), "Camera " + DemoIds.Camera(cameraName));
+
+    /// The administrator renames the camera, as VmsCfg's own form would.
+    public void Rename(string cameraName, string name) => _known[DemoIds.Camera(cameraName)] = name;
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult(_known.Contains(cameraId)
-        ? new CameraInfo(cameraId, "Camera " + cameraId, "srv")
-        : null);
+      Task.FromResult(_known.TryGetValue(cameraId, out var name) ? new CameraInfo(cameraId, name, "srv") : null);
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
-      Task.FromResult(_known.Select(id => new CameraInfo(id, "Camera " + id, "srv")).ToList());
+      Task.FromResult(_known.Select(pair => new CameraInfo(pair.Key, pair.Value, "srv")).ToList());
   }
 
   private sealed class TestNotifier : IMapConfigNotifier
@@ -81,13 +83,16 @@ public class DemoSeederTests
   private static DemoWorld World(
     IReadOnlyList<DemoNode>? nodes = null,
     IReadOnlyList<DemoPlacement>? placements = null,
+    IReadOnlyList<DemoPartReplica>? partReplicas = null,
     IReadOnlyList<DemoDeviceSettings>? devices = null,
     IReadOnlyList<DemoLandmark>? landmarks = null,
     IReadOnlyList<DemoGroundMark>? groundMarks = null,
-    IReadOnlyList<DemoPtzObservation>? ptzObservations = null) => new(
+    IReadOnlyList<DemoPtzObservation>? ptzObservations = null,
+    IReadOnlyList<DemoFile>? files = null,
+    IReadOnlyList<DemoDeviceDiagram>? deviceDiagrams = null) => new(
       Key,
       1,
-      [],
+      files ?? [],
       [new DemoDiagramType("type/rack", "Rack 42U", null,
         [new DemoRegion("slot-1", new DemoRect(0.1, 0.2, 0.8, 0.1))])],
       [
@@ -104,11 +109,12 @@ public class DemoSeederTests
       ],
       nodes ?? DefaultNodes(),
       placements ?? [],
+      partReplicas ?? [],
       devices ?? [],
       landmarks ?? [],
       groundMarks ?? [],
       ptzObservations ?? [],
-      [],
+      deviceDiagrams ?? [],
       [new DemoState("object/port", "DISCONNECTED")],
       [new DemoRight("space/map", "user", RightActions.View)]);
 
@@ -250,6 +256,95 @@ public class DemoSeederTests
     Assert.Equal("armed", row.arm_mode);
     Assert.Equal("closed", row.trigger_on);
     Assert.True(row.alarm_enabled);
+  }
+
+  [Fact]
+  public async Task APartReplicaIsANodeOfThePartAndLeavesWithTheWorld()
+  {
+    // A part placed on a canvas is a replica of the part's canonical node — the row an
+    // administrator's placement writes — with a point of its own and no camera placement. The
+    // second install updates that row instead of adding another, and removing the world takes it.
+    var s = Create("sim-master");
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      partReplicas:
+      [
+        new DemoPartReplica("object/part-button", "sim-master", "relay", "button", "space/map",
+          "relay4 rep1", 39.05, -76.95, "#26a69a"),
+      ]);
+
+    var first = await s.Seeder.InstallAsync(world, CancellationToken.None);
+    Assert.Empty(first.SkippedCameras);
+
+    var partId = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, DemoIds.Camera("sim-master"), "relay", "button"));
+    var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == partId);
+    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
+    Assert.Equal(DemoIds.For("object/part-button"), picture.id);
+    Assert.Equal(mapSpace.id, picture.parent_id);
+    Assert.Equal("relay4 rep1", picture.name);
+    Assert.Empty(await s.Db.CameraPlacements.AsNoTracking()
+      .Where(placement => placement.object_id == picture.id).ToListAsync());
+
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+    var again = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == partId);
+    Assert.Equal(picture.id, again.id);
+
+    await s.Seeder.RemoveAsync(Key, CancellationToken.None);
+    Assert.Empty(await s.Db.Markers.AsNoTracking().Where(m => m.owner_id == partId).ToListAsync());
+  }
+
+  [Fact]
+  public async Task AWorldThatRenamesItsCameraRenamesItsPicture()
+  {
+    // A picture already on the canvas is not renamed by a placement write. The world's own picture
+    // is the world's row, so the seeder keeps its name in step with the camera: a version of the
+    // demo that renames its cameras must not leave yesterday's names on the map.
+    var s = Create("sim-master");
+    var world = World(placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)]);
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-master")));
+    var before = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    Assert.Equal("Camera sim-master rep1", before.name);
+
+    s.Catalog.Rename("sim-master", "cam1");
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var after = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    Assert.Equal(before.id, after.id);
+    Assert.Equal("cam1 rep1", after.name);
+  }
+
+  [Fact]
+  public async Task AWorldThatRenamesItsCameraRenamesTheDiagramUnderIt()
+  {
+    // The device's diagram is named `<camera> / <type>` once, when the service makes the node, and
+    // an attach afterwards keeps the name it finds. The camera is the world's to name, so a version
+    // of the world that renames its cameras must not leave yesterday's name on the panel under the
+    // picture — and the rename must not orphan the node it renames.
+    var s = Create("sim-master");
+    var world = World(
+      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      files: [new DemoFile("file/panel", "<svg/>"u8.ToArray(), "image/svg+xml")],
+      deviceDiagrams:
+      [
+        new DemoDeviceDiagram("object/panel", "sim-master", "type/rack", "file/panel", 44, 28),
+      ]);
+
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-master")));
+    var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    var before = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.parent_id == picture.id);
+    Assert.Equal("Camera sim-master / Rack 42U", before.name);
+
+    s.Catalog.Rename("sim-master", "cam1");
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var after = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == before.id);
+    Assert.Equal("cam1 / Rack 42U", after.name);
+    Assert.Equal(picture.id, after.parent_id);
   }
 
   [Fact]

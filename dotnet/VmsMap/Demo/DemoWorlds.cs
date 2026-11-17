@@ -62,7 +62,11 @@ namespace VmsMap.Demo
     // 21: the diagram is no longer drawn on the floor: it is kept under the camera's picture and
     //     reached by the link the plan offers next to the selected camera, so the floor shows one
     //     point per camera rather than a second card beside the master.
-    public const int UmdDataCenterVersion = 21;
+    // 22: a part of a device stands on a canvas as a replica, the way an administrator places one:
+    //     the master's fourth relay is on the map and switched from there. Names are a type and a
+    //     number throughout — cam1…cam5, relay1…relay4, map1, plan1, diag1 — with the replica's
+    //     suffix `rep<N>`, and the operator may control the devices on the floor.
+    public const int UmdDataCenterVersion = 22;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -76,9 +80,10 @@ namespace VmsMap.Demo
     private static readonly DemoPoint Racks = new(38.9929167, -76.9379687);
 
     // The calibration landmarks of the two pairs: the points MarylandWorld marks with coloured
-    // blocks, on the floor of the hall and out on the lot. Their names are what an operator reads
-    // — `L1 red` — plus the place they stand in, because the tree shows both sets side by side and
-    // `L1 red` twice says nothing; their keys are what the marks and observations name.
+    // blocks, on the floor of the hall and out on the lot. A name is a type and a number, and the
+    // colour is the type here — it is what an operator looks for in a camera's picture while
+    // calibrating. Each set lives in its own space, so `L1 red` on the plan and `L1 red` on the map
+    // are two entries under two parents; their keys are what the marks and observations name.
     // The behaviour of the demo's two sensors. A logical object's settings are the map's — the
     // resolver, the alarm rule and the operator's list all read them there — so the world installs
     // them; VmsCfg's half of the demo keeps only the parts' names. Both inputs idle open and the
@@ -95,16 +100,16 @@ namespace VmsMap.Demo
 
     private static List<DemoLandmark> Landmarks() =>
     [
-      new("landmark/hall/l1", "L1 red (hall)", "space/building", 38.9929432, -76.9379225),
-      new("landmark/hall/l2", "L2 yellow (hall)", "space/building", 38.9929432, -76.9378740),
-      new("landmark/hall/l3", "L3 blue (hall)", "space/building", 38.9929100, -76.9379225),
-      new("landmark/hall/l4", "L4 white (hall)", "space/building", 38.9929100, -76.9378740),
-      new("landmark/hall/l5", "L5 purple (hall)", "space/building", 38.9929270, -76.9378982),
-      new("landmark/road/l1", "L1 red (road)", "space/umd", 38.9930546, -76.9378925),
-      new("landmark/road/l2", "L2 yellow (road)", "space/umd", 38.9931175, -76.9379271),
-      new("landmark/road/l3", "L3 blue (road)", "space/umd", 38.9931265, -76.9378462),
-      new("landmark/road/l4", "L4 white (road)", "space/umd", 38.9931803, -76.9378925),
-      new("landmark/road/l5", "L5 purple (road)", "space/umd", 38.9931983, -76.9377769),
+      new("landmark/hall/l1", "L1 red", "space/building", 38.9929432, -76.9379225),
+      new("landmark/hall/l2", "L2 yellow", "space/building", 38.9929432, -76.9378740),
+      new("landmark/hall/l3", "L3 blue", "space/building", 38.9929100, -76.9379225),
+      new("landmark/hall/l4", "L4 white", "space/building", 38.9929100, -76.9378740),
+      new("landmark/hall/l5", "L5 purple", "space/building", 38.9929270, -76.9378982),
+      new("landmark/road/l1", "L1 red", "space/umd", 38.9930546, -76.9378925),
+      new("landmark/road/l2", "L2 yellow", "space/umd", 38.9931175, -76.9379271),
+      new("landmark/road/l3", "L3 blue", "space/umd", 38.9931265, -76.9378462),
+      new("landmark/road/l4", "L4 white", "space/umd", 38.9931803, -76.9378925),
+      new("landmark/road/l5", "L5 purple", "space/umd", 38.9931983, -76.9377769),
     ];
 
     // The calibration of the four cameras, computed once from the simulator's own world: the feet
@@ -208,9 +213,9 @@ namespace VmsMap.Demo
 
       var spaces = new List<DemoSpace>
       {
-        new("space/umd", "UMD Data Center (demo)", null, SpaceKind.Map,
+        new("space/umd", "map1", null, SpaceKind.Map,
           38.9908, -76.9408, 38.9936, -76.9348),
-        new("space/building", "First floor", "space/umd", SpaceKind.Plan,
+        new("space/building", "plan1", "space/umd", SpaceKind.Plan,
           BuildingSouth, BuildingWest, BuildingNorth, BuildingEast,
           RealCoordinates: true,
           Footprint: BuildingOutline,
@@ -227,7 +232,7 @@ namespace VmsMap.Demo
       // into its regions. Each rack opens on its own canvas, and so does every switch inside it.
       // No layer: like the plan's own footprint, the diagram's marker stands on the floor at every
       // zoom the floor is looked at.
-      nodes.Add(new DemoNode(FloorLayout, "First floor Diagram", "space/building", FloorLayoutType,
+      nodes.Add(new DemoNode(FloorLayout, "diag1", "space/building", FloorLayoutType,
         Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
         At: Racks,
         VisualKey: "file/server-room-icon", VisualWidth: 44, VisualHeight: 44));
@@ -238,7 +243,7 @@ namespace VmsMap.Demo
       for (var index = 1; index <= DemoArt.RackCount; index += 1)
       {
         var rackKey = $"object/rack-a-{index:00}";
-        var rackName = $"Rack A-{index:00}";
+        var rackName = $"rack{index}";
         nodes.Add(new DemoNode(rackKey, rackName, FloorLayout, RackType,
           RegionKey: $"rack-{index}",
           Canvas: new DemoRect(0, 0, DemoArt.RackWidth, DemoArt.RackHeight),
@@ -248,13 +253,13 @@ namespace VmsMap.Demo
         for (var slot = 1; slot <= DemoArt.RackSlots; slot += 1)
         {
           var switchKey = $"object/switch-{slug}-{slot}";
-          nodes.Add(new DemoNode(switchKey, $"Switch A-{index:00} U{slot}", rackKey, SwitchType,
+          nodes.Add(new DemoNode(switchKey, $"switch{(index - 1) * DemoArt.RackSlots + slot}", rackKey, SwitchType,
             RegionKey: $"slot-{slot}",
             Canvas: new DemoRect(0, 0, DemoArt.SwitchWidth, DemoArt.SwitchHeight)));
 
           for (var port = 1; port <= DemoArt.PortsPerSwitch; port += 1)
           {
-            nodes.Add(new DemoNode($"object/port-{slug}-{slot}-{port:00}", $"Port {port}", switchKey, PortType,
+            nodes.Add(new DemoNode($"object/port-{slug}-{slot}-{port:00}", $"port{port}", switchKey, PortType,
               RegionKey: $"port-{port}",
               Canvas: new DemoRect(0, 0, DemoArt.PortWidth, DemoArt.PortHeight)));
           }
@@ -297,6 +302,21 @@ namespace VmsMap.Demo
         spaces,
         nodes,
         placements,
+        [
+          // The master's fourth relay does not hang in a diagram somewhere: it stands on the map
+          // itself, south of the building, and the operator switches it from there. It closes the
+          // same sensor `relay3` does, so either of them raises what the input raises.
+          new DemoPartReplica(
+            "object/part-umd-button",
+            CameraKey: "sim-master",
+            PartKind: "relay",
+            Token: "button",
+            SpaceKey: "space/umd",
+            Name: "relay4 rep1",
+            Lat: 38.9926800,
+            Lon: -76.9377000,
+            Color: "#26a69a"),
+        ],
         DeviceSettings(),
         Landmarks(),
         GroundMarks,
@@ -315,7 +335,13 @@ namespace VmsMap.Demo
             VisualHeight: 28),
         ],
         states,
-        [new DemoRight("space/umd", "user", RightActions.View)]);
+        [
+          // The operator sees the world; `control` is what lets them act on its devices — the
+          // button on the map is a part of `sim-master`, and a device's rights are anchored to the
+          // space its reference replica stands in, which is the floor.
+          new DemoRight("space/umd", "user", RightActions.View),
+          new DemoRight("space/building", "user", RightActions.Control),
+        ]);
     }
 
     /// The first floor drawn as a schematic instead of a plan: its rack slots are the regions its
@@ -333,7 +359,7 @@ namespace VmsMap.Demo
     }
 
     /// A camera as a switch is drawn: the model's rear panel, one region per terminal. The parts
-    /// are found by their tokens — `sim-master` declares exactly these four — and the type attaches
+    /// are found by their tokens — `sim-master` declares exactly these five — and the type attaches
     /// itself to any device that reports being this model. `sim-vehicle` is the same model and has
     /// nothing configured, so it gets no diagram.
     private static DemoDiagramType CameraPanelTypeDefinition() => new(
@@ -349,6 +375,8 @@ namespace VmsMap.Demo
           PanelStyle, new DemoRegionPart("relay", "token", "peer")),
         new DemoRegion("loop", DemoArt.CameraPanelSocket("loop"),
           PanelStyle, new DemoRegionPart("relay", "token", "loop")),
+        new DemoRegion("button", DemoArt.CameraPanelSocket("button"),
+          PanelStyle, new DemoRegionPart("relay", "token", "button")),
       ],
       SourceKind: "camera",
       DeviceManufacturer: "OnvifSim",

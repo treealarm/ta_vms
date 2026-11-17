@@ -17,8 +17,8 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
   /// the input it watches cannot drift apart. The same contact is the map's half of the demo:
   /// `DemoWorlds` in VmsMap installs both inputs' alarm rule with it.
   /// <para>
-  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay, and `sim-master`'s own input to its
-  /// `loop` relay. Both inputs idle open, so an open circuit is idle and a closed one is active:
+  /// `sim-ptz`'s input is wired to `sim-master`'s `peer` relay, and `sim-master`'s own input to both
+  /// its `loop` and its `button` relay. Both inputs idle open, so an open circuit is idle and a closed one is active:
   /// that contact is closed. It is the polarity the trigger is set to, not a guess from the picture.
   /// </para>
   public const string SensorTrigger = "closed";
@@ -28,18 +28,19 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     CameraId = DemoCameraIds.For("sim-ptz"),
     Kind = DeviceSettingsRules.DigitalInput,
     Token = "input",
-    Name = "Sensor",
+    Name = "sensor2",
   };
 
-  /// The master's own input, wired to its `loop` relay in the simulator. It is the operator's
-  /// sensor, and the map installs it to inherit: the camera — disarmed at install — leaves it off
-  /// guard, and it fires only once somebody arms it from the card and closes `loop`.
+  /// The master's own input, wired to its `loop` and `button` relays in the simulator. It is the
+  /// operator's sensor, and the map installs it to inherit: the camera — disarmed at install —
+  /// leaves it off guard, and it fires only once somebody arms it from the card and closes one of
+  /// those relays.
   public static DeviceSettings MasterSensorSettings() => new()
   {
     CameraId = DemoCameraIds.For("sim-master"),
     Kind = DeviceSettingsRules.DigitalInput,
     Token = "input",
-    Name = "Master sensor",
+    Name = "sensor1",
   };
 
   /// The parts of the master. They are configured — not merely discovered — because a device's
@@ -51,17 +52,22 @@ public sealed class DemoDevices(DeviceStorage devices, DeviceSettingsNotifier no
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
-      Kind = DeviceSettingsRules.Relay, Token = "lamp", Name = "Lamp",
+      Kind = DeviceSettingsRules.Relay, Token = "lamp", Name = "relay1",
     },
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
-      Kind = DeviceSettingsRules.Relay, Token = "peer", Name = "Peer",
+      Kind = DeviceSettingsRules.Relay, Token = "peer", Name = "relay2",
     },
     new()
     {
       CameraId = DemoCameraIds.For("sim-master"),
-      Kind = DeviceSettingsRules.Relay, Token = "loop", Name = "Loop",
+      Kind = DeviceSettingsRules.Relay, Token = "loop", Name = "relay3",
+    },
+    new()
+    {
+      CameraId = DemoCameraIds.For("sim-master"),
+      Kind = DeviceSettingsRules.Relay, Token = "button", Name = "relay4",
     },
   ];
 

@@ -122,11 +122,11 @@ export default function SpaceEditor({
 
   const spaceId = space.id ?? ''
   const { openDeviceDiagram, placeDeviceDiagram } = useDeviceDiagram(spaceId)
-  // The map is taking a click rather than selecting what is under it: a landmark, a camera or a
+  // The map is taking a click rather than selecting what is under it: a part, a camera or a
   // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
-  // on.
-  const picking = !!pendingCameraId || !!pendingDiagramId || mode === 'landmark'
-    || DRAW_MODES.includes(mode)
+  // on — the crosshair says so, and nothing under it is interactive while it is aimed.
+  const picking = !!pendingPart || !!pendingCameraId || !!pendingDiagramId
+    || mode === 'landmark' || DRAW_MODES.includes(mode)
   // The modes whose clicks build a run of points rather than one shape at one click.
   const drawingPath = mode === 'line' || mode === 'polygon' || mode === 'footprint'
   // A footprint and a polygon are rings; a line is not.
@@ -433,8 +433,8 @@ export default function SpaceEditor({
     }
     if (pendingPart && spaceId) {
       // A part has no placement row of its own: the replica is an ordinary picture of the part's
-      // node, and its colour says which kind of contact it is. The name is the part's, so the map
-      // says "Master sensor" and not the replica's generated name.
+      // node, and its colour says which kind of contact it is. Its name is the part's and its own
+      // number — `relay4 rep1` — and the server picks the number, so the client sends none.
       const part = pendingPart
       setPendingPart(null)
       void run(async () => {
@@ -443,11 +443,7 @@ export default function SpaceEditor({
           parentId: spaceId,
           lat: at.lat,
           lon: at.lon,
-          name: part.name,
-          visual: {
-            color: part.kind === 'relay' ? '#ffb300' : '#26a69a',
-            text: part.name,
-          },
+          visual: { color: part.kind === 'relay' ? '#ffb300' : '#26a69a' },
         })).unwrap()
         setSelection({ kind: 'node', id: marker.id })
       })
@@ -967,9 +963,11 @@ export default function SpaceEditor({
                 // The node whichever way it was picked: a row in the tree selects the node, the
                 // map itself selects the landmark.
                 selected={selectionNodeId === m.id}
-                // A landmark is picked while selecting and while placing one; the drawing tools
-                // and a camera waiting for its spot take the click instead.
-                interactive={!pendingCameraId && (mode === 'select' || mode === 'landmark')}
+                // A landmark is picked while selecting and while placing one; the drawing tools,
+                // a camera waiting for its spot and a part about to be dropped take the click
+                // instead.
+                interactive={!pendingCameraId && !pendingPart && !pendingDiagramId
+                  && (mode === 'select' || mode === 'landmark')}
                 editable={mode === 'select'}
                 levels={levels}
                 zoomLevel={m.id ? figuresById[m.id]?.zoomLevel : undefined}
