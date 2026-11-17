@@ -342,18 +342,39 @@ namespace VmsMap.Demo
         // The picture the plan draws the camera with, rather than the map's own dot. It hangs on
         // the placement's replica node, which is the node drawn there — the camera's canonical node
         // under its server carries no figure. The map turns the picture by the placement's heading.
-        if (world.Files.FirstOrDefault(file => file.Key == CameraIconKey) is { } glyph)
+        //
+        // The picture is the world's own row, so its name is the world's to keep in step: a camera
+        // renamed between versions of the world — `OnvifSim cam1` became `cam1` — renames its
+        // picture, which the placement write does not do for a picture that already exists.
+        var canonical = Utils.ConvertObjectIdToGuid(CameraObjectId.For(cameraId));
+        var picture = await _db.Markers.AsNoTracking()
+          .Where(m => m.parent_id == spaceId && m.owner_id == canonical)
+          .Select(m => (Guid?)m.id)
+          .FirstOrDefaultAsync(ct);
+        if (picture is { } pictureId)
         {
-          var canonical = Utils.ConvertObjectIdToGuid(CameraObjectId.For(cameraId));
-          var picture = await _db.Markers.AsNoTracking()
-            .Where(m => m.parent_id == spaceId && m.owner_id == canonical)
-            .Select(m => (Guid?)m.id)
-            .FirstOrDefaultAsync(ct);
-          if (picture is not null)
+          var siblings = await _db.Markers.AsNoTracking()
+            .Where(m => m.owner_id == canonical && m.id != pictureId)
+            .Select(m => m.name)
+            .ToListAsync(ct);
+          var name = ReplicaNames.Next(camera.Name, siblings);
+          var marker = await _db.Markers.AsNoTracking().SingleAsync(m => m.id == pictureId, ct);
+          if (marker.name != name)
+          {
+            await _updates.UpdateObjects([new BaseMarkerDTO
+            {
+              id = Utils.ConvertGuidToObjectId(pictureId),
+              parent_id = spaceId.ToString(),
+              owner_id = canonical?.ToString(),
+              name = name,
+            }]);
+          }
+
+          if (world.Files.FirstOrDefault(file => file.Key == CameraIconKey) is { } glyph)
           {
             await _visuals.UpdateListAsync([new VisualDTO
             {
-              object_id = Utils.ConvertGuidToObjectId(picture),
+              object_id = Utils.ConvertGuidToObjectId(pictureId),
               image = glyph.Content,
               image_width = CameraIconSize,
               image_height = CameraIconSize,

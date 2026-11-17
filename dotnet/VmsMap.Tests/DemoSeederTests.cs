@@ -24,22 +24,24 @@ public class DemoSeederTests
   private sealed class TestCatalog : ICameraCatalog
   {
     // The demo world names its cameras; VmsCfg keys them by id. The fake catalogue holds ids, the
-    // way the real one does.
-    private readonly HashSet<string> _known;
+    // way the real one does, and the names an administrator may rename them to.
+    private readonly Dictionary<string, string> _known;
 
     public TestCatalog(params string[] known) =>
-      _known = new HashSet<string>(known.Select(DemoIds.Camera), StringComparer.Ordinal);
+      _known = known.ToDictionary(DemoIds.Camera, id => "Camera " + id, StringComparer.Ordinal);
 
     /// A camera the installation provisions after the demo was installed once.
-    public void Add(string cameraName) => _known.Add(DemoIds.Camera(cameraName));
+    public void Add(string cameraName) =>
+      _known.TryAdd(DemoIds.Camera(cameraName), "Camera " + DemoIds.Camera(cameraName));
+
+    /// The administrator renames the camera, as VmsCfg's own form would.
+    public void Rename(string cameraName, string name) => _known[DemoIds.Camera(cameraName)] = name;
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult(_known.Contains(cameraId)
-        ? new CameraInfo(cameraId, "Camera " + cameraId, "srv")
-        : null);
+      Task.FromResult(_known.TryGetValue(cameraId, out var name) ? new CameraInfo(cameraId, name, "srv") : null);
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
-      Task.FromResult(_known.Select(id => new CameraInfo(id, "Camera " + id, "srv")).ToList());
+      Task.FromResult(_known.Select(pair => new CameraInfo(pair.Key, pair.Value, "srv")).ToList());
   }
 
   private sealed class TestNotifier : IMapConfigNotifier
@@ -288,6 +290,28 @@ public class DemoSeederTests
 
     await s.Seeder.RemoveAsync(Key, CancellationToken.None);
     Assert.Empty(await s.Db.Markers.AsNoTracking().Where(m => m.owner_id == partId).ToListAsync());
+  }
+
+  [Fact]
+  public async Task AWorldThatRenamesItsCameraRenamesItsPicture()
+  {
+    // A picture already on the canvas is not renamed by a placement write. The world's own picture
+    // is the world's row, so the seeder keeps its name in step with the camera: a version of the
+    // demo that renames its cameras must not leave yesterday's names on the map.
+    var s = Create("sim-master");
+    var world = World(placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)]);
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-master")));
+    var before = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    Assert.Equal("Camera sim-master rep1", before.name);
+
+    s.Catalog.Rename("sim-master", "cam1");
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var after = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    Assert.Equal(before.id, after.id);
+    Assert.Equal("cam1 rep1", after.name);
   }
 
   [Fact]
