@@ -440,7 +440,7 @@ endpoint and the "Entity State" debug tab in the frontend).
 
 Spaces (maps and nested plans), plan images, camera placements, landmarks and their calibrations
 live in **VmsMap**, on Square's object tree; see [`docs/maps-and-plans.md`](docs/maps-and-plans.md)
-and the migration `dotnet/VmsMap/Grpc/migrations/0002_spaces.sql`. VmsCfg keeps the cameras
+and the migration `dotnet/VmsMap/Grpc/migrations/0000_init.sql`. VmsCfg keeps the cameras
 themselves; a placement write checks the camera exists through `GetCamera` (there is no foreign key
 across the two databases). These are the invariants a change must keep:
 

@@ -136,7 +136,7 @@ Conventions that hold everywhere:
 
 ## Where things live
 
-- **VmsMap** owns the tables (`dotnet/VmsMap/Grpc/migrations/0002_spaces.sql`,
+- **VmsMap** owns the tables (`dotnet/VmsMap/Grpc/migrations/0000_init.sql`,
   `Db/Services/SpatialDb.cs`) and the gRPC contract (`proto/vms_map.proto`, section
   "Maps & plans"). Plan images are `bytea` in its database and travel as chunked gRPC streams,
   because Dapr service invocation caps one message at 4 MiB. Limit: 20 MiB per image. A placement
@@ -417,7 +417,7 @@ rectangle by construction, and a region keeps the aspect of the diagram it holds
 a rack slot and the rack drawn in the floor diagram are not stretched. There is no import/export
 format for maps, and the demo does not add one.
 
-**The registry.** `demo_config` and `demo_object` (`Grpc/migrations/0006_demo_seed.sql`) record the
+**The registry.** `demo_config` and `demo_object` (`Grpc/migrations/0000_init.sql`) record the
 logical key of every row the world created — `space/building`, `object/floor-layout`,
 `object/rack-a-01`, `type/rack`, `file/rack-background`, `level/rack`, `camera/sim-master` — and the
 id it was created with. A

@@ -23,7 +23,7 @@ namespace VmsMap.Db
   /// Spaces, plan images, camera placements, landmarks and PTZ and ground observations. A space,
   /// a placement and a landmark are nodes of the one tree with side rows of their own; a camera is
   /// one node whose id is derived from the camera id, and its other placements are replicas of it.
-  /// See Grpc/migrations/0002_spaces.sql for what each table means.
+  /// See Grpc/migrations/0000_init.sql for what each table means.
   public class SpatialDb : ICameraGeoWriter
   {
     private readonly VmsMapDbContext _db;    private readonly IMapService _mapService;
