@@ -57,7 +57,7 @@ public class SpatialDbTests
     var trackService = new TrackService(db, levels);
     var geo = new GeoService(db, levels);
     var tracks = new TracksUpdateService(map, trackService, geo);
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
     var catalog = new FakeCatalog();
     var notifier = new RecordingNotifier();
 

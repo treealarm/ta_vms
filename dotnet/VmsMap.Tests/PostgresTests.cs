@@ -68,7 +68,7 @@ public class PostgresTests
     var trackService = new TrackService(db, levels);
     var geoService = new GeoService(db, levels);
     var tracks = new TracksUpdateService(map, trackService, geoService);
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
 
     return new Services(dataSource, db, map, states, updates);
   }

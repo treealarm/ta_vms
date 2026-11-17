@@ -32,6 +32,7 @@ public class ConnectionStateServiceTests
     var statesUpdate = new StatesUpdateService(stateService, map, db);
     var writer = new CameraStateWriter(new ObjectStateWriter(db, stateService, statesUpdate));
     var nodes = TestWiring.DeviceNodes(db, map, new MapUpdateService(
+      db,
       map,
       new TracksUpdateService(map, new TrackService(db, new LevelService(db)),
         new GeoService(db, new LevelService(db))),

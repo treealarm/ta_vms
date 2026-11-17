@@ -67,6 +67,12 @@ public class CameraArmingTests
 
   private static async Task PlaceReferenceAsync(Fixture f, string spaceId)
   {
+    // A picture names its original, and the original exists: the placement writer creates the
+    // camera's canonical node before the replica that carries the point.
+    await f.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = CameraObjectId.For(CameraId), name = "Camera" }
+    ]);
+
     var replica = await NodeAsync(
       f, "Camera picture", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
 

@@ -5,9 +5,15 @@ using Microsoft.EntityFrameworkCore;
 namespace VmsMap.Db
 {
   /// <summary>
-  /// The map's transitive locks in the one order they may be taken. The camera-state lock
-  /// serialises the read-modify-write of an object's full state set; the alarm lock serialises the
-  /// aggregation that follows it. Taking them in the other order in one handler and this order in
+  /// The map's transitive locks in the one order they may be taken:
+  /// <c>camera-state → camera-placement → alarm → device-diagram → hierarchy</c>.
+  ///
+  /// The camera-state lock serialises the read-modify-write of an object's full state set; the alarm
+  /// lock serialises the aggregation that follows it. A placement comes before the alarm because
+  /// removing one recomputes alarms inside the same transaction; the hierarchy lock comes last
+  /// because the paths that write the tree and then recompute alarms — <see cref="MapUpdateService"/>
+  /// — take the alarm lock first, and <c>DeviceDiagramService</c> already holds camera-state and
+  /// alarm when it moves a node. Taking them in another order in one handler and this order in
   /// another is a deadlock, so no new code writes <c>pg_advisory_xact_lock</c> by hand — a grep test
   /// enforces that, and this class is the only place the lock names live.
   /// </summary>
@@ -15,6 +21,9 @@ namespace VmsMap.Db
   {
     public const string CameraState = "ta_map_camera_state";
     public const string Alarm = "ta_map_alarm";
+
+    /// <summary>The tree itself: a move reads it and writes it, and the two must not interleave.</summary>
+    public const string Hierarchy = "ta_map_hierarchy";
 
     /// <summary>Installing or removing the demo world is once-only work for the whole deployment.</summary>
     private const long DemoInstallKey = 0x74615f64656d6f31; // "ta_demo1"
@@ -26,6 +35,31 @@ namespace VmsMap.Db
     /// <summary>Taken after the camera-state lock when both are needed.</summary>
     public static Task AcquireAlarmAsync(VmsMapDbContext db, CancellationToken ct = default) =>
       AcquireAsync(db, Alarm, ct);
+
+    /// <summary>
+    /// Serialises tree changes for the whole deployment. A cycle is a property of the tree, not of
+    /// one node, so the lock cannot be keyed by node; tree writes are configuration changes, not a
+    /// hot path, which is what makes one key affordable. Taken after the alarm lock: the writer
+    /// that recomputes alarms takes them in that order.
+    /// </summary>
+    public static Task AcquireHierarchyAsync(VmsMapDbContext db, CancellationToken ct = default) =>
+      AcquireAsync(db, Hierarchy, ct);
+
+    /// <summary>
+    /// Serialises one camera's placements. Two requests for the same canvas both find no picture
+    /// and each would create one; the canvas is derived (geo_objects.canvas_id), so the schema
+    /// cannot say "one picture per camera per canvas" and the write is serialised per camera.
+    /// </summary>
+    public static async Task AcquireCameraPlacementAsync(
+      VmsMapDbContext db, string cameraId, CancellationToken ct = default)
+    {
+      if (!db.Database.IsRelational())
+        return;
+
+      var name = $"ta_map_camera_placement:{cameraId}";
+      await db.Database.ExecuteSqlInterpolatedAsync(
+        $"SELECT pg_advisory_xact_lock(hashtext({name}));", ct);
+    }
 
     /// <summary>
     /// Both of the map's transitive locks, in the one order they may be taken. An alarm transition

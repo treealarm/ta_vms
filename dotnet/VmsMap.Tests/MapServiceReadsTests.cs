@@ -54,6 +54,7 @@ public class MapServiceReadsTests
     VmsMapDbContext Db,
     MapDb Map,
     StatesUpdateService States,
+    MapUpdateService Updates,
     MapServiceImpl Grpc,
     TestRightsNotifier Notifier,
     AlarmStore Alarms,
@@ -73,7 +74,7 @@ public class MapServiceReadsTests
     var trackService = new TrackService(db, levels);
     var geo = new GeoService(db, levels);
     var tracks = new TracksUpdateService(map, trackService, geo);
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
     var rights = new RightsService(db);
     var notifier = new TestRightsNotifier();
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
@@ -100,7 +101,7 @@ public class MapServiceReadsTests
       // The attach RPC is not exercised here; the diagram service has its own tests.
       null!);
 
-    return new Services(db, map, states, grpc, notifier, alarms, arming);
+    return new Services(db, map, states, updates, grpc, notifier, alarms, arming);
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -794,5 +795,26 @@ public class MapServiceReadsTests
 
     Assert.Equal(1, result.Acknowledged);
     Assert.Empty(result.Rejected);
+  }
+
+  [Fact]
+  public async Task APropertyWriteDoesNotMoveTheNode()
+  {
+    var s = Create();
+    var building = await Node(s.Map, "Building");
+    var floor = await Node(s.Map, "Floor", building.id);
+
+    // The property DTO carries no parent; before, the hierarchy write copied that null onto the
+    // row and every property update silently moved the node to the root.
+    await s.Updates.UpdateProperties(new ObjPropsDTO
+    {
+      id = floor.id,
+      extra_props = [new ObjExtraPropertyDTO { prop_name = "note", str_val = "kept" }],
+    });
+
+    var stored = await s.Db.Markers.AsNoTracking()
+      .SingleAsync(m => m.id == Guid.Parse(floor.id!));
+    Assert.Equal(Guid.Parse(building.id!), stored.parent_id);
+    Assert.Equal("Floor", stored.name);
   }
 }

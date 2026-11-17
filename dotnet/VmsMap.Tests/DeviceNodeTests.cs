@@ -81,7 +81,7 @@ public class DeviceNodeTests
     var trackService = new TrackService(db, levels);
     var geo = new GeoService(db, levels);
     var tracks = new TracksUpdateService(map, trackService, geo);
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
     var rights = new RightsService(db);
     var spatial = new SpatialDb(db, map, updates, geo, new TestCatalog(), new TestNotifier(), TestWiring.CameraArming(db, map));
     var nodes = TestWiring.DeviceNodes(db, map, updates);
