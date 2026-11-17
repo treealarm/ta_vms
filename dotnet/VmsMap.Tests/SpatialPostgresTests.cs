@@ -89,7 +89,7 @@ public class SpatialPostgresTests
     var trackService = new TrackService(db, levels);
     var geo = new GeoService(db, levels);
     var tracks = new TracksUpdateService(map, trackService, geo);
-    var updates = new MapUpdateService(map, tracks, states);
+    var updates = new MapUpdateService(db, map, tracks, states);
     var notifier = new RecordingNotifier();
 
     return new Services(
@@ -556,5 +556,117 @@ public class SpatialPostgresTests
     // Deleting the node takes its settings with it, through the schema's cascade.
     await test.Db.Database.ExecuteSqlInterpolatedAsync($"DELETE FROM objects WHERE id = {node}");
     Assert.False(await test.Db.DeviceObjectSettings.AnyAsync(r => r.object_id == node));
+  }
+
+  // ── The general delete takes the specialized steps ───────────────────────────────────────
+
+  [Fact]
+  public async Task DeletingALandmarkThroughTheGeneralPathTellsItsObservers()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+    var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
+    {
+      SpaceId = map.Id,
+      Name = "Corner",
+      Lat = 0.4,
+      Lon = 0.4,
+      HeightM = 2,
+    }, CancellationToken.None);
+
+    var observations = new PtzGeoObservations { CameraId = TestCameras.One };
+    observations.Observations.Add(new PtzGeoObservation { LandmarkId = landmark.Id, Pan = 10, Tilt = -5 });
+    await test.Spatial.SetObservationsAsync(observations, CancellationToken.None);
+
+    var removed = await test.Spatial.RemoveSubtreeAsync([landmark.Id], CancellationToken.None);
+
+    Assert.True(removed > 0);
+    Assert.False(await test.Db.Landmarks.AnyAsync());
+    Assert.False(await test.Db.PtzGeoObservations.AnyAsync());
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == Guid.Parse(landmark.Id)));
+
+    // The camera that was calibrated on it loses a model, and learns so on the same event.
+    var last = test.Notifier.Events[^1];
+    Assert.Contains(landmark.Id, last.Objects);
+    Assert.Contains(TestCameras.One, last.Cameras);
+  }
+
+  [Fact]
+  public async Task DeletingASpaceThroughTheGeneralPathDoesWhatRemovingTheSpaceDoes()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
+    var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
+    {
+      SpaceId = plan.Id,
+      Name = "Corner",
+      Lat = 0.4,
+      Lon = 0.4,
+      HeightM = 2,
+    }, CancellationToken.None);
+
+    var removed = await test.Spatial.RemoveSubtreeAsync([plan.Id], CancellationToken.None);
+
+    Assert.True(removed > 0);
+    Assert.False(await test.Db.Spaces.AnyAsync(s => s.object_id == Guid.Parse(plan.Id)));
+    Assert.False(await test.Db.Landmarks.AnyAsync());
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == Guid.Parse(landmark.Id)));
+    Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.object_id == Guid.Parse(landmark.Id)));
+
+    // The placement inside the plan went with it, and the camera that stood there is named.
+    Assert.False(await test.Db.CameraPlacements.AnyAsync());
+    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
+  }
+
+  [Fact]
+  public async Task DeletingAPictureThroughTheGeneralPathTakesItsDiagram()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+
+    var picture = await test.Db.CameraPlacements.AsNoTracking()
+      .SingleAsync(p => p.camera_id == TestCameras.One);
+    var diagram = Guid.Parse(DeviceObjectId.ForDeviceDiagram(
+      DeviceObjectId.CameraSource, TestCameras.One, IDeviceDiagramService.DefaultSlot));
+
+    test.Db.Markers.Add(new DBMarker
+    {
+      id = diagram,
+      parent_id = picture.object_id,
+      name = "Camera / rear panel",
+    });
+    await test.Db.SaveChangesAsync();
+    test.Db.DeviceDiagrams.Add(new DBDeviceDiagram
+    {
+      object_id = diagram,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      slot = IDeviceDiagramService.DefaultSlot,
+    });
+    await test.Db.SaveChangesAsync();
+
+    var removed = await test.Spatial.RemoveSubtreeAsync(
+      [Utils.ConvertGuidToObjectId(picture.object_id)], CancellationToken.None);
+
+    Assert.True(removed > 0);
+    Assert.False(await test.Db.DeviceDiagrams.AnyAsync());
+    Assert.False(await test.Db.Markers.AnyAsync(m => m.id == diagram || m.id == picture.object_id));
+    Assert.False(await test.Db.CameraPlacements.AnyAsync());
   }
 }

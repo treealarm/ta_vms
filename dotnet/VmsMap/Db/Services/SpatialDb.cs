@@ -180,14 +180,51 @@ namespace VmsMap.Db
       if (!await _db.Spaces.AnyAsync(s => s.object_id == spaceId, ct))
         return false;
 
-      await using var tx = await BeginTransactionAsync(ct);
+      return await RemoveSubtreeAsync([spaceId.ToString()], ct) > 0;
+    }
 
-      var subtree = await _mapService.GetSubtreeIdsAsync([spaceId.ToString()]);
+    /// <summary>
+    /// Removes the named nodes with everything under them: one path for the general "delete node"
+    /// RPC and for removing a space, a landmark or a camera's picture. Whatever a node carries
+    /// leaves with it -- its subtree, placements, geometry, landmark observations and the device
+    /// diagrams drawn under it -- and the cameras that stood in it are told, so the guard flag a
+    /// zone set is dropped now rather than at the next restart.
+    /// </summary>
+    public async Task<long> RemoveSubtreeAsync(IReadOnlyCollection<string> ids, CancellationToken ct)
+    {
+      var requested = ids
+        .Where(id => !string.IsNullOrEmpty(id))
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+      if (requested.Count == 0)
+        return 0;
+
+      await using var tx = await BeginTransactionAsync(ct);
+      var result = await RemoveInSubtreeAsync(requested, ct);
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      await AfterRemovalAsync(result, ct);
+      return result.Removed;
+    }
+
+    private sealed record RemovalResult(
+      long Removed, IReadOnlyList<string> ObjectIds, IReadOnlyCollection<string> Cameras);
+
+    // Everything the removal does inside its transaction. The caller owns the transaction and the
+    // post-commit steps, because a caller that has an outer lock and transaction of its own (a
+    // placement removal) must not have the notification run before that transaction commits.
+    private async Task<RemovalResult> RemoveInSubtreeAsync(
+      IReadOnlyList<string> requested, CancellationToken ct)
+    {
+      var subtree = await _mapService.GetSubtreeIdsAsync(requested);
       var subtreeIds = subtree
         .Select(Utils.ConvertObjectIdToGuid)
         .Where(id => id.HasValue)
         .Select(id => id!.Value)
         .ToList();
+      if (subtreeIds.Count == 0)
+        return new RemovalResult(0, requested, []);
 
       var cameras = new HashSet<string>(StringComparer.Ordinal);
 
@@ -199,36 +236,63 @@ namespace VmsMap.Db
         .ToListAsync(ct);
       cameras.UnionWith(placements.Select(p => p.camera_id));
       _db.CameraPlacements.RemoveRange(placements);
-      _db.GeoObjects.RemoveRange(
-        await _db.GeoObjects.Where(g => subtreeIds.Contains(g.id)).ToListAsync(ct));
 
-      // Landmarks go with the subtree, and the observations made on them with the landmarks.
+      // Landmarks go with the subtree, and the observations made on them with the landmarks. The
+      // cameras that made them lose a model, so they are named in the notification.
       var landmarks = await _db.Landmarks
         .Where(l => subtreeIds.Contains(l.object_id))
-        .Select(l => l.object_id)
         .ToListAsync(ct);
       if (landmarks.Count > 0)
       {
-        cameras.UnionWith(await _db.PtzGeoObservations
-          .Where(o => landmarks.Contains(o.landmark_id))
-          .Select(o => o.camera_id).ToListAsync(ct));
-        cameras.UnionWith(await _db.GroundObservations
-          .Where(o => landmarks.Contains(o.landmark_id))
-          .Select(o => o.camera_id).ToListAsync(ct));
+        var landmarkIds = landmarks.Select(l => l.object_id).ToList();
+        var ptz = await _db.PtzGeoObservations
+          .Where(o => landmarkIds.Contains(o.landmark_id))
+          .ToListAsync(ct);
+        var ground = await _db.GroundObservations
+          .Where(o => landmarkIds.Contains(o.landmark_id))
+          .ToListAsync(ct);
+        cameras.UnionWith(ptz.Select(o => o.camera_id));
+        cameras.UnionWith(ground.Select(o => o.camera_id));
+        _db.PtzGeoObservations.RemoveRange(ptz);
+        _db.GroundObservations.RemoveRange(ground);
+
+        // The observations go in a statement of their own: PostgreSQL cascades them away with the
+        // landmark, and EF does not model that foreign key, so one batch may delete the landmark
+        // first -- the observations' own delete would then affect no row.
+        await _db.SaveChangesAsync(ct);
+        _db.Landmarks.RemoveRange(landmarks);
       }
 
+      _db.GeoObjects.RemoveRange(
+        await _db.GeoObjects.Where(g => subtreeIds.Contains(g.id)).ToListAsync(ct));
+
+      // The registry rows point at nodes and EF does not model those foreign keys. The parts go
+      // first, in a statement of their own: PostgreSQL cascades them away with their diagram, and
+      // one batch may delete the diagram first -- the parts' own delete then affects no row.
+      _db.DeviceDiagramParts.RemoveRange(
+        await _db.DeviceDiagramParts
+          .Where(part => subtreeIds.Contains(part.diagram_object_id))
+          .ToListAsync(ct));
       await _db.SaveChangesAsync(ct);
 
-      var removed = await _mapUpdateService.Delete([spaceId.ToString()]);
+      _db.DeviceDiagrams.RemoveRange(
+        await _db.DeviceDiagrams
+          .Where(diagram => subtreeIds.Contains(diagram.object_id))
+          .ToListAsync(ct));
+      await _db.SaveChangesAsync(ct);
 
-      if (tx is not null)
-        await tx.CommitAsync(ct);
+      var removed = await _mapUpdateService.Delete(requested.ToList());
+      return new RemovalResult(removed, requested, cameras);
+    }
 
-      // The space is gone, and with it every zone the cameras in it stood in.
-      await _arming.ReconcileManyAsync(cameras, ct);
+    private async Task AfterRemovalAsync(RemovalResult result, CancellationToken ct)
+    {
+      if (result.Removed == 0)
+        return;
 
-      await NotifyAsync([spaceId.ToString()], cameras, ct);
-      return removed > 0;
+      // What the cameras stood in may be gone: the guard flag VmsCfg keeps has to say so now.
+      await _arming.ReconcileManyAsync(result.Cameras, ct);
+      await NotifyAsync(result.ObjectIds, result.Cameras, ct);
     }
 
     /// <summary>
@@ -410,6 +474,11 @@ namespace VmsMap.Db
 
       await using var tx = await BeginTransactionAsync(ct);
 
+      // Two placements of one camera on one canvas would both find no picture and each create
+      // one; the canvas is derived, so nothing in the schema says otherwise. Serialising the
+      // camera's placement writes makes the second call update the row the first created.
+      await MapLocks.AcquireCameraPlacementAsync(_db, placement.CameraId, ct);
+
       if (!await _db.Spaces.AnyAsync(s => s.object_id == spaceId, ct))
         throw new SpatialConfigException($"Space '{placement.SpaceId}' does not exist");
 
@@ -531,6 +600,10 @@ namespace VmsMap.Db
     {
       await using var tx = await BeginTransactionAsync(ct);
 
+      // A placement write on this canvas is serialised with this removal by the camera's lock:
+      // otherwise the write could create a picture while this deletes the row it found.
+      await MapLocks.AcquireCameraPlacementAsync(_db, cameraId, ct);
+
       var row = await RowInSpaceAsync(cameraId, spaceId, ct);
       if (row is null)
         return false;
@@ -538,17 +611,15 @@ namespace VmsMap.Db
       // A placement always belongs to a replica: taking it off the canvas takes the replica with
       // it. The canonical node stays under its server, without a position until another placement
       // makes one of its replicas the reference.
-      await DeletePictureAsync(row.object_id, ct);
+      var result = await RemoveInSubtreeAsync([row.object_id.ToString()], ct);
 
       if (tx is not null)
         await tx.CommitAsync(ct);
 
       // The picture that went may have been the camera's reference: the zone it stood in no longer
       // reaches it.
-      await _arming.ReconcileAsync(cameraId, ct);
-
-      await NotifyAsync([row.object_id.ToString()], [cameraId], ct);
-      return true;
+      await AfterRemovalAsync(result, ct);
+      return result.Removed > 0;
     }
 
     // ── Landmarks ─────────────────────────────────────────────────────────────
@@ -627,41 +698,12 @@ namespace VmsMap.Db
 
     public async Task<bool> RemoveLandmarkAsync(Guid landmarkId, CancellationToken ct)
     {
-      var row = await _db.Landmarks.FirstOrDefaultAsync(l => l.object_id == landmarkId, ct);
-      if (row is null)
+      if (!await _db.Landmarks.AnyAsync(l => l.object_id == landmarkId, ct))
         return false;
 
-      var observers = await ObserversOfLandmarkAsync([landmarkId], ct);
-
-      await using var tx = await BeginTransactionAsync(ct);
-
-      // The observations on the landmark describe nothing once it is gone; in PostgreSQL the
-      // foreign keys cascade, and they are removed here explicitly as well so that the same code
-      // runs wherever the context points.
-      //
-      // Saved in three steps, in the order the foreign keys demand: EF does not model these
-      // relationships, so a single batch may delete the object before the landmark it cascades to,
-      // and then the landmark's own delete affects no row and throws a concurrency error.
-      _db.PtzGeoObservations.RemoveRange(
-        await _db.PtzGeoObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
-      _db.GroundObservations.RemoveRange(
-        await _db.GroundObservations.Where(o => o.landmark_id == landmarkId).ToListAsync(ct));
-      await _db.SaveChangesAsync(ct);
-
-      _db.Landmarks.Remove(row);
-      await _db.SaveChangesAsync(ct);
-
-      _db.GeoObjects.RemoveRange(
-        await _db.GeoObjects.Where(g => g.id == landmarkId).ToListAsync(ct));
-      _db.Markers.RemoveRange(
-        await _db.Markers.Where(m => m.id == landmarkId).ToListAsync(ct));
-      await _db.SaveChangesAsync(ct);
-
-      if (tx is not null)
-        await tx.CommitAsync(ct);
-
-      await NotifyAsync([landmarkId.ToString()], observers, ct);
-      return true;
+      // The observations made on it describe nothing once it is gone, and the cameras that made
+      // them are told: the shared removal takes the landmark, its rows and the notify with it.
+      return await RemoveSubtreeAsync([landmarkId.ToString()], ct) > 0;
     }
 
     // ── PTZ observations ──────────────────────────────────────────────────────
@@ -998,6 +1040,16 @@ namespace VmsMap.Db
         ? null
         : ServerNodeId.For(camera.ServerId);
 
+      // The first placement of a camera may reach a server the adapter has not seen yet, and the
+      // tree refuses a parent that names nothing. The server node is a plain node named by its id,
+      // the same row the adapter would write: writing it here changes nothing once it exists.
+      if (serverId is not null && Utils.ConvertObjectIdToGuid(serverId) is { } serverGuid
+          && !await _db.Markers.AsNoTracking().AnyAsync(m => m.id == serverGuid, ct))
+      {
+        await _mapService.UpdateHierarchyAsync([
+          new BaseMarkerDTO { id = serverId, name = camera.ServerId }]);
+      }
+
       var marker = await _db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonicalId, ct);
       if (marker is null || marker.parent_id != Utils.ConvertObjectIdToGuid(serverId))
       {
@@ -1035,47 +1087,6 @@ namespace VmsMap.Db
         row.part_kind = DeviceObjectId.DevicePart;
         row.part_token = string.Empty;
       }
-    }
-
-    /// <summary>
-    /// Removes one picture: its node, everything the camera hangs under it on that canvas — the
-    /// device's diagram and the replicas of its parts — and its placement and point. A diagram is a
-    /// map object, and on a canvas it belongs under the picture of the camera it draws; taking the
-    /// picture away takes the drawing with it. The device-diagram registry rows follow their nodes
-    /// through ON DELETE CASCADE in the schema.
-    /// </summary>
-    private async Task DeletePictureAsync(Guid objectId, CancellationToken ct)
-    {
-      var objectIdText = Utils.ConvertGuidToObjectId(objectId);
-      var subtreeGuids = (await _mapService.GetSubtreeIdsAsync([objectIdText]))
-        .Select(Utils.ConvertObjectIdToGuid)
-        .Where(guid => guid.HasValue)
-        .Select(guid => guid!.Value)
-        .ToList();
-
-      // The in-memory provider the tests use has neither the schema's cascades nor the explicit
-      // cleanup the delete below does on Postgres: the registry and the side rows are taken here by
-      // name, before the nodes they point at.
-      _db.DeviceDiagramParts.RemoveRange(
-        await _db.DeviceDiagramParts
-          .Where(part => subtreeGuids.Contains(part.diagram_object_id))
-          .ToListAsync(ct));
-      // The parts go first, in a statement of their own: PostgreSQL cascades them away with their
-      // diagram, and EF does not model that foreign key, so one batch may delete the diagram first
-      // — the parts' own delete then affects no row and throws a concurrency error.
-      await _db.SaveChangesAsync(ct);
-
-      _db.DeviceDiagrams.RemoveRange(
-        await _db.DeviceDiagrams
-          .Where(diagram => subtreeGuids.Contains(diagram.object_id))
-          .ToListAsync(ct));
-      _db.CameraPlacements.RemoveRange(
-        await _db.CameraPlacements.Where(p => p.object_id == objectId).ToListAsync(ct));
-      _db.GeoObjects.RemoveRange(
-        await _db.GeoObjects.Where(g => g.id == objectId).ToListAsync(ct));
-      await _db.SaveChangesAsync(ct);
-
-      await _mapUpdateService.Delete([objectIdText]);
     }
 
     private static void ApplyValues(DBCameraPlacement row, CameraPlacement placement)
