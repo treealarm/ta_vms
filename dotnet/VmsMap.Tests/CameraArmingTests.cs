@@ -15,6 +15,9 @@ public class CameraArmingTests
 {
   private const string CameraId = "94681efe-57da-5093-b420-1bed3b28dae8";
 
+  // The fixtures these tests share.
+  private const string FloorName = "floor";
+
   private sealed record Fixture(
     VmsMapDbContext Db,
     MapDb Map,
@@ -70,11 +73,11 @@ public class CameraArmingTests
     // A picture names its original, and the original exists: the placement writer creates the
     // camera's canonical node before the replica that carries the point.
     await f.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = CameraObjectId.For(CameraId), name = "Camera" }
+      new BaseMarkerDTO { id = CameraObjectId.For(CameraId), name = "camera" }
     ]);
 
     var replica = await NodeAsync(
-      f, "Camera picture", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
+      f, "camera picture", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
 
     f.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -89,7 +92,7 @@ public class CameraArmingTests
   public async Task ACameraInAnArmedZoneIsWrittenOnGuard()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor", armed: true);
+    var space = await SpaceAsync(f, FloorName, armed: true);
     await PlaceReferenceAsync(f, space);
 
     Assert.True(await f.Reconciler.ReconcileAsync(CameraId, default));
@@ -101,7 +104,7 @@ public class CameraArmingTests
   public async Task ASecondLookWritesNothing()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor", armed: true);
+    var space = await SpaceAsync(f, FloorName, armed: true);
     await PlaceReferenceAsync(f, space);
 
     await f.Reconciler.ReconcileAsync(CameraId, default);
@@ -113,7 +116,7 @@ public class CameraArmingTests
   public async Task AZoneThatIsDisarmedTakesTheCameraOffGuard()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor", armed: false);
+    var space = await SpaceAsync(f, FloorName, armed: false);
     await PlaceReferenceAsync(f, space);
     f.CameraState.Armed = true;
 
@@ -125,7 +128,7 @@ public class CameraArmingTests
   public async Task AnExplicitModeWinsOverTheZone()
   {
     var f = await CreateAsync(cameraMode: ArmMode.Disarmed);
-    var space = await SpaceAsync(f, "Floor", armed: true);
+    var space = await SpaceAsync(f, FloorName, armed: true);
     await PlaceReferenceAsync(f, space);
     f.CameraState.Armed = true; // as if the zone had put it on guard before the mode changed
 
@@ -148,7 +151,7 @@ public class CameraArmingTests
   public async Task TheSweepReachesTheCamerasOfAnArmedZoneAndNoOthers()
   {
     var f = await CreateAsync();
-    var armed = await SpaceAsync(f, "Floor", armed: true);
+    var armed = await SpaceAsync(f, FloorName, armed: true);
     await PlaceReferenceAsync(f, armed);
 
     Assert.True(await f.Reconciler.ReconcileAsync(CameraId, default));

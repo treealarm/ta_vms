@@ -11,15 +11,34 @@ namespace VmsMap.Tests;
 // look for.
 public class DemoWorldTests
 {
+  // The fixtures these tests share.
+  private const string MapSpaceKey = "space/umd";
+  private const string BuildingSpaceKey = "space/building";
+  private const string RackTypeKey = "type/rack";
+  private const string SwitchTypeKey = "type/switch";
+  private const string FloorLayoutTypeKey = "type/floor-layout";
+  private const string FloorLayoutKey = "object/floor-layout";
+  private const string PortKey = "object/port-rack-a-01-1-03";
+  private const string FloorPlanFileKey = "file/floor-plan";
+  private const string MasterCameraId = "sim-master";
+  private const string SecondMasterCameraId = "sim-master2";
+  private const string PtzCameraId = "sim-ptz";
+  private const string SecondPtzCameraId = "sim-ptz2";
+  private const string RelayPart = "relay";
+  private const string InputToken = "input";
+  private const string ButtonToken = "button";
+  private const string ClosedTrigger = "closed";
+  private const string OperatorSubject = "user";
+
   private readonly DemoWorld _world = DemoWorlds.UmdDataCenter();
 
   [Fact]
   public void TheFloorIsTheRoomAndItsDiagramShowsTheRacks()
   {
     var map = Assert.Single(_world.Spaces, space => space.ParentKey is null);
-    Assert.Equal("space/umd", map.Key);
+    Assert.Equal(MapSpaceKey, map.Key);
 
-    var building = Assert.Single(_world.Spaces, space => space.Key == "space/building");
+    var building = Assert.Single(_world.Spaces, space => space.Key == BuildingSpaceKey);
     Assert.Equal(map.Key, building.ParentKey);
     // The building is the real one, named by its floor: its footprint is the 19-corner outline of
     // Biomolecular Sciences, the same the simulator builds its prism from.
@@ -29,10 +48,10 @@ public class DemoWorldTests
 
     // The floor is the room: no plan is nested in it, and the hall pair stands on the floor's own
     // plan. What stands in the room is one diagram of the floor — its four racks are regions of it.
-    var diagram = Assert.Single(_world.Nodes, node => node.Key == "object/floor-layout");
+    var diagram = Assert.Single(_world.Nodes, node => node.Key == FloorLayoutKey);
     Assert.Equal("diag1", diagram.Name);
     Assert.Equal(building.Key, diagram.ParentKey);
-    Assert.Equal("type/floor-layout", diagram.TypeKey);
+    Assert.Equal(FloorLayoutTypeKey, diagram.TypeKey);
     Assert.NotNull(diagram.At);
     // The marker stands on the rack row the simulator builds along Room 101's west wall — not in
     // the east wing of the building, where an earlier world put it.
@@ -46,14 +65,14 @@ public class DemoWorldTests
   [Fact]
   public void EveryRackIsAFilledCabinetOfTheFloorsDiagram()
   {
-    var racks = _world.Nodes.Where(node => node.TypeKey == "type/rack").ToList();
+    var racks = _world.Nodes.Where(node => node.TypeKey == RackTypeKey).ToList();
     Assert.Equal(DemoArt.RackCount, racks.Count);
 
     // All four stand in the floor's schematic, each in a region of its type: a rack has no point of
     // its own on the plan.
     Assert.All(racks, rack =>
     {
-      Assert.Equal("object/floor-layout", rack.ParentKey);
+      Assert.Equal(FloorLayoutKey, rack.ParentKey);
       Assert.Null(rack.At);
       Assert.Matches("^rack-[1-4]$", rack.RegionKey);
       Assert.Equal("Rack", rack.ZoomLevel);
@@ -62,7 +81,7 @@ public class DemoWorldTests
     });
 
     // Every slot of every rack holds a switch, and every switch its eight ports.
-    var switches = _world.Nodes.Where(node => node.TypeKey == "type/switch").ToList();
+    var switches = _world.Nodes.Where(node => node.TypeKey == SwitchTypeKey).ToList();
     Assert.Equal(racks.Count * DemoArt.RackSlots, switches.Count);
     Assert.All(switches, computer =>
     {
@@ -78,7 +97,7 @@ public class DemoWorldTests
       Assert.Matches("^port-[1-8]$", port.RegionKey);
     });
 
-    var thirdPortOfTheFirstSwitch = ports.Single(port => port.Key == "object/port-rack-a-01-1-03");
+    var thirdPortOfTheFirstSwitch = ports.Single(port => port.Key == PortKey);
     Assert.Equal("port3", thirdPortOfTheFirstSwitch.Name);
     Assert.Equal("port-3", thirdPortOfTheFirstSwitch.RegionKey);
     Assert.Equal("object/switch-rack-a-01-1", thirdPortOfTheFirstSwitch.ParentKey);
@@ -87,16 +106,16 @@ public class DemoWorldTests
   [Fact]
   public void TheTypesRegionsAreThePlacesTheNodesTake()
   {
-    var rackType = _world.Types.Single(type => type.Key == "type/rack");
+    var rackType = _world.Types.Single(type => type.Key == RackTypeKey);
     Assert.Equal("Rack 42U", rackType.Name);
     Assert.Equal(DemoArt.RackSlots, rackType.Regions.Count);
     Assert.Contains(rackType.Regions, region => region.Key == "slot-1");
 
-    var switchType = _world.Types.Single(type => type.Key == "type/switch");
+    var switchType = _world.Types.Single(type => type.Key == SwitchTypeKey);
     Assert.Equal(DemoArt.PortsPerSwitch, switchType.Regions.Count);
     Assert.Contains(switchType.Regions, region => region.Key == "port-8");
 
-    var floorLayout = _world.Types.Single(type => type.Key == "type/floor-layout");
+    var floorLayout = _world.Types.Single(type => type.Key == FloorLayoutTypeKey);
     Assert.Equal(["rack-1", "rack-2", "rack-3", "rack-4"], floorLayout.Regions.Select(region => region.Key));
 
     // Every region lies on its picture: a child in a region outside it would be drawn in nothing.
@@ -113,7 +132,7 @@ public class DemoWorldTests
   public void TheFiveCamerasArePlacedInTheWorld()
   {
     Assert.Equal(
-      ["sim-master", "sim-master2", "sim-ptz", "sim-ptz2", "sim-vehicle"],
+      [MasterCameraId, SecondMasterCameraId, PtzCameraId, SecondPtzCameraId, "sim-vehicle"],
       _world.Placements.Select(placement => placement.CameraId).OrderBy(id => id, System.StringComparer.Ordinal));
 
     var spaceKeys = _world.Spaces.Select(space => space.Key).ToHashSet();
@@ -130,12 +149,12 @@ public class DemoWorldTests
     // is the same contact, so closing `loop` raises.
     var placed = _world.Placements.Select(placement => placement.CameraId).ToHashSet();
 
-    var sensor = Assert.Single(_world.Devices, device => device.CameraKey == "sim-ptz");
-    Assert.Equal(("input", "armed", "closed", true),
+    var sensor = Assert.Single(_world.Devices, device => device.CameraKey == PtzCameraId);
+    Assert.Equal((InputToken, "armed", ClosedTrigger, true),
       (sensor.Token, sensor.ArmMode, sensor.TriggerOn, sensor.AlarmEnabled));
 
-    var master = Assert.Single(_world.Devices, device => device.CameraKey == "sim-master");
-    Assert.Equal(("input", "inherit", "closed", true),
+    var master = Assert.Single(_world.Devices, device => device.CameraKey == MasterCameraId);
+    Assert.Equal((InputToken, "inherit", ClosedTrigger, true),
       (master.Token, master.ArmMode, master.TriggerOn, master.AlarmEnabled));
 
     // A device the world did not place has no camera in the deployment to configure.
@@ -148,8 +167,8 @@ public class DemoWorldTests
     // The points MarylandWorld marks with coloured blocks: five in the hall, five out on the lot,
     // each on the ground. The camera poses and these are the same constants, so a landmark cannot
     // move on the map without the world moving with it.
-    var hall = _world.Landmarks.Where(landmark => landmark.SpaceKey == "space/building").ToList();
-    var road = _world.Landmarks.Where(landmark => landmark.SpaceKey == "space/umd").ToList();
+    var hall = _world.Landmarks.Where(landmark => landmark.SpaceKey == BuildingSpaceKey).ToList();
+    var road = _world.Landmarks.Where(landmark => landmark.SpaceKey == MapSpaceKey).ToList();
 
     Assert.Equal(5, hall.Count);
     Assert.Equal(5, road.Count);
@@ -197,9 +216,9 @@ public class DemoWorldTests
     Assert.Equal(_world.Landmarks.Count, _world.PtzObservations.Count);
 
     // The hall's slave frames a person at each landmark; the yard's keeps the wide lens.
-    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == "sim-ptz"),
+    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == PtzCameraId),
       observation => Assert.NotNull(observation.Zoom));
-    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == "sim-ptz2"),
+    Assert.All(_world.PtzObservations.Where(observation => observation.CameraKey == SecondPtzCameraId),
       observation => Assert.Null(observation.Zoom));
   }
 
@@ -218,11 +237,11 @@ public class DemoWorldTests
     var bindings = panel.Regions.ToDictionary(region => region.Key, region => region.Part);
     Assert.Equal(5, bindings.Count);
     Assert.All(bindings.Values, part => Assert.Equal("token", part!.MatchBy));
-    Assert.Equal("digital_input", bindings["input"]!.PartKind);
-    Assert.Equal("relay", bindings["lamp"]!.PartKind);
-    Assert.Equal("relay", bindings["peer"]!.PartKind);
-    Assert.Equal("relay", bindings["loop"]!.PartKind);
-    Assert.Equal("relay", bindings["button"]!.PartKind);
+    Assert.Equal("digital_input", bindings[InputToken]!.PartKind);
+    Assert.Equal(RelayPart, bindings["lamp"]!.PartKind);
+    Assert.Equal(RelayPart, bindings["peer"]!.PartKind);
+    Assert.Equal(RelayPart, bindings["loop"]!.PartKind);
+    Assert.Equal(RelayPart, bindings[ButtonToken]!.PartKind);
   }
 
   [Fact]
@@ -232,7 +251,7 @@ public class DemoWorldTests
     // the part's canonical node, standing in a space with a point of its own. The name carries the
     // owner's and its own number, as an administrator's placement would.
     var replica = Assert.Single(_world.PartReplicas);
-    Assert.Equal(("sim-master", "relay", "button", "space/umd"),
+    Assert.Equal((MasterCameraId, RelayPart, ButtonToken, MapSpaceKey),
       (replica.CameraKey, replica.PartKind, replica.Token, replica.SpaceKey));
     Assert.Equal("relay4 rep1", replica.Name);
     Assert.StartsWith("relay4 rep", replica.Name);
@@ -245,7 +264,7 @@ public class DemoWorldTests
     // by the token the simulator reports.
     var panel = _world.Types.Single(type => type.Key == "type/camera-rear-panel");
     var region = Assert.Single(panel.Regions, candidate => candidate.Part?.MatchValue == replica.Token);
-    Assert.Equal(("relay", replica.PartKind), (region.Part!.PartKind, replica.PartKind));
+    Assert.Equal((RelayPart, replica.PartKind), (region.Part!.PartKind, replica.PartKind));
     Assert.Equal(region.Geometry, DemoArt.CameraPanelSocket(replica.Token));
   }
 
@@ -258,30 +277,30 @@ public class DemoWorldTests
     // at one side and the lot the person turns into at the other.
     Assert.Equal(22, _world.Version);
 
-    var hall = _world.Placements.Single(placement => placement.CameraId == "sim-master");
-    Assert.Equal("space/building", hall.SpaceKey);
+    var hall = _world.Placements.Single(placement => placement.CameraId == MasterCameraId);
+    Assert.Equal(BuildingSpaceKey, hall.SpaceKey);
     Assert.Equal(38.9928120, hall.Lat, 6);
     Assert.Equal(-76.9378925, hall.Lon, 6);
     Assert.Equal(2.8, hall.HeightM);
     Assert.Equal(0, hall.HeadingDeg);
     Assert.Equal(45, hall.HfovDeg);
 
-    var hallSlave = _world.Placements.Single(placement => placement.CameraId == "sim-ptz");
-    Assert.Equal("space/building", hallSlave.SpaceKey);
+    var hallSlave = _world.Placements.Single(placement => placement.CameraId == PtzCameraId);
+    Assert.Equal(BuildingSpaceKey, hallSlave.SpaceKey);
     Assert.Equal(38.9928722, hallSlave.Lat, 6);
     Assert.Equal(-76.9378196, hallSlave.Lon, 6);
     Assert.Equal(310, hallSlave.HeadingDeg);
 
-    var master = _world.Placements.Single(placement => placement.CameraId == "sim-master2");
-    Assert.Equal("space/umd", master.SpaceKey);
+    var master = _world.Placements.Single(placement => placement.CameraId == SecondMasterCameraId);
+    Assert.Equal(MapSpaceKey, master.SpaceKey);
     Assert.Equal(38.9933061, master.Lat, 6);
     Assert.Equal(-76.9381467, master.Lon, 6);
     Assert.Equal(6, master.HeightM);
     Assert.Equal(125, master.HeadingDeg);
     Assert.Equal(55, master.HfovDeg);
 
-    var ptz = _world.Placements.Single(placement => placement.CameraId == "sim-ptz2");
-    Assert.Equal("space/umd", ptz.SpaceKey);
+    var ptz = _world.Placements.Single(placement => placement.CameraId == SecondPtzCameraId);
+    Assert.Equal(MapSpaceKey, ptz.SpaceKey);
     Assert.Equal(38.9931085, ptz.Lat, 6);
     Assert.Equal(-76.9380312, ptz.Lon, 6);
     Assert.Equal(5.5, ptz.HeightM);
@@ -304,18 +323,18 @@ public class DemoWorldTests
   {
     // The demo owns no device, so it writes no alarm. The port's row is CONNECTED, which also
     // replaces the DISCONNECTED an earlier world left behind.
-    var port = Assert.Single(_world.States, state => state.NodeKey == "object/port-rack-a-01-1-03");
+    var port = Assert.Single(_world.States, state => state.NodeKey == PortKey);
     Assert.Equal(["CONNECTED"], port.States);
 
     Assert.Contains(_world.Rights, right =>
-      right.NodeKey == "space/umd" && right.Subject == "user" && right.Action == RightActions.View);
+      right.NodeKey == MapSpaceKey && right.Subject == OperatorSubject && right.Action == RightActions.View);
 
     // The operator acts too: `control` on the floor, the space the master's reference replica
     // stands in — a right on the map above it does not reach a device's node.
     Assert.Contains(_world.Rights, right =>
-      right.NodeKey == "space/building" && right.Subject == "user" && right.Action == RightActions.Control);
+      right.NodeKey == BuildingSpaceKey && right.Subject == OperatorSubject && right.Action == RightActions.Control);
     Assert.DoesNotContain(_world.Rights, right =>
-      right.NodeKey == "space/umd" && right.Action == RightActions.Control);
+      right.NodeKey == MapSpaceKey && right.Action == RightActions.Control);
   }
 
   [Fact]
@@ -324,18 +343,18 @@ public class DemoWorldTests
     // The types' regions and the vector backgrounds are drawn from the same geometry (DemoArt),
     // which is what keeps a port inside its socket. These assertions are the seam: a region that
     // stopped coming from DemoArt would drift from the picture with nothing else to notice.
-    var rackType = _world.Types.Single(type => type.Key == "type/rack");
-    for (var slot = 1; slot <= 6; slot += 1)
+    var rackType = _world.Types.Single(type => type.Key == RackTypeKey);
+    for (var slot = 1; slot <= DemoArt.RackSlots; slot += 1)
     {
       Assert.Equal(DemoArt.RackSlot(slot), rackType.Regions.Single(region => region.Key == $"slot-{slot}").Geometry);
     }
-    var switchType = _world.Types.Single(type => type.Key == "type/switch");
-    for (var port = 1; port <= 8; port += 1)
+    var switchType = _world.Types.Single(type => type.Key == SwitchTypeKey);
+    for (var port = 1; port <= DemoArt.PortsPerSwitch; port += 1)
     {
       Assert.Equal(DemoArt.SwitchPort(port), switchType.Regions.Single(region => region.Key == $"port-{port}").Geometry);
     }
 
-    var floorType = _world.Types.Single(type => type.Key == "type/floor-layout");
+    var floorType = _world.Types.Single(type => type.Key == FloorLayoutTypeKey);
     for (var rack = 1; rack <= DemoArt.RackCount; rack += 1)
     {
       Assert.Equal(DemoArt.RackRegion(rack),
@@ -352,7 +371,7 @@ public class DemoWorldTests
     foreach (var key in new[]
     {
       "file/floor-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
-      "file/camera-icon", "file/floor-plan",
+      "file/camera-icon", FloorPlanFileKey,
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);
@@ -370,10 +389,10 @@ public class DemoWorldTests
     // The plan is the building's silhouette, and the doorway is the world's 1.8 m cut out of the
     // north wall. The floor is the room, so nothing is drawn inside it: a plan with no room in it is
     // the honest picture of one room.
-    var file = _world.Files.Single(candidate => candidate.Key == "file/floor-plan");
+    var file = _world.Files.Single(candidate => candidate.Key == FloorPlanFileKey);
     var text = System.Text.Encoding.UTF8.GetString(file.Content);
 
-    var building = _world.Spaces.Single(space => space.Key == "space/building");
+    var building = _world.Spaces.Single(space => space.Key == BuildingSpaceKey);
     var perPixelX = (building.East - building.West) / DemoArt.FloorPlanWidth;
     var perPixelY = (building.North - building.South) / DemoArt.FloorPlanHeight;
     const double EarthRadiusM = 6378137.0;

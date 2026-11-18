@@ -15,12 +15,19 @@ namespace VmsMap.Tests;
 // property merge.
 public class DeviceNodeServiceTests
 {
+  // The fixtures these tests share. The catalog's camera name and server id are what the adapter
+  // writes into the tree; the token is the part address under the camera.
+  private const string CameraName = "front door";
+  private const string ServerId = "srv1";
+  private const string PartToken = "input1";
+  private const string BuildingName = "building";
+
   private sealed record Services(VmsMapDbContext Db, MapDb Map, DeviceNodeService Nodes);
 
   private sealed class FrontDoorCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Front door", "srv1"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, CameraName, ServerId));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -59,15 +66,15 @@ public class DeviceNodeServiceTests
   {
     var s = Create();
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonical);
-    Assert.Equal("Front door", marker.name);
-    Assert.Equal(ServerGuid("srv1"), marker.parent_id);
+    Assert.Equal(CameraName, marker.name);
+    Assert.Equal(ServerGuid(ServerId), marker.parent_id);
 
-    var server = await s.Db.Markers.SingleAsync(m => m.id == ServerGuid("srv1"));
-    Assert.Equal("srv1", server.name);
+    var server = await s.Db.Markers.SingleAsync(m => m.id == ServerGuid(ServerId));
+    Assert.Equal(ServerId, server.name);
     Assert.Null(server.parent_id);
 
     var index = await s.Db.DeviceNodes.SingleAsync();
@@ -79,18 +86,18 @@ public class DeviceNodeServiceTests
   public async Task APlacedCameraStaysUnderItsServerAndOnlyItsNameMoves()
   {
     var s = Create();
-    var space = await Node(s.Map, "Building");
+    var space = await Node(s.Map, BuildingName);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     // A stale parent, as a database written under the old model would have it.
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonicalId.ToString(), name = "Old name", parent_id = space.id }
+      new BaseMarkerDTO { id = canonicalId.ToString(), name = "old name", parent_id = space.id }
     ]);
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
-    Assert.Equal("Front door", marker.name);
-    Assert.Equal(ServerGuid("srv1"), marker.parent_id);
+    Assert.Equal(CameraName, marker.name);
+    Assert.Equal(ServerGuid(ServerId), marker.parent_id);
     Assert.Equal(canonicalId, (await s.Db.DeviceNodes.SingleAsync()).object_id);
   }
 
@@ -98,21 +105,21 @@ public class DeviceNodeServiceTests
   public async Task AReplicaInAContainerKeepsItsParentWhileTheCanonicalNodeStaysUnderTheServer()
   {
     var s = Create();
-    var space = await Node(s.Map, "Building");
-    var container = await Node(s.Map, "Car park", space.id);
+    var space = await Node(s.Map, BuildingName);
+    var container = await Node(s.Map, "car park", space.id);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
 
     // A picture names its original, and the original exists: every writer (a placement, the
     // adapter) creates the canonical node first.
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonicalId.ToString(), name = "Camera" }
+      new BaseMarkerDTO { id = canonicalId.ToString(), name = "camera" }
     ]);
 
     // The camera is drawn in a container on the building's canvas; that is a replica of it.
     var replicaId = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO {
-        id = replicaId.ToString(), name = "Front door", parent_id = container.id, owner_id = canonicalId.ToString() }
+        id = replicaId.ToString(), name = CameraName, parent_id = container.id, owner_id = canonicalId.ToString() }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -127,9 +134,9 @@ public class DeviceNodeServiceTests
 
     // The periodic reconcile runs for every camera: the canonical node goes under the server, and
     // the replica keeps the parent the administrator gave it.
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
-    Assert.Equal(ServerGuid("srv1"), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
+    Assert.Equal(ServerGuid(ServerId), (await s.Db.Markers.SingleAsync(m => m.id == canonicalId)).parent_id);
     Assert.Equal(Guid.Parse(container.id!), (await s.Db.Markers.SingleAsync(m => m.id == replicaId)).parent_id);
   }
 
@@ -138,12 +145,12 @@ public class DeviceNodeServiceTests
   {
     var s = Create();
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
-    await Node(s.Map, "Front door");
+    await Node(s.Map, CameraName);
 
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
-    Assert.Equal(ServerGuid("srv1"), marker.parent_id);
+    Assert.Equal(ServerGuid(ServerId), marker.parent_id);
   }
 
   [Fact]
@@ -151,9 +158,9 @@ public class DeviceNodeServiceTests
   {
     var s = Create();
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
-    await Node(s.Map, "Front door", ownerId: CameraObjectId.For(TestCameras.One));
+    await Node(s.Map, CameraName, ownerId: CameraObjectId.For(TestCameras.One));
     var replicaMarker = await s.Db.Markers.SingleAsync(m => m.owner_id == canonicalId);
     var replica = replicaMarker.id;
 
@@ -204,8 +211,8 @@ public class DeviceNodeServiceTests
   public async Task AResyncRemovesCamerasVmsCfgNoLongerLists()
   {
     var s = Create();
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "One", "srv1"), default);
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "Two", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "one", ServerId), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "two", ServerId), default);
 
     await s.Nodes.RemoveUnknownAsync(
       new HashSet<string>(StringComparer.Ordinal) { TestCameras.Two }, default);
@@ -221,25 +228,26 @@ public class DeviceNodeServiceTests
   public async Task APartGetsItsOwnNodeUnderTheCameraAndKeepsItOnASecondEnsure()
   {
     var s = Create();
-    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, "Front door", "srv1"), default);
+    await s.Nodes.EnsureCameraAsync(new CameraInfo(TestCameras.One, CameraName, ServerId), default);
 
     var first = await s.Nodes.EnsureAsync(
-      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1", default);
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, PartToken, default);
     var second = await s.Nodes.EnsureAsync(
-      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1", default);
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, PartToken, default);
 
     Assert.NotNull(first);
     Assert.Equal(first, second);
     Assert.Equal(
-      DeviceObjectId.For(DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "input1"),
+      DeviceObjectId.For(DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, PartToken),
       first);
 
     var node = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(first!));
-    Assert.Equal("Front door / input1", node.name);
+    Assert.Equal($"{CameraName} / {PartToken}", node.name);
     Assert.Equal(Guid.Parse(CameraObjectId.For(TestCameras.One)), node.parent_id);
 
     // Idempotent: the second ensure did not add a second registry row.
-    Assert.Equal(2, await s.Db.DeviceNodes.CountAsync());
+    const int registryRows = 2; // the camera row and the part row
+    Assert.Equal(registryRows, await s.Db.DeviceNodes.CountAsync());
     Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == Guid.Parse(first!)));
   }
 

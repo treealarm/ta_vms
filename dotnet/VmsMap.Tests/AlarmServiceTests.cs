@@ -16,6 +16,13 @@ namespace VmsMap.Tests;
 // episode is over, and connectivity never displaces the alarm.
 public class AlarmServiceTests
 {
+  // The fixtures these tests share. The stream and the trigger are the episode's own fields, and
+  // the property name is the one the legacy journal event carries the projected end under.
+  private const string MainStream = "main";
+  private const string MotionTrigger = "motion";
+  private const string AlarmEndProperty = "alarm_end_ts";
+  private const string RoundTripFormat = "O";
+
   private sealed class FakeRetention : IRetentionEventSource
   {
     public RetentionEpisode? Next { get; set; }
@@ -59,7 +66,7 @@ public class AlarmServiceTests
     var node = new BaseMarkerDTO
     {
       id = CameraObjectId.For(cameraId),
-      name = "Camera " + cameraId,
+      name = "camera " + cameraId,
     };
     await map.UpdateHierarchyAsync([node]);
     db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, Guid.Parse(node.id!)));
@@ -68,7 +75,7 @@ public class AlarmServiceTests
   }
 
   private static RetentionEpisode Episode(
-    string? id = null, DateTime? end = null, string? stream = "main", string? trigger = "motion",
+    string? id = null, DateTime? end = null, string? stream = MainStream, string? trigger = MotionTrigger,
     bool raiseAlarm = true) =>
     new(DateTime.UtcNow, end, stream, trigger, id ?? Guid.NewGuid().ToString(), raiseAlarm);
 
@@ -111,9 +118,9 @@ public class AlarmServiceTests
     Assert.Equal(Guid.Parse(episode.EventUuid), evt.id);
     Assert.Equal(Guid.Parse(camera.id!), evt.object_id);
     Assert.Equal("alarm", evt.event_name);
-    Assert.Equal("main", evt.param0);
-    Assert.Equal("motion", evt.param1);
-    Assert.Contains(evt.extra_props, p => p.prop_name == "alarm_end_ts" && !string.IsNullOrEmpty(p.str_val));
+    Assert.Equal(MainStream, evt.param0);
+    Assert.Equal(MotionTrigger, evt.param1);
+    Assert.Contains(evt.extra_props, p => p.prop_name == AlarmEndProperty && !string.IsNullOrEmpty(p.str_val));
   }
 
   [Fact]
@@ -170,12 +177,12 @@ public class AlarmServiceTests
     await s.Retention.RecordAsync(TestCameras.One, second, default);
 
     var evt = await s.Db.Events.Include(e => e.extra_props).SingleAsync();
-    var end = evt.extra_props.Single(p => p.prop_name == "alarm_end_ts").str_val;
-    Assert.Contains(second.AlarmEndTs!.Value.ToString("O")[..16], end);
+    var end = evt.extra_props.Single(p => p.prop_name == AlarmEndProperty).str_val;
+    Assert.Contains(second.AlarmEndTs!.Value.ToString(RoundTripFormat)[..16], end);
 
     var alarm = await Open(s.Db);
     Assert.NotNull(alarm!.expected_end_ts);
-    Assert.Equal(second.AlarmEndTs.Value.ToString("O")[..16], alarm.expected_end_ts.Value.ToString("O")[..16]);
+    Assert.Equal(second.AlarmEndTs.Value.ToString(RoundTripFormat)[..16], alarm.expected_end_ts.Value.ToString(RoundTripFormat)[..16]);
   }
 
   [Fact]
@@ -220,7 +227,7 @@ public class AlarmServiceTests
 
     var alarm = await Open(s.Db);
     Assert.Equal(AlarmStatus.Active, alarm!.status);
-    Assert.Equal(renewed.ToString("O")[..16], alarm.expected_end_ts!.Value.ToString("O")[..16]);
+    Assert.Equal(renewed.ToString(RoundTripFormat)[..16], alarm.expected_end_ts!.Value.ToString(RoundTripFormat)[..16]);
     Assert.Equal(CameraStateWriter.Alarm, await State(s.Db, TestCameras.One));
   }
 

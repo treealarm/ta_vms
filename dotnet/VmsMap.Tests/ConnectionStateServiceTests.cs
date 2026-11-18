@@ -16,6 +16,11 @@ namespace VmsMap.Tests;
 // server without touching a placed one.
 public class ConnectionStateServiceTests
 {
+  // The fixtures these tests share.
+  private const string ServerOneId = "srv1";
+  private const string FrontDoorName = "front door";
+  private const string BuildingName = "building";
+
   private sealed record Services(
     VmsMapDbContext Db, MapDb Map, DeviceNodeService Nodes,
     ConnectionStateService Connections);
@@ -51,7 +56,7 @@ public class ConnectionStateServiceTests
   }
 
   private static CameraInfo Camera() =>
-    new(TestCameras.One, "Front door", "srv1");
+    new(TestCameras.One, FrontDoorName, ServerOneId);
 
   [Fact]
   public async Task APathWithoutASourceMakesTheCameraDisconnectedAndBack()
@@ -86,39 +91,39 @@ public class ConnectionStateServiceTests
   public async Task ReconcileReturnsAnUnplacedCameraToItsServer()
   {
     var s = Create();
-    var space = new BaseMarkerDTO { name = "Building" };
+    var space = new BaseMarkerDTO { name = BuildingName };
     await s.Map.UpdateHierarchyAsync([space]);
 
     // The canonical node was left somewhere by an older placement that no longer exists.
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = "Front door" }
+      new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = FrontDoorName }
     ]);
 
     await s.Connections.ReconcileAsync([Camera()], default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
     Assert.Equal(
-      Guid.Parse(ObjectIdGenerator.GenerateObjectId("srv1", "server")), marker.parent_id);
+      Guid.Parse(ObjectIdGenerator.GenerateObjectId(ServerOneId, "server")), marker.parent_id);
   }
 
   [Fact]
   public async Task ReconcilePutsAPlacedCameraUnderItsServer()
   {
     var s = Create();
-    var space = new BaseMarkerDTO { name = "Building" };
+    var space = new BaseMarkerDTO { name = BuildingName };
     await s.Map.UpdateHierarchyAsync([space]);
     var canonicalId = Guid.Parse(CameraObjectId.For(TestCameras.One));
     // A stale parent, as a database written under the old model would have it; the reference
     // placement itself lives on a replica and does not decide where the canonical node stands.
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = "Front door" }
+      new BaseMarkerDTO { id = canonicalId.ToString(), parent_id = space.id, name = FrontDoorName }
     ]);
     await s.Db.SaveChangesAsync();
 
     await s.Connections.ReconcileAsync([Camera()], default);
 
     var marker = await s.Db.Markers.SingleAsync(m => m.id == canonicalId);
-    Assert.Equal(Guid.Parse(ServerNodeId.For("srv1")), marker.parent_id);
+    Assert.Equal(Guid.Parse(ServerNodeId.For(ServerOneId)), marker.parent_id);
   }
 }

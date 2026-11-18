@@ -12,6 +12,11 @@ namespace VmsMap.Tests;
 // it is asked about.
 public class DeviceObjectSettingsTests
 {
+  // The fixtures these tests share.
+  private const string SimMasterId = "sim-master";
+  private const string OpenContact = "open";
+  private const string ClosedContact = "closed";
+
   private static VmsMapDbContext Create()
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
@@ -42,11 +47,11 @@ public class DeviceObjectSettingsTests
     var store = new DeviceObjectSettingsStore(db);
     var id = NodeId();
 
-    await store.SetAsync(id, ArmMode.Disarmed, "closed", true, default);
+    await store.SetAsync(id, ArmMode.Disarmed, ClosedContact, true, default);
 
     var settings = await store.GetAsync(id, default);
     Assert.Equal(ArmMode.Disarmed, settings.Mode);
-    Assert.Equal("closed", settings.TriggerOn);
+    Assert.Equal(ClosedContact, settings.TriggerOn);
     Assert.True(settings.AlarmEnabled);
   }
 
@@ -58,12 +63,12 @@ public class DeviceObjectSettingsTests
     var id = NodeId();
 
     await store.SetAsync(id, ArmMode.Armed, null, false, default);
-    await store.SetAsync(id, ArmMode.Inherit, "open", true, default);
+    await store.SetAsync(id, ArmMode.Inherit, OpenContact, true, default);
 
     Assert.Equal(1, await db.DeviceObjectSettings.CountAsync());
     var settings = await store.GetAsync(id, default);
     Assert.Equal(ArmMode.Inherit, settings.Mode);
-    Assert.Equal("open", settings.TriggerOn);
+    Assert.Equal(OpenContact, settings.TriggerOn);
     Assert.True(settings.AlarmEnabled);
   }
 
@@ -76,9 +81,10 @@ public class DeviceObjectSettingsTests
     var unconfigured = NodeId();
     await store.SetAsync(configured, ArmMode.Armed, null, false, default);
 
-    var page = await store.GetManyAsync([configured, unconfigured], default);
+    var ids = new[] { configured, unconfigured };
+    var page = await store.GetManyAsync(ids, default);
 
-    Assert.Equal(2, page.Count);
+    Assert.Equal(ids.Length, page.Count);
     Assert.Equal(ArmMode.Armed, page[configured].Mode);
     Assert.Equal(ArmMode.Inherit, page[unconfigured].Mode);
   }
@@ -89,10 +95,10 @@ public class DeviceObjectSettingsTests
     await using var db = Create();
     var store = new DeviceObjectSettingsStore(db);
 
-    var settings = await store.GetAsync("sim-master", default);
+    var settings = await store.GetAsync(SimMasterId, default);
     Assert.Equal(ArmMode.Inherit, settings.Mode);
 
     await Assert.ThrowsAsync<ArgumentException>(
-      () => store.SetAsync("sim-master", ArmMode.Armed, null, false, default));
+      () => store.SetAsync(SimMasterId, ArmMode.Armed, null, false, default));
   }
 }

@@ -17,6 +17,11 @@ public class CameraGeoFollowerTests
 {
   private const string CameraId = "cam1";
 
+  // The fixtures these tests share.
+  private const string FrontDoorName = "front door";
+  private const string ServerOneId = "srv1";
+  private const int PollCount = 3;
+
   // About 1 m of latitude here; a degree is ~111 km, which the follower's equirectangular frame
   // takes as 2πR/360.
   private const double OneMetreInLatitude = 1.0 / 111_319.5;
@@ -82,10 +87,10 @@ public class CameraGeoFollowerTests
   }
 
   private static CameraInfo Flagged(string cameraId = CameraId) =>
-    new(cameraId, "Front door", "srv1", GeoFromDevice: true);
+    new(cameraId, FrontDoorName, ServerOneId, GeoFromDevice: true);
 
   private static CameraInfo Manual(string cameraId = CameraId) =>
-    new(cameraId, "Front door", "srv1");
+    new(cameraId, FrontDoorName, ServerOneId);
 
   [Fact]
   public async Task AFlaggedCameraAtANewPlaceMovesItsPoint()
@@ -107,13 +112,12 @@ public class CameraGeoFollowerTests
     var (follower, source, writer) = Build(Flagged());
     source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378);
 
-    await follower.PollOnceAsync(CancellationToken.None);
-    await follower.PollOnceAsync(CancellationToken.None);
-    await follower.PollOnceAsync(CancellationToken.None);
+    for (var tick = 0; tick < PollCount; tick++)
+      await follower.PollOnceAsync(CancellationToken.None);
 
     Assert.Single(writer.Moves);
     // Asked every tick regardless: a camera can start moving between any two of them.
-    Assert.Equal(3, source.Asked.Count);
+    Assert.Equal(PollCount, source.Asked.Count);
   }
 
   [Fact]
@@ -141,7 +145,7 @@ public class CameraGeoFollowerTests
     await follower.PollOnceAsync(CancellationToken.None);
 
     Assert.Equal(2, writer.Moves.Count);
-    Assert.Equal(38.9923 + OneMetreInLatitude, writer.Moves[1].Lat, 9);
+    Assert.Equal(38.9923 + OneMetreInLatitude, writer.Moves.Last().Lat, 9);
   }
 
   [Fact]
@@ -188,7 +192,7 @@ public class CameraGeoFollowerTests
     await follower.PollOnceAsync(CancellationToken.None);
 
     Assert.Equal(2, writer.Moves.Count);
-    Assert.Equal(275, writer.Moves[1].HeadingDeg);
+    Assert.Equal(275, writer.Moves.Last().HeadingDeg);
   }
 
   [Fact]

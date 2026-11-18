@@ -10,17 +10,24 @@ namespace VmsMap.Tests;
 // source, because a test that merely ran two writers would pass until the unlucky interleaving.
 public class MapLockTests
 {
+  // The fixtures these tests share.
+  private const string DotnetDirectory = "dotnet";
+  private const string VmsMapDirectory = "VmsMap";
+  private const string MapLocksFile = "MapLocks.cs";
+
   private static IEnumerable<string> Sources()
   {
     var root = AppContext.BaseDirectory;
-    while (root is not null && !Directory.Exists(Path.Combine(root, "dotnet", "VmsMap")))
+    while (root is not null
+           && !Directory.Exists(Path.Combine(root, DotnetDirectory, VmsMapDirectory)))
       root = Path.GetDirectoryName(root);
 
     if (root is null)
       throw new InvalidOperationException("Could not find the repository root from " + AppContext.BaseDirectory);
 
     return Directory
-      .EnumerateFiles(Path.Combine(root, "dotnet", "VmsMap"), "*.cs", SearchOption.AllDirectories)
+      .EnumerateFiles(Path.Combine(root, DotnetDirectory, VmsMapDirectory), "*.cs",
+        SearchOption.AllDirectories)
       .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
       .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"));
   }
@@ -31,7 +38,7 @@ public class MapLockTests
     var offenders = Sources()
       .Where(f => File.ReadAllText(f).Contains("pg_advisory_xact_lock", StringComparison.Ordinal))
       .Select(Path.GetFileName)
-      .Where(name => name != "MapLocks.cs")
+      .Where(name => name != MapLocksFile)
       .ToList();
 
     Assert.Empty(offenders);
@@ -62,7 +69,7 @@ public class MapLockTests
     var offenders = Sources()
       .Where(f => File.ReadAllText(f).Contains("AcquireHierarchyAsync", StringComparison.Ordinal))
       .Select(Path.GetFileName)
-      .Where(name => name != "MapDb.cs" && name != "MapLocks.cs")
+      .Where(name => name != "MapDb.cs" && name != MapLocksFile)
       .ToList();
 
     Assert.Empty(offenders);

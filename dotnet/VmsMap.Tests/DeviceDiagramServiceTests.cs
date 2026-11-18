@@ -21,6 +21,14 @@ public class DeviceDiagramServiceTests
   private const string OtherCameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3302";
   private const string Manufacturer = "OnvifSim";
   private const string Model = "Simulated fixed camera";
+  private const string PtzModel = "Simulated PTZ camera";
+  private const string CameraNamePrefix = "Camera ";
+  private const string InputToken = "input";
+  private const string LampToken = "lamp";
+  private const string LampRegionTwo = "lamp-2";
+  private const string RearPanelName = "Rear panel";
+  private const string FrontPanelName = "Front panel";
+  private const string SecondPlanName = "second plan";
 
   private sealed record Services(
     VmsMapDbContext Db,
@@ -60,7 +68,7 @@ public class DeviceDiagramServiceTests
   private sealed class FakeCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, CameraNamePrefix + cameraId, "srv"));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -91,7 +99,7 @@ public class DeviceDiagramServiceTests
 
     // The canvas the diagrams stand on: a diagram is a map object, and one of these tests needs
     // only the space to exist.
-    db.Markers.Add(new DBMarker { id = Space, name = "Floor" });
+    db.Markers.Add(new DBMarker { id = Space, name = "floor" });
     db.Spaces.Add(new DBSpace { object_id = Space, kind = SpaceKinds.Map });
     await db.SaveChangesAsync();
 
@@ -100,7 +108,7 @@ public class DeviceDiagramServiceTests
 
   private static Task SeedCameraAsync(Services s, string cameraId = CameraId) =>
     s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = CameraObjectId.For(cameraId), name = "Camera " + cameraId }
+      new BaseMarkerDTO { id = CameraObjectId.For(cameraId), name = CameraNamePrefix + cameraId }
     ]);
 
   private static async Task SeedModelAsync(
@@ -214,11 +222,11 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.DigitalInputPart, "input");
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedPartAsync(s, DeviceObjectId.DigitalInputPart, InputToken);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
     var typeId = await SeedTypeAsync(s, new TypeSpec(),
-      ("input", DeviceObjectId.DigitalInputPart, DiagramPartMatch.Token, "input"),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"),
+      (InputToken, DeviceObjectId.DigitalInputPart, DiagramPartMatch.Token, InputToken),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken),
       ("caption", string.Empty, string.Empty, string.Empty));
 
     await AttachAsync(s);
@@ -233,8 +241,8 @@ public class DeviceDiagramServiceTests
     // Two regions bound; the third is a caption and draws nothing.
     var managed = await s.Db.DeviceDiagramParts.ToListAsync();
     Assert.Equal(2, managed.Count);
-    Assert.Contains(managed, m => m.region_key == "input");
-    Assert.Contains(managed, m => m.region_key == "lamp");
+    Assert.Contains(managed, m => m.region_key == InputToken);
+    Assert.Contains(managed, m => m.region_key == LampToken);
 
     var placements = await s.Db.Diagrams.Where(d => managed.Select(m => m.replica_object_id).Contains(d.id)).ToListAsync();
     Assert.All(placements, p => Assert.NotNull(p.region_id));
@@ -247,8 +255,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var first = (await s.Db.DeviceDiagrams.SingleAsync(), await s.Db.DeviceDiagramParts.SingleAsync());
@@ -270,17 +278,17 @@ public class DeviceDiagramServiceTests
     // The device declares the relay, but nobody configured it: no replica, and the region stays as
     // the template drew it.
     var relay = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, CameraId, DeviceObjectId.RelayPart, "lamp"));
+      DeviceObjectId.CameraSource, CameraId, DeviceObjectId.RelayPart, LampToken));
     s.Db.DeviceNodes.Add(new DBDeviceNode
     {
       object_id = relay,
       source_kind = DeviceObjectId.CameraSource,
       source_id = CameraId,
       part_kind = DeviceObjectId.RelayPart,
-      part_token = "lamp",
+      part_token = LampToken,
     });
     await s.Db.SaveChangesAsync();
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
 
@@ -296,7 +304,7 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
 
     await AttachAsync(s);
 
@@ -312,7 +320,7 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     // The camera is not drawn on this canvas, so there is no placement to stand beside.
     var space = await s.Db.Spaces.SingleAsync();
@@ -334,8 +342,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var replica = (await s.Db.DeviceDiagramParts.SingleAsync()).replica_object_id;
@@ -357,8 +365,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    var lamp = await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    var lamp = await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var row = await s.Db.DeviceDiagrams.SingleAsync();
@@ -372,7 +380,7 @@ public class DeviceDiagramServiceTests
         id = Utils.ConvertGuidToObjectId(manualId),
         parent_id = Utils.ConvertGuidToObjectId(row.object_id),
         owner_id = lamp,
-        name = "Lamp (by hand)",
+        name = "lamp (by hand)",
       }
     ]);
 
@@ -387,26 +395,26 @@ public class DeviceDiagramServiceTests
   {
     var s = await CreateAsync();
     await SeedCameraAsync(s);
-    await SeedModelAsync(s, model: "Simulated fixed camera");
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(Name: "Rear panel"),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
-    await SeedTypeAsync(s, new TypeSpec(Name: "Front panel", Model: "Simulated PTZ camera"),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedModelAsync(s, model: Model);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(Name: RearPanelName),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    await SeedTypeAsync(s, new TypeSpec(Name: FrontPanelName, Model: PtzModel),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var node = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
-    var rear = await s.Db.DiagramTypes.SingleAsync(t => t.name == "Rear panel");
+    var rear = await s.Db.DiagramTypes.SingleAsync(t => t.name == RearPanelName);
 
     // The device says it is another model now.
     var info = await s.Db.DeviceInfos.SingleAsync();
-    info.model = "Simulated PTZ camera";
+    info.model = PtzModel;
     await s.Db.SaveChangesAsync();
 
     await EnsureAsync(s);
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
-    var front = await s.Db.DiagramTypes.SingleAsync(t => t.name == "Front panel");
+    var front = await s.Db.DiagramTypes.SingleAsync(t => t.name == FrontPanelName);
 
     // The node stays — its id never depended on the type — and only what is drawn on it changes.
     Assert.Equal(node, row.object_id);
@@ -421,8 +429,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    var typeId = await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    var typeId = await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
 
@@ -442,9 +450,9 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
     await SeedTypeAsync(s, new TypeSpec(),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var nodeId = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
@@ -464,7 +472,7 @@ public class DeviceDiagramServiceTests
     // The template comes back under a new id, and is taken up again — on the canvas too, which is
     // what is drawn: a row naming a template the canvas does not is blank paper.
     var again = await SeedTypeAsync(s, new TypeSpec(),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
     await EnsureAsync(s);
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
@@ -479,14 +487,14 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
 
     await AttachAsync(s);
     Assert.Null((await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id);
 
     // The template is added later; the same button fills the sheet the administrator placed.
     var typeId = await SeedTypeAsync(s, new TypeSpec(),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
     await AttachAsync(s);
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
@@ -510,7 +518,7 @@ public class DeviceDiagramServiceTests
         id = Utils.ConvertGuidToObjectId(picture),
         parent_id = Utils.ConvertGuidToObjectId(spaceId),
         owner_id = CameraObjectId.For(CameraId),
-        name = "Camera " + CameraId,
+        name = CameraNamePrefix + CameraId,
       }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
@@ -539,8 +547,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
     var picture = await SeedPictureAsync(s);
 
     await AttachAsync(s);
@@ -563,8 +571,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
     var picture = await SeedPictureAsync(s);
 
     var id = await s.Diagrams.AttachAsync(
@@ -600,8 +608,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     // A diagram of the older world: it stands beside the camera as a child of the space.
     await AttachAsync(s);
@@ -626,7 +634,7 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
@@ -647,11 +655,11 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     // The camera is drawn on two canvases; the diagram is on the second one, not the reference.
     await SeedPictureAsync(s);
-    var elsewhere = await SeedSpaceAsync(s, "Second plan");
+    var elsewhere = await SeedSpaceAsync(s, SecondPlanName);
     var elsewherePicture = await SeedPictureAsync(s, elsewhere, false);
 
     await s.Diagrams.AttachAsync(
@@ -676,7 +684,7 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     // Drawn on the tests' canvas at a point of its own.
     await AttachAsync(s);
@@ -684,7 +692,7 @@ public class DeviceDiagramServiceTests
 
     // Another canvas, no point named: the middle of its own view, not the coordinates the diagram
     // has on the first one — those are the first plan's metres.
-    var elsewhere = await SeedSpaceAsync(s, "Second plan");
+    var elsewhere = await SeedSpaceAsync(s, SecondPlanName);
     var space = await s.Db.Spaces.SingleAsync(x => x.object_id == elsewhere);
     space.view_south = 38.9; space.view_north = 39.0;
     space.view_west = -77.0; space.view_east = -76.9;
@@ -704,11 +712,11 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(Name: "Rear panel"),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
-    await SeedTypeAsync(s, new TypeSpec(Name: "Front panel"),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(Name: RearPanelName),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    await SeedTypeAsync(s, new TypeSpec(Name: FrontPanelName),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
 
@@ -725,9 +733,9 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
     var typeId = await SeedTypeAsync(s, new TypeSpec(AutoAttach: false),
-      ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await EnsureAsync(s);
     Assert.Empty(s.Db.DeviceDiagrams);
@@ -748,9 +756,9 @@ public class DeviceDiagramServiceTests
     await SeedCameraAsync(s, OtherCameraId);
     await SeedModelAsync(s);
     await SeedModelAsync(s, OtherCameraId);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp", cameraId: OtherCameraId);
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken, cameraId: OtherCameraId);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     await AttachAsync(s, cameraId: OtherCameraId);
@@ -768,8 +776,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    var typeId = await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    var typeId = await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var replica = (await s.Db.DeviceDiagramParts.SingleAsync()).replica_object_id;
@@ -780,23 +788,22 @@ public class DeviceDiagramServiceTests
     s.Db.DiagramTypeRegions.Add(new DBDiagramTypeRegion
     {
       diagram_type_id = typeId,
-      region_key = "lamp-2",
+      region_key = LampRegionTwo,
       geometry = new DBDiagramCoord { width = 10, height = 10 },
     });
     await s.Db.SaveChangesAsync();
     s.Db.DiagramTypeParts.Add(new DBDiagramTypePart
     {
       diagram_type_id = typeId,
-      region_key = "lamp-2",
+      region_key = LampRegionTwo,
       part_kind = DeviceObjectId.RelayPart,
       match_by = DiagramPartMatch.Token,
-      match_value = "lamp",
+      match_value = LampToken,
     });
     await s.Db.SaveChangesAsync();
 
     var rules = await s.Db.DiagramTypeParts.ToListAsync();
-    Assert.Single(rules);
-    Assert.Equal("lamp-2", rules[0].region_key);
+    Assert.Equal(LampRegionTwo, Assert.Single(rules).region_key);
 
     await EnsureAsync(s);
 
@@ -805,8 +812,8 @@ public class DeviceDiagramServiceTests
     Assert.Equal(1, await s.Db.DeviceDiagramParts.CountAsync());
 
     var managed = await s.Db.DeviceDiagramParts.SingleAsync();
-    Assert.Equal("lamp-2", managed.region_key);
-    Assert.Equal("lamp-2", (await s.Db.Diagrams.SingleAsync(d => d.id == replica)).region_id);
+    Assert.Equal(LampRegionTwo, managed.region_key);
+    Assert.Equal(LampRegionTwo, (await s.Db.Diagrams.SingleAsync(d => d.id == replica)).region_id);
   }
 
   [Fact]
@@ -815,8 +822,8 @@ public class DeviceDiagramServiceTests
     var s = await CreateAsync();
     await SeedCameraAsync(s);
     await SeedModelAsync(s);
-    await SeedPartAsync(s, DeviceObjectId.RelayPart, "lamp");
-    await SeedTypeAsync(s, new TypeSpec(), ("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"));
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
 
     await AttachAsync(s);
     var row = await s.Db.DeviceDiagrams.SingleAsync();

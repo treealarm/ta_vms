@@ -23,10 +23,41 @@ namespace VmsMap.Tests;
 // and replica creation. The heavy geometry paths need PostgreSQL and live in the spatial tests.
 public class MapServiceReadsTests
 {
+  // The fixtures these tests share.
+  private const string AliceName = "alice";
+  private const string BobName = "bob";
+  private const string AdminRole = "admin";
+  private const string CameraNamePrefix = "Camera ";
+  private const string CameraLabel = "camera";
+  private const string CameraKind = "camera";
+  private const string BuildingLabel = "building";
+  private const string FloorLabel = "floor";
+  private const string PlanLabel = "plan";
+  private const string RootLabel = "root";
+  private const string BoxLabel = "box";
+  private const string DoorLabel = "door";
+  private const string RackLabel = "rack";
+  private const string NoteLabel = "note";
+  private const string DistrictLabel = "district";
+  private const string DistrictZoomLevel = "district";
+  private const string RearPanelLabel = "camera / rear panel";
+  private const string FirstRegionKey = "slot-1";
+  private const string SecondRegionKey = "slot-2";
+  private const string SensorId = "sensor:1";
+  private const string AlarmState = "ALARM";
+  private const string FigureColor = "#123456";
+  private const string FigureKind = "figure";
+  private const string VisualText = "Door";
+  private const string ModelPropName = "model";
+  private const string ModelPropValue = "X";
+  private const string NotePropName = "note";
+  private const string PictureName = "my picture";
+  private const string CompactGuidFormat = "N";
+
   private sealed class TestCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, CameraNamePrefix + cameraId, "srv"));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -63,7 +94,7 @@ public class MapServiceReadsTests
   private static Services Create()
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
-      .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+      .UseInMemoryDatabase(Guid.NewGuid().ToString(CompactGuidFormat))
       .Options;
 
     var db = new VmsMapDbContext(options);
@@ -161,8 +192,8 @@ public class MapServiceReadsTests
   public async Task UpdateDiagramsKeepsTheGeometryOfADiagramPlacedInARegion()
   {
     var s = Create();
-    var rack = await Node(s.Map, "Rack");
-    var computer = await Node(s.Map, "Switch", rack.id);
+    var rack = await Node(s.Map, RackLabel);
+    var computer = await Node(s.Map, "switch", rack.id);
 
     await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
     {
@@ -171,7 +202,7 @@ public class MapServiceReadsTests
         new MapProto.Diagram
         {
           Id = computer.id!,
-          RegionId = "slot-1",
+          RegionId = FirstRegionKey,
           Geometry = new MapProto.DiagramCoordinate { Width = 320, Height = 240 },
         },
       },
@@ -181,11 +212,11 @@ public class MapServiceReadsTests
     var read = await s.Grpc.GetDiagramsByIds(new MapProto.GetByIdsRequest
     {
       Ids = { computer.id! },
-      Caller = Caller("admin", "admin"),
+      Caller = Caller(AdminRole, AdminRole),
     }, new TestContext());
 
     var stored = Assert.Single(read.Diagrams);
-    Assert.Equal("slot-1", stored.RegionId);
+    Assert.Equal(FirstRegionKey, stored.RegionId);
     Assert.NotNull(stored.Geometry);
     Assert.Equal(320, stored.Geometry.Width);
     Assert.Equal(240, stored.Geometry.Height);
@@ -198,14 +229,14 @@ public class MapServiceReadsTests
         new MapProto.Diagram
         {
           Id = computer.id!,
-          RegionId = "slot-2",
+          RegionId = SecondRegionKey,
           Geometry = new MapProto.DiagramCoordinate { Width = 400, Height = 300 },
         },
       },
     }, new TestContext());
 
     var rewritten = Assert.Single(await s.Db.Diagrams.ToListAsync());
-    Assert.Equal("slot-2", rewritten.region_id);
+    Assert.Equal(SecondRegionKey, rewritten.region_id);
     Assert.Equal(400, rewritten.geometry?.width);
     Assert.Equal(300, rewritten.geometry?.height);
   }
@@ -224,46 +255,46 @@ public class MapServiceReadsTests
     // A child names its place by the key; a blank one names nothing and two alike name the same.
     await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
     {
-      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region("  ") } } },
+      DiagramTypes = { new MapProto.DiagramType { Name = RackLabel, Regions = { Region("  ") } } },
     }, new TestContext()));
 
     await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
     {
-      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region("slot-1"), Region("slot-1") } } },
+      DiagramTypes = { new MapProto.DiagramType { Name = RackLabel, Regions = { Region(FirstRegionKey), Region(FirstRegionKey) } } },
     }, new TestContext()));
 
     var written = await s.Grpc.UpdateDiagramTypes(new MapProto.DiagramTypeList
     {
-      DiagramTypes = { new MapProto.DiagramType { Name = "Rack", Regions = { Region(" slot-1 ") } } },
+      DiagramTypes = { new MapProto.DiagramType { Name = RackLabel, Regions = { Region(" slot-1 ") } } },
     }, new TestContext());
 
     // The key is stored trimmed: it is what a child's region_id is compared with.
     var type = Assert.Single(written.DiagramTypes);
-    Assert.Equal("slot-1", Assert.Single(type.Regions).RegionKey);
+    Assert.Equal(FirstRegionKey, Assert.Single(type.Regions).RegionKey);
   }
 
   [Fact]
   public async Task GetByParentHidesANodeTheCallerCannotSee()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var camera = await Node(s.Map, "Camera", building.id);
-    await Grant(s.Db, building, "alice", RightActions.View);
+    var building = await Node(s.Map, BuildingLabel);
+    var camera = await Node(s.Map, CameraLabel, building.id);
+    await Grant(s.Db, building, AliceName, RightActions.View);
 
     var context = new TestContext();
     var seen = await s.Grpc.GetByParent(new MapProto.GetByParentRequest
     {
       ParentId = building.id,
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, context);
 
     Assert.Single(seen.Children);
-    Assert.Equal(camera.id, seen.Children[0].Id);
+    Assert.Equal(camera.id, seen.Children.Single().Id);
 
     var hidden = await s.Grpc.GetByParent(new MapProto.GetByParentRequest
     {
       ParentId = building.id,
-      Caller = Caller("bob"),
+      Caller = Caller(BobName),
     }, context);
 
     Assert.Empty(hidden.Children);
@@ -274,13 +305,13 @@ public class MapServiceReadsTests
   public async Task GetObjPropsReportsWhetherTheNodeHasChildren()
   {
     var s = Create();
-    var container = await Node(s.Map, "District");
-    await Node(s.Map, "Building", container.id);
+    var container = await Node(s.Map, DistrictLabel);
+    await Node(s.Map, BuildingLabel, container.id);
 
     var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
     {
       Id = container.id,
-      Caller = Caller("admin", "admin"),
+      Caller = Caller(AdminRole, AdminRole),
     }, new TestContext());
 
     // The panel that opens on this read replaces the node in the client's store, and a container
@@ -293,8 +324,8 @@ public class MapServiceReadsTests
   {
     var s = Create();
     var deviceId = CameraObjectId.For(TestCameras.One);
-    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = deviceId, name = "Camera " + TestCameras.One }]);
-    var diagram = await Node(s.Map, "Camera / rear panel");
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = deviceId, name = CameraNamePrefix + TestCameras.One }]);
+    var diagram = await Node(s.Map, RearPanelLabel);
     s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
     {
       object_id = Guid.Parse(diagram.id!),
@@ -307,7 +338,7 @@ public class MapServiceReadsTests
     var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
     {
       Id = diagram.id,
-      Caller = Caller("admin", "admin"),
+      Caller = Caller(AdminRole, AdminRole),
     }, new TestContext());
 
     // The panel says whose diagram it is, and can send the reader to the device: the registry row
@@ -315,7 +346,7 @@ public class MapServiceReadsTests
     Assert.Equal(DeviceObjectId.CameraSource, props.Device.SourceKind);
     Assert.Equal(TestCameras.One, props.Device.SourceId);
     Assert.Equal(deviceId, props.Device.NodeId);
-    Assert.Equal("Camera " + TestCameras.One, props.Device.Name);
+    Assert.Equal(CameraNamePrefix + TestCameras.One, props.Device.Name);
   }
 
   [Fact]
@@ -325,14 +356,14 @@ public class MapServiceReadsTests
     var deviceId = CameraObjectId.For(TestCameras.One);
     // The device's canonical node hangs under a server whose rights name somebody else; the
     // diagram is allowed on its own. Seeing the diagram is not seeing the device.
-    var server = await Node(s.Map, "Server");
-    await Grant(s.Db, server, "bob", RightActions.View);
+    var server = await Node(s.Map, "server");
+    await Grant(s.Db, server, BobName, RightActions.View);
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = deviceId, parent_id = server.id, name = "Camera " + TestCameras.One }
+      new BaseMarkerDTO { id = deviceId, parent_id = server.id, name = CameraNamePrefix + TestCameras.One }
     ]);
 
-    var diagram = await Node(s.Map, "Camera / rear panel");
-    await Grant(s.Db, diagram, "alice", RightActions.View);
+    var diagram = await Node(s.Map, RearPanelLabel);
+    await Grant(s.Db, diagram, AliceName, RightActions.View);
     s.Db.DeviceDiagrams.Add(new DBDeviceDiagram
     {
       object_id = Guid.Parse(diagram.id!),
@@ -345,7 +376,7 @@ public class MapServiceReadsTests
     var props = await s.Grpc.GetObjProps(new MapProto.GetObjPropsRequest
     {
       Id = diagram.id,
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     // A node the caller may not see never leaves the service: no node id, and no name to go with
@@ -359,9 +390,9 @@ public class MapServiceReadsTests
   public async Task UpdateFiguresKeepsTheOwnerAndTheLayerItWasGiven()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    var plan = await Node(s.Map, "Plan");
-    var replica = await Node(s.Map, "Camera", plan.id, ownerId: camera.id);
+    var camera = await Node(s.Map, CameraLabel);
+    var plan = await Node(s.Map, PlanLabel);
+    var replica = await Node(s.Map, CameraLabel, plan.id, ownerId: camera.id);
 
     await s.Grpc.UpdateFigures(new MapProto.Figures
     {
@@ -372,8 +403,8 @@ public class MapServiceReadsTests
           Id = replica.id!,
           ParentId = plan.id!,
           OwnerId = camera.id!,
-          Name = "Camera",
-          ZoomLevel = "district",
+          Name = CameraLabel,
+          ZoomLevel = DistrictZoomLevel,
           Geometry = new MapProto.Geometry
           {
             Type = "Point",
@@ -388,16 +419,16 @@ public class MapServiceReadsTests
     Assert.Equal(Guid.Parse(camera.id!), stored.owner_id);
 
     var figure = await s.Db.GeoObjects.SingleAsync(g => g.id == Guid.Parse(replica.id!));
-    Assert.Equal("district", figure.zoom_level);
+    Assert.Equal(DistrictZoomLevel, figure.zoom_level);
   }
 
   [Fact]
   public async Task GetAlarmedStatesWithoutIdsReturnsEveryAlarmTheCallerSees()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    var hidden = await Node(s.Map, "Hidden");
-    await Grant(s.Db, camera, "alice", RightActions.View);
+    var camera = await Node(s.Map, CameraLabel);
+    var hidden = await Node(s.Map, "hidden");
+    await Grant(s.Db, camera, AliceName, RightActions.View);
     s.Db.AlarmStates.Add(new DBAlarmState
     {
       id = Guid.Parse(camera.id!),
@@ -414,7 +445,7 @@ public class MapServiceReadsTests
 
     var seen = await s.Grpc.GetAlarmedStates(new MapProto.GetStatesRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.Contains(seen.States, state => state.Id == camera.id && state.Alarm);
@@ -425,22 +456,22 @@ public class MapServiceReadsTests
   public async Task GetVisualStatesRewritesTheOwnerStateForAReplica()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    var plan = await Node(s.Map, "Plan");
-    var replica = await Node(s.Map, "Camera", plan.id, ownerId: camera.id);
-    await Grant(s.Db, camera, "alice", RightActions.View);
+    var camera = await Node(s.Map, CameraLabel);
+    var plan = await Node(s.Map, PlanLabel);
+    var replica = await Node(s.Map, CameraLabel, plan.id, ownerId: camera.id);
+    await Grant(s.Db, camera, AliceName, RightActions.View);
     await s.States.UpdateStates([
-      new ObjectStateDTO { id = camera.id, states = [ "ALARM" ] }
+      new ObjectStateDTO { id = camera.id, states = [ AlarmState ] }
     ]);
 
     var states = await s.Grpc.GetVisualStates(new MapProto.GetStatesRequest
     {
       Ids = { camera.id!, replica.id! },
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.Equal(2, states.States.Count);
-    Assert.All(states.States, state => Assert.Contains("ALARM", state.States));
+    Assert.All(states.States, state => Assert.Contains(AlarmState, state.States));
     Assert.Contains(states.States, state => state.Id == replica.id);
   }
 
@@ -448,8 +479,8 @@ public class MapServiceReadsTests
   public async Task GetEventsByFilterHidesEventsOnAnInvisibleNode()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    await Grant(s.Db, camera, "alice", RightActions.View);
+    var camera = await Node(s.Map, CameraLabel);
+    await Grant(s.Db, camera, AliceName, RightActions.View);
     await new EventsService(s.Db, s.Map).InsertManyAsync([
       new EventDTO
       {
@@ -464,11 +495,11 @@ public class MapServiceReadsTests
 
     var alice = await s.Grpc.GetEventsByFilter(new MapProto.GetEventsByFilterRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
     var bob = await s.Grpc.GetEventsByFilter(new MapProto.GetEventsByFilterRequest
     {
-      Caller = Caller("bob"),
+      Caller = Caller(BobName),
     }, new TestContext());
 
     Assert.Single(alice.Events);
@@ -479,14 +510,14 @@ public class MapServiceReadsTests
   public async Task CreateReplicaCopiesTheOwnerPropertiesAndNeedsEditOnTheParent()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var camera = await Node(s.Map, "Camera", building.id);
-    await Grant(s.Db, building, "alice", RightActions.View, RightActions.Edit);
+    var building = await Node(s.Map, BuildingLabel);
+    var camera = await Node(s.Map, CameraLabel, building.id);
+    await Grant(s.Db, building, AliceName, RightActions.View, RightActions.Edit);
     await ((IMapService)s.Map).UpdatePropAsync([
       new ObjPropsDTO
       {
         id = camera.id,
-        extra_props = [new ObjExtraPropertyDTO { prop_name = "model", str_val = "X" }],
+        extra_props = [new ObjExtraPropertyDTO { prop_name = ModelPropName, str_val = ModelPropValue }],
       }
     ]);
 
@@ -494,31 +525,31 @@ public class MapServiceReadsTests
     {
       OwnerId = camera.id,
       ParentId = building.id,
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.NotEqual(camera.id, replica.Id);
     Assert.Equal(camera.id, replica.OwnerId);
     // Unnamed, the replica is named by its owner and its own number — the number the server picks.
-    Assert.Equal("Camera rep1", replica.Name);
+    Assert.Equal(CameraLabel + " rep1", replica.Name);
     var props = await s.Map.GetPropAsync(replica.Id);
-    Assert.Contains(props.extra_props!, p => p.prop_name == "model" && p.str_val == "X");
+    Assert.Contains(props.extra_props!, p => p.prop_name == ModelPropName && p.str_val == ModelPropValue);
 
     var second = await s.Grpc.CreateReplica(new MapProto.CreateReplicaRequest
     {
       OwnerId = camera.id,
       ParentId = building.id,
-      Name = "My picture",
-      Caller = Caller("alice"),
+      Name = PictureName,
+      Caller = Caller(AliceName),
     }, new TestContext());
-    Assert.Equal("My picture", second.Name);
+    Assert.Equal(PictureName, second.Name);
 
     await Assert.ThrowsAsync<RpcException>(() =>
       s.Grpc.CreateReplica(new MapProto.CreateReplicaRequest
       {
         OwnerId = camera.id,
         ParentId = building.id,
-        Caller = Caller("bob"),
+        Caller = Caller(BobName),
       }, new TestContext()));
   }
 
@@ -526,14 +557,14 @@ public class MapServiceReadsTests
   public async Task GetByParentNamesTheKindOfEveryChild()
   {
     var s = Create();
-    var root = await Node(s.Map, "Root");
-    var space = await Node(s.Map, "Floor", root.id);
-    var diagram = await Node(s.Map, "Rack", root.id);
-    var landmark = await Node(s.Map, "Door", root.id);
-    var camera = await Node(s.Map, "Camera", root.id);
-    var figure = await Node(s.Map, "Box", root.id);
-    var plain = await Node(s.Map, "Note", root.id);
-    var replica = await Node(s.Map, "Camera picture", root.id, ownerId: camera.id);
+    var root = await Node(s.Map, RootLabel);
+    var space = await Node(s.Map, FloorLabel, root.id);
+    var diagram = await Node(s.Map, RackLabel, root.id);
+    var landmark = await Node(s.Map, DoorLabel, root.id);
+    var camera = await Node(s.Map, CameraLabel, root.id);
+    var figure = await Node(s.Map, BoxLabel, root.id);
+    var plain = await Node(s.Map, NoteLabel, root.id);
+    var replica = await Node(s.Map, "camera picture", root.id, ownerId: camera.id);
 
     s.Db.Spaces.Add(new DBSpace
     {
@@ -558,7 +589,7 @@ public class MapServiceReadsTests
     var response = await s.Grpc.GetByParent(new MapProto.GetByParentRequest
     {
       ParentId = root.id,
-      Caller = Caller("alice", "admin"),
+      Caller = Caller(AliceName, AdminRole),
     }, new TestContext());
 
     string KindOf(BaseMarkerDTO node) =>
@@ -567,19 +598,19 @@ public class MapServiceReadsTests
     Assert.Equal("space", KindOf(space));
     Assert.Equal("diagram", KindOf(diagram));
     Assert.Equal("landmark", KindOf(landmark));
-    Assert.Equal("camera", KindOf(camera));
-    Assert.Equal("figure", KindOf(figure));
+    Assert.Equal(CameraKind, KindOf(camera));
+    Assert.Equal(FigureKind, KindOf(figure));
     Assert.Equal("object", KindOf(plain));
     // A replica answers with its owner's kind: the picture of a camera is still that camera.
-    Assert.Equal("camera", KindOf(replica));
+    Assert.Equal(CameraKind, KindOf(replica));
   }
 
   [Fact]
   public async Task GetByIdsReturnsTheVisualAndKindOfAFigure()
   {
     var s = Create();
-    var root = await Node(s.Map, "Root");
-    var figure = await Node(s.Map, "Box", root.id);
+    var root = await Node(s.Map, RootLabel);
+    var figure = await Node(s.Map, BoxLabel, root.id);
     var guid = Guid.Parse(figure.id!);
 
     s.Db.GeoObjects.Add(new DBGeoObject
@@ -592,8 +623,8 @@ public class MapServiceReadsTests
     s.Db.Visuals.Add(new DBVisual
     {
       object_id = guid,
-      color = "#123456",
-      text = "Door",
+      color = FigureColor,
+      text = VisualText,
       rotation_deg = 45,
     });
     await s.Db.SaveChangesAsync();
@@ -601,13 +632,13 @@ public class MapServiceReadsTests
     var figures = await s.Grpc.GetByIds(new MapProto.GetByIdsRequest
     {
       Ids = { figure.id! },
-      Caller = Caller("alice", "admin"),
+      Caller = Caller(AliceName, AdminRole),
     }, new TestContext());
 
     var fig = Assert.Single(figures.Figs);
-    Assert.Equal("figure", fig.NodeKind);
-    Assert.Equal("#123456", fig.Visual.Color);
-    Assert.Equal("Door", fig.Visual.Text);
+    Assert.Equal(FigureKind, fig.NodeKind);
+    Assert.Equal(FigureColor, fig.Visual.Color);
+    Assert.Equal(VisualText, fig.Visual.Text);
     Assert.True(fig.Visual.HasRotationDeg);
     Assert.Equal(45, fig.Visual.RotationDeg);
   }
@@ -616,7 +647,7 @@ public class MapServiceReadsTests
 
   private static async Task<string> AlarmCameraAsync(Services s, params string[] actions)
   {
-    var node = await Node(s.Map, "Camera " + Guid.NewGuid().ToString("N")[..6]);
+    var node = await Node(s.Map, CameraNamePrefix + Guid.NewGuid().ToString(CompactGuidFormat)[..6]);
     var id = Guid.Parse(node.id!);
     s.Db.DeviceNodes.Add(new DBDeviceNode
     {
@@ -631,7 +662,7 @@ public class MapServiceReadsTests
       s.Db.Rights.Add(new DBRight
       {
         object_id = id,
-        subject = "alice",
+        subject = AliceName,
         action = action,
       });
     }
@@ -648,17 +679,17 @@ public class MapServiceReadsTests
     var objectId = Guid.Parse(node);
 
     await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
-      objectId, AlarmSource.Sensor, "sensor:1"), default);
+      objectId, AlarmSource.Sensor, SensorId), default);
 
     var pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     var alarm = Assert.Single(pages.Open.Alarms);
     Assert.Equal(node, alarm.ObjectId);
     Assert.True(alarm.CanAck);
-    Assert.Equal("Camera ", alarm.ObjectName[..7]);
+    Assert.StartsWith(CameraNamePrefix, alarm.ObjectName);
 
     // Armed: the condition is live, so the acknowledgement is the store's to refuse. The camera's
     // own mode lives in the map.
@@ -666,7 +697,7 @@ public class MapServiceReadsTests
     await TestWiring.ObjectSettings(s.Db).SetModeAsync(node, ArmMode.Armed, default);
     pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
     Assert.False(Assert.Single(pages.Open.Alarms).CanAck);
 
@@ -677,13 +708,13 @@ public class MapServiceReadsTests
 
     var anonymous = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("bob"),
+      Caller = Caller(BobName),
     }, new TestContext());
     Assert.Empty(anonymous.Open.Alarms);
 
     var admin = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("bob", "admin"),
+      Caller = Caller(BobName, AdminRole),
     }, new TestContext());
     Assert.Equal(2, admin.Open.Alarms.Count);
   }
@@ -696,10 +727,10 @@ public class MapServiceReadsTests
     var objectId = Guid.Parse(node);
 
     await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
-      objectId, AlarmSource.Sensor, "sensor:1"), default);
+      objectId, AlarmSource.Sensor, SensorId), default);
     var raised = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext())).Open.Alarms.Single();
 
     // Disarmed, so the live condition may be acknowledged.
@@ -707,20 +738,20 @@ public class MapServiceReadsTests
     {
       Id = raised.Id,
       Comment = "seen",
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
     Assert.Equal("acknowledged", acknowledged.Status);
     Assert.True(acknowledged.ConditionActive);
 
     // The condition goes away; the acknowledged alarm closes as returned_to_normal.
-    await s.Alarms.NormalAsync(objectId, "sensor:1", default);
+    await s.Alarms.NormalAsync(objectId, SensorId, default);
 
     var closed = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext())).Closed.Alarms.Single();
     Assert.Equal(AlarmCloseReason.ReturnedToNormal, closed.CloseReason);
-    Assert.Equal("alice", closed.ClosedBy);
+    Assert.Equal(AliceName, closed.ClosedBy);
   }
 
   [Fact]
@@ -729,16 +760,16 @@ public class MapServiceReadsTests
     var s = Create();
     var node = await AlarmCameraAsync(s, RightActions.View);
     await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
-      Guid.Parse(node), AlarmSource.Sensor, "sensor:1"), default);
+      Guid.Parse(node), AlarmSource.Sensor, SensorId), default);
 
     var raised = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext())).Open.Alarms.Single();
     Assert.False(raised.CanAck);
 
     var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.AcknowledgeAlarm(
-      new MapProto.AcknowledgeAlarmRequest { Id = raised.Id, Caller = Caller("alice") },
+      new MapProto.AcknowledgeAlarmRequest { Id = raised.Id, Caller = Caller(AliceName) },
       new TestContext()));
     Assert.Equal(StatusCode.PermissionDenied, error.StatusCode);
   }
@@ -751,15 +782,15 @@ public class MapServiceReadsTests
     var s = Create();
 
     var space = Guid.NewGuid();
-    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = space.ToString(), name = "Floor" }]);
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = space.ToString(), name = FloorLabel }]);
     s.Db.Spaces.Add(new DBSpace { object_id = space, kind = SpaceKinds.Map });
 
     var cameraNode = Guid.NewGuid();
     var part = Guid.NewGuid();
     var cameraId = Guid.NewGuid().ToString();
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = cameraNode.ToString(), name = "Camera" },
-      new BaseMarkerDTO { id = part.ToString(), parent_id = cameraNode.ToString(), name = "Door" },
+      new BaseMarkerDTO { id = cameraNode.ToString(), name = CameraLabel },
+      new BaseMarkerDTO { id = part.ToString(), parent_id = cameraNode.ToString(), name = DoorLabel },
     ]);
     s.Db.DeviceNodes.Add(new DBDeviceNode
     {
@@ -776,20 +807,20 @@ public class MapServiceReadsTests
     await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO
     {
       id = replica.ToString(), parent_id = space.ToString(),
-      owner_id = cameraNode.ToString(), name = "Camera on the plan",
+      owner_id = cameraNode.ToString(), name = "camera on the plan",
     }]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = replica, camera_id = cameraId, is_reference = true,
     });
     await s.Db.SaveChangesAsync();
-    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, "sensor:1"), default);
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
 
     var result = await s.Grpc.AcknowledgeSubtreeAlarms(
       new MapProto.AcknowledgeSubtreeAlarmsRequest
       {
         ObjectId = space.ToString(),
-        Caller = Caller("admin", "admin"),
+        Caller = Caller(AdminRole, AdminRole),
       },
       new TestContext());
 
@@ -801,20 +832,20 @@ public class MapServiceReadsTests
   public async Task APropertyWriteDoesNotMoveTheNode()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var floor = await Node(s.Map, "Floor", building.id);
+    var building = await Node(s.Map, BuildingLabel);
+    var floor = await Node(s.Map, FloorLabel, building.id);
 
     // The property DTO carries no parent; before, the hierarchy write copied that null onto the
     // row and every property update silently moved the node to the root.
     await s.Updates.UpdateProperties(new ObjPropsDTO
     {
       id = floor.id,
-      extra_props = [new ObjExtraPropertyDTO { prop_name = "note", str_val = "kept" }],
+      extra_props = [new ObjExtraPropertyDTO { prop_name = NotePropName, str_val = "kept" }],
     });
 
     var stored = await s.Db.Markers.AsNoTracking()
       .SingleAsync(m => m.id == Guid.Parse(floor.id!));
     Assert.Equal(Guid.Parse(building.id!), stored.parent_id);
-    Assert.Equal("Floor", stored.name);
+    Assert.Equal(FloorLabel, stored.name);
   }
 }

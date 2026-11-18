@@ -21,13 +21,26 @@ namespace VmsMap.Tests;
 // the transaction around a placement write. Enabled by VMS_MAP_TEST_DSN, as PostgresTests is.
 [Collection("postgis")]
 public class SpatialPostgresTests
-{  private static readonly string? Dsn = Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
+{
+  // The fixtures these tests share.
+  private const string ServerId = "srv";
+  private const string FloorPlanName = "floor";
+  private const string CameraLabel = "camera";
+  private const string LandmarkName = "corner";
+  private const string InputLabel = "input 1";
+  private const string PartToken = "1";
+  private const string TriggerOnClosed = "closed";
+  private const string RearPanelLabel = "camera / rear panel";
+  private const string GeometryTypeQuery =
+    "SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {0}";
+
+  private static readonly string? Dsn = Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
   private sealed class FakeCatalog(IReadOnlySet<string>? geoFromDevice = null) : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
       Task.FromResult<CameraInfo?>(new CameraInfo(
-        cameraId, "Camera " + cameraId, "srv", geoFromDevice?.Contains(cameraId) == true));
+        cameraId, "Camera " + cameraId, ServerId, geoFromDevice?.Contains(cameraId) == true));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -97,7 +110,7 @@ public class SpatialPostgresTests
       new SpatialDb(db, map, updates, geo, new FakeCatalog(geoFromDevice), notifier, TestWiring.CameraArming(db, map)), notifier);
   }
 
-  private static Space MapSpace(string name = "Main map") => new()
+  private static Space MapSpace(string name = "main map") => new()
   {
     Name = name,
     Kind = SpaceKind.Map,
@@ -144,14 +157,14 @@ public class SpatialPostgresTests
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
+    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace(FloorPlanName, map.Id), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: false), CancellationToken.None);
 
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
       SpaceId = plan.Id,
-      Name = "Corner",
+      Name = LandmarkName,
       Lat = 0.4,
       Lon = 0.4,
       HeightM = 2,
@@ -170,12 +183,12 @@ public class SpatialPostgresTests
     // the picture on the map.
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     Assert.Equal(
-      Guid.Parse(ServerNodeId.For("srv")),
+      Guid.Parse(ServerNodeId.For(ServerId)),
       (await test.Db.Markers.SingleAsync(m => m.id == canonical)).parent_id!.Value);
     Assert.False(await test.Db.CameraPlacements.AnyAsync(p => p.is_reference));
     var picture = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
     Assert.Equal(Guid.Parse(map.Id), (await test.Db.Markers.SingleAsync(m => m.id == picture.object_id)).parent_id);
-    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
+    Assert.Contains(TestCameras.One, test.Notifier.Events.Last().Cameras);
   }
 
   [Fact]
@@ -189,7 +202,7 @@ public class SpatialPostgresTests
     var spaceId = Guid.Parse(map.Id);
 
     var first = Guid.NewGuid();
-    test.Db.Markers.Add(new DBMarker { id = first, parent_id = spaceId, name = "Camera" });
+    test.Db.Markers.Add(new DBMarker { id = first, parent_id = spaceId, name = CameraLabel });
     await test.Db.SaveChangesAsync();
     test.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -198,7 +211,7 @@ public class SpatialPostgresTests
     await test.Db.SaveChangesAsync();
 
     var second = Guid.NewGuid();
-    test.Db.Markers.Add(new DBMarker { id = second, parent_id = spaceId, name = "Camera" });
+    test.Db.Markers.Add(new DBMarker { id = second, parent_id = spaceId, name = CameraLabel });
     await test.Db.SaveChangesAsync();
     test.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -215,7 +228,7 @@ public class SpatialPostgresTests
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var plan = PlanSpace("Floor", map.Id);
+    var plan = PlanSpace(FloorPlanName, map.Id);
     plan.Footprint.AddRange([
       new Coordinate { Lat = 0.1, Lon = 0.1 },
       new Coordinate { Lat = 0.2, Lon = 0.1 },
@@ -231,12 +244,12 @@ public class SpatialPostgresTests
     var replicaId = replica.object_id;
 
     var types = await test.Db.Database
-      .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {planId}")
+      .SqlQueryRaw<string>(GeometryTypeQuery, planId)
       .ToListAsync();
     Assert.Equal("ST_Polygon", Assert.Single(types));
 
     var point = await test.Db.Database
-      .SqlQuery<string>($"SELECT ST_GeometryType(figure) AS \"Value\" FROM geo_objects WHERE id = {replicaId}")
+      .SqlQueryRaw<string>(GeometryTypeQuery, replicaId)
       .SingleAsync();
     Assert.Equal("ST_Point", point);
 
@@ -356,7 +369,7 @@ public class SpatialPostgresTests
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
+    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace(FloorPlanName, map.Id), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, plan.Id, reference: false), CancellationToken.None);
 
@@ -409,11 +422,11 @@ public class SpatialPostgresTests
     // The canonical node keeps its place under the server: the device moved a picture, not the tree.
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.One));
     Assert.Equal(
-      Guid.Parse(ServerNodeId.For("srv")),
+      Guid.Parse(ServerNodeId.For(ServerId)),
       (await test.Db.Markers.AsNoTracking().SingleAsync(m => m.id == canonical)).parent_id!.Value);
 
     // The map's watch stream and the tracking models both hear about it.
-    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
+    Assert.Contains(TestCameras.One, test.Notifier.Events.Last().Cameras);
   }
 
   // A camera that reports a bearing — the one on a vehicle — has its placement turned to it, while
@@ -460,7 +473,7 @@ public class SpatialPostgresTests
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
       SpaceId = map.Id,
-      Name = "Corner",
+      Name = LandmarkName,
       Lat = 0.4,
       Lon = 0.4,
       HeightM = 2,
@@ -491,7 +504,7 @@ public class SpatialPostgresTests
       return;
 
     var nodes = TestWiring.DeviceNodes(test.Db, test.Map, test.Updates);
-    await nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "New camera", "srv-new"), CancellationToken.None);
+    await nodes.EnsureCameraAsync(new CameraInfo(TestCameras.Two, "new camera", "srv-new"), CancellationToken.None);
 
     var canonical = Guid.Parse(CameraObjectId.For(TestCameras.Two));
     Assert.NotNull(await test.Db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == canonical));
@@ -512,27 +525,27 @@ public class SpatialPostgresTests
     var cameraId = TestCameras.One;
     var cameraNode = Guid.Parse(CameraObjectId.For(cameraId));
     var input = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, PartToken));
     var relay = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.RelayPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.RelayPart, PartToken));
     var nodes = new[] { cameraNode, input, relay };
 
     test.Db.Markers.AddRange(
-      new DBMarker { id = cameraNode, name = "Camera" },
-      new DBMarker { id = input, parent_id = cameraNode, name = "Input 1" },
-      new DBMarker { id = relay, parent_id = cameraNode, name = "Relay 1" });
+      new DBMarker { id = cameraNode, name = CameraLabel },
+      new DBMarker { id = input, parent_id = cameraNode, name = InputLabel },
+      new DBMarker { id = relay, parent_id = cameraNode, name = "relay 1" });
     await test.Db.SaveChangesAsync();
 
     test.Db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, cameraNode));
     test.Db.DeviceNodes.Add(new DBDeviceNode
     {
       object_id = input, source_kind = DeviceObjectId.CameraSource, source_id = cameraId,
-      part_kind = DeviceObjectId.DigitalInputPart, part_token = "1",
+      part_kind = DeviceObjectId.DigitalInputPart, part_token = PartToken,
     });
     test.Db.DeviceNodes.Add(new DBDeviceNode
     {
       object_id = relay, source_kind = DeviceObjectId.CameraSource, source_id = cameraId,
-      part_kind = DeviceObjectId.RelayPart, part_token = "1",
+      part_kind = DeviceObjectId.RelayPart, part_token = PartToken,
     });
     // The registry rows follow their objects, and then the states and alarms: EF does not know
     // any of these point at objects, and would otherwise insert a child before its parent.
@@ -585,13 +598,13 @@ public class SpatialPostgresTests
     var diagram = Guid.Parse(DeviceObjectId.ForDeviceDiagram(
       DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot));
     var part = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, PartToken));
     var replica = Guid.NewGuid();
 
     test.Db.Markers.AddRange(
-      new DBMarker { id = diagram, parent_id = picture.object_id, name = "Camera / rear panel" },
-      new DBMarker { id = part, parent_id = Guid.Parse(CameraObjectId.For(cameraId)), name = "Input 1" },
-      new DBMarker { id = replica, parent_id = diagram, owner_id = part, name = "Input 1" });
+      new DBMarker { id = diagram, parent_id = picture.object_id, name = RearPanelLabel },
+      new DBMarker { id = part, parent_id = Guid.Parse(CameraObjectId.For(cameraId)), name = InputLabel },
+      new DBMarker { id = replica, parent_id = diagram, owner_id = part, name = InputLabel });
     // The registry rows point at objects, and EF does not model that either: each step is saved
     // once its parents are in the database.
     await test.Db.SaveChangesAsync();
@@ -632,17 +645,17 @@ public class SpatialPostgresTests
       return;
 
     var node = Guid.NewGuid();
-    test.Db.Markers.Add(new DBMarker { id = node, name = "Camera" });
+    test.Db.Markers.Add(new DBMarker { id = node, name = CameraLabel });
     await test.Db.SaveChangesAsync();
 
     var store = new VmsMap.Domain.Arming.DeviceObjectSettingsStore(test.Db);
     await store.SetAsync(
-      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, "closed", true,
+      node.ToString(), VmsMap.Domain.Arming.ArmMode.Disarmed, TriggerOnClosed, true,
       CancellationToken.None);
 
     var read = await store.GetAsync(node.ToString(), CancellationToken.None);
     Assert.Equal(VmsMap.Domain.Arming.ArmMode.Disarmed, read.Mode);
-    Assert.Equal("closed", read.TriggerOn);
+    Assert.Equal(TriggerOnClosed, read.TriggerOn);
     Assert.True(read.AlarmEnabled);
 
     // An alarm cannot follow a contact state that was never named.
@@ -670,7 +683,7 @@ public class SpatialPostgresTests
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
       SpaceId = map.Id,
-      Name = "Corner",
+      Name = LandmarkName,
       Lat = 0.4,
       Lon = 0.4,
       HeightM = 2,
@@ -688,7 +701,7 @@ public class SpatialPostgresTests
     Assert.False(await test.Db.Markers.AnyAsync(m => m.id == Guid.Parse(landmark.Id)));
 
     // The camera that was calibrated on it loses a model, and learns so on the same event.
-    var last = test.Notifier.Events[^1];
+    var last = test.Notifier.Events.Last();
     Assert.Contains(landmark.Id, last.Objects);
     Assert.Contains(TestCameras.One, last.Cameras);
   }
@@ -701,13 +714,13 @@ public class SpatialPostgresTests
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
+    var plan = await test.Spatial.UpsertSpaceAsync(PlanSpace(FloorPlanName, map.Id), CancellationToken.None);
     await test.Spatial.UpsertPlacementAsync(
       Placement(TestCameras.One, plan.Id, reference: true), CancellationToken.None);
     var landmark = await test.Spatial.UpsertLandmarkAsync(new Landmark
     {
       SpaceId = plan.Id,
-      Name = "Corner",
+      Name = LandmarkName,
       Lat = 0.4,
       Lon = 0.4,
       HeightM = 2,
@@ -723,7 +736,7 @@ public class SpatialPostgresTests
 
     // The placement inside the plan went with it, and the camera that stood there is named.
     Assert.False(await test.Db.CameraPlacements.AnyAsync());
-    Assert.Contains(TestCameras.One, test.Notifier.Events[^1].Cameras);
+    Assert.Contains(TestCameras.One, test.Notifier.Events.Last().Cameras);
   }
 
   [Fact]
@@ -746,7 +759,7 @@ public class SpatialPostgresTests
     {
       id = diagram,
       parent_id = picture.object_id,
-      name = "Camera / rear panel",
+      name = RearPanelLabel,
     });
     await test.Db.SaveChangesAsync();
     test.Db.DeviceDiagrams.Add(new DBDeviceDiagram

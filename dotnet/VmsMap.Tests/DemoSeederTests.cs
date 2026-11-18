@@ -28,20 +28,20 @@ public class DemoSeederTests
     private readonly Dictionary<string, string> _known;
 
     public TestCatalog(params string[] known) =>
-      _known = known.ToDictionary(DemoIds.Camera, id => "Camera " + id, StringComparer.Ordinal);
+      _known = known.ToDictionary(DemoIds.Camera, id => CameraNamePrefix + id, StringComparer.Ordinal);
 
     /// A camera the installation provisions after the demo was installed once.
     public void Add(string cameraName) =>
-      _known.TryAdd(DemoIds.Camera(cameraName), "Camera " + DemoIds.Camera(cameraName));
+      _known.TryAdd(DemoIds.Camera(cameraName), CameraNamePrefix + DemoIds.Camera(cameraName));
 
     /// The administrator renames the camera, as VmsCfg's own form would.
     public void Rename(string cameraName, string name) => _known[DemoIds.Camera(cameraName)] = name;
 
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult(_known.TryGetValue(cameraId, out var name) ? new CameraInfo(cameraId, name, "srv") : null);
+      Task.FromResult(_known.TryGetValue(cameraId, out var name) ? new CameraInfo(cameraId, name, CatalogServerId) : null);
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
-      Task.FromResult(_known.Select(pair => new CameraInfo(pair.Key, pair.Value, "srv")).ToList());
+      Task.FromResult(_known.Select(pair => new CameraInfo(pair.Key, pair.Value, CatalogServerId)).ToList());
   }
 
   private sealed class TestNotifier : IMapConfigNotifier
@@ -78,7 +78,35 @@ public class DemoSeederTests
     return new Services(db, map, seeder, catalog);
   }
 
+  // The fixtures these tests share.
   private const string Key = "umd-datacenter";
+  private const string CameraNamePrefix = "Camera ";
+  private const string CatalogServerId = "srv";
+  private const string MapSpaceKey = "space/map";
+  private const string RoomSpaceKey = "space/room";
+  private const string MapSpaceName = "demo map";
+  private const string RackTypeKey = "type/rack";
+  private const string SlotKey = "slot-1";
+  private const string RackKey = "object/rack";
+  private const string SwitchKey = "object/switch";
+  private const string PortKey = "object/port";
+  private const string MasterCamera = "sim-master";
+  private const string MissingCamera = "sim-missing";
+  private const string PtzCamera = "sim-ptz";
+  private const string MovedMasterCamera = "sim-master2";
+  private const string RenamedCamera = "cam1";
+  private const string SensorToken = "input";
+  private const string DigitalInputPart = "digital_input";
+  private const string RelayPart = "relay";
+  private const string ButtonToken = "button";
+  private const string ArmedMode = "armed";
+  private const string ClosedTrigger = "closed";
+  private const string FirstLandmarkKey = "landmark/l1";
+  private const string SecondLandmarkKey = "landmark/l2";
+  private const string FirstLandmarkName = "l1 red";
+  private const string PanelFileKey = "file/panel";
+  private const string PartButtonKey = "object/part-button";
+  private const string PartButtonName = "relay4 rep1";
 
   private static DemoWorld World(
     IReadOnlyList<DemoNode>? nodes = null,
@@ -93,12 +121,12 @@ public class DemoSeederTests
       Key,
       1,
       files ?? [],
-      [new DemoDiagramType("type/rack", "Rack 42U", null,
-        [new DemoRegion("slot-1", new DemoRect(0.1, 0.2, 0.8, 0.1))])],
+      [new DemoDiagramType(RackTypeKey, "Rack 42U", null,
+        [new DemoRegion(SlotKey, new DemoRect(0.1, 0.2, 0.8, 0.1))])],
       [
-        new DemoSpace("space/map", "Demo map", null, SpaceKind.Map,
+        new DemoSpace(MapSpaceKey, MapSpaceName, null, SpaceKind.Map,
           39.0, -77.0, 39.1, -76.9),
-        new DemoSpace("space/room", "Room 101", "space/map", SpaceKind.Plan,
+        new DemoSpace(RoomSpaceKey, "room 101", MapSpaceKey, SpaceKind.Plan,
           39.01, -76.99, 39.02, -76.98,
           Footprint:
           [
@@ -115,16 +143,16 @@ public class DemoSeederTests
       groundMarks ?? [],
       ptzObservations ?? [],
       deviceDiagrams ?? [],
-      [new DemoState("object/port", "DISCONNECTED")],
-      [new DemoRight("space/map", "user", RightActions.View)]);
+      [new DemoState(PortKey, "DISCONNECTED")],
+      [new DemoRight(MapSpaceKey, "user", RightActions.View)]);
 
   private static List<DemoNode> DefaultNodes() =>
   [
-    new DemoNode("object/rack", "Rack A-01", "space/room", "type/rack",
+    new DemoNode(RackKey, "rack a-01", RoomSpaceKey, RackTypeKey,
       Canvas: new DemoRect(0, 0, 400, 800), At: new DemoPoint(39.015, -76.985)),
-    new DemoNode("object/switch", "Switch A-01", "object/rack", "type/rack",
-      RegionKey: "slot-1", Canvas: new DemoRect(0, 0, 300, 200)),
-    new DemoNode("object/port", "Port 1", "object/switch", "type/rack", RegionKey: "slot-1"),
+    new DemoNode(SwitchKey, "switch a-01", RackKey, RackTypeKey,
+      RegionKey: SlotKey, Canvas: new DemoRect(0, 0, 300, 200)),
+    new DemoNode(PortKey, "port 1", SwitchKey, RackTypeKey, RegionKey: SlotKey),
   ];
 
   private static async Task<BaseMarkerDTO> UserNode(MapDb map, string name)
@@ -160,7 +188,7 @@ public class DemoSeederTests
   public async Task RemovalTakesTheDemoAndLeavesTheUsersOwnNode()
   {
     var s = Create();
-    var user = await UserNode(s.Map, "The administrator's note");
+    var user = await UserNode(s.Map, "the administrator's note");
 
     await s.Seeder.InstallAsync(World(), CancellationToken.None);
     Assert.NotNull(await s.Db.Markers.FirstOrDefaultAsync(m => m.id == Guid.Parse(user.id!)));
@@ -172,7 +200,7 @@ public class DemoSeederTests
 
     // The in-memory provider has no cascades, so the side rows of a removed node stay behind
     // there; what the demo owns is the tree nodes, and those are gone.
-    var demoIds = new[] { "object/rack", "object/switch", "object/port" }
+    var demoIds = new[] { RackKey, SwitchKey, PortKey }
       .Select(DemoIds.For)
       .ToList();
     Assert.Empty(await s.Db.Markers.Where(m => demoIds.Contains(m.id)).ToListAsync());
@@ -186,10 +214,10 @@ public class DemoSeederTests
   {
     var s = Create();
     await s.Seeder.InstallAsync(World(), CancellationToken.None);
-    var kept = DemoIds.Id("object/switch");
-    var dropped = DemoIds.Id("object/port");
+    var kept = DemoIds.Id(SwitchKey);
+    var dropped = DemoIds.Id(PortKey);
 
-    var smaller = World(DefaultNodes().Where(node => node.Key != "object/port").ToList());
+    var smaller = World(DefaultNodes().Where(node => node.Key != PortKey).ToList());
     var report = await s.Seeder.InstallAsync(smaller, CancellationToken.None);
 
     Assert.Equal(1, report.Removed);
@@ -201,32 +229,32 @@ public class DemoSeederTests
   [Fact]
   public async Task ACameraTheDeploymentLacksIsSkippedAndTheWorldStillInstalls()
   {
-    var s = Create("sim-master");
+    var s = Create(MasterCamera);
     var world = World(placements:
     [
-      new DemoPlacement("sim-master", "space/room", 39.015, -76.985),
-      new DemoPlacement("sim-missing", "space/room", 39.016, -76.984),
+      new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985),
+      new DemoPlacement(MissingCamera, RoomSpaceKey, 39.016, -76.984),
     ]);
 
     var report = await s.Seeder.InstallAsync(world, CancellationToken.None);
 
-    Assert.Equal(["sim-missing"], report.SkippedCameras);
+    Assert.Equal([MissingCamera], report.SkippedCameras);
     Assert.True((await s.Seeder.GetStatusAsync(Key, CancellationToken.None)).Installed);
-    Assert.Equal(DemoIds.Camera("sim-master"), (await s.Db.CameraPlacements.SingleAsync()).camera_id);
+    Assert.Equal(DemoIds.Camera(MasterCamera), (await s.Db.CameraPlacements.SingleAsync()).camera_id);
   }
 
   [Fact]
   public async Task ACameraArrivingLaterIsPlacedByAReinstall()
   {
     var s = Create();
-    var world = World(placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)]);
+    var world = World(placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)]);
 
     var without = await s.Seeder.InstallAsync(world, CancellationToken.None);
     Assert.Single(without.SkippedCameras);
     Assert.Empty(await s.Db.CameraPlacements.ToListAsync());
 
     // The installation provisions the camera; the same world now places it.
-    s.Catalog.Add("sim-master");
+    s.Catalog.Add(MasterCamera);
     var placed = await s.Seeder.InstallAsync(world, CancellationToken.None);
 
     Assert.Empty(placed.SkippedCameras);
@@ -238,23 +266,23 @@ public class DemoSeederTests
   {
     // The map owns a logical object's settings, so the world writes them — not VmsCfg, whose half
     // of the demo keeps the part's name only.
-    var s = Create("sim-master");
+    var s = Create(MasterCamera);
     var world = World(
-      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
       devices:
       [
-        new DemoDeviceSettings("sim-master", "digital_input", "input", "armed", "closed",
+        new DemoDeviceSettings(MasterCamera, DigitalInputPart, SensorToken, ArmedMode, ClosedTrigger,
           AlarmEnabled: true),
       ]);
 
     await s.Seeder.InstallAsync(world, CancellationToken.None);
 
     var partId = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, DemoIds.Camera("sim-master"), "digital_input", "input"));
+      DeviceObjectId.CameraSource, DemoIds.Camera(MasterCamera), DigitalInputPart, SensorToken));
     var row = Assert.Single(await s.Db.DeviceObjectSettings.ToListAsync());
     Assert.Equal(partId, row.object_id);
-    Assert.Equal("armed", row.arm_mode);
-    Assert.Equal("closed", row.trigger_on);
+    Assert.Equal(ArmedMode, row.arm_mode);
+    Assert.Equal(ClosedTrigger, row.trigger_on);
     Assert.True(row.alarm_enabled);
   }
 
@@ -264,25 +292,25 @@ public class DemoSeederTests
     // A part placed on a canvas is a replica of the part's canonical node — the row an
     // administrator's placement writes — with a point of its own and no camera placement. The
     // second install updates that row instead of adding another, and removing the world takes it.
-    var s = Create("sim-master");
+    var s = Create(MasterCamera);
     var world = World(
-      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
       partReplicas:
       [
-        new DemoPartReplica("object/part-button", "sim-master", "relay", "button", "space/map",
-          "relay4 rep1", 39.05, -76.95, "#26a69a"),
+        new DemoPartReplica(PartButtonKey, MasterCamera, RelayPart, ButtonToken, MapSpaceKey,
+          PartButtonName, 39.05, -76.95, "#26a69a"),
       ]);
 
     var first = await s.Seeder.InstallAsync(world, CancellationToken.None);
     Assert.Empty(first.SkippedCameras);
 
     var partId = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, DemoIds.Camera("sim-master"), "relay", "button"));
+      DeviceObjectId.CameraSource, DemoIds.Camera(MasterCamera), RelayPart, ButtonToken));
     var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == partId);
-    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
-    Assert.Equal(DemoIds.For("object/part-button"), picture.id);
+    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == MapSpaceName);
+    Assert.Equal(DemoIds.For(PartButtonKey), picture.id);
     Assert.Equal(mapSpace.id, picture.parent_id);
-    Assert.Equal("relay4 rep1", picture.name);
+    Assert.Equal(PartButtonName, picture.name);
     Assert.Empty(await s.Db.CameraPlacements.AsNoTracking()
       .Where(placement => placement.object_id == picture.id).ToListAsync());
 
@@ -300,15 +328,15 @@ public class DemoSeederTests
     // A picture already on the canvas is not renamed by a placement write. The world's own picture
     // is the world's row, so the seeder keeps its name in step with the camera: a version of the
     // demo that renames its cameras must not leave yesterday's names on the map.
-    var s = Create("sim-master");
-    var world = World(placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)]);
+    var s = Create(MasterCamera);
+    var world = World(placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)]);
     await s.Seeder.InstallAsync(world, CancellationToken.None);
 
-    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-master")));
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera(MasterCamera)));
     var before = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
     Assert.Equal("Camera sim-master rep1", before.name);
 
-    s.Catalog.Rename("sim-master", "cam1");
+    s.Catalog.Rename(MasterCamera, RenamedCamera);
     await s.Seeder.InstallAsync(world, CancellationToken.None);
 
     var after = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
@@ -323,23 +351,23 @@ public class DemoSeederTests
     // an attach afterwards keeps the name it finds. The camera is the world's to name, so a version
     // of the world that renames its cameras must not leave yesterday's name on the panel under the
     // picture — and the rename must not orphan the node it renames.
-    var s = Create("sim-master");
+    var s = Create(MasterCamera);
     var world = World(
-      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
-      files: [new DemoFile("file/panel", "<svg/>"u8.ToArray(), "image/svg+xml")],
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
+      files: [new DemoFile(PanelFileKey, "<svg/>"u8.ToArray(), "image/svg+xml")],
       deviceDiagrams:
       [
-        new DemoDeviceDiagram("object/panel", "sim-master", "type/rack", "file/panel", 44, 28),
+        new DemoDeviceDiagram("object/panel", MasterCamera, RackTypeKey, PanelFileKey, 44, 28),
       ]);
 
     await s.Seeder.InstallAsync(world, CancellationToken.None);
 
-    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera("sim-master")));
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera(MasterCamera)));
     var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
     var before = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.parent_id == picture.id);
     Assert.Equal("Camera sim-master / Rack 42U", before.name);
 
-    s.Catalog.Rename("sim-master", "cam1");
+    s.Catalog.Rename(MasterCamera, RenamedCamera);
     await s.Seeder.InstallAsync(world, CancellationToken.None);
 
     var after = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == before.id);
@@ -352,12 +380,12 @@ public class DemoSeederTests
   {
     var s = Create();
     var world = World(
-      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
-      devices: [new DemoDeviceSettings("sim-master", "digital_input", "input", "armed")]);
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
+      devices: [new DemoDeviceSettings(MasterCamera, DigitalInputPart, SensorToken, ArmedMode)]);
 
     var report = await s.Seeder.InstallAsync(world, CancellationToken.None);
 
-    Assert.Equal(["sim-master"], report.SkippedCameras);
+    Assert.Equal([MasterCamera], report.SkippedCameras);
     Assert.Empty(await s.Db.DeviceObjectSettings.ToListAsync());
   }
 
@@ -367,18 +395,18 @@ public class DemoSeederTests
     // The second pair moved out of the building onto the map: the camera is one picture in one
     // space, not one in each, and the old one must not survive the reinstall unreachable from the
     // registry.
-    var s = Create("sim-master2");
-    var inTheRoom = World(placements: [new DemoPlacement("sim-master2", "space/room", 39.015, -76.985)]);
+    var s = Create(MovedMasterCamera);
+    var inTheRoom = World(placements: [new DemoPlacement(MovedMasterCamera, RoomSpaceKey, 39.015, -76.985)]);
     await s.Seeder.InstallAsync(inTheRoom, CancellationToken.None);
     Assert.Single(await s.Db.CameraPlacements.ToListAsync());
 
-    var onTheMap = World(placements: [new DemoPlacement("sim-master2", "space/map", 39.05, -76.95)]);
+    var onTheMap = World(placements: [new DemoPlacement(MovedMasterCamera, MapSpaceKey, 39.05, -76.95)]);
     var report = await s.Seeder.InstallAsync(onTheMap, CancellationToken.None);
 
     var placement = Assert.Single(await s.Db.CameraPlacements.ToListAsync());
     var node = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.id == placement.object_id);
     // A space's id is the server's, so the map is found by the name the world gives it.
-    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == "Demo map");
+    var mapSpace = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.name == MapSpaceName);
     Assert.Equal(mapSpace.id, node.parent_id);
     Assert.Empty(report.SkippedCameras);
   }
@@ -386,27 +414,27 @@ public class DemoSeederTests
   [Fact]
   public async Task LandmarksAndTheirCalibrationsAreWrittenAndRemovedWithTheWorld()
   {
-    var s = Create("sim-master", "sim-ptz");
+    var s = Create(MasterCamera, PtzCamera);
     var world = World(
       placements:
       [
-        new DemoPlacement("sim-master", "space/room", 39.015, -76.985),
-        new DemoPlacement("sim-ptz", "space/room", 39.016, -76.985),
+        new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985),
+        new DemoPlacement(PtzCamera, RoomSpaceKey, 39.016, -76.985),
       ],
       landmarks:
       [
-        new DemoLandmark("landmark/l1", "L1 red", "space/room", 39.017, -76.984),
-        new DemoLandmark("landmark/l2", "L2 blue", "space/room", 39.018, -76.983),
+        new DemoLandmark(FirstLandmarkKey, FirstLandmarkName, RoomSpaceKey, 39.017, -76.984),
+        new DemoLandmark(SecondLandmarkKey, "l2 blue", RoomSpaceKey, 39.018, -76.983),
       ],
       groundMarks:
       [
-        new DemoGroundMark("sim-master", "landmark/l1", 0.4, 0.7),
-        new DemoGroundMark("sim-master", "landmark/l2", 0.6, 0.7),
+        new DemoGroundMark(MasterCamera, FirstLandmarkKey, 0.4, 0.7),
+        new DemoGroundMark(MasterCamera, SecondLandmarkKey, 0.6, 0.7),
       ],
       ptzObservations:
       [
-        new DemoPtzObservation("sim-ptz", "landmark/l1", 0.1, 0.3, 0.2),
-        new DemoPtzObservation("sim-ptz", "landmark/l2", -0.1, 0.4),
+        new DemoPtzObservation(PtzCamera, FirstLandmarkKey, 0.1, 0.3, 0.2),
+        new DemoPtzObservation(PtzCamera, SecondLandmarkKey, -0.1, 0.4),
       ]);
 
     var first = await s.Seeder.InstallAsync(world, CancellationToken.None);
@@ -434,21 +462,21 @@ public class DemoSeederTests
   [Fact]
   public async Task CalibrationIsSkippedForACameraTheDeploymentLacks()
   {
-    var s = Create("sim-master");
+    var s = Create(MasterCamera);
     var world = World(
-      placements: [new DemoPlacement("sim-master", "space/room", 39.015, -76.985)],
-      landmarks: [new DemoLandmark("landmark/l1", "L1 red", "space/room", 39.017, -76.984)],
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
+      landmarks: [new DemoLandmark(FirstLandmarkKey, FirstLandmarkName, RoomSpaceKey, 39.017, -76.984)],
       groundMarks:
       [
-        new DemoGroundMark("sim-master", "landmark/l1", 0.4, 0.7),
-        new DemoGroundMark("sim-missing", "landmark/l1", 0.5, 0.7),
+        new DemoGroundMark(MasterCamera, FirstLandmarkKey, 0.4, 0.7),
+        new DemoGroundMark(MissingCamera, FirstLandmarkKey, 0.5, 0.7),
       ]);
 
     var report = await s.Seeder.InstallAsync(world, CancellationToken.None);
 
-    Assert.Equal(["sim-missing"], report.SkippedCameras);
+    Assert.Equal([MissingCamera], report.SkippedCameras);
     var mark = Assert.Single(await s.Db.GroundObservations.ToListAsync());
-    Assert.Equal(DemoIds.Camera("sim-master"), mark.camera_id);
+    Assert.Equal(DemoIds.Camera(MasterCamera), mark.camera_id);
   }
 
 }

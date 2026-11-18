@@ -8,25 +8,31 @@ namespace VmsMap.Tests;
 // reads it from CameraInfo alone.
 public class CameraCatalogTests
 {
+  // The fixtures these tests share.
+  private const string CameraOneId = "cam1";
+  private const string ServerOneId = "srv1";
+  private const string FrontDoorName = "front door";
+
   [Fact]
   public void TheGeoFromDeviceFlagReachesTheMap()
   {
     var info = VmsCfgCameraCatalog.ToInfo(new CameraSetup
     {
-      CameraId = "cam1",
-      Name = "Front door",
-      ServerId = "srv1",
+      CameraId = CameraOneId,
+      Name = FrontDoorName,
+      ServerId = ServerOneId,
       GeoFromDevice = true,
     });
 
     Assert.True(info.GeoFromDevice);
-    Assert.Equal("cam1", info.CameraId);
+    Assert.Equal(CameraOneId, info.CameraId);
   }
 
   [Fact]
   public void ACameraWithoutTheFlagKeepsItsPlace()
   {
-    var info = VmsCfgCameraCatalog.ToInfo(new CameraSetup { CameraId = "cam1", ServerId = "srv1" });
+    var info = VmsCfgCameraCatalog.ToInfo(
+      new CameraSetup { CameraId = CameraOneId, ServerId = ServerOneId });
 
     Assert.False(info.GeoFromDevice);
   }

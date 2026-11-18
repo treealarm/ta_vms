@@ -13,6 +13,17 @@ namespace VmsMap.Tests;
 // resolve has to be refused rather than stored and puzzled over later.
 public class DiagramTemplateTests
 {
+  // The fixtures these tests share.
+  private const string Manufacturer = "OnvifSim";
+  private const string Model = "Simulated fixed camera";
+  private const string DigitalInputPart = "digital_input";
+  private const string InputToken = "input";
+  private const string LampToken = "lamp";
+  private const string RelayPart = "relay";
+  private const string CaptionRegion = "caption";
+  private const string PlaceholderValue = "x";
+  private const string CountsFromOne = "counts from 1";
+
   private static VmsMapDbContext NewDb() => new(
     new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -35,8 +46,8 @@ public class DiagramTemplateTests
   {
     name = "Camera rear panel",
     source_kind = DeviceObjectId.CameraSource,
-    device_manufacturer = "OnvifSim",
-    device_model = "Simulated fixed camera",
+    device_manufacturer = Manufacturer,
+    device_model = Model,
     auto_attach = true,
     regions = regions.ToList(),
   };
@@ -56,22 +67,22 @@ public class DiagramTemplateTests
     var service = new DiagramTypeService(db);
 
     var saved = await RoundTripAsync(service, Type(
-      Bound("input", DeviceObjectId.DigitalInputPart, DiagramPartMatch.Token, "input"),
-      Bound("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"),
-      Region("caption")));
+      Bound(InputToken, DeviceObjectId.DigitalInputPart, DiagramPartMatch.Token, InputToken),
+      Bound(LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken),
+      Region(CaptionRegion)));
 
     Assert.Equal(DeviceObjectId.CameraSource, saved.source_kind);
-    Assert.Equal("OnvifSim", saved.device_manufacturer);
-    Assert.Equal("Simulated fixed camera", saved.device_model);
+    Assert.Equal(Manufacturer, saved.device_manufacturer);
+    Assert.Equal(Model, saved.device_model);
     Assert.True(saved.auto_attach);
 
-    var input = saved.regions!.Single(r => r.region_key == "input");
+    var input = saved.regions!.Single(r => r.region_key == InputToken);
     Assert.Equal(DeviceObjectId.DigitalInputPart, input.part!.part_kind);
     Assert.Equal(DiagramPartMatch.Token, input.part.match_by);
-    Assert.Equal("input", input.part.match_value);
+    Assert.Equal(InputToken, input.part.match_value);
 
     // A region that is only a drawing or a caption binds nothing, and that is normal.
-    Assert.Null(saved.regions!.Single(r => r.region_key == "caption").part);
+    Assert.Null(saved.regions!.Single(r => r.region_key == CaptionRegion).part);
   }
 
   [Fact]
@@ -81,20 +92,20 @@ public class DiagramTemplateTests
     var service = new DiagramTypeService(db);
 
     var saved = await RoundTripAsync(service, Type(
-      Bound("lamp", " Relay ", "TOKEN ", "  lamp  ")));
+      Bound(LampToken, " Relay ", "TOKEN ", "  lamp  ")));
 
     var part = saved.regions!.Single().part!;
     Assert.Equal(DeviceObjectId.RelayPart, part.part_kind);
     Assert.Equal(DiagramPartMatch.Token, part.match_by);
-    Assert.Equal("lamp", part.match_value);
+    Assert.Equal(LampToken, part.match_value);
   }
 
   [Theory]
-  [InlineData(null, "token", "x", "part kind")]
-  [InlineData("digital_input", "colour", "x", "matches by")]
-  [InlineData("digital_input", "token", "  ", "says nothing")]
-  [InlineData("digital_input", "index", "0", "counts from 1")]
-  [InlineData("digital_input", "index", "first", "counts from 1")]
+  [InlineData(null, DiagramPartMatch.Token, PlaceholderValue, "part kind")]
+  [InlineData(DigitalInputPart, "colour", PlaceholderValue, "matches by")]
+  [InlineData(DigitalInputPart, DiagramPartMatch.Token, "  ", "says nothing")]
+  [InlineData(DigitalInputPart, DiagramPartMatch.Index, "0", CountsFromOne)]
+  [InlineData(DigitalInputPart, DiagramPartMatch.Index, "first", CountsFromOne)]
   public async Task ABindingNothingCouldResolveIsRefused(
     string? kind, string? by, string? value, string expected)
   {
@@ -113,8 +124,8 @@ public class DiagramTemplateTests
 
     var error = await Assert.ThrowsAsync<DiagramTypeConfigException>(
       () => service.UpdateListAsync([Type(
-        Bound("a", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"),
-        Bound("b", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"))]));
+        Bound("a", DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken),
+        Bound("b", DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken))]));
 
     Assert.Contains("Two regions", error.Message, StringComparison.Ordinal);
   }
@@ -139,12 +150,12 @@ public class DiagramTemplateTests
     var service = new DiagramTypeService(db);
 
     var saved = await RoundTripAsync(service, Type(
-      Bound("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp"),
-      Region("caption")));
+      Bound(LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken),
+      Region(CaptionRegion)));
 
     // The key is what a binding names, so a row left behind would bind whatever region takes the
     // key next.
-    saved.regions = saved.regions!.Where(r => r.region_key != "lamp").ToList();
+    saved.regions = saved.regions!.Where(r => r.region_key != LampToken).ToList();
     await service.UpdateListAsync([saved]);
 
     Assert.Empty(db.DiagramTypeParts);
@@ -157,14 +168,14 @@ public class DiagramTemplateTests
     var service = new DiagramTypeService(db);
 
     var saved = await RoundTripAsync(service, Type(
-      Bound("lamp", DeviceObjectId.RelayPart, DiagramPartMatch.Token, "lamp")));
+      Bound(LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken)));
 
-    saved.regions![0].part = null;
+    var region = Assert.Single(saved.regions!);
+    region.part = null;
     await service.UpdateListAsync([saved]);
 
     var reloaded = await RoundTripAsync(service, saved);
-    Assert.Single(reloaded.regions!);
-    Assert.Null(reloaded.regions![0].part);
+    Assert.Null(Assert.Single(reloaded.regions!).part);
     Assert.Empty(db.DiagramTypeParts);
   }
 
@@ -189,19 +200,30 @@ public class DiagramTemplateTests
 // nothing at all when two are equally specific.
 public class DiagramModelMatchTests
 {
+  // The fixtures these tests share.
+  private const string Manufacturer = "OnvifSim";
+  private const string Model = "Simulated fixed camera";
+  private const string CameraSource = "camera";
+  private const string AnyTypeId = "any";
+  private const string ExactTypeId = "exact";
+  private const string RearTypeId = "rear";
+  private const string FrontTypeId = "front";
+  private const string SwitchSource = "switch";
+  private const string UnknownModel = "X";
+
   private static DiagramTypeCandidate Type(
     string id, string manufacturer = "", string model = "", bool autoAttach = true,
-    string sourceKind = "camera") => new(id, sourceKind, manufacturer, model, autoAttach);
+    string sourceKind = CameraSource) => new(id, sourceKind, manufacturer, model, autoAttach);
 
   [Fact]
   public void AModelMatchWinsOverAWildcard()
   {
     var chosen = DiagramModelMatch.Select(
-      [Type("any"), Type("byMaker", manufacturer: "OnvifSim"),
-       Type("exact", manufacturer: "OnvifSim", model: "Simulated fixed camera")],
-      "camera", "OnvifSim", "Simulated fixed camera");
+      [Type(AnyTypeId), Type("byMaker", manufacturer: Manufacturer),
+       Type(ExactTypeId, manufacturer: Manufacturer, model: Model)],
+      CameraSource, Manufacturer, Model);
 
-    Assert.Equal("exact", chosen.TypeId);
+    Assert.Equal(ExactTypeId, chosen.TypeId);
     Assert.Null(chosen.Ambiguity);
   }
 
@@ -209,34 +231,34 @@ public class DiagramModelMatchTests
   public void TheComparisonIgnoresCaseAndSurroundingSpace()
   {
     var chosen = DiagramModelMatch.Select(
-      [Type("exact", manufacturer: " onvifsim ", model: "SIMULATED FIXED CAMERA")],
-      "camera", "OnvifSim", "Simulated fixed camera");
+      [Type(ExactTypeId, manufacturer: " onvifsim ", model: "SIMULATED FIXED CAMERA")],
+      CameraSource, Manufacturer, Model);
 
-    Assert.Equal("exact", chosen.TypeId);
+    Assert.Equal(ExactTypeId, chosen.TypeId);
   }
 
   [Fact]
   public void AnEmptyFieldIsAnyDeviceOfThatKind()
   {
-    var chosen = DiagramModelMatch.Select([Type("any")], "camera", "Whatever", "X");
+    var chosen = DiagramModelMatch.Select([Type(AnyTypeId)], CameraSource, "Whatever", UnknownModel);
 
-    Assert.Equal("any", chosen.TypeId);
+    Assert.Equal(AnyTypeId, chosen.TypeId);
   }
 
   [Fact]
   public void ATieCreatesNothingAndSaysWhy()
   {
     var chosen = DiagramModelMatch.Select(
-      [Type("rear"), Type("front", manufacturer: "OnvifSim")],
-      "camera", "OnvifSim", "Simulated fixed camera");
+      [Type(RearTypeId), Type(FrontTypeId, manufacturer: Manufacturer)],
+      CameraSource, Manufacturer, Model);
 
     // "front" is the only one with a manufacturer — it wins, it does not tie.
-    Assert.Equal("front", chosen.TypeId);
+    Assert.Equal(FrontTypeId, chosen.TypeId);
 
     var tie = DiagramModelMatch.Select(
-      [Type("rear", manufacturer: "OnvifSim", model: "X"),
-       Type("front", manufacturer: "OnvifSim", model: "X")],
-      "camera", "OnvifSim", "X");
+      [Type(RearTypeId, manufacturer: Manufacturer, model: UnknownModel),
+       Type(FrontTypeId, manufacturer: Manufacturer, model: UnknownModel)],
+      CameraSource, Manufacturer, UnknownModel);
 
     Assert.Null(tie.TypeId);
     Assert.NotNull(tie.Ambiguity);
@@ -246,8 +268,8 @@ public class DiagramModelMatchTests
   public void ATemplateThatDoesNotAttachItselfIsNotACandidate()
   {
     var chosen = DiagramModelMatch.Select(
-      [Type("manual", manufacturer: "OnvifSim", model: "X", autoAttach: false)],
-      "camera", "OnvifSim", "X");
+      [Type("manual", manufacturer: Manufacturer, model: UnknownModel, autoAttach: false)],
+      CameraSource, Manufacturer, UnknownModel);
 
     Assert.Null(chosen.TypeId);
     Assert.Null(chosen.Ambiguity);
@@ -257,7 +279,7 @@ public class DiagramModelMatchTests
   public void AnotherSourceKindIsAnotherDeviceType()
   {
     var chosen = DiagramModelMatch.Select(
-      [Type("switch", sourceKind: "switch")], "camera", "OnvifSim", "X");
+      [Type(SwitchSource, sourceKind: SwitchSource)], CameraSource, Manufacturer, UnknownModel);
 
     Assert.Null(chosen.TypeId);
   }
@@ -267,6 +289,13 @@ public class DiagramModelMatchTests
 // conflict that nobody wins.
 public class DiagramTemplateBindingTests
 {
+  // The fixtures these tests share.
+  private const string LampToken = "lamp";
+  private const string RelayPart = "relay";
+  private const string RelayOneToken = "relay1";
+  private const string TokenA = "a";
+  private const string TokenB = "b";
+
   private static DevicePartRef Part(string kind, string token, string name = "") =>
     new(kind, token, name);
 
@@ -277,10 +306,10 @@ public class DiagramTemplateBindingTests
   public void ATokenFindsItsPart()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("lamp", "relay", DiagramPartMatch.Token, "lamp")],
-      [Part("relay", "lamp"), Part("relay", "peer")]);
+      [Rule(LampToken, RelayPart, DiagramPartMatch.Token, LampToken)],
+      [Part(RelayPart, LampToken), Part(RelayPart, "peer")]);
 
-    Assert.Equal("lamp", Assert.Single(result.Bound).Part.Token);
+    Assert.Equal(LampToken, Assert.Single(result.Bound).Part.Token);
     Assert.Empty(result.Warnings);
   }
 
@@ -288,18 +317,18 @@ public class DiagramTemplateBindingTests
   public void ANameIsTheOperatorsAndIgnoresCase()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("lamp", "relay", DiagramPartMatch.Name, " Lamp ")],
-      [Part("relay", "relay1", "lamp")]);
+      [Rule(LampToken, RelayPart, DiagramPartMatch.Name, " Lamp ")],
+      [Part(RelayPart, RelayOneToken, LampToken)]);
 
-    Assert.Equal("relay1", Assert.Single(result.Bound).Part.Token);
+    Assert.Equal(RelayOneToken, Assert.Single(result.Bound).Part.Token);
   }
 
   [Fact]
   public void AnEmptyNameMatchesNothing()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("lamp", "relay", DiagramPartMatch.Name, "")],
-      [Part("relay", "relay1", "")]);
+      [Rule(LampToken, RelayPart, DiagramPartMatch.Name, "")],
+      [Part(RelayPart, RelayOneToken, "")]);
 
     Assert.Empty(result.Bound);
   }
@@ -308,8 +337,8 @@ public class DiagramTemplateBindingTests
   public void TwoPartsWithOneNameBindNeither()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("lamp", "relay", DiagramPartMatch.Name, "lamp")],
-      [Part("relay", "a", "lamp"), Part("relay", "b", "lamp")]);
+      [Rule(LampToken, RelayPart, DiagramPartMatch.Name, LampToken)],
+      [Part(RelayPart, TokenA, LampToken), Part(RelayPart, TokenB, LampToken)]);
 
     Assert.Empty(result.Bound);
     Assert.NotEmpty(result.Warnings);
@@ -319,11 +348,11 @@ public class DiagramTemplateBindingTests
   public void AnIndexCountsFromOneInTokenOrder()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("second", "relay", DiagramPartMatch.Index, "2")],
-      [Part("relay", "c"), Part("relay", "a"), Part("relay", "b")]);
+      [Rule("second", RelayPart, DiagramPartMatch.Index, "2")],
+      [Part(RelayPart, "c"), Part(RelayPart, TokenA), Part(RelayPart, TokenB)]);
 
     // The manifest's order is not a contract; the order of the tokens is.
-    Assert.Equal("b", Assert.Single(result.Bound).Part.Token);
+    Assert.Equal(TokenB, Assert.Single(result.Bound).Part.Token);
   }
 
   [Fact]
@@ -331,10 +360,10 @@ public class DiagramTemplateBindingTests
   {
     var result = DiagramTemplateBinding.Bind(
       [
-        Rule("a", "relay", DiagramPartMatch.Token, "lamp"),
-        Rule("b", "relay", DiagramPartMatch.Name, "lamp"),
+        Rule(TokenA, RelayPart, DiagramPartMatch.Token, LampToken),
+        Rule(TokenB, RelayPart, DiagramPartMatch.Name, LampToken),
       ],
-      [Part("relay", "lamp", "lamp")]);
+      [Part(RelayPart, LampToken, LampToken)]);
 
     Assert.Empty(result.Bound);
     Assert.NotEmpty(result.Warnings);
@@ -344,8 +373,8 @@ public class DiagramTemplateBindingTests
   public void APartThatIsNotThereBindsNothing()
   {
     var result = DiagramTemplateBinding.Bind(
-      [Rule("lamp", "relay", DiagramPartMatch.Token, "lamp")],
-      [Part("digital_input", "lamp")]);
+      [Rule(LampToken, RelayPart, DiagramPartMatch.Token, LampToken)],
+      [Part("digital_input", LampToken)]);
 
     // Same token, other kind: a relay region cannot stand for an input.
     Assert.Empty(result.Bound);

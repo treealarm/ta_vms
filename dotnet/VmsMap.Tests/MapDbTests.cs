@@ -10,6 +10,20 @@ namespace VmsMap.Tests;
 
 public class MapDbTests
 {
+  // The fixtures these tests share.
+  private const string CameraLabel = "camera";
+  private const string BuildingLabel = "building";
+  private const string MainMapName = "main map";
+  private const string FloorPlanName = "floor";
+  private const string FloorRename = "floor 2";
+  private const string PngMime = "image/png";
+  private const string OwnerLabel = "owner";
+  private const string ViewLabel = "view";
+  private const string PlainLabel = "plain";
+  private const string RackLabel = "rack";
+  private const string RenamedLabel = "renamed";
+  private const string VisualColor = "#ff0000";
+
   private static (VmsMapDbContext Db, MapDb Map) CreateDb()
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
@@ -25,20 +39,20 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var parent = new BaseMarkerDTO { name = "Building" };
-    var child = new BaseMarkerDTO { name = "Floor 1", parent_id = null };
+    var parent = new BaseMarkerDTO { name = BuildingLabel };
+    var child = new BaseMarkerDTO { name = "floor 1", parent_id = null };
     await map.UpdateHierarchyAsync(new[] { parent, child });
 
-    var otherParent = new BaseMarkerDTO { name = "Building 2" };
+    var otherParent = new BaseMarkerDTO { name = "building 2" };
     await map.UpdateHierarchyAsync(new[] { otherParent });
 
     // Square's UpdateHierarchyAsync called Update() on the unchanged entity: this rename and
     // move were silently dropped.
-    child.name = "Floor 2";
+    child.name = FloorRename;
     child.parent_id = otherParent.id;
     await map.UpdateHierarchyAsync(new[] { child });
 
-    var stored = await db.Markers.SingleAsync(m => m.name == "Floor 2");
+    var stored = await db.Markers.SingleAsync(m => m.name == FloorRename);
     Assert.Equal(Utils.ConvertObjectIdToGuid(otherParent.id), stored.parent_id);
   }
 
@@ -46,11 +60,11 @@ public class MapDbTests
   public async Task MovingANodeUnderItsOwnDescendantIsRefused()
   {
     var (db, map) = CreateDb();
-    var container = new BaseMarkerDTO { name = "Container" };
+    var container = new BaseMarkerDTO { name = "container" };
     await map.UpdateHierarchyAsync([container]);
-    var child = new BaseMarkerDTO { name = "Child", parent_id = container.id };
+    var child = new BaseMarkerDTO { name = "child", parent_id = container.id };
     await map.UpdateHierarchyAsync([child]);
-    var grandchild = new BaseMarkerDTO { name = "Grandchild", parent_id = child.id };
+    var grandchild = new BaseMarkerDTO { name = "grandchild", parent_id = child.id };
     await map.UpdateHierarchyAsync([grandchild]);
 
     container.parent_id = grandchild.id;
@@ -66,15 +80,15 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var original = new BaseMarkerDTO { name = "Camera" };
+    var original = new BaseMarkerDTO { name = CameraLabel };
     await map.UpdateHierarchyAsync([original]);
-    var picture = new BaseMarkerDTO { name = "Camera", owner_id = original.id };
+    var picture = new BaseMarkerDTO { name = CameraLabel, owner_id = original.id };
     await map.UpdateHierarchyAsync([picture]);
 
     // The second picture is dropped from the first picture's canvas: it must show the node both
     // show. Every read that answers through an owner resolves it in one hop, so a chain would make
     // its end answer nothing.
-    var second = new BaseMarkerDTO { name = "Camera", owner_id = picture.id };
+    var second = new BaseMarkerDTO { name = CameraLabel, owner_id = picture.id };
     await map.UpdateHierarchyAsync([second]);
 
     var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(second.id!));
@@ -87,7 +101,7 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var node = new BaseMarkerDTO { name = "Camera" };
+    var node = new BaseMarkerDTO { name = CameraLabel };
     await map.UpdateHierarchyAsync([node]);
 
     node.owner_id = node.id;
@@ -101,11 +115,11 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var owner = new BaseMarkerDTO { name = "Rack" };
+    var owner = new BaseMarkerDTO { name = RackLabel };
     await map.UpdateHierarchyAsync([owner]);
-    var replica = new BaseMarkerDTO { name = "Rack", owner_id = owner.id };
+    var replica = new BaseMarkerDTO { name = RackLabel, owner_id = owner.id };
     await map.UpdateHierarchyAsync([replica]);
-    var other = new BaseMarkerDTO { name = "Other" };
+    var other = new BaseMarkerDTO { name = "other" };
     await map.UpdateHierarchyAsync([other]);
 
     await map.RemoveAsync([owner.id!]);
@@ -119,8 +133,8 @@ public class MapDbTests
   public async Task MovingTwoNodesInOneWriteIsCheckedAgainstWhereTheyWillBe()
   {
     var (db, map) = CreateDb();
-    var first = new BaseMarkerDTO { name = "First" };
-    var second = new BaseMarkerDTO { name = "Second" };
+    var first = new BaseMarkerDTO { name = "first" };
+    var second = new BaseMarkerDTO { name = "second" };
     await map.UpdateHierarchyAsync([first, second]);
 
     // First goes under Second while Second goes under First: together that is a loop.
@@ -135,14 +149,14 @@ public class MapDbTests
   public async Task MovingAContainerRecomputesTheCanvasOfItsWholeSubtree()
   {
     var (db, map) = CreateDb();
-    var first = Space(db, "First map");
-    var second = Space(db, "Second map");
+    var first = Space(db, "first map");
+    var second = Space(db, "second map");
 
-    var container = new BaseMarkerDTO { name = "District", parent_id = first.ToString() };
+    var container = new BaseMarkerDTO { name = "district", parent_id = first.ToString() };
     await map.UpdateHierarchyAsync([container]);
-    var building = new BaseMarkerDTO { name = "Building", parent_id = container.id };
+    var building = new BaseMarkerDTO { name = BuildingLabel, parent_id = container.id };
     await map.UpdateHierarchyAsync([building]);
-    var camera = new BaseMarkerDTO { name = "Camera", parent_id = building.id };
+    var camera = new BaseMarkerDTO { name = CameraLabel, parent_id = building.id };
     await map.UpdateHierarchyAsync([camera]);
 
     var geo = new GeoService(db, new LevelService(db));
@@ -184,7 +198,7 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var node = new BaseMarkerDTO { name = "Camera" };
+    var node = new BaseMarkerDTO { name = CameraLabel };
     await map.UpdateHierarchyAsync(new[] { node });
 
     Assert.False(string.IsNullOrEmpty(node.id));
@@ -196,11 +210,11 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var owner = new BaseMarkerDTO { name = "Owner" };
+    var owner = new BaseMarkerDTO { name = OwnerLabel };
     await map.UpdateHierarchyAsync(new[] { owner });
 
-    var view = new BaseMarkerDTO { name = "View", owner_id = owner.id };
-    var plain = new BaseMarkerDTO { name = "Plain" };
+    var view = new BaseMarkerDTO { name = ViewLabel, owner_id = owner.id };
+    var plain = new BaseMarkerDTO { name = PlainLabel };
     await map.UpdateHierarchyAsync(new[] { view, plain });
 
     // Square returned only the replicas and the owners fetched for them, so `plain` vanished.
@@ -210,9 +224,9 @@ public class MapDbTests
     });
 
     Assert.Equal(3, result.Count);
-    Assert.Contains(result, kv => kv.Value.name == "Plain");
-    Assert.Contains(result, kv => kv.Value.name == "Owner");
-    Assert.Contains(result, kv => kv.Value.name == "View");
+    Assert.Contains(result, kv => kv.Value.name == PlainLabel);
+    Assert.Contains(result, kv => kv.Value.name == OwnerLabel);
+    Assert.Contains(result, kv => kv.Value.name == ViewLabel);
   }
 
   [Fact]
@@ -222,13 +236,13 @@ public class MapDbTests
     var files = new FileService(db);
 
     var bytes = new byte[] { 1, 2, 3, 4 };
-    var stored = await files.PutAsync("image/png", bytes);
+    var stored = await files.PutAsync(PngMime, bytes);
 
     var loaded = await files.GetAsync(Utils.ConvertGuidToObjectId(stored.id));
 
     Assert.NotNull(loaded);
     Assert.Equal(bytes, loaded!.bytes);
-    Assert.Equal("image/png", loaded.mime);
+    Assert.Equal(PngMime, loaded.mime);
     Assert.False(string.IsNullOrEmpty(loaded.etag));
   }
 
@@ -240,7 +254,7 @@ public class MapDbTests
 
     var tooBig = new byte[FileService.MaxFileBytes + 1];
 
-    await Assert.ThrowsAsync<ArgumentException>(() => files.PutAsync("image/png", tooBig));
+    await Assert.ThrowsAsync<ArgumentException>(() => files.PutAsync(PngMime, tooBig));
   }
 
   [Fact]
@@ -249,18 +263,18 @@ public class MapDbTests
     var (db, _) = CreateDb();
     var visuals = new VisualService(db);
 
-    var node = new BaseMarkerDTO { name = "Camera" };
+    var node = new BaseMarkerDTO { name = CameraLabel };
     var map = new MapDb(db);
     await map.UpdateHierarchyAsync(new[] { node });
 
     await visuals.UpdateListAsync(new List<VisualDTO>
     {
-      new() { object_id = node.id, color = "#ff0000", rotation_deg = 90, text = "cam" }
+      new() { object_id = node.id, color = VisualColor, rotation_deg = 90, text = "cam" }
     });
 
     var loaded = await visuals.GetListByIdsAsync(new List<string> { node.id! });
 
-    Assert.Equal("#ff0000", loaded[node.id!].color);
+    Assert.Equal(VisualColor, loaded[node.id!].color);
     Assert.Equal(90, loaded[node.id!].rotation_deg);
   }
 
@@ -271,10 +285,10 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var original = new BaseMarkerDTO { name = "Camera" };
-    var other = new BaseMarkerDTO { name = "Other camera" };
+    var original = new BaseMarkerDTO { name = CameraLabel };
+    var other = new BaseMarkerDTO { name = "other camera" };
     await map.UpdateHierarchyAsync([original, other]);
-    await map.UpdateHierarchyAsync([new BaseMarkerDTO { name = "Camera", owner_id = original.id }]);
+    await map.UpdateHierarchyAsync([new BaseMarkerDTO { name = CameraLabel, owner_id = original.id }]);
 
     // A picture of a picture would make everything that resolves an owner in one hop -- states,
     // values, camera id, node kind, rights -- answer with what the new owner does not have.
@@ -290,12 +304,12 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var orphan = new BaseMarkerDTO { name = "Orphan", parent_id = Guid.NewGuid().ToString() };
+    var orphan = new BaseMarkerDTO { name = "orphan", parent_id = Guid.NewGuid().ToString() };
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([orphan]));
     Assert.Empty(await db.Markers.ToListAsync());
 
     // A move to a node that does not exist is refused too, and the node stays where it was.
-    var node = new BaseMarkerDTO { name = "Building" };
+    var node = new BaseMarkerDTO { name = BuildingLabel };
     await map.UpdateHierarchyAsync([node]);
     node.parent_id = Guid.NewGuid().ToString();
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([node]));
@@ -310,7 +324,7 @@ public class MapDbTests
 
     var replica = new BaseMarkerDTO
     {
-      name = "Camera",
+      name = CameraLabel,
       owner_id = Guid.NewGuid().ToString(),
     };
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([replica]));
@@ -327,14 +341,14 @@ public class MapDbTests
     var pictureId = Guid.NewGuid().ToString();
 
     await map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = parentId, name = "Building" },
-      new BaseMarkerDTO { id = originalId, parent_id = parentId, name = "Camera" },
+      new BaseMarkerDTO { id = parentId, name = BuildingLabel },
+      new BaseMarkerDTO { id = originalId, parent_id = parentId, name = CameraLabel },
       new BaseMarkerDTO
       {
         id = pictureId,
         parent_id = parentId,
         owner_id = originalId,
-        name = "Camera picture",
+        name = "camera picture",
       },
     ]);
 
@@ -354,15 +368,15 @@ public class MapDbTests
     {
       id = node,
       parent_id = dangling,
-      name = "Legacy",
+      name = "legacy",
     });
     await db.SaveChangesAsync();
 
     await map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = node.ToString(), parent_id = dangling.ToString(), name = "Renamed" }]);
+      new BaseMarkerDTO { id = node.ToString(), parent_id = dangling.ToString(), name = RenamedLabel }]);
 
     var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == node);
-    Assert.Equal("Renamed", stored.name);
+    Assert.Equal(RenamedLabel, stored.name);
   }
 
   [Fact]
@@ -370,16 +384,16 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var building = new BaseMarkerDTO { name = "Building" };
+    var building = new BaseMarkerDTO { name = BuildingLabel };
     await map.UpdateHierarchyAsync([building]);
 
     var spaceId = Guid.NewGuid();
-    db.Markers.Add(new DBMarker { id = spaceId, name = "Main map" });
+    db.Markers.Add(new DBMarker { id = spaceId, name = MainMapName });
     db.Spaces.Add(new DBSpace { object_id = spaceId, kind = SpaceKinds.Map });
     await db.SaveChangesAsync();
 
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = spaceId.ToString(), parent_id = building.id, name = "Main map" }]));
+      new BaseMarkerDTO { id = spaceId.ToString(), parent_id = building.id, name = MainMapName }]));
 
     Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == spaceId)).parent_id);
   }
@@ -389,25 +403,25 @@ public class MapDbTests
   {
     var (db, map) = CreateDb();
 
-    var building = new BaseMarkerDTO { name = "Building" };
+    var building = new BaseMarkerDTO { name = BuildingLabel };
     await map.UpdateHierarchyAsync([building]);
 
     var mapId = Guid.NewGuid();
     var planId = Guid.NewGuid();
     db.Markers.AddRange(
-      new DBMarker { id = mapId, name = "Main map" },
-      new DBMarker { id = planId, name = "Floor" });
+      new DBMarker { id = mapId, name = MainMapName },
+      new DBMarker { id = planId, name = FloorPlanName });
     db.Spaces.Add(new DBSpace { object_id = mapId, kind = SpaceKinds.Map });
     db.Spaces.Add(new DBSpace { object_id = planId, kind = SpaceKinds.Plan });
     await db.SaveChangesAsync();
 
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = planId.ToString(), parent_id = building.id, name = "Floor" }]));
+      new BaseMarkerDTO { id = planId.ToString(), parent_id = building.id, name = FloorPlanName }]));
     Assert.Null((await db.Markers.AsNoTracking().SingleAsync(m => m.id == planId)).parent_id);
 
     // The model's own shape is allowed: a plan lies in a space.
     await map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = planId.ToString(), parent_id = mapId.ToString(), name = "Floor" }]);
+      new BaseMarkerDTO { id = planId.ToString(), parent_id = mapId.ToString(), name = FloorPlanName }]);
     Assert.Equal(mapId, (await db.Markers.AsNoTracking().SingleAsync(m => m.id == planId)).parent_id);
   }
 
@@ -420,7 +434,7 @@ public class MapDbTests
     await map.UpdateHierarchyAsync([server]);
 
     var spaceId = Guid.NewGuid();
-    db.Markers.Add(new DBMarker { id = spaceId, name = "Main map" });
+    db.Markers.Add(new DBMarker { id = spaceId, name = MainMapName });
     db.Spaces.Add(new DBSpace { object_id = spaceId, kind = SpaceKinds.Map });
 
     var cameraId = Guid.Parse(CameraObjectId.For(TestCameras.One));
@@ -428,7 +442,7 @@ public class MapDbTests
     {
       id = cameraId,
       parent_id = Guid.Parse(server.id!),
-      name = "Camera",
+      name = CameraLabel,
     });
     db.DeviceNodes.Add(new DBDeviceNode
     {
@@ -440,12 +454,12 @@ public class MapDbTests
     await db.SaveChangesAsync();
 
     await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = spaceId.ToString(), name = "Camera" }]));
+      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = spaceId.ToString(), name = CameraLabel }]));
     Assert.Equal(Guid.Parse(server.id!),
       (await db.Markers.AsNoTracking().SingleAsync(m => m.id == cameraId)).parent_id);
 
     // Under the server is where it stands.
     await map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = server.id, name = "Camera" }]);
+      new BaseMarkerDTO { id = cameraId.ToString(), parent_id = server.id, name = CameraLabel }]);
   }
 }

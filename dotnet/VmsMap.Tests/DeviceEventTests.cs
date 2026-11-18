@@ -17,9 +17,13 @@ public class DeviceEventTranslatorTests
 {
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
 
+  // The fixtures these tests share: the part's token and the contact value that becomes a state.
+  private const string PartToken = "part1";
+  private const string OpenContact = "open";
+
   private static DeviceEventMessage Message(
     string partKind, JsonElement? contact = null, JsonElement? active = null) =>
-    new("camera", CameraId, partKind, "part1", contact, active,
+    new("camera", CameraId, partKind, PartToken, contact, active,
         Previous: null, Initialized: false, DateTimeOffset.UtcNow,
         Epoch: Guid.NewGuid().ToString(), Seq: 1, PolarityKnown: true);
 
@@ -27,7 +31,7 @@ public class DeviceEventTranslatorTests
   private static JsonElement Bool(bool value) => JsonSerializer.SerializeToElement(value);
 
   [Theory]
-  [InlineData("open", DeviceEventTranslator.SensorOpen)]
+  [InlineData(OpenContact, DeviceEventTranslator.SensorOpen)]
   [InlineData("closed", DeviceEventTranslator.SensorClosed)]
   public void AnInputBecomesItsSensorState(string contact, string expected)
   {
@@ -67,13 +71,13 @@ public class DeviceEventTranslatorTests
   public void TheEventAddressesItsSource()
   {
     var change = new DeviceEventTranslator().Translate(
-      Message(DeviceObjectId.DigitalInputPart, contact: Text("open")));
+      Message(DeviceObjectId.DigitalInputPart, contact: Text(OpenContact)));
 
     var props = change!.ExtraProps.ToDictionary(p => p.prop_name!, p => p.str_val);
     Assert.Equal(CameraId, props["camera_id"]);
     Assert.Equal(DeviceObjectId.DigitalInputPart, props["part_kind"]);
-    Assert.Equal("part1", props["token"]);
-    Assert.Equal("open", props["contact"]);
+    Assert.Equal(PartToken, props["token"]);
+    Assert.Equal(OpenContact, props["contact"]);
     Assert.Equal("true", props["polarity_known"]);
     Assert.True(props.ContainsKey("observed_at"));
   }
@@ -83,6 +87,16 @@ public class DeviceEventWriterTests
 {
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string Token = "input1";
+
+  // The fixtures these tests share: the contact values, the snapshot's device info, and the empty
+  // answer that replaces the stored model.
+  private const string OpenContact = "open";
+  private const string ClosedContact = "closed";
+  private const string CameraSourceKind = "camera";
+  private const string ManufacturerName = "OnvifSim";
+  private const string ModelName = "Simulated fixed camera";
+  private const string FirmwareVersion = "0.1.0";
+  private const string EmptyValue = "";
 
   private sealed record Services(
     VmsMapDbContext Db, DeviceNodeService Nodes, DeviceEventWriter Writer,
@@ -127,7 +141,7 @@ public class DeviceEventWriterTests
 
   private static DeviceEventMessage Input(
     string contact, string epoch, long seq, DateTimeOffset? at = null) =>
-    new("camera", CameraId, DeviceObjectId.DigitalInputPart, Token,
+    new(CameraSourceKind, CameraId, DeviceObjectId.DigitalInputPart, Token,
         System.Text.Json.JsonSerializer.SerializeToElement(contact),
         Active: null, Previous: null, Initialized: false,
         ObservedAt: at ?? DateTimeOffset.UtcNow,
@@ -148,8 +162,8 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
     var epoch = Guid.NewGuid().ToString();
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", epoch, 5), default);
-    await s.Writer.ApplyAsync(s.ObjectId, Input("closed", epoch, 4), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, epoch, 5), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(ClosedContact, epoch, 4), default);
 
     var states = await States(s.Db, s.ObjectId);
     Assert.Contains(DeviceEventTranslator.SensorOpen, states);
@@ -165,8 +179,8 @@ public class DeviceEventWriterTests
     var second = Guid.NewGuid().ToString();
     var now = DateTimeOffset.UtcNow;
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", first, 10, now), default);
-    await s.Writer.ApplyAsync(s.ObjectId, Input("closed", second, 1, now.AddSeconds(1)), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, first, 10, now), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(ClosedContact, second, 1, now.AddSeconds(1)), default);
 
     var states = await States(s.Db, s.ObjectId);
     Assert.Contains(DeviceEventTranslator.SensorClosed, states);
@@ -187,14 +201,14 @@ public class DeviceEventWriterTests
     var second = Guid.NewGuid().ToString();
     var now = DateTimeOffset.UtcNow;
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", first, 42, now), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, first, 42, now), default);
 
     await s.Reconciler.ApplyAsync(
       new DeviceSnapshotMessage(
-        "camera", CameraId, Reachable: true, now.AddSeconds(1), second, Device: null,
+        CameraSourceKind, CameraId, Reachable: true, now.AddSeconds(1), second, Device: null,
         [new DeviceSnapshotPartMessage(
           DeviceObjectId.DigitalInputPart, Token, IdleState: null,
-          System.Text.Json.JsonSerializer.SerializeToElement("closed"), Active: null,
+          System.Text.Json.JsonSerializer.SerializeToElement(ClosedContact), Active: null,
           Present: true)]),
       default);
 
@@ -202,14 +216,14 @@ public class DeviceEventWriterTests
     Assert.Equal(Guid.Parse(second), node.last_epoch);
     Assert.Equal(0, node.last_seq);
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", second, 1, now.AddSeconds(2)), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, second, 1, now.AddSeconds(2)), default);
 
     Assert.Contains(DeviceEventTranslator.SensorOpen, await States(s.Db, s.ObjectId));
   }
 
   private static DeviceSnapshotMessage Snapshot(
     DeviceInfoMessage? device, DateTimeOffset? at = null) =>
-    new("camera", CameraId, Reachable: true, at ?? DateTimeOffset.UtcNow,
+    new(CameraSourceKind, CameraId, Reachable: true, at ?? DateTimeOffset.UtcNow,
         Guid.NewGuid().ToString(), device, []);
 
   [Fact]
@@ -218,16 +232,16 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
 
     await s.Reconciler.ApplyAsync(
-      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
+      Snapshot(new DeviceInfoMessage(ManufacturerName, ModelName, FirmwareVersion)), default);
 
     // Stored, not remembered from the message: a diagram template must still match after the
     // process that heard the camera has restarted.
     var info = await s.Db.DeviceInfos.SingleAsync();
     Assert.Equal(DeviceObjectId.CameraSource, info.source_kind);
     Assert.Equal(CameraId, info.source_id);
-    Assert.Equal("OnvifSim", info.manufacturer);
-    Assert.Equal("Simulated fixed camera", info.model);
-    Assert.Equal("0.1.0", info.firmware);
+    Assert.Equal(ManufacturerName, info.manufacturer);
+    Assert.Equal(ModelName, info.model);
+    Assert.Equal(FirmwareVersion, info.firmware);
   }
 
   [Fact]
@@ -236,14 +250,14 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
 
     await s.Reconciler.ApplyAsync(
-      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
+      Snapshot(new DeviceInfoMessage(ManufacturerName, ModelName, FirmwareVersion)), default);
 
     // A timeout is "not asked", not "says nothing": the network dropping for a minute must not
     // lose the model the diagram was matched by.
     await s.Reconciler.ApplyAsync(Snapshot(device: null), default);
 
     var info = await s.Db.DeviceInfos.SingleAsync();
-    Assert.Equal("Simulated fixed camera", info.model);
+    Assert.Equal(ModelName, info.model);
   }
 
   [Fact]
@@ -252,8 +266,8 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
 
     await s.Reconciler.ApplyAsync(
-      Snapshot(new DeviceInfoMessage("OnvifSim", "Simulated fixed camera", "0.1.0")), default);
-    await s.Reconciler.ApplyAsync(Snapshot(new DeviceInfoMessage("", "", "")), default);
+      Snapshot(new DeviceInfoMessage(ManufacturerName, ModelName, FirmwareVersion)), default);
+    await s.Reconciler.ApplyAsync(Snapshot(new DeviceInfoMessage(EmptyValue, EmptyValue, EmptyValue)), default);
 
     // The camera answered. That is the fact the stored row follows, even when the answer is empty.
     var info = await s.Db.DeviceInfos.SingleAsync();
@@ -266,13 +280,13 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
     var now = DateTimeOffset.UtcNow;
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", Guid.NewGuid().ToString(), 1, now), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, Guid.NewGuid().ToString(), 1, now), default);
     await s.Writer.ApplyAsync(
-      s.ObjectId, Input("closed", Guid.NewGuid().ToString(), 1, now.AddSeconds(1)), default);
+      s.ObjectId, Input(ClosedContact, Guid.NewGuid().ToString(), 1, now.AddSeconds(1)), default);
 
     // A process whose clock is behind must not overwrite the newer state.
     await s.Writer.ApplyAsync(
-      s.ObjectId, Input("open", Guid.NewGuid().ToString(), 1, now.AddSeconds(-10)), default);
+      s.ObjectId, Input(OpenContact, Guid.NewGuid().ToString(), 1, now.AddSeconds(-10)), default);
 
     var states = await States(s.Db, s.ObjectId);
     Assert.Contains(DeviceEventTranslator.SensorClosed, states);
@@ -283,7 +297,7 @@ public class DeviceEventWriterTests
   public async Task TheSameDeliveryDoesNotWriteASecondEvent()
   {
     var s = await CreateAsync();
-    var message = Input("open", Guid.NewGuid().ToString(), 7);
+    var message = Input(OpenContact, Guid.NewGuid().ToString(), 7);
 
     await s.Writer.ApplyAsync(s.ObjectId, message, default);
     await s.Writer.ApplyAsync(s.ObjectId, message, default);
@@ -297,8 +311,8 @@ public class DeviceEventWriterTests
     var s = await CreateAsync();
     var epoch = Guid.NewGuid().ToString();
 
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", epoch, 1), default);
-    await s.Writer.ApplyAsync(s.ObjectId, Input("open", epoch, 2), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, epoch, 1), default);
+    await s.Writer.ApplyAsync(s.ObjectId, Input(OpenContact, epoch, 2), default);
 
     Assert.Equal(1, await s.Db.Events.CountAsync());
     Assert.Equal(2, (await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(s.ObjectId))).last_seq);

@@ -25,6 +25,14 @@ public class MapConcurrencyPostgresTests
 {
   private static readonly string? Dsn = Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
+  // The fixtures these tests share.
+  private const string MainMapName = "main map";
+  private const string FloorPlanName = "floor";
+  private const string RootAName = "root a";
+  private const string RootBName = "root b";
+  private const string NodeAName = "a";
+  private const string NodeBName = "b";
+
   private sealed class FakeCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
@@ -115,7 +123,7 @@ public class MapConcurrencyPostgresTests
     }
   }
 
-  private static Space MapSpace(string name = "Main map") => new()
+  private static Space MapSpace(string name = MainMapName) => new()
   {
     Name = name,
     Kind = SpaceKind.Map,
@@ -169,17 +177,17 @@ public class MapConcurrencyPostgresTests
     var a = Guid.NewGuid();
     var b = Guid.NewGuid();
     first.Db.Markers.AddRange(
-      new DBMarker { id = rootA, name = "Root A" },
-      new DBMarker { id = rootB, name = "Root B" },
-      new DBMarker { id = a, parent_id = rootA, name = "A" },
-      new DBMarker { id = b, parent_id = rootB, name = "B" });
+      new DBMarker { id = rootA, name = RootAName },
+      new DBMarker { id = rootB, name = RootBName },
+      new DBMarker { id = a, parent_id = rootA, name = NodeAName },
+      new DBMarker { id = b, parent_id = rootB, name = NodeBName });
     await first.Db.SaveChangesAsync();
 
     var outcomes = await Task.WhenAll(
       Capture(() => first.Updates.UpdateObjects([
-        new BaseMarkerDTO { id = a.ToString(), parent_id = b.ToString(), name = "A" }])),
+        new BaseMarkerDTO { id = a.ToString(), parent_id = b.ToString(), name = NodeAName }])),
       Capture(() => second.Updates.UpdateObjects([
-        new BaseMarkerDTO { id = b.ToString(), parent_id = a.ToString(), name = "B" }])));
+        new BaseMarkerDTO { id = b.ToString(), parent_id = a.ToString(), name = NodeBName }])));
 
     // One move wins; the other sees the committed tree and refuses. Both committing would leave a
     // cycle the alarm aggregation cannot walk.
@@ -211,7 +219,7 @@ public class MapConcurrencyPostgresTests
       return;
 
     var map = await first.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-    var plan = await first.Spatial.UpsertSpaceAsync(PlanSpace("Floor", map.Id), CancellationToken.None);
+    var plan = await first.Spatial.UpsertSpaceAsync(PlanSpace(FloorPlanName, map.Id), CancellationToken.None);
 
     // A reference on another canvas: the new pictures are ordinary ones, so the unique index on
     // the reference admits both writes and cannot be what saves the invariant.

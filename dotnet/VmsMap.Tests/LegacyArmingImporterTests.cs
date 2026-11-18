@@ -21,10 +21,16 @@ public class LegacyArmingImporterTests
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string Token = "input1";
 
+  // The fixtures these tests share.
+  private const string ServerId = "srv";
+  private const string CameraName = "camera";
+  private const string ClosedContact = "closed";
+  private const string InheritMode = "inherit";
+
   private sealed class Catalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, ServerId));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult<List<CameraInfo>>([]);
@@ -87,13 +93,13 @@ public class LegacyArmingImporterTests
       NullLogger<LegacyArmingImporter>.Instance);
 
     await importer.EnsureImportedAsync(
-      [new CameraInfo(CameraId, "Camera", "srv")], CancellationToken.None);
+      [new CameraInfo(CameraId, CameraName, ServerId)], CancellationToken.None);
 
     return new Fixture(db, store, marker, nodes);
   }
 
-  private static DeviceSettingsInfo InputRow(string mode = "inherit", string trigger = "closed") =>
-    new(CameraId, DeviceObjectId.DigitalInputPart, Token, "Door", mode, trigger, true);
+  private static DeviceSettingsInfo InputRow(string mode = InheritMode, string trigger = ClosedContact) =>
+    new(CameraId, DeviceObjectId.DigitalInputPart, Token, "door", mode, trigger, true);
 
   [Fact]
   public async Task AnExplicitlyArmedCameraKeepsItsMode()
@@ -108,19 +114,19 @@ public class LegacyArmingImporterTests
   [Fact]
   public async Task AConfiguredInputKeepsItsRule()
   {
-    var f = await ImportAsync(settings: InputRow(trigger: "closed"));
+    var f = await ImportAsync(settings: InputRow(trigger: ClosedContact));
 
     var input = DeviceObjectId.For(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token);
     var seeded = await f.Store.GetAsync(input, default);
-    Assert.Equal("closed", seeded.TriggerOn);
+    Assert.Equal(ClosedContact, seeded.TriggerOn);
     Assert.True(seeded.AlarmEnabled);
   }
 
   [Fact]
   public async Task AnInheritingCameraWithNoInputRuleWritesNothing()
   {
-    var f = await ImportAsync(settings: InputRow(mode: "inherit", trigger: "closed") with
+    var f = await ImportAsync(settings: InputRow(mode: InheritMode, trigger: ClosedContact) with
     {
       TriggerOn = null,
       AlarmEnabled = false,
@@ -148,7 +154,7 @@ public class LegacyArmingImporterTests
       f.Store, new TestCameraState(armMode: ArmMode.Armed), new LegacySettings(null), f.Nodes,
       new Marker(false), NullLogger<LegacyArmingImporter>.Instance);
     await importer.EnsureImportedAsync(
-      [new CameraInfo(CameraId, "Camera", "srv")], CancellationToken.None);
+      [new CameraInfo(CameraId, CameraName, ServerId)], CancellationToken.None);
 
     Assert.Equal(ArmMode.Disarmed,
       (await f.Store.GetAsync(CameraObjectId.For(CameraId), default)).Mode);

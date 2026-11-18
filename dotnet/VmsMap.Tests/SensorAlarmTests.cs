@@ -23,6 +23,10 @@ public class SensorAlarmTests
 
   private const string Token = "1";
 
+  // The two contact positions the rule compares against and records in the journal event.
+  private const string TriggerClosed = "closed";
+  private const string TriggerOpen = "open";
+
   private static Services Create(DBDeviceObjectSettings? settings = null, bool armed = false)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
@@ -58,8 +62,8 @@ public class SensorAlarmTests
       DeviceObjectId.CameraSource, s.CameraId, DeviceObjectId.DigitalInputPart, s.Token));
 
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = camera.ToString(), name = "Camera" },
-      new BaseMarkerDTO { id = input.ToString(), parent_id = camera.ToString(), name = "Door" },
+      new BaseMarkerDTO { id = camera.ToString(), name = "camera" },
+      new BaseMarkerDTO { id = input.ToString(), parent_id = camera.ToString(), name = "door" },
     ]);
 
     s.Db.DeviceNodes.Add(TestCameras.DeviceNode(s.CameraId, camera));
@@ -75,7 +79,7 @@ public class SensorAlarmTests
     return input;
   }
 
-  private static DBDeviceObjectSettings AlarmOn(string cameraId, string triggerOn = "closed") =>
+  private static DBDeviceObjectSettings AlarmOn(string cameraId, string triggerOn = TriggerClosed) =>
     new()
     {
       object_id = Guid.Parse(DeviceObjectId.For(
@@ -95,7 +99,7 @@ public class SensorAlarmTests
     var s = Create(AlarmOn(TestCameras.One), armed: true);
     var input = await DeviceAsync(s);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
 
     var alarm = await Open(s.Db);
     Assert.NotNull(alarm);
@@ -108,7 +112,7 @@ public class SensorAlarmTests
     var evt = await s.Db.Events.Include(e => e.extra_props)
       .SingleAsync(e => e.event_name == AlarmStore.RaisedEvent);
     Assert.Equal("warning", evt.param0);
-    Assert.Equal("closed", evt.param1);
+    Assert.Equal(TriggerClosed, evt.param1);
   }
 
   [Fact]
@@ -117,8 +121,8 @@ public class SensorAlarmTests
     var s = Create(AlarmOn(TestCameras.One), armed: true);
     var input = await DeviceAsync(s);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "open");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerOpen);
 
     var alarm = await Open(s.Db);
     Assert.NotNull(alarm);
@@ -143,7 +147,7 @@ public class SensorAlarmTests
     var s = Create(AlarmOn(TestCameras.One), armed: false);
     var input = await DeviceAsync(s);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
 
     Assert.Null(await Open(s.Db));
   }
@@ -154,7 +158,7 @@ public class SensorAlarmTests
     var s = Create(armed: true);
     var input = await DeviceAsync(s);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.RelayPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.RelayPart, Token, TriggerClosed);
 
     Assert.Null(await Open(s.Db));
   }
@@ -164,13 +168,13 @@ public class SensorAlarmTests
   {
     var s = Create(AlarmOn(TestCameras.One), armed: true);
     var input = await DeviceAsync(s);
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
 
     // The operator saves the input with the alarm off: the open row must not stay as if it were.
     await TestWiring.ObjectSettings(s.Db).SetAsync(
-      input.ToString(), ArmMode.Inherit, "closed", false, default);
+      input.ToString(), ArmMode.Inherit, TriggerClosed, false, default);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
 
     Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
   }
@@ -189,7 +193,7 @@ public class SensorAlarmTests
       states = [new DBObjectStateValue { id = Guid.NewGuid(), object_id = input, state = SensorAlarmService.SensorClosed }],
     });
     await s.Db.SaveChangesAsync();
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
     Assert.Null(await Open(s.Db));
 
     // The camera is armed; the reconcile from the settings change finds the condition already true.
@@ -217,10 +221,10 @@ public class SensorAlarmTests
     });
     await s.Db.SaveChangesAsync();
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
     Assert.NotNull(await Open(s.Db));
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "open");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerOpen);
     Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
   }
 
@@ -230,7 +234,7 @@ public class SensorAlarmTests
   /// way the facade writes it, and answers the space's node id.</summary>
   private static async Task<string> ZoneAsync(Services s, bool armed)
   {
-    var space = new BaseMarkerDTO { id = Guid.NewGuid().ToString(), name = "Floor" };
+    var space = new BaseMarkerDTO { id = Guid.NewGuid().ToString(), name = "floor" };
     await s.Map.UpdateHierarchyAsync([space]);
 
     s.Db.Spaces.Add(new DBSpace { object_id = Guid.Parse(space.id!), kind = SpaceKinds.Map });
@@ -238,7 +242,7 @@ public class SensorAlarmTests
     var replica = new BaseMarkerDTO
     {
       id = Guid.NewGuid().ToString(),
-      name = "Camera on the plan",
+      name = "camera on the plan",
       parent_id = space.id,
       owner_id = CameraObjectId.For(s.CameraId),
     };
@@ -282,7 +286,7 @@ public class SensorAlarmTests
     await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
 
     // The zone is written after the contact closed while nothing was armed: no alarm so far.
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
     Assert.Null(await Open(s.Db));
 
     var space = await ZoneAsync(s, armed: true);
@@ -344,11 +348,11 @@ public class SensorAlarmTests
     var input = await DeviceAsync(s);
     await StoreContactAsync(s, input, SensorAlarmService.SensorClosed);
 
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "closed");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
     Assert.Equal(AlarmStatus.Active, (await Open(s.Db))!.status);
 
     // The contact opens: the condition is gone, the row is a returned alarm.
-    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, "open");
+    await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerOpen);
     Assert.Equal(AlarmStatus.Returned, (await Open(s.Db))!.status);
 
     // The camera is disarmed while the contact is closed again — nothing to raise — and then a zone

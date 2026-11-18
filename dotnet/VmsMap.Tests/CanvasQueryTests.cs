@@ -99,6 +99,7 @@ public class CanvasQueryTests
   // the role are the subject the rights cases agree on.
   private const string CityName = "city";
   private const string OtherCityName = "other city";
+  private const string NodeLabel = "node";
   private const string NodeNamePrefix = "node ";
   private const string AliceName = "alice";
   private const string AdminName = "root";
@@ -185,7 +186,7 @@ public class CanvasQueryTests
   {
     var s = Create();
     var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
-    var node = await Node(s.Map, "node", city.Id);
+    var node = await Node(s.Map, NodeLabel, city.Id);
     await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
 
     var geo = (await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = "not-a-canvas" })).Objects;
@@ -266,7 +267,7 @@ public class CanvasQueryTests
   {
     var s = Create();
     var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
-    var node = await Node(s.Map, "node", city.Id);
+    var node = await Node(s.Map, NodeLabel, city.Id);
     await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
 
     var read = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id });

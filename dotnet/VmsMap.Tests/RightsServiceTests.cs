@@ -12,6 +12,19 @@ namespace VmsMap.Tests;
 // tests run on the in-memory provider, so they exercise the walk itself, not a PostgreSQL CTE.
 public class RightsServiceTests
 {
+  // The fixtures these tests share. The node names are labels the tests never assert; the users
+  // and roles are the subjects the rights cases agree on.
+  private const string BuildingName = "building";
+  private const string FloorName = "floor";
+  private const string CameraNodeName = "camera";
+  private const string PlanName = "plan";
+  private const string AliceName = "alice";
+  private const string BobName = "bob";
+  private const string AnyUserName = "anyone";
+  private const string AdminRole = "admin";
+  private const string OperatorsRole = "operators";
+  private const string GuardsRole = "guards";
+
   private sealed record Services(VmsMapDbContext Db, MapDb Map, RightsService Rights);
 
   private static Services Create()
@@ -59,101 +72,102 @@ public class RightsServiceTests
   public async Task AViewGrantOnAnAncestorCoversTheWholeSubtree()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var floor = await Node(s.Map, "Floor", building.id);
-    var camera = await Node(s.Map, "Camera", floor.id);
-    await Grant(s.Db, building, "operators", RightActions.View);
+    var building = await Node(s.Map, BuildingName);
+    var floor = await Node(s.Map, FloorName, building.id);
+    var camera = await Node(s.Map, CameraNodeName, floor.id);
+    await Grant(s.Db, building, OperatorsRole, RightActions.View);
 
+    var subtreeIds = new[] { building.id!, floor.id!, camera.id! };
     var visible = await s.Rights.VisibleAsync(
-      [building.id!, floor.id!, camera.id!], Caller(null, "operators"), default);
+      subtreeIds, Caller(null, OperatorsRole), default);
 
-    Assert.Equal(3, visible.Count);
+    Assert.Equal(subtreeIds.Length, visible.Count);
     Assert.Empty(await s.Rights.VisibleAsync(
-      [building.id!, floor.id!, camera.id!], Caller("bob"), default));
+      subtreeIds, Caller(BobName), default));
   }
 
   [Fact]
   public async Task AReplicaFollowsItsOwner()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    var plan = await Node(s.Map, "Plan");
-    var picture = await Node(s.Map, "Camera", plan.id, ownerId: camera.id);
-    await Grant(s.Db, camera, "alice", RightActions.View);
+    var camera = await Node(s.Map, CameraNodeName);
+    var plan = await Node(s.Map, PlanName);
+    var picture = await Node(s.Map, CameraNodeName, plan.id, ownerId: camera.id);
+    await Grant(s.Db, camera, AliceName, RightActions.View);
 
-    var visible = await s.Rights.VisibleAsync([picture.id!], Caller("alice"), default);
+    var visible = await s.Rights.VisibleAsync([picture.id!], Caller(AliceName), default);
 
     Assert.Contains(picture.id!, visible);
-    Assert.Empty(await s.Rights.VisibleAsync([picture.id!], Caller("bob"), default));
+    Assert.Empty(await s.Rights.VisibleAsync([picture.id!], Caller(BobName), default));
   }
 
   [Fact]
   public async Task OpenModeMakesAnUnrightedNodeVisibleAndARowClosesIt()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var camera = await Node(s.Map, "Camera", building.id);
+    var building = await Node(s.Map, BuildingName);
+    var camera = await Node(s.Map, CameraNodeName, building.id);
     await s.Rights.SetModeAsync(RightsMode.Open, default);
 
-    Assert.Contains(building.id!, await s.Rights.VisibleAsync([building.id!], Caller("bob"), default));
+    Assert.Contains(building.id!, await s.Rights.VisibleAsync([building.id!], Caller(BobName), default));
 
-    await Grant(s.Db, building, "alice", RightActions.View);
+    await Grant(s.Db, building, AliceName, RightActions.View);
 
-    Assert.Empty(await s.Rights.VisibleAsync([building.id!, camera.id!], Caller("bob"), default));
-    Assert.Contains(camera.id!, await s.Rights.VisibleAsync([camera.id!], Caller("alice"), default));
+    Assert.Empty(await s.Rights.VisibleAsync([building.id!, camera.id!], Caller(BobName), default));
+    Assert.Contains(camera.id!, await s.Rights.VisibleAsync([camera.id!], Caller(AliceName), default));
   }
 
   [Fact]
   public async Task AdminAndUnrestrictedBypassEveryRow()
   {
     var s = Create();
-    var node = await Node(s.Map, "Building");
+    var node = await Node(s.Map, BuildingName);
 
     Assert.Contains(node.id!, await s.Rights.VisibleAsync(
-      [node.id!], Caller("anyone", "admin"), default));
+      [node.id!], Caller(AnyUserName, AdminRole), default));
     Assert.Contains(node.id!, await s.Rights.VisibleAsync(
-      [node.id!], new CallerContext("anyone", [], Unrestricted: true), default));
+      [node.id!], new CallerContext(AnyUserName, [], Unrestricted: true), default));
   }
 
   [Fact]
   public async Task IsAllowedChecksTheRequestedAction()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    await Grant(s.Db, camera, "alice", RightActions.View, RightActions.ViewLive);
+    var camera = await Node(s.Map, CameraNodeName);
+    await Grant(s.Db, camera, AliceName, RightActions.View, RightActions.ViewLive);
 
     Assert.True(await s.Rights.IsAllowedAsync(
-      camera.id!, RightActions.ViewLive, Caller("alice"), default));
+      camera.id!, RightActions.ViewLive, Caller(AliceName), default));
     Assert.False(await s.Rights.IsAllowedAsync(
-      camera.id!, RightActions.Ptz, Caller("alice"), default));
+      camera.id!, RightActions.Ptz, Caller(AliceName), default));
   }
 
   [Fact]
   public async Task AcknowledgeIsInheritedLikeAnyOtherAction()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var floor = await Node(s.Map, "Floor", building.id);
-    await Grant(s.Db, building, "guards", RightActions.Acknowledge);
+    var building = await Node(s.Map, BuildingName);
+    var floor = await Node(s.Map, FloorName, building.id);
+    await Grant(s.Db, building, GuardsRole, RightActions.Acknowledge);
 
     // The batch form is the one a list uses; it must agree with the single check.
-    var allowed = await rightsAllowed(s, [floor.id!], RightActions.Acknowledge, Caller(null, "guards"));
+    var allowed = await rightsAllowed(s, [floor.id!], RightActions.Acknowledge, Caller(null, GuardsRole));
     Assert.Contains(floor.id!, allowed);
 
     Assert.True(await s.Rights.IsAllowedAsync(
-      floor.id!, RightActions.Acknowledge, Caller(null, "guards"), default));
+      floor.id!, RightActions.Acknowledge, Caller(null, GuardsRole), default));
     Assert.False(await s.Rights.IsAllowedAsync(
-      floor.id!, RightActions.Acknowledge, Caller("alice"), default));
+      floor.id!, RightActions.Acknowledge, Caller(AliceName), default));
   }
 
   [Fact]
   public async Task AdminBypassesTheAcknowledgeRowsToo()
   {
     var s = Create();
-    var node = await Node(s.Map, "Building");
+    var node = await Node(s.Map, BuildingName);
 
     var allowed = await rightsAllowed(
-      s, [node.id!], RightActions.Acknowledge, Caller("anyone", "admin"));
+      s, [node.id!], RightActions.Acknowledge, Caller(AnyUserName, AdminRole));
     Assert.Contains(node.id!, allowed);
   }
 
@@ -161,22 +175,22 @@ public class RightsServiceTests
   public async Task InOpenModeAcknowledgeFollowsTheSameSwitchAsView()
   {
     var s = Create();
-    var node = await Node(s.Map, "Building");
+    var node = await Node(s.Map, BuildingName);
 
     await s.Rights.SetModeAsync(RightsMode.Open, default);
     Assert.Contains(node.id!, await rightsAllowed(
-      s, [node.id!], RightActions.Acknowledge, Caller("alice")));
+      s, [node.id!], RightActions.Acknowledge, Caller(AliceName)));
 
     await s.Rights.SetModeAsync(RightsMode.Enforced, default);
-    Assert.Empty(await rightsAllowed(s, [node.id!], RightActions.Acknowledge, Caller("alice")));
+    Assert.Empty(await rightsAllowed(s, [node.id!], RightActions.Acknowledge, Caller(AliceName)));
   }
 
   [Fact]
   public async Task EffectiveRightsExpandDownTheTreeAndNameTheCamera()
   {
     var s = Create();
-    var building = await Node(s.Map, "Building");
-    var camera = await Node(s.Map, "Camera", building.id);
+    var building = await Node(s.Map, BuildingName);
+    var camera = await Node(s.Map, CameraNodeName, building.id);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = Guid.Parse(camera.id!),
@@ -187,27 +201,28 @@ public class RightsServiceTests
       range_m = 30,
     });
     await s.Db.SaveChangesAsync();
-    await Grant(s.Db, building, "operators", RightActions.View, RightActions.ViewLive);
+    await Grant(s.Db, building, OperatorsRole, RightActions.View, RightActions.ViewLive);
 
-    var effective = await s.Rights.GetEffectiveAsync(Caller(null, "operators"), default);
+    var effective = await s.Rights.GetEffectiveAsync(Caller(null, OperatorsRole), default);
 
-    Assert.Equal(2, effective.Count);
+    const int rightedNodes = 2; // the building and the camera, one entry each
+    Assert.Equal(rightedNodes, effective.Count);
     Assert.Contains(effective, n => n.object_id == camera.id && n.camera_id == TestCameras.One
       && n.actions.Contains(RightActions.ViewLive));
     Assert.Contains(effective, n => n.object_id == building.id && n.camera_id is null);
-    Assert.Empty(await s.Rights.GetEffectiveAsync(Caller("bob"), default));
+    Assert.Empty(await s.Rights.GetEffectiveAsync(Caller(BobName), default));
   }
 
   [Fact]
   public async Task EffectiveRightsIncludeReplicasOfARightedNode()
   {
     var s = Create();
-    var camera = await Node(s.Map, "Camera");
-    var plan = await Node(s.Map, "Plan");
-    var picture = await Node(s.Map, "Camera", plan.id, ownerId: camera.id);
-    await Grant(s.Db, camera, "alice", RightActions.View);
+    var camera = await Node(s.Map, CameraNodeName);
+    var plan = await Node(s.Map, PlanName);
+    var picture = await Node(s.Map, CameraNodeName, plan.id, ownerId: camera.id);
+    await Grant(s.Db, camera, AliceName, RightActions.View);
 
-    var effective = await s.Rights.GetEffectiveAsync(Caller("alice"), default);
+    var effective = await s.Rights.GetEffectiveAsync(Caller(AliceName), default);
 
     Assert.Contains(effective, n => n.object_id == picture.id);
   }

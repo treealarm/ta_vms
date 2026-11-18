@@ -12,8 +12,15 @@ public class AnalyticsEventTests
 {
   private const string CameraId = "0e9d6f4a-3c1b-4a5f-9e2d-1b7c8a6f5e4d";
 
-  private static AnalyticsEventMessage Message(long detectionId, string? objectId = "obj-7") =>
-    new(detectionId, CameraId, "person", 0.87f, objectId,
+  // The fixtures these tests share.
+  private const string DetectionKind = "person";
+  private const string ReidObjectId = "obj-7";
+  private const string ReidObjectIdProp = "reid_object_id";
+  private const string ConfidenceProp = "confidence";
+  private const string ConfidenceText = "0.87";
+
+  private static AnalyticsEventMessage Message(long detectionId, string? objectId = ReidObjectId) =>
+    new(detectionId, CameraId, DetectionKind, 0.87f, objectId,
       new DateTimeOffset(2026, 11, 6, 12, 0, 0, TimeSpan.Zero));
 
   [Fact]
@@ -31,7 +38,7 @@ public class AnalyticsEventTests
 
     Assert.Equal(CameraObjectId.For(CameraId), evt.object_id);
     Assert.Equal("analytics", evt.event_name);
-    Assert.Equal("person", evt.param0);
+    Assert.Equal(DetectionKind, evt.param0);
     Assert.Equal(EventIds.ForAnalytics(42), evt.id);
     Assert.Equal(new DateTime(2026, 11, 6, 12, 0, 0, DateTimeKind.Utc), evt.timestamp);
   }
@@ -44,9 +51,9 @@ public class AnalyticsEventTests
       .ToDictionary(p => p.prop_name!, p => p.str_val);
 
     Assert.Equal(CameraId, props["camera_id"]);
-    Assert.Equal("person", props["kind"]);
-    Assert.Equal("0.87", props["confidence"]);
-    Assert.Equal("obj-7", props["reid_object_id"]);
+    Assert.Equal(DetectionKind, props["kind"]);
+    Assert.Equal(ConfidenceText, props[ConfidenceProp]);
+    Assert.Equal(ReidObjectId, props[ReidObjectIdProp]);
     Assert.Equal("42", props["detection_id"]);
   }
 
@@ -58,7 +65,7 @@ public class AnalyticsEventTests
       .Select(p => p.prop_name)
       .ToList();
 
-    Assert.DoesNotContain("reid_object_id", props);
+    Assert.DoesNotContain(ReidObjectIdProp, props);
   }
 
   [Fact]
@@ -75,7 +82,7 @@ public class AnalyticsEventTests
 
       // The router parses this with the invariant culture; a comma here would be an event no
       // threshold selector ever matches.
-      Assert.Equal("0.87", props["confidence"]);
+      Assert.Equal(ConfidenceText, props[ConfidenceProp]);
     }
     finally
     {

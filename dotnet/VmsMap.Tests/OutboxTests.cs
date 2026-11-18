@@ -17,6 +17,10 @@ public class OutboxTests
   private static readonly string? Dsn =
     Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
+  // The fixtures these tests share.
+  private const string SensorName = "sensor";
+  private const string OpenContact = "open";
+
   private static async Task<(NpgsqlDataSource Source, VmsMapDbContext Db)?> OpenAsync()
   {
     if (string.IsNullOrWhiteSpace(Dsn))
@@ -55,7 +59,7 @@ public class OutboxTests
     await using var db = o.Db;
 
     var objectId = Guid.NewGuid();
-    db.Markers.Add(new DBMarker { id = objectId, name = "Sensor" });
+    db.Markers.Add(new DBMarker { id = objectId, name = SensorName });
     await db.SaveChangesAsync();
 
     var eventId = Guid.NewGuid().ToString();
@@ -65,9 +69,9 @@ public class OutboxTests
       {
         id = eventId,
         object_id = objectId.ToString(),
-        event_name = "sensor",
+        event_name = SensorName,
         timestamp = DateTime.UtcNow,
-        param0 = "open",
+        param0 = OpenContact,
       }
     ]);
 
@@ -90,7 +94,7 @@ public class OutboxTests
     await using var db = o.Db;
 
     var objectId = Guid.NewGuid();
-    db.Markers.Add(new DBMarker { id = objectId, name = "Sensor" });
+    db.Markers.Add(new DBMarker { id = objectId, name = SensorName });
     await db.SaveChangesAsync();
 
     var writer = new EventsWriter(db, new EventsService(db, new MapDb(db)));
@@ -99,7 +103,7 @@ public class OutboxTests
       {
         id = Guid.NewGuid().ToString(),
         object_id = objectId.ToString(),
-        event_name = "sensor",
+        event_name = SensorName,
         timestamp = DateTime.UtcNow,
       }
     ]);
@@ -134,7 +138,7 @@ public class OutboxTests
     await using var db = o.Db;
 
     var objectId = Guid.NewGuid();
-    db.Markers.Add(new DBMarker { id = objectId, name = "Sensor" });
+    db.Markers.Add(new DBMarker { id = objectId, name = SensorName });
     await db.SaveChangesAsync();
 
     var eventId = Guid.NewGuid().ToString();
@@ -143,9 +147,9 @@ public class OutboxTests
     {
       id = eventId,
       object_id = objectId.ToString(),
-      event_name = "sensor",
+      event_name = SensorName,
       timestamp = DateTime.UtcNow,
-      param0 = "open",
+      param0 = OpenContact,
     };
 
     var first = await writer.WriteAsync([dto]);

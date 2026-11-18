@@ -17,6 +17,17 @@ namespace VmsMap.Tests;
 [Collection("postgis")]
 public class AlarmStorePostgresTests
 {
+  // The fixtures these tests share. The node names are labels no test asserts; the token is the
+  // digital input's part address and the sensor keys are the store's dedup addresses.
+  private const string AliceName = "alice";
+  private const string InputToken = "1";
+  private const string BuildingName = "building";
+  private const string FloorName = "floor";
+  private const string CameraNodeName = "camera";
+  private const string DoorNodeName = "door";
+  private const string SensorOneKey = "sensor:1";
+  private const string SensorTwoKey = "sensor:two";
+
   private static readonly string? Dsn =
     Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
@@ -102,13 +113,13 @@ public class AlarmStorePostgresTests
     var floor = Guid.NewGuid();
     var camera = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var input = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, InputToken));
 
     s.Db.Markers.AddRange(
-      new DBMarker { id = root, name = "Building" },
-      new DBMarker { id = floor, name = "Floor", parent_id = root },
-      new DBMarker { id = camera, name = "Camera", parent_id = floor },
-      new DBMarker { id = input, name = "Door", parent_id = camera });
+      new DBMarker { id = root, name = BuildingName },
+      new DBMarker { id = floor, name = FloorName, parent_id = root },
+      new DBMarker { id = camera, name = CameraNodeName, parent_id = floor },
+      new DBMarker { id = input, name = DoorNodeName, parent_id = camera });
     await s.Db.SaveChangesAsync();
 
     // A second save: the model has no navigation from device_node to objects, so EF cannot order
@@ -121,7 +132,7 @@ public class AlarmStorePostgresTests
         source_kind = DeviceObjectId.CameraSource,
         source_id = TestCameras.One,
         part_kind = DeviceObjectId.DigitalInputPart,
-        part_token = "1",
+        part_token = InputToken,
       });
     await s.Db.SaveChangesAsync();
 
@@ -131,7 +142,7 @@ public class AlarmStorePostgresTests
   private static Task<DBAlarmState?> AlarmAsync(VmsMapDbContext db, Guid id) =>
     db.AlarmStates.AsNoTracking().FirstOrDefaultAsync(a => a.id == id);
 
-  private static RaiseAlarmSpec Sensor(Guid input, string key = "sensor:1") =>
+  private static RaiseAlarmSpec Sensor(Guid input, string key = SensorOneKey) =>
     new(input, AlarmSource.Sensor, key, Trigger: "open");
 
   [Fact]
@@ -194,7 +205,7 @@ public class AlarmStorePostgresTests
     await using var _ = otherDb;
 
     await Task.WhenAll(
-      s.Alarms.AcknowledgeAsync(raised.Alarm!.id, "alice", null, default),
+      s.Alarms.AcknowledgeAsync(raised.Alarm!.id, AliceName, null, default),
       second.RaiseAsync(Sensor(tree.Input), default));
 
     var row = await s.Db.Alarms.AsNoTracking().SingleAsync();
@@ -226,7 +237,7 @@ public class AlarmStorePostgresTests
     // The condition clears and an operator closes the alarm before the repeat arrives.
     await s.Alarms.NormalAsync(tree.Input, spec.DedupKey, default);
     await s.Alarms.CloseAsync(
-      first.Alarm!.id, "alice", AlarmCloseReason.FalseAlarm, null, default);
+      first.Alarm!.id, AliceName, AlarmCloseReason.FalseAlarm, null, default);
 
     var repeat = await s.Alarms.RaiseAsync(spec, default);
 
@@ -247,10 +258,10 @@ public class AlarmStorePostgresTests
 
     var otherCamera = Guid.Parse(CameraObjectId.For(TestCameras.Two));
     var otherInput = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, TestCameras.Two, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, TestCameras.Two, DeviceObjectId.DigitalInputPart, InputToken));
     s.Db.Markers.AddRange(
-      new DBMarker { id = otherCamera, name = "Other camera", parent_id = tree.Floor },
-      new DBMarker { id = otherInput, name = "Other door", parent_id = otherCamera });
+      new DBMarker { id = otherCamera, name = "other camera", parent_id = tree.Floor },
+      new DBMarker { id = otherInput, name = "other door", parent_id = otherCamera });
     await s.Db.SaveChangesAsync();
 
     s.Db.DeviceNodes.AddRange(
@@ -261,15 +272,15 @@ public class AlarmStorePostgresTests
         source_kind = DeviceObjectId.CameraSource,
         source_id = TestCameras.Two,
         part_kind = DeviceObjectId.DigitalInputPart,
-        part_token = "1",
+        part_token = InputToken,
       });
     await s.Db.SaveChangesAsync();
 
     await s.Alarms.RaiseAsync(Sensor(tree.Input, "sensor:one"), default);
-    await s.Alarms.RaiseAsync(Sensor(otherInput, "sensor:two"), default);
+    await s.Alarms.RaiseAsync(Sensor(otherInput, SensorTwoKey), default);
     Assert.Equal(2, (await AlarmAsync(s.Db, tree.Floor))!.children_alarms);
 
-    await s.Alarms.NormalAsync(otherInput, "sensor:two", default);
+    await s.Alarms.NormalAsync(otherInput, SensorTwoKey, default);
 
     Assert.Equal(1, (await AlarmAsync(s.Db, tree.Floor))!.children_alarms);
     Assert.Equal(1, (await AlarmAsync(s.Db, tree.Root))!.children_alarms);
@@ -289,7 +300,7 @@ public class AlarmStorePostgresTests
     var before = await s.Db.AlarmStates.AsNoTracking()
       .ToDictionaryAsync(a => a.id, a => (a.alarm, a.children_alarms));
 
-    await s.Alarms.AcknowledgeAsync(raised.Alarm!.id, "alice", null, default);
+    await s.Alarms.AcknowledgeAsync(raised.Alarm!.id, AliceName, null, default);
 
     var after = await s.Db.AlarmStates.AsNoTracking()
       .ToDictionaryAsync(a => a.id, a => (a.alarm, a.children_alarms));
@@ -309,17 +320,17 @@ public class AlarmStorePostgresTests
     var server = Guid.NewGuid();
     var camera = Guid.Parse(CameraObjectId.For(TestCameras.One));
     var input = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, InputToken));
     var replica = Guid.NewGuid();
 
     s.Db.Markers.AddRange(
-      new DBMarker { id = building, name = "Building" },
-      new DBMarker { id = floor, name = "Floor", parent_id = building },
-      new DBMarker { id = server, name = "Server" },
-      new DBMarker { id = camera, name = "Camera", parent_id = server },
-      new DBMarker { id = input, name = "Door", parent_id = camera },
+      new DBMarker { id = building, name = BuildingName },
+      new DBMarker { id = floor, name = FloorName, parent_id = building },
+      new DBMarker { id = server, name = "server" },
+      new DBMarker { id = camera, name = CameraNodeName, parent_id = server },
+      new DBMarker { id = input, name = DoorNodeName, parent_id = camera },
       // A picture of the camera on the floor plan, where a person looks for it.
-      new DBMarker { id = replica, name = "Camera", parent_id = floor, owner_id = camera });
+      new DBMarker { id = replica, name = CameraNodeName, parent_id = floor, owner_id = camera });
     await s.Db.SaveChangesAsync();
 
     s.Db.DeviceNodes.AddRange(
@@ -330,7 +341,7 @@ public class AlarmStorePostgresTests
         source_kind = DeviceObjectId.CameraSource,
         source_id = TestCameras.One,
         part_kind = DeviceObjectId.DigitalInputPart,
-        part_token = "1",
+        part_token = InputToken,
       });
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -364,7 +375,7 @@ public class AlarmStorePostgresTests
     Assert.Equal(1, (await AlarmAsync(s.Db, room.Floor))!.children_alarms);
     Assert.Equal(1, (await AlarmAsync(s.Db, room.Building))!.children_alarms);
 
-    await s.Alarms.NormalAsync(room.Input, "sensor:1", default);
+    await s.Alarms.NormalAsync(room.Input, SensorOneKey, default);
 
     Assert.False((await AlarmAsync(s.Db, room.Input))!.alarm);
     Assert.Equal(0, (await AlarmAsync(s.Db, room.Replica))!.children_alarms);

@@ -159,11 +159,14 @@ internal static class TestWiring
 /// <summary>The three seeded definitions, as VmsCfg would answer them.</summary>
 internal sealed class TestAlarmDefinitions : IAlarmDefinitionsSource
 {
+  private const string WarningSeverity = "warning";
+  private const string RequiredAction = "required";
+
   private static readonly IReadOnlyList<AlarmDefinitionInfo> Entries =
   [
-    new("00000000-0000-0000-0000-00000000a101", "sensor", "warning", "required"),
-    new("00000000-0000-0000-0000-00000000a102", "retention", "warning", "auto_on_normal"),
-    new("00000000-0000-0000-0000-00000000a103", "subscription", "warning", "required"),
+    new("00000000-0000-0000-0000-00000000a101", "sensor", WarningSeverity, RequiredAction),
+    new("00000000-0000-0000-0000-00000000a102", "retention", WarningSeverity, "auto_on_normal"),
+    new("00000000-0000-0000-0000-00000000a103", "subscription", WarningSeverity, RequiredAction),
   ];
 
   public Task<IReadOnlyList<AlarmDefinitionInfo>> ListAsync(CancellationToken ct) =>

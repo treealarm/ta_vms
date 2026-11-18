@@ -8,23 +8,30 @@ namespace VmsMap.Tests;
 // carry the same name.
 public class ReplicaNamesTests
 {
+  // The fixtures these tests share.
+  private const string CameraName = "cam1";
+  private const string CameraFirstReplicaName = "cam1 rep1";
+  private const string RelayName = "relay4";
+  private const string RelayFirstReplicaName = "relay4 rep1";
+
   [Fact]
   public void TheFirstReplicaOfAnOwnerIsTheFirst()
   {
-    Assert.Equal("cam1 rep1", ReplicaNames.Next("cam1", []));
+    Assert.Equal(CameraFirstReplicaName, ReplicaNames.Next(CameraName, []));
   }
 
   [Fact]
   public void TheNextReplicaFollowsTheHighestNumberInUse()
   {
-    Assert.Equal("relay4 rep2", ReplicaNames.Next("relay4", ["relay4 rep1"]));
-    Assert.Equal("relay4 rep4", ReplicaNames.Next("relay4", ["relay4 rep1", "relay4 rep3"]));
+    Assert.Equal("relay4 rep2", ReplicaNames.Next(RelayName, [RelayFirstReplicaName]));
+    Assert.Equal("relay4 rep4",
+      ReplicaNames.Next(RelayName, [RelayFirstReplicaName, "relay4 rep3"]));
   }
 
   [Fact]
   public void OnlyNamesOfThatOwnerCount()
   {
-    Assert.Equal("cam1 rep1",
-      ReplicaNames.Next("cam1", ["cam1", "cam12 rep7", "cam1 rack", "other rep9", null]));
+    Assert.Equal(CameraFirstReplicaName,
+      ReplicaNames.Next(CameraName, [CameraName, "cam12 rep7", "cam1 rack", "other rep9", null]));
   }
 }

@@ -20,6 +20,11 @@ public class SpaceArmingTests
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string Token = "input1";
 
+  // The fixtures these tests share. The space names are labels; the operator is the journal's actor.
+  private const string BuildingName = "building";
+  private const string FloorName = "floor";
+  private const string DanilName = "danil";
+
   private sealed class FakeSettings : IDeviceSettingsSource
   {
     /// <summary>Whether the administrator gave the input a settings row at all.</summary>
@@ -27,7 +32,7 @@ public class SpaceArmingTests
 
     public DeviceSettingsInfo? Row => Configured
       ? new DeviceSettingsInfo(
-          CameraId, DeviceObjectId.DigitalInputPart, Token, "Door", ArmMode.Inherit, "closed", true)
+          CameraId, DeviceObjectId.DigitalInputPart, Token, "door", ArmMode.Inherit, "closed", true)
       : null;
 
     public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
@@ -117,7 +122,7 @@ public class SpaceArmingTests
   private static async Task<string> PlaceReferenceAsync(Fixture f, string spaceId)
   {
     var replica = await NodeAsync(
-      f.Map, "Camera picture", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
+      f.Map, "camera picture", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
 
     f.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -140,9 +145,9 @@ public class SpaceArmingTests
   public async Task ArmingAContainerStoresTheBooleanTheResolverReads()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
-    var view = await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
+    var view = await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
 
     // Not "armed": the resolver parses this value with bool.TryParse and would skip anything else.
     Assert.True(await StoredArmingAsync(f, space.id!));
@@ -155,10 +160,10 @@ public class SpaceArmingTests
   public async Task InheritRemovesThePropertyRatherThanStoringAMode()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
-    await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
+    var space = await SpaceAsync(f, FloorName);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
 
-    await f.Arming.SetAsync(space.id!, ArmMode.Inherit, "danil", default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Inherit, DanilName, default);
 
     Assert.Null(await StoredArmingAsync(f, space.id!));
     var view = await f.Arming.GetAsync(space.id!, default);
@@ -170,11 +175,11 @@ public class SpaceArmingTests
   public async Task ASensorUnderAnArmedContainerResolvesToItAndNamesTheZone()
   {
     var f = await CreateAsync();
-    var building = await NodeAsync(f.Map, "Building");
-    var floor = await SpaceAsync(f, "Floor", building.id);
+    var building = await NodeAsync(f.Map, BuildingName);
+    var floor = await SpaceAsync(f, FloorName, building.id);
     await PlaceReferenceAsync(f, floor.id!);
 
-    await f.Arming.SetAsync(building.id!, ArmMode.Armed, "danil", default);
+    await f.Arming.SetAsync(building.id!, ArmMode.Armed, DanilName, default);
 
     var view = await f.Arming.GetAsync(f.PartId, default);
 
@@ -189,12 +194,12 @@ public class SpaceArmingTests
   public async Task ADisarmedFloorInsideAnArmedBuildingIsDisarmed()
   {
     var f = await CreateAsync();
-    var building = await NodeAsync(f.Map, "Building");
-    var floor = await SpaceAsync(f, "Floor", building.id);
+    var building = await NodeAsync(f.Map, BuildingName);
+    var floor = await SpaceAsync(f, FloorName, building.id);
     await PlaceReferenceAsync(f, floor.id!);
 
-    await f.Arming.SetAsync(building.id!, ArmMode.Armed, "danil", default);
-    await f.Arming.SetAsync(floor.id!, ArmMode.Disarmed, "danil", default);
+    await f.Arming.SetAsync(building.id!, ArmMode.Armed, DanilName, default);
+    await f.Arming.SetAsync(floor.id!, ArmMode.Disarmed, DanilName, default);
 
     var view = await f.Arming.GetAsync(f.PartId, default);
 
@@ -206,7 +211,7 @@ public class SpaceArmingTests
   public async Task ASpaceIsArmableBeforeAnyCameraStandsInIt()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
     var view = await f.Arming.GetAsync(space.id!, default);
 
@@ -219,22 +224,22 @@ public class SpaceArmingTests
   public async Task AContainerNoCameraStandsThroughIsNotArmable()
   {
     var f = await CreateAsync();
-    var drawing = await NodeAsync(f.Map, "A picture of the camera's parts");
+    var drawing = await NodeAsync(f.Map, "a picture of the camera's parts");
 
     var view = await f.Arming.GetAsync(drawing.id!, default);
 
     Assert.False(view!.Armable);
 
     await Assert.ThrowsAsync<ArmingException>(() =>
-      f.Arming.SetAsync(drawing.id!, ArmMode.Armed, "danil", default));
+      f.Arming.SetAsync(drawing.id!, ArmMode.Armed, DanilName, default));
   }
 
   [Fact]
   public async Task AContainerWithAReferenceReplicaInItsSubtreeIsArmable()
   {
     var f = await CreateAsync();
-    var zone = await NodeAsync(f.Map, "Warehouse");
-    var floor = await SpaceAsync(f, "Floor", zone.id);
+    var zone = await NodeAsync(f.Map, "warehouse");
+    var floor = await SpaceAsync(f, FloorName, zone.id);
     await PlaceReferenceAsync(f, floor.id!);
 
     var view = await f.Arming.GetAsync(zone.id!, default);
@@ -247,7 +252,7 @@ public class SpaceArmingTests
   public async Task ACameraPictureResolvesThroughItsOwner()
   {
     var f = await CreateAsync(cameraArmed: true, cameraMode: ArmMode.Armed);
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
     var picture = await PlaceReferenceAsync(f, space.id!);
 
     var view = await f.Arming.GetAsync(picture, default);
@@ -263,7 +268,7 @@ public class SpaceArmingTests
   public async Task ACameraOnInheritWithNoZoneIsOff()
   {
     var f = await CreateAsync(cameraArmed: true);
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
     var picture = await PlaceReferenceAsync(f, space.id!);
 
     var view = await f.Arming.GetAsync(picture, default);
@@ -279,7 +284,7 @@ public class SpaceArmingTests
     var f = await CreateAsync();
     var cameraNode = CameraObjectId.For(CameraId);
 
-    var view = await f.Arming.SetAsync(cameraNode, ArmMode.Armed, "danil", default);
+    var view = await f.Arming.SetAsync(cameraNode, ArmMode.Armed, DanilName, default);
 
     Assert.Equal((CameraId, true), Assert.Single(f.Cfg.CameraFlags));
     Assert.True(view!.Arming!.Armed);
@@ -287,7 +292,7 @@ public class SpaceArmingTests
 
     var entry = Assert.Single(await f.Db.Events.ToListAsync());
     Assert.Equal(NodeArmingService.JournalEventName, entry.event_name);
-    Assert.Equal("danil", entry.param0);
+    Assert.Equal(DanilName, entry.param0);
     Assert.Equal(ArmMode.Armed, entry.param1);
   }
 
@@ -296,7 +301,7 @@ public class SpaceArmingTests
   {
     var f = await CreateAsync(armMode: ArmMode.Inherit);
 
-    await f.Arming.SetAsync(f.PartId, ArmMode.Armed, "danil", default);
+    await f.Arming.SetAsync(f.PartId, ArmMode.Armed, DanilName, default);
 
     Assert.Equal(ArmMode.Armed, (await f.ObjectSettings.GetAsync(f.PartId, default)).Mode);
     Assert.Single(await f.Db.Events.ToListAsync());
@@ -314,7 +319,7 @@ public class SpaceArmingTests
     Assert.False(view!.Armable);
     Assert.Null(view.Arming);
     await Assert.ThrowsAsync<ArmingException>(() =>
-      f.Arming.SetAsync(relayId, ArmMode.Armed, "danil", default));
+      f.Arming.SetAsync(relayId, ArmMode.Armed, DanilName, default));
   }
 
   [Fact]
@@ -328,7 +333,7 @@ public class SpaceArmingTests
     Assert.False(view.Configured);
 
     var refused = await Assert.ThrowsAsync<ArmingException>(() =>
-      f.Arming.SetAsync(f.PartId, ArmMode.Armed, "danil", default));
+      f.Arming.SetAsync(f.PartId, ArmMode.Armed, DanilName, default));
     Assert.Equal(ArmingRefusal.NotConfigured, refused.Refusal);
     Assert.Equal(ArmMode.Inherit, (await f.ObjectSettings.GetAsync(f.PartId, default)).Mode);
   }
@@ -337,10 +342,10 @@ public class SpaceArmingTests
   public async Task AnUnknownModeIsRefusedBeforeAnythingIsWritten()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
     var refused = await Assert.ThrowsAsync<ArmingException>(() =>
-      f.Arming.SetAsync(space.id!, "always", "danil", default));
+      f.Arming.SetAsync(space.id!, "always", DanilName, default));
 
     Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
     Assert.Null(await StoredArmingAsync(f, space.id!));
@@ -350,9 +355,9 @@ public class SpaceArmingTests
   public async Task AChangeQueuesTheRecheckInTheSameTransaction()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
-    await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
 
     var row = Assert.Single(await f.Db.MapOutbox.ToListAsync());
     Assert.Equal(MapTopics.ArmingChanged, row.topic);
@@ -363,23 +368,24 @@ public class SpaceArmingTests
   public async Task RepeatingTheSameModeJournalsButDoesNotQueueARecheck()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
-    await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
-    await f.Arming.SetAsync(space.id!, ArmMode.Armed, "danil", default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
 
     Assert.Single(await f.Db.MapOutbox.ToListAsync());
     // Both commands are the operator's actions, so both stay in the journal.
-    Assert.Equal(2, (await f.Db.Events.ToListAsync()).Count);
+    const int operatorCommands = 2;
+    Assert.Equal(operatorCommands, (await f.Db.Events.ToListAsync()).Count);
   }
 
   [Fact]
   public async Task ADisarmedContainerStillJournals()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
-    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, "danil", default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, DanilName, default);
 
     Assert.False(await StoredArmingAsync(f, space.id!));
     Assert.Equal(
@@ -393,7 +399,7 @@ public class SpaceArmingTests
 
     Assert.Null(await f.Arming.GetAsync(Guid.NewGuid().ToString(), default));
     var refused = await Assert.ThrowsAsync<ArmingException>(() =>
-      f.Arming.SetAsync(Guid.NewGuid().ToString(), ArmMode.Armed, "danil", default));
+      f.Arming.SetAsync(Guid.NewGuid().ToString(), ArmMode.Armed, DanilName, default));
     Assert.Equal(ArmingRefusal.NotFound, refused.Refusal);
   }
 
@@ -401,7 +407,7 @@ public class SpaceArmingTests
   public async Task AnOperatorNameIsNotRequiredForTheJournal()
   {
     var f = await CreateAsync();
-    var space = await SpaceAsync(f, "Floor");
+    var space = await SpaceAsync(f, FloorName);
 
     await f.Arming.SetAsync(space.id!, ArmMode.Armed, "  ", default);
 

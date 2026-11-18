@@ -18,6 +18,10 @@ public class PostgresTests
 {  private static readonly string? Dsn =
     Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
 
+  // The fixtures these tests share.
+  private const string AlarmState = "ALARM";
+  private const string CameraNodeName = "camera";
+
   private sealed record Services(
     NpgsqlDataSource DataSource,
     VmsMapDbContext Db,
@@ -80,9 +84,9 @@ public class PostgresTests
     var leaf = Guid.NewGuid();
 
     db.Markers.AddRange(
-      new DBMarker { id = root, name = "Building" },
-      new DBMarker { id = floor, name = "Floor", parent_id = root },
-      new DBMarker { id = leaf, name = "Camera", parent_id = floor });
+      new DBMarker { id = root, name = "building" },
+      new DBMarker { id = floor, name = "floor", parent_id = root },
+      new DBMarker { id = leaf, name = CameraNodeName, parent_id = floor });
 
     await db.SaveChangesAsync();
     return (root, floor, leaf);
@@ -101,7 +105,7 @@ public class PostgresTests
 
     await s.States.UpdateStates(new List<ObjectStateDTO>
     {
-      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { "ALARM" } }
+      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { AlarmState } }
     });
 
     Assert.True((await AlarmAsync(s.Db, leaf))!.alarm);
@@ -128,7 +132,7 @@ public class PostgresTests
 
     var alarm = new List<ObjectStateDTO>
     {
-      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { "ALARM" } }
+      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { AlarmState } }
     };
 
     await s.States.UpdateStates(alarm);
@@ -148,7 +152,7 @@ public class PostgresTests
 
     await s.States.UpdateStates(new List<ObjectStateDTO>
     {
-      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { "ALARM" } }
+      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { AlarmState } }
     });
 
     await s.Updates.Delete(new List<string> { Utils.ConvertGuidToObjectId(leaf) });
@@ -168,12 +172,12 @@ public class PostgresTests
     var (root, floor, leaf) = await SeedTreeAsync(s.Db);
 
     var otherRoot = Guid.NewGuid();
-    s.Db.Markers.Add(new DBMarker { id = otherRoot, name = "Other building" });
+    s.Db.Markers.Add(new DBMarker { id = otherRoot, name = "other building" });
     await s.Db.SaveChangesAsync();
 
     await s.States.UpdateStates(new List<ObjectStateDTO>
     {
-      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { "ALARM" } }
+      new() { id = Utils.ConvertGuidToObjectId(leaf), states = new List<string> { AlarmState } }
     });
 
     Assert.Equal(1, (await AlarmAsync(s.Db, floor))!.children_alarms);
@@ -183,7 +187,7 @@ public class PostgresTests
       new()
       {
         id = Utils.ConvertGuidToObjectId(leaf),
-        name = "Camera",
+        name = CameraNodeName,
         parent_id = Utils.ConvertGuidToObjectId(otherRoot)
       }
     });
@@ -202,10 +206,10 @@ public class PostgresTests
     var (root, _, leaf) = await SeedTreeAsync(s.Db);
 
     var replica = Guid.NewGuid();
-    s.Db.Markers.Add(new DBMarker { id = replica, name = "Camera", owner_id = leaf, parent_id = root });
+    s.Db.Markers.Add(new DBMarker { id = replica, name = CameraNodeName, owner_id = leaf, parent_id = root });
     // A picture of a node that is not being deleted is none of this delete's business.
     var otherReplica = Guid.NewGuid();
-    s.Db.Markers.Add(new DBMarker { id = otherReplica, name = "Still there", owner_id = root });
+    s.Db.Markers.Add(new DBMarker { id = otherReplica, name = "still there", owner_id = root });
     await s.Db.SaveChangesAsync();
 
     await s.Updates.Delete(new List<string> { Utils.ConvertGuidToObjectId(leaf) });

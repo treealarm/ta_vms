@@ -13,6 +13,19 @@ namespace VmsMap.Tests;
 // each status, what it writes, and when ALARM comes off the node.
 public class AlarmStoreTests
 {
+  // The fixtures these tests share. The sensor keys are the store's dedup addresses; the token is
+  // the digital input's part address; the names are the node labels the transitions hang on.
+  private const string AliceName = "alice";
+  private const string AckComment = "checking";
+  private const string SystemActorName = "system";
+  private const string InputToken = "1";
+  private const string CameraNodeName = "camera";
+  private const string DoorNodeName = "door";
+  private const string SensorOneKey = "sensor:1";
+  private const string SensorTwoKey = "sensor:2";
+  private const string SensorCameraKey = "sensor:camera";
+  private const string RetentionOneKey = "retention:1";
+
   private sealed record Services(
     VmsMapDbContext Db, MapDb Map, AlarmStore Store, TestCameraState Arming);
 
@@ -37,11 +50,11 @@ public class AlarmStoreTests
   {
     var camera = Guid.Parse(CameraObjectId.For(cameraId));
     var input = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, InputToken));
 
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = camera.ToString(), name = "Camera" },
-      new BaseMarkerDTO { id = input.ToString(), parent_id = camera.ToString(), name = "Door" },
+      new BaseMarkerDTO { id = camera.ToString(), name = CameraNodeName },
+      new BaseMarkerDTO { id = input.ToString(), parent_id = camera.ToString(), name = DoorNodeName },
     ]);
 
     s.Db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, camera));
@@ -51,14 +64,14 @@ public class AlarmStoreTests
       source_kind = DeviceObjectId.CameraSource,
       source_id = cameraId,
       part_kind = DeviceObjectId.DigitalInputPart,
-      part_token = "1",
+      part_token = InputToken,
     });
     await s.Db.SaveChangesAsync();
 
     return (camera, input);
   }
 
-  private static RaiseAlarmSpec Sensor(Guid objectId, string key = "sensor:1", string? trigger = "open") =>
+  private static RaiseAlarmSpec Sensor(Guid objectId, string key = SensorOneKey, string? trigger = "open") =>
     new(objectId, AlarmSource.Sensor, key, Trigger: trigger);
 
   private static Task<DBAlarm?> ById(VmsMapDbContext db, Guid id) =>
@@ -101,7 +114,7 @@ public class AlarmStoreTests
     var raised = await s.Store.RaiseAsync(Sensor(input), default);
     var id = raised.Alarm!.id;
 
-    Assert.Equal(AlarmMove.Applied, (await s.Store.NormalAsync(input, "sensor:1", default)).Move);
+    Assert.Equal(AlarmMove.Applied, (await s.Store.NormalAsync(input, SensorOneKey, default)).Move);
     Assert.Equal(AlarmStatus.Returned, (await ById(s.Db, id))!.status);
 
     var again = await s.Store.RaiseAsync(Sensor(input), default);
@@ -123,7 +136,7 @@ public class AlarmStoreTests
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
 
-    var outcome = await s.Store.AcknowledgeAsync(alarm.id, "alice", "seen", default);
+    var outcome = await s.Store.AcknowledgeAsync(alarm.id, AliceName, "seen", default);
 
     Assert.Equal(AlarmMove.Refused, outcome.Move);
     Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
@@ -137,23 +150,23 @@ public class AlarmStoreTests
     s.Arming.Armed = false;
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
-    var outcome = await s.Store.AcknowledgeAsync(alarm.id, "alice", "checking", default);
+    var outcome = await s.Store.AcknowledgeAsync(alarm.id, AliceName, AckComment, default);
 
     Assert.Equal(AlarmMove.Applied, outcome.Move);
 
     var row = await ById(s.Db, alarm.id);
     Assert.Equal(AlarmStatus.Acknowledged, row!.status);
     Assert.True(row.condition_active);
-    Assert.Equal("alice", row.acknowledged_by);
-    Assert.Equal("checking", row.ack_comment);
+    Assert.Equal(AliceName, row.acknowledged_by);
+    Assert.Equal(AckComment, row.ack_comment);
     Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
 
     var evt = await s.Db.Events.Include(e => e.extra_props)
       .SingleAsync(e => e.event_name == AlarmStore.AcknowledgedEvent);
     var props = evt.extra_props.ToDictionary(p => p.prop_name!, p => p.str_val);
     Assert.Equal(alarm.id.ToString(), props["alarm_id"]);
-    Assert.Equal("alice", props["acknowledged_by"]);
-    Assert.Equal("checking", props["comment"]);
+    Assert.Equal(AliceName, props["acknowledged_by"]);
+    Assert.Equal(AckComment, props["comment"]);
     Assert.Equal(TestCameras.One, props["camera_id"]);
   }
 
@@ -164,16 +177,16 @@ public class AlarmStoreTests
     var (_, input) = await DeviceAsync(s);
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
-    await s.Store.NormalAsync(input, "sensor:1", default);
+    await s.Store.NormalAsync(input, SensorOneKey, default);
 
-    var outcome = await s.Store.AcknowledgeAsync(alarm.id, "alice", null, default);
+    var outcome = await s.Store.AcknowledgeAsync(alarm.id, AliceName, null, default);
 
     Assert.Equal(AlarmMove.Applied, outcome.Move);
 
     var row = await ById(s.Db, alarm.id);
     Assert.Equal(AlarmStatus.Closed, row!.status);
     Assert.Equal(AlarmCloseReason.AcknowledgedAfterNormal, row.close_reason);
-    Assert.Equal("alice", row.closed_by);
+    Assert.Equal(AliceName, row.closed_by);
 
     var events = await Events(s.Db);
     Assert.Contains(AlarmStore.AcknowledgedEvent, events);
@@ -187,13 +200,13 @@ public class AlarmStoreTests
     var (_, input) = await DeviceAsync(s);
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
-    await s.Store.AcknowledgeAsync(alarm.id, "alice", null, default);
-    await s.Store.NormalAsync(input, "sensor:1", default);
+    await s.Store.AcknowledgeAsync(alarm.id, AliceName, null, default);
+    await s.Store.NormalAsync(input, SensorOneKey, default);
 
     var row = await ById(s.Db, alarm.id);
     Assert.Equal(AlarmStatus.Closed, row!.status);
     Assert.Equal(AlarmCloseReason.ReturnedToNormal, row.close_reason);
-    Assert.Equal("alice", row.closed_by);
+    Assert.Equal(AliceName, row.closed_by);
     Assert.False(row.condition_active);
     Assert.NotNull(row.cleared_at);
     Assert.NotNull(row.closed_at);
@@ -207,17 +220,17 @@ public class AlarmStoreTests
 
     // A retention alarm uses the seeded auto_on_normal definition and stands on the camera node.
     var outcome = await s.Store.RaiseAsync(
-      new RaiseAlarmSpec(camera, AlarmSource.Retention, "retention:1",
+      new RaiseAlarmSpec(camera, AlarmSource.Retention, RetentionOneKey,
         ExpectedEndTs: DateTime.UtcNow.AddMinutes(5)), default);
 
-    var normal = await s.Store.NormalAsync(camera, "retention:1", default);
+    var normal = await s.Store.NormalAsync(camera, RetentionOneKey, default);
 
     Assert.Equal(AlarmMove.Applied, normal.Move);
 
     var row = await ById(s.Db, outcome.Alarm!.id);
     Assert.Equal(AlarmStatus.Closed, row!.status);
     Assert.Equal(AlarmCloseReason.AutoReturnedToNormal, row.close_reason);
-    Assert.Equal("system", row.closed_by);
+    Assert.Equal(SystemActorName, row.closed_by);
     Assert.Contains(AlarmStore.ClosedEvent, await Events(s.Db));
 
     // Retention writes no raised event of its own.
@@ -231,7 +244,7 @@ public class AlarmStoreTests
     var (_, input) = await DeviceAsync(s);
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
-    var outcome = await s.Store.CloseAsync(alarm.id, "alice", AlarmCloseReason.FalseAlarm, null, default);
+    var outcome = await s.Store.CloseAsync(alarm.id, AliceName, AlarmCloseReason.FalseAlarm, null, default);
 
     Assert.Equal(AlarmMove.Refused, outcome.Move);
     Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
@@ -243,8 +256,8 @@ public class AlarmStoreTests
     var s = Create();
     var (_, input) = await DeviceAsync(s);
 
-    var first = (await s.Store.RaiseAsync(Sensor(input, "sensor:1"), default)).Alarm!;
-    var second = (await s.Store.RaiseAsync(Sensor(input, "sensor:2"), default)).Alarm!;
+    var first = (await s.Store.RaiseAsync(Sensor(input, SensorOneKey), default)).Alarm!;
+    var second = (await s.Store.RaiseAsync(Sensor(input, SensorTwoKey), default)).Alarm!;
 
     await s.Store.CloseForDeviceGoneAsync(input, default);
 
@@ -253,7 +266,7 @@ public class AlarmStoreTests
       var row = await ById(s.Db, id);
       Assert.Equal(AlarmStatus.Closed, row!.status);
       Assert.Equal(AlarmCloseReason.DeviceGone, row.close_reason);
-      Assert.Equal("system", row.closed_by);
+      Assert.Equal(SystemActorName, row.closed_by);
       Assert.False(row.condition_active);
       Assert.NotNull(row.cleared_at);
     }
@@ -267,13 +280,13 @@ public class AlarmStoreTests
     var s = Create();
     var (_, input) = await DeviceAsync(s);
 
-    await s.Store.RaiseAsync(Sensor(input, "sensor:1"), default);
-    await s.Store.RaiseAsync(Sensor(input, "sensor:2"), default);
+    await s.Store.RaiseAsync(Sensor(input, SensorOneKey), default);
+    await s.Store.RaiseAsync(Sensor(input, SensorTwoKey), default);
 
-    await s.Store.NormalAsync(input, "sensor:1", default);
+    await s.Store.NormalAsync(input, SensorOneKey, default);
     Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
 
-    await s.Store.NormalAsync(input, "sensor:2", default);
+    await s.Store.NormalAsync(input, SensorTwoKey, default);
     Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, input));
   }
 
@@ -283,10 +296,10 @@ public class AlarmStoreTests
     var s = Create();
     var (camera, _) = await DeviceAsync(s);
 
-    await s.Store.RaiseAsync(new RaiseAlarmSpec(camera, AlarmSource.Sensor, "sensor:camera"), default);
+    await s.Store.RaiseAsync(new RaiseAlarmSpec(camera, AlarmSource.Sensor, SensorCameraKey), default);
     Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, camera));
 
-    await s.Store.NormalAsync(camera, "sensor:camera", default);
+    await s.Store.NormalAsync(camera, SensorCameraKey, default);
 
     var states = await States(s.Db, camera);
     Assert.DoesNotContain(CameraStateWriter.Alarm, states);
@@ -300,13 +313,13 @@ public class AlarmStoreTests
     var (_, input) = await DeviceAsync(s);
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
-    await s.Store.NormalAsync(input, "sensor:1", default);
-    await s.Store.AcknowledgeAsync(alarm.id, "alice", null, default);
+    await s.Store.NormalAsync(input, SensorOneKey, default);
+    await s.Store.AcknowledgeAsync(alarm.id, AliceName, null, default);
 
-    var again = await s.Store.AcknowledgeAsync(alarm.id, "alice", null, default);
+    var again = await s.Store.AcknowledgeAsync(alarm.id, AliceName, null, default);
     Assert.Equal(AlarmMove.Refused, again.Move);
 
-    var close = await s.Store.CloseAsync(alarm.id, "alice", AlarmCloseReason.Other, null, default);
+    var close = await s.Store.CloseAsync(alarm.id, AliceName, AlarmCloseReason.Other, null, default);
     Assert.Equal(AlarmMove.Unchanged, close.Move);
   }
 }

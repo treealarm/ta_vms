@@ -20,6 +20,9 @@ public class EffectiveArmingTests
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string Token = "input1";
 
+  // The fixtures these tests share.
+  private const string FloorName = "floor";
+
   private sealed record Fixture(
     VmsMapDbContext Db,
     MapDb Map,
@@ -65,7 +68,7 @@ public class EffectiveArmingTests
   private static async Task PlaceReferenceAsync(
     Fixture f, string spaceId, string propertyOwnerId, bool? propertyValue)
   {
-    var replica = await Node(f.Map, "Camera on the map", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
+    var replica = await Node(f.Map, "camera on the map", parentId: spaceId, ownerId: CameraObjectId.For(CameraId));
 
     f.Db.CameraPlacements.Add(new DBCameraPlacement
     {
@@ -103,7 +106,7 @@ public class EffectiveArmingTests
   public async Task ADisarmedInputStaysDisarmedEvenWhenItsSpaceIsArmed()
   {
     var f = await CreateAsync(cameraArmed: true);
-    var space = await Node(f.Map, "Floor");
+    var space = await Node(f.Map, FloorName);
     await PlaceReferenceAsync(f, space.id!, space.id!, true);
     await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
 
@@ -128,7 +131,7 @@ public class EffectiveArmingTests
   public async Task AnArmedPropertyOfTheReferenceReplicasSpaceIsInherited()
   {
     var f = await CreateAsync(cameraArmed: false);
-    var space = await Node(f.Map, "Floor");
+    var space = await Node(f.Map, FloorName);
     await PlaceReferenceAsync(f, space.id!, space.id!, true);
 
     var arming = await f.Resolver.ResolveAsync(f.PartId, default);
@@ -141,8 +144,8 @@ public class EffectiveArmingTests
   public async Task TheNearestExplicitPropertyWins()
   {
     var f = await CreateAsync(cameraArmed: true);
-    var building = await Node(f.Map, "Building");
-    var floor = await Node(f.Map, "Floor", parentId: building.id);
+    var building = await Node(f.Map, "building");
+    var floor = await Node(f.Map, FloorName, parentId: building.id);
 
     // The building is armed; this floor is explicitly disarmed.
     await PlaceReferenceAsync(f, floor.id!, building.id!, true);
@@ -163,7 +166,7 @@ public class EffectiveArmingTests
   public async Task ACameraNodeInheritsLikeItsParts()
   {
     var f = await CreateAsync(cameraArmed: false);
-    var space = await Node(f.Map, "Floor");
+    var space = await Node(f.Map, FloorName);
     await PlaceReferenceAsync(f, space.id!, space.id!, true);
 
     var arming = await f.Resolver.ResolveAsync(CameraObjectId.For(CameraId), default);
@@ -176,7 +179,7 @@ public class EffectiveArmingTests
   public async Task ACamerasOwnModeComesFromTheMapAndWinsOverItsZone()
   {
     var f = await CreateAsync(cameraArmed: false);
-    var space = await Node(f.Map, "Floor");
+    var space = await Node(f.Map, FloorName);
     await PlaceReferenceAsync(f, space.id!, space.id!, true);
     await f.Store.SetAsync(
       CameraObjectId.For(CameraId), ArmMode.Disarmed, null, false, default);
@@ -192,7 +195,7 @@ public class EffectiveArmingTests
   public async Task AnIdThatIsNotADeviceNodeHasNoArming()
   {
     var f = await CreateAsync();
-    var space = await Node(f.Map, "Floor");
+    var space = await Node(f.Map, FloorName);
 
     Assert.Null(await f.Resolver.ResolveAsync(space.id!, default));
   }

@@ -21,6 +21,10 @@ public class DeviceSettingsServiceTests
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string Token = "input1";
 
+  // The fixtures these tests share.
+  private const string DanilName = "danil";
+  private const string ClosedContact = "closed";
+
   private sealed class Catalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
@@ -34,7 +38,8 @@ public class DeviceSettingsServiceTests
   {
     private DeviceSettingsInfo? Row => configured
       ? new DeviceSettingsInfo(
-          CameraId, DeviceObjectId.DigitalInputPart, Token, "Door", ArmMode.Inherit, "closed", true)
+          CameraId, DeviceObjectId.DigitalInputPart, Token, "door", ArmMode.Inherit,
+          ClosedContact, true)
       : null;
 
     public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
@@ -109,7 +114,7 @@ public class DeviceSettingsServiceTests
   {
     var f = await CreateAsync();
 
-    var view = await f.Service.SetAsync(Camera(), ArmMode.Armed, null, false, "danil", default);
+    var view = await f.Service.SetAsync(Camera(), ArmMode.Armed, null, false, DanilName, default);
 
     Assert.NotNull(view);
     Assert.Equal(ArmMode.Armed, view!.Mode);
@@ -124,15 +129,15 @@ public class DeviceSettingsServiceTests
   {
     var f = await CreateAsync();
 
-    var view = await f.Service.SetAsync(Input(), ArmMode.Inherit, "closed", true, "danil", default);
+    var view = await f.Service.SetAsync(Input(), ArmMode.Inherit, ClosedContact, true, DanilName, default);
 
     Assert.NotNull(view);
-    Assert.Equal("closed", view!.TriggerOn);
+    Assert.Equal(ClosedContact, view!.TriggerOn);
     Assert.True(view.AlarmEnabled);
     Assert.True(view.Configured);
 
     var read = await f.Service.GetAsync(Input(), default);
-    Assert.Equal("closed", read!.TriggerOn);
+    Assert.Equal(ClosedContact, read!.TriggerOn);
     Assert.True(read.AlarmEnabled);
   }
 
@@ -140,16 +145,16 @@ public class DeviceSettingsServiceTests
   public async Task SavingOnlyTheRuleLeavesTheModeAsItIs()
   {
     var f = await CreateAsync();
-    await f.Service.SetAsync(Input(), ArmMode.Armed, "open", true, "danil", default);
+    await f.Service.SetAsync(Input(), ArmMode.Armed, "open", true, DanilName, default);
 
     // The camera's Devices page edits the rule and says nothing about the mode, which is the
     // object's own setting: an empty mode must not be read as "inherit" and undo it.
-    var view = await f.Service.SetAsync(Input(), string.Empty, "closed", true, "danil", default);
+    var view = await f.Service.SetAsync(Input(), string.Empty, ClosedContact, true, DanilName, default);
 
     var partId = DeviceObjectId.For(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token);
     Assert.Equal(ArmMode.Armed, view!.Mode);
-    Assert.Equal("closed", view.TriggerOn);
+    Assert.Equal(ClosedContact, view.TriggerOn);
     Assert.Equal(ArmMode.Armed, (await f.Store.GetAsync(partId, default)).Mode);
   }
 
@@ -159,7 +164,7 @@ public class DeviceSettingsServiceTests
     var f = await CreateAsync(configured: false);
 
     var refused = await Assert.ThrowsAsync<ArmingException>(
-      () => f.Service.SetAsync(Input(), ArmMode.Armed, "closed", true, "danil", default));
+      () => f.Service.SetAsync(Input(), ArmMode.Armed, ClosedContact, true, DanilName, default));
 
     Assert.Equal(ArmingRefusal.NotConfigured, refused.Refusal);
   }
@@ -170,7 +175,7 @@ public class DeviceSettingsServiceTests
     var f = await CreateAsync();
 
     var refused = await Assert.ThrowsAsync<ArmingException>(
-      () => f.Service.SetAsync(Camera(), ArmMode.Armed, "closed", true, "danil", default));
+      () => f.Service.SetAsync(Camera(), ArmMode.Armed, ClosedContact, true, DanilName, default));
 
     Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
   }
@@ -183,7 +188,7 @@ public class DeviceSettingsServiceTests
     var key = new DeviceSettingsKey(
       DeviceSettingsKey.CameraSource, CameraId, DeviceSettingsKey.RelayPart, "lamp");
     var refused = await Assert.ThrowsAsync<ArmingException>(
-      () => f.Service.SetAsync(key, ArmMode.Inherit, null, false, "danil", default));
+      () => f.Service.SetAsync(key, ArmMode.Inherit, null, false, DanilName, default));
 
     Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
   }
@@ -194,7 +199,7 @@ public class DeviceSettingsServiceTests
     var f = await CreateAsync();
 
     var refused = await Assert.ThrowsAsync<ArmingException>(
-      () => f.Service.SetAsync(Input(), ArmMode.Inherit, null, true, "danil", default));
+      () => f.Service.SetAsync(Input(), ArmMode.Inherit, null, true, DanilName, default));
 
     Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
   }
@@ -203,12 +208,12 @@ public class DeviceSettingsServiceTests
   public async Task TheOperatorsSwitchTakesAnExplicitCameraBackToItsZone()
   {
     var f = await CreateAsync();
-    await f.Service.SetArmingAsync(Camera(), ArmMode.Armed, "danil", default);
+    await f.Service.SetArmingAsync(Camera(), ArmMode.Armed, DanilName, default);
     Assert.True(f.CameraState.Armed);
 
     // Inherit is an operator's command too: no zone is armed here, so the flag the services near
     // the hardware read goes off at once rather than at the next sweep.
-    var view = await f.Service.SetArmingAsync(Camera(), ArmMode.Inherit, "danil", default);
+    var view = await f.Service.SetArmingAsync(Camera(), ArmMode.Inherit, DanilName, default);
 
     Assert.Equal(ArmMode.Inherit, view!.Mode);
     Assert.False(f.CameraState.Armed);
@@ -220,7 +225,7 @@ public class DeviceSettingsServiceTests
   {
     var f = await CreateAsync();
 
-    var view = await f.Service.SetArmingAsync(Camera(), ArmMode.Armed, "danil", default);
+    var view = await f.Service.SetArmingAsync(Camera(), ArmMode.Armed, DanilName, default);
 
     Assert.True(view!.Arming!.Armed);
     Assert.Equal(ArmMode.Armed,
@@ -236,7 +241,7 @@ public class DeviceSettingsServiceTests
     var key = new DeviceSettingsKey(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, "never-reported");
     var refused = await Assert.ThrowsAsync<ArmingException>(
-      () => f.Service.SetArmingAsync(key, ArmMode.Armed, "danil", default));
+      () => f.Service.SetArmingAsync(key, ArmMode.Armed, DanilName, default));
 
     Assert.Equal(ArmingRefusal.NotFound, refused.Refusal);
   }

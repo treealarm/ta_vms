@@ -24,10 +24,20 @@ namespace VmsMap.Tests;
 // states and events are read like any other node's, with no geometry anywhere.
 public class DeviceNodeTests
 {
+  // The fixtures these tests share. The names are labels, the server id is the catalog's, and the
+  // states are the two vocabulary values the read path answers with.
+  private const string AliceName = "alice";
+  private const string AdminRole = "admin";
+  private const string ServerId = "srv";
+  private const string CameraNodeName = "camera";
+  private const string PartOneToken = "1";
+  private const string SensorOpenState = "SENSOR_OPEN";
+  private const string AlarmState = "ALARM";
+
   private sealed class TestCatalog : ICameraCatalog
   {
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "camera " + cameraId, ServerId));
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -109,22 +119,22 @@ public class DeviceNodeTests
     return new Services(db, map, states, nodes, grpc);
   }
 
-  private static MapProto.Caller Admin() => new() { Roles = { "admin" } };
+  private static MapProto.Caller Admin() => new() { Roles = { AdminRole } };
 
   private sealed record Device(string CameraId, BaseMarkerDTO CameraNode, string DigitalInput, string Relay);
 
   private static async Task<Device> SeedDeviceAsync(Services s, string cameraId = TestCameras.One)
   {
     var cameraNode = Guid.Parse(CameraObjectId.For(cameraId));
-    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = cameraNode.ToString(), name = "Camera" }]);
+    await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = cameraNode.ToString(), name = CameraNodeName }]);
 
     var input = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.DigitalInputPart, PartOneToken));
     var relay = Guid.Parse(DeviceObjectId.For(
-      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.RelayPart, "1"));
+      DeviceObjectId.CameraSource, cameraId, DeviceObjectId.RelayPart, PartOneToken));
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = input.ToString(), parent_id = cameraNode.ToString(), name = "Input 1" },
-      new BaseMarkerDTO { id = relay.ToString(), parent_id = cameraNode.ToString(), name = "Relay 1" },
+      new BaseMarkerDTO { id = input.ToString(), parent_id = cameraNode.ToString(), name = "input 1" },
+      new BaseMarkerDTO { id = relay.ToString(), parent_id = cameraNode.ToString(), name = "relay 1" },
     ]);
 
     s.Db.DeviceNodes.Add(TestCameras.DeviceNode(cameraId, cameraNode));
@@ -134,7 +144,7 @@ public class DeviceNodeTests
       source_kind = DeviceObjectId.CameraSource,
       source_id = cameraId,
       part_kind = DeviceObjectId.DigitalInputPart,
-      part_token = "1",
+      part_token = PartOneToken,
     });
     s.Db.DeviceNodes.Add(new DBDeviceNode
     {
@@ -142,7 +152,7 @@ public class DeviceNodeTests
       source_kind = DeviceObjectId.CameraSource,
       source_id = cameraId,
       part_kind = DeviceObjectId.RelayPart,
-      part_token = "1",
+      part_token = PartOneToken,
     });
     await s.Db.SaveChangesAsync();
 
@@ -160,7 +170,7 @@ public class DeviceNodeTests
     Assert.NotEqual(
       CameraObjectId.For(TestCameras.One),
       DeviceObjectId.For(
-        DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, "1"));
+        DeviceObjectId.CameraSource, TestCameras.One, DeviceObjectId.DigitalInputPart, PartOneToken));
   }
 
   [Fact]
@@ -184,12 +194,12 @@ public class DeviceNodeTests
     // A right granted on the device flows down to its parts, but only the device row names a
     // camera: the parts are not "the camera" to a reader of the rights answer.
     await s.Db.Rights.AddRangeAsync(
-      new DBRight { object_id = Guid.Parse(device.CameraNode.id!), subject = "alice", action = RightActions.View },
-      new DBRight { object_id = Guid.Parse(device.DigitalInput), subject = "alice", action = RightActions.View });
+      new DBRight { object_id = Guid.Parse(device.CameraNode.id!), subject = AliceName, action = RightActions.View },
+      new DBRight { object_id = Guid.Parse(device.DigitalInput), subject = AliceName, action = RightActions.View });
     await s.Db.SaveChangesAsync();
 
     var effective = await new RightsService(s.Db).GetEffectiveAsync(
-      new CallerContext("alice", [], false), CancellationToken.None);
+      new CallerContext(AliceName, [], false), CancellationToken.None);
 
     Assert.Equal(
       device.CameraId,
@@ -205,7 +215,7 @@ public class DeviceNodeTests
     var device = await SeedDeviceAsync(s);
 
     await s.States.UpdateStates([
-      new ObjectStateDTO { id = device.DigitalInput, states = ["SENSOR_OPEN"] }
+      new ObjectStateDTO { id = device.DigitalInput, states = [SensorOpenState] }
     ]);
     await new EventsService(s.Db, s.Map).InsertManyAsync([
       new EventDTO
@@ -223,7 +233,7 @@ public class DeviceNodeTests
       Ids = { device.DigitalInput },
       Caller = Admin(),
     }, new TestContext());
-    Assert.Contains(states.States, state => state.Id == device.DigitalInput && state.States.Contains("SENSOR_OPEN"));
+    Assert.Contains(states.States, state => state.Id == device.DigitalInput && state.States.Contains(SensorOpenState));
 
     var events = await s.Grpc.GetEventsByFilter(new MapProto.GetEventsByFilterRequest
     {
@@ -231,7 +241,7 @@ public class DeviceNodeTests
       Caller = Admin(),
     }, new TestContext());
     Assert.Single(events.Events);
-    Assert.Equal(device.DigitalInput, events.Events[0].ObjectId);
+    Assert.Equal(device.DigitalInput, events.Events.First().ObjectId);
 
     // No pictures, no geometry: the node is readable without either.
     Assert.Empty(await s.Db.GeoObjects.Where(g => g.id == Guid.Parse(device.DigitalInput)).ToListAsync());
@@ -246,28 +256,28 @@ public class DeviceNodeTests
     var camera = Guid.Parse(device.CameraNode.id!);
 
     // The server node and the space the camera is drawn in; the reference replica stands there.
-    var server = Guid.Parse(ServerNodeId.For("srv"));
+    var server = Guid.Parse(ServerNodeId.For(ServerId));
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = server.ToString(), name = "srv" },
-      new BaseMarkerDTO { id = camera.ToString(), parent_id = server.ToString(), name = "Camera" },
+      new BaseMarkerDTO { id = server.ToString(), name = ServerId },
+      new BaseMarkerDTO { id = camera.ToString(), parent_id = server.ToString(), name = CameraNodeName },
     ]);
     var space = Guid.NewGuid();
     var replica = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = space.ToString(), name = "Yard" },
+      new BaseMarkerDTO { id = space.ToString(), name = "yard" },
       new BaseMarkerDTO { id = replica.ToString(), parent_id = space.ToString(),
-        owner_id = camera.ToString(), name = "Camera" },
+        owner_id = camera.ToString(), name = CameraNodeName },
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = replica, camera_id = device.CameraId, is_reference = true,
     });
     await s.Db.Rights.AddRangeAsync(
-      new DBRight { object_id = space, subject = "alice", action = RightActions.View });
+      new DBRight { object_id = space, subject = AliceName, action = RightActions.View });
     await s.Db.SaveChangesAsync();
 
     var rights = new RightsService(s.Db);
-    var alice = new CallerContext("alice", [], false);
+    var alice = new CallerContext(AliceName, [], false);
 
     // The canonical node and its part stand under the server, where the space's right cannot
     // reach them; the reference replica is what carries that right to them.
@@ -279,11 +289,11 @@ public class DeviceNodeTests
     var noSpaceDevice = await SeedDeviceAsync(noSpaceRights);
     var noSpaceCamera = Guid.Parse(noSpaceDevice.CameraNode.id!);
     await noSpaceRights.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = server.ToString(), name = "srv" },
-      new BaseMarkerDTO { id = noSpaceCamera.ToString(), parent_id = server.ToString(), name = "Camera" },
+      new BaseMarkerDTO { id = server.ToString(), name = ServerId },
+      new BaseMarkerDTO { id = noSpaceCamera.ToString(), parent_id = server.ToString(), name = CameraNodeName },
     ]);
     await noSpaceRights.Db.Rights.AddRangeAsync(
-      new DBRight { object_id = server, subject = "alice", action = RightActions.View });
+      new DBRight { object_id = server, subject = AliceName, action = RightActions.View });
     await noSpaceRights.Db.SaveChangesAsync();
     Assert.True(await new RightsService(noSpaceRights.Db).IsAllowedAsync(
       noSpaceCamera.ToString(), RightActions.View, alice, CancellationToken.None));
@@ -293,7 +303,7 @@ public class DeviceNodeTests
     await s.Db.SaveChangesAsync();
     Assert.False(await rights.IsAllowedAsync(camera.ToString(), RightActions.View, alice, CancellationToken.None));
     Assert.True(await rights.IsAllowedAsync(
-      camera.ToString(), RightActions.View, new CallerContext(null, ["admin"], false), CancellationToken.None));
+      camera.ToString(), RightActions.View, new CallerContext(null, [AdminRole], false), CancellationToken.None));
   }
 
   [Fact]
@@ -307,16 +317,16 @@ public class DeviceNodeTests
     var diagramReplica = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO { id = mapReplica.ToString(), parent_id = canonical.ToString(),
-        owner_id = canonical.ToString(), name = "Camera on the map" },
+        owner_id = canonical.ToString(), name = "camera on the map" },
       new BaseMarkerDTO { id = diagramReplica.ToString(), parent_id = canonical.ToString(),
-        owner_id = canonical.ToString(), name = "Camera on the diagram" },
+        owner_id = canonical.ToString(), name = "camera on the diagram" },
     ]);
     // Two drawings of one camera: different on each canvas.
     s.Db.Visuals.AddRange(
       new DBVisual { object_id = mapReplica, color = "#ff0000" },
       new DBVisual { object_id = diagramReplica, color = "#0000ff" });
     await s.States.UpdateStates([
-      new ObjectStateDTO { id = canonical.ToString(), states = ["ALARM"] }
+      new ObjectStateDTO { id = canonical.ToString(), states = [AlarmState] }
     ]);
     await new EventsService(s.Db, s.Map).InsertManyAsync([
       new EventDTO
@@ -342,8 +352,9 @@ public class DeviceNodeTests
       Ids = { mapReplica.ToString(), diagramReplica.ToString() },
       Caller = Admin(),
     }, new TestContext());
-    Assert.Equal(2, states.States.Count);
-    Assert.All(states.States, state => Assert.Contains("ALARM", state.States));
+    const int replicaCount = 2; // the two replicas the request asks about
+    Assert.Equal(replicaCount, states.States.Count);
+    Assert.All(states.States, state => Assert.Contains(AlarmState, state.States));
 
     var events = await s.Grpc.GetEventsByFilter(new MapProto.GetEventsByFilterRequest
     {
@@ -366,7 +377,7 @@ public class DeviceNodeTests
       SourceKind = DeviceObjectId.CameraSource,
       SourceId = device.CameraId,
       PartKind = DeviceObjectId.DigitalInputPart,
-      PartToken = "1",
+      PartToken = PartOneToken,
     }, new TestContext());
 
     Assert.True(arming.Found);
@@ -433,7 +444,7 @@ public class DeviceNodeTests
 
     var space = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
-      new BaseMarkerDTO { id = space.ToString(), name = "Room" },
+      new BaseMarkerDTO { id = space.ToString(), name = "room" },
     ]);
     var picture = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
@@ -442,7 +453,7 @@ public class DeviceNodeTests
         id = picture.ToString(),
         parent_id = space.ToString(),
         owner_id = device.DigitalInput,
-        name = "Sensor picture",
+        name = "sensor picture",
       },
     ]);
 
