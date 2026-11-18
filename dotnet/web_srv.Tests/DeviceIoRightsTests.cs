@@ -18,6 +18,8 @@ namespace web_srv.Tests;
 // the control list is a self-filtering read rather than a per-camera check.
 public class DeviceIoRightsTests
 {
+  private const string CameraIdParameter = "cameraId";
+
   [Fact]
   public void TheControlListFiltersItselfByViewLive()
   {
@@ -123,7 +125,7 @@ public class DeviceIoRightsTests
     };
     var route = new RouteData();
     if (cameraId is not null)
-      route.Values["cameraId"] = cameraId;
+      route.Values[CameraIdParameter] = cameraId;
 
     var actionContext = new ActionContext(http, route, descriptor);
     var executing = new ActionExecutingContext(

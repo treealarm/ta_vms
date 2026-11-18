@@ -5,12 +5,20 @@ import {
   ownRect, regionAtPoint, regionRect, type Rect,
 } from './diagramGeometry'
 
+// The fixtures these tests share: the rack's region, the nodes drawn in it, and the shape kind.
+const SLOT_ONE = 'slot-1'
+const SWITCH = 'switch'
+const FREE = 'free'
+const FRONT = 'front'
+const BACK = 'back'
+const POLYGON = 'Polygon'
+
 const parent: Rect = { left: 0, top: 0, width: 400, height: 800, rotation: 0 }
 
 const rackType: MapDiagramType = {
   id: 'type-rack',
   regions: [
-    { regionKey: 'slot-1', geometry: { left: 0.1, top: 0.25, width: 0.8, height: 0.1 } },
+    { regionKey: SLOT_ONE, geometry: { left: 0.1, top: 0.25, width: 0.8, height: 0.1 } },
   ],
 }
 
@@ -33,8 +41,8 @@ describe('regionRect', () => {
 describe('elementRect', () => {
   it('takes the place of the region the element names', () => {
     const switchDiagram: MapDiagram = {
-      id: 'switch',
-      regionId: 'slot-1',
+      id: SWITCH,
+      regionId: SLOT_ONE,
       geometry: { left: 0, top: 0, width: 300, height: 200 },
     }
 
@@ -48,7 +56,7 @@ describe('elementRect', () => {
   })
 
   it('takes its own rectangle when it names no region', () => {
-    const free: MapDiagram = { id: 'free', geometry: { left: 10, top: 20, width: 30, height: 40 } }
+    const free: MapDiagram = { id: FREE, geometry: { left: 10, top: 20, width: 30, height: 40 } }
 
     expect(elementRect(free, rackType, parent)).toEqual({
       left: 10,
@@ -60,7 +68,7 @@ describe('elementRect', () => {
   })
 
   it('stands nowhere when the region is not in the type any more', () => {
-    const orphan: MapDiagram = { id: 'switch', regionId: 'slot-9' }
+    const orphan: MapDiagram = { id: SWITCH, regionId: 'slot-9' }
 
     expect(elementRect(orphan, rackType, parent)).toBeNull()
   })
@@ -69,8 +77,8 @@ describe('elementRect', () => {
 describe('diagramPaper', () => {
   it('is the diagram its own rectangle, wherever its parent put it', () => {
     const nested: MapDiagram = {
-      id: 'switch',
-      regionId: 'slot-1',
+      id: SWITCH,
+      regionId: SLOT_ONE,
       geometry: { left: 40, top: 200, width: 300, height: 200 },
     }
 
@@ -102,7 +110,7 @@ describe('diagramPaper', () => {
 
 describe('ownRect', () => {
   it('keeps the placement, which is what a free element is drawn at', () => {
-    expect(ownRect({ id: 'free', geometry: { left: 10, top: 20, width: 30, height: 40 } }))
+    expect(ownRect({ id: FREE, geometry: { left: 10, top: 20, width: 30, height: 40 } }))
       .toEqual({ left: 10, top: 20, width: 30, height: 40, rotation: 0 })
   })
 })
@@ -141,18 +149,18 @@ describe('clampRegion', () => {
 
 describe('regionAtPoint', () => {
   const regions: MapDiagramTypeRegion[] = [
-    { regionKey: 'back', geometry: { left: 0, top: 0, width: 0.5, height: 0.5 } },
-    { regionKey: 'front', geometry: { left: 0.25, top: 0.25, width: 0.5, height: 0.5 } },
+    { regionKey: BACK, geometry: { left: 0, top: 0, width: 0.5, height: 0.5 } },
+    { regionKey: FRONT, geometry: { left: 0.25, top: 0.25, width: 0.5, height: 0.5 } },
     { regionKey: 'has-none' },
   ]
 
   it('answers with the region the point falls in', () => {
-    expect(regionAtPoint(regions, 0.1, 0.1)?.regionKey).toBe('back')
-    expect(regionAtPoint(regions, 0.6, 0.6)?.regionKey).toBe('front')
+    expect(regionAtPoint(regions, 0.1, 0.1)?.regionKey).toBe(BACK)
+    expect(regionAtPoint(regions, 0.6, 0.6)?.regionKey).toBe(FRONT)
   })
 
   it('gives an overlap to the last region drawn', () => {
-    expect(regionAtPoint(regions, 0.3, 0.3)?.regionKey).toBe('front')
+    expect(regionAtPoint(regions, 0.3, 0.3)?.regionKey).toBe(FRONT)
   })
 
   it('has nothing outside every region', () => {
@@ -172,11 +180,11 @@ describe('free figures on a diagram', () => {
 
   it('moves every vertex of a shape and keeps its type', () => {
     const moved = moveGeometry({
-      type: 'Polygon',
+      type: POLYGON,
       coord: [{ lat: 10, lon: 20 }, { lat: 10, lon: 60 }, { lat: 50, lon: 60 }, { lat: 10, lon: 20 }],
     }, 5, -3)
 
-    expect(moved?.type).toBe('Polygon')
+    expect(moved?.type).toBe(POLYGON)
     expect(moved?.coord).toEqual([
       { lat: 7, lon: 25 }, { lat: 7, lon: 65 }, { lat: 47, lon: 65 }, { lat: 7, lon: 25 },
     ])

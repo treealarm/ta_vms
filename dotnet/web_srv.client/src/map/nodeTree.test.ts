@@ -2,20 +2,27 @@ import { describe, expect, it } from 'vitest'
 import type { MapMarker } from '../dto/mapDtos'
 import { treeRows, type TreePage } from './nodeTree'
 
+// The fixtures these tests share: a root with two children, and a chain below one of them.
+const ROOT = 'root'
+const NODE_A = 'a'
+const NODE_B = 'b'
+const NODE_C = 'c'
+const NODE_D = 'd'
+
 const marker = (id: string, parentId?: string): MapMarker => ({ id, parentId, name: id })
 
 const markers: Record<string, MapMarker> = {
-  a: marker('a', 'root'),
-  b: marker('b', 'root'),
-  c: marker('c', 'a'),
-  d: marker('d', 'c'),
+  a: marker(NODE_A, ROOT),
+  b: marker(NODE_B, ROOT),
+  c: marker(NODE_C, NODE_A),
+  d: marker(NODE_D, NODE_C),
 }
 
 const pages: Record<string, TreePage | undefined> = {
-  root: { ids: ['a', 'b'], loaded: true },
-  a: { ids: ['c'], loaded: true },
+  root: { ids: [NODE_A, NODE_B], loaded: true },
+  a: { ids: [NODE_C], loaded: true },
   b: { ids: [], loaded: false },
-  c: { ids: ['d'], loaded: true },
+  c: { ids: [NODE_D], loaded: true },
 }
 
 const roots = [markers.a, markers.b]
@@ -23,32 +30,32 @@ const ids = (rows: ReturnType<typeof treeRows>) => rows.map((row) => row.marker.
 
 describe('treeRows', () => {
   it('shows the roots alone while nothing is open', () => {
-    expect(ids(treeRows(roots, pages, markers, new Set()))).toEqual(['a', 'b'])
+    expect(ids(treeRows(roots, pages, markers, new Set()))).toEqual([NODE_A, NODE_B])
   })
 
   it('unfolds an open row into its page', () => {
-    const rows = treeRows(roots, pages, markers, new Set(['a']))
-    expect(ids(rows)).toEqual(['a', 'c', 'b'])
-    expect(rows.find((row) => row.marker.id === 'c')?.depth).toBe(1)
+    const rows = treeRows(roots, pages, markers, new Set([NODE_A]))
+    expect(ids(rows)).toEqual([NODE_A, NODE_C, NODE_B])
+    expect(rows.find((row) => row.marker.id === NODE_C)?.depth).toBe(1)
   })
 
   it('goes as deep as the reader has opened', () => {
-    const rows = treeRows(roots, pages, markers, new Set(['a', 'c']))
-    expect(ids(rows)).toEqual(['a', 'c', 'd', 'b'])
-    expect(rows.find((row) => row.marker.id === 'd')?.depth).toBe(2)
+    const rows = treeRows(roots, pages, markers, new Set([NODE_A, NODE_C]))
+    expect(ids(rows)).toEqual([NODE_A, NODE_C, NODE_D, NODE_B])
+    expect(rows.find((row) => row.marker.id === NODE_D)?.depth).toBe(2)
   })
 
   it('does not walk a page that has not been read', () => {
-    expect(ids(treeRows(roots, pages, markers, new Set(['b'])))).toEqual(['a', 'b'])
+    expect(ids(treeRows(roots, pages, markers, new Set([NODE_B])))).toEqual([NODE_A, NODE_B])
   })
 
   it('skips a child the store does not know, rather than drawing a blank row', () => {
-    const partial = { ...pages, a: { ids: ['c', 'gone'], loaded: true } }
-    expect(ids(treeRows(roots, partial, markers, new Set(['a'])))).toEqual(['a', 'c', 'b'])
+    const partial = { ...pages, a: { ids: [NODE_C, 'gone'], loaded: true } }
+    expect(ids(treeRows(roots, partial, markers, new Set([NODE_A])))).toEqual([NODE_A, NODE_C, NODE_B])
   })
 
   it('draws a node once even if the data closes a cycle', () => {
-    const cyclic = { ...pages, c: { ids: ['a'], loaded: true } }
-    expect(ids(treeRows(roots, cyclic, markers, new Set(['a', 'c'])))).toEqual(['a', 'c', 'b'])
+    const cyclic = { ...pages, c: { ids: [NODE_A], loaded: true } }
+    expect(ids(treeRows(roots, cyclic, markers, new Set([NODE_A, NODE_C])))).toEqual([NODE_A, NODE_C, NODE_B])
   })
 })

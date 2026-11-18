@@ -16,6 +16,9 @@ namespace web_srv.Tests;
 // can resolve a node id — a space has no camera id at all, so `cameraId` would never bind.
 public class ZoneArmingRightsTests
 {
+  // The route parameter the filter resolves; every control action must name it.
+  private const string ObjectIdParameter = "objectId";
+
   [Fact]
   public void ReadingArmingIsView()
   {
@@ -23,7 +26,7 @@ public class ZoneArmingRightsTests
 
     Assert.NotNull(required);
     Assert.Equal(RightActions.View, required.Action);
-    Assert.Equal("objectId", required.Name);
+    Assert.Equal(ObjectIdParameter, required.Name);
   }
 
   [Fact]
@@ -33,7 +36,7 @@ public class ZoneArmingRightsTests
 
     Assert.NotNull(required);
     Assert.Equal(RightActions.Control, required.Action);
-    Assert.Equal("objectId", required.Name);
+    Assert.Equal(ObjectIdParameter, required.Name);
   }
 
   [Fact]
@@ -43,7 +46,7 @@ public class ZoneArmingRightsTests
 
     Assert.NotNull(required);
     Assert.Equal(RightActions.Acknowledge, required.Action);
-    Assert.Equal("objectId", required.Name);
+    Assert.Equal(ObjectIdParameter, required.Name);
   }
 
   [Fact]
@@ -87,7 +90,7 @@ public class ZoneArmingRightsTests
 
   private sealed class Probe : ControllerBase
   {
-    [RequiresRight(RightActions.Control, Name = "objectId")]
+    [RequiresRight(RightActions.Control, Name = ObjectIdParameter)]
     public void NodeGuarded() { }
   }
 
@@ -111,7 +114,7 @@ public class ZoneArmingRightsTests
       User = new ClaimsPrincipal(new ClaimsIdentity("test")),
     };
     var route = new RouteData();
-    route.Values["objectId"] = "f0b9c5d0-0000-4000-8000-000000000001";
+    route.Values[ObjectIdParameter] = "f0b9c5d0-0000-4000-8000-000000000001";
 
     var descriptor = new ControllerActionDescriptor
     {

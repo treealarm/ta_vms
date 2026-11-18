@@ -2,34 +2,44 @@ import { describe, expect, it } from 'vitest'
 import type { MapMarker } from '../dto/mapDtos'
 import { isUnder } from './tree'
 
+// The fixtures these tests share: one chain and one sibling beside it.
+const MAP = 'map'
+const DISTRICT = 'district'
+const BUILDING = 'building'
+const CAMERA = 'camera'
+const OTHER = 'other'
+// The two nodes of the malformed loop, which belong to no tree of their own.
+const LOOP_A = 'a'
+const LOOP_B = 'b'
+
 const markers: Record<string, MapMarker> = {
-  map: { id: 'map', name: 'Map' },
-  district: { id: 'district', name: 'District', parentId: 'map' },
-  building: { id: 'building', name: 'Building', parentId: 'district' },
-  camera: { id: 'camera', name: 'Camera', parentId: 'building' },
-  other: { id: 'other', name: 'Other', parentId: 'map' },
+  map: { id: MAP, name: MAP },
+  district: { id: DISTRICT, name: DISTRICT, parentId: MAP },
+  building: { id: BUILDING, name: BUILDING, parentId: DISTRICT },
+  camera: { id: CAMERA, name: CAMERA, parentId: BUILDING },
+  other: { id: OTHER, name: OTHER, parentId: MAP },
 }
 
 describe('isUnder', () => {
   it('finds a node below itself, at any depth', () => {
-    expect(isUnder(markers, 'district', 'map')).toBe(true)
-    expect(isUnder(markers, 'camera', 'map')).toBe(true)
+    expect(isUnder(markers, DISTRICT, MAP)).toBe(true)
+    expect(isUnder(markers, CAMERA, MAP)).toBe(true)
   })
 
   it('does not call a sibling a descendant', () => {
-    expect(isUnder(markers, 'other', 'district')).toBe(false)
+    expect(isUnder(markers, OTHER, DISTRICT)).toBe(false)
   })
 
   it('keeps a node out of its own subtree', () => {
-    expect(isUnder(markers, 'district', 'district')).toBe(false)
-    expect(isUnder(markers, 'camera', 'district')).toBe(true)
+    expect(isUnder(markers, DISTRICT, DISTRICT)).toBe(false)
+    expect(isUnder(markers, CAMERA, DISTRICT)).toBe(true)
   })
 
   it('stops on a loop already in the data', () => {
     const looped: Record<string, MapMarker> = {
-      a: { id: 'a', parentId: 'b' },
-      b: { id: 'b', parentId: 'a' },
+      a: { id: LOOP_A, parentId: LOOP_B },
+      b: { id: LOOP_B, parentId: LOOP_A },
     }
-    expect(isUnder(looped, 'a', 'missing')).toBe(false)
+    expect(isUnder(looped, LOOP_A, 'missing')).toBe(false)
   })
 })

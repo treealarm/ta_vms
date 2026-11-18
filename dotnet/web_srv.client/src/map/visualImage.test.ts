@@ -5,6 +5,7 @@ import { visualImageUrl } from './visualImage'
 // background used as an icon — used to be handed to the browser as a broken PNG.
 const svg = btoa('<svg xmlns="http://www.w3.org/2000/svg" width="44" height="28"/>')
 const png = btoa('\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR')
+const PNG_DATA_URL = 'data:image/png;base64,AAAA'
 
 describe('visualImageUrl', () => {
   it('tells an SVG from a PNG by the bytes it starts with', () => {
@@ -13,7 +14,7 @@ describe('visualImageUrl', () => {
   })
 
   it('passes a data URL through, and an absent picture stays absent', () => {
-    expect(visualImageUrl('data:image/png;base64,AAAA')).toBe('data:image/png;base64,AAAA')
+    expect(visualImageUrl(PNG_DATA_URL)).toBe(PNG_DATA_URL)
     expect(visualImageUrl(null)).toBe('')
     expect(visualImageUrl(undefined)).toBe('')
   })

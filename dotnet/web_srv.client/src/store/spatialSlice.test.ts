@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { SpaceDto } from '../dto/dtos'
 import { parentsToRefresh } from './spatialSlice'
 
+// The fixtures these tests share: the building every space hangs under, and the annex one moves to.
+const BUILDING = 'building'
+const ANNEX = 'annex'
+
 const MAP = {
   view: { southWest: { lat: 0, lon: 0 }, northEast: { lat: 1, lon: 1 } },
   kind: 'plan' as const,
@@ -12,16 +16,16 @@ const MAP = {
 }
 
 const floor = (over: Partial<SpaceDto> = {}): SpaceDto => ({
-  id: 'floor', parentId: 'building', name: 'First floor', ...MAP, ...over,
+  id: 'floor', parentId: BUILDING, name: 'first floor', ...MAP, ...over,
 })
 
 describe('parentsToRefresh', () => {
   it('names the parent of a nested space just created', () => {
-    expect(parentsToRefresh(undefined, floor())).toEqual(['building'])
+    expect(parentsToRefresh(undefined, floor())).toEqual([BUILDING])
   })
 
   it('leaves a map created at the root alone: it has no parent page to re-read', () => {
-    expect(parentsToRefresh(undefined, floor({ id: 'map', parentId: null, name: 'Campus' }))).toEqual([])
+    expect(parentsToRefresh(undefined, floor({ id: 'map', parentId: null, name: 'campus' }))).toEqual([])
   })
 
   it('says nothing when the map saved what it is looking at', () => {
@@ -35,15 +39,15 @@ describe('parentsToRefresh', () => {
   })
 
   it('re-reads the parent when a space is renamed, because the page carries the name', () => {
-    expect(parentsToRefresh(floor(), floor({ name: 'Ground floor' }))).toEqual(['building'])
+    expect(parentsToRefresh(floor(), floor({ name: 'ground floor' }))).toEqual([BUILDING])
   })
 
   it('re-reads both parents when a space moves under another one', () => {
-    expect(parentsToRefresh(floor(), floor({ parentId: 'annex' }))).toEqual(['building', 'annex'])
+    expect(parentsToRefresh(floor(), floor({ parentId: ANNEX }))).toEqual([BUILDING, ANNEX])
   })
 
   it('re-reads the parent of a deleted space', () => {
-    expect(parentsToRefresh(floor(), null)).toEqual(['building'])
+    expect(parentsToRefresh(floor(), null)).toEqual([BUILDING])
   })
 
   it('has nothing to re-read for a root space that was deleted', () => {
