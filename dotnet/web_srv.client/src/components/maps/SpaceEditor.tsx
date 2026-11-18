@@ -31,6 +31,7 @@ import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } f
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
+import CanvasTruncatedNotice from '../../map/CanvasTruncatedNotice'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
 import DrawingPreview, { FinishOnDoubleClick } from '../../map/DrawingPreview'
@@ -857,125 +858,128 @@ export default function SpaceEditor({
             onDeleted={() => { openDiagram(null); setSelection(null) }}
           />
         ) : (
-          <SpaceCanvas
-            key={spaceId}
-            space={space}
-            alignOnMap={alignOnMap}
-            onMapClick={handleMapClick}
-            picking={picking}
-            focus={focus}
-            overlay={<SpaceNav spaces={spaces} space={space} />}
-            onNodeDrop={(at, nodeId) => void run(async () => {
-              const marker = await dispatch(createReplicaAt({
-                ownerId: nodeId, parentId: spaceId, lat: at.lat, lon: at.lon,
-              })).unwrap()
-              setSelection({ kind: 'node', id: marker.id })
-            })}
-          >
-            <MapBridge mapRef={mapRef} />
-            {plan && (
-              <PlanOverlay
-                space={space}
-                corners={planCorners}
-                editable={mode === 'plan'}
-                onCornersChange={(c, commit) => (commit ? void commitCorners(c) : setDraftCorners(c))}
-              />
-            )}
-            <FiguresLayer
-              figures={mapData.figures.map((figure) => (draftFigure?.id === figure.id ? draftFigure : figure))}
-              states={{}}
-              alarms={{}}
-              descriptions={{}}
-              levels={levels}
-              selectedId={selectedNodeId}
-              onSelect={selectOnCanvas}
-              // A camera placed here is drawn by its marker, not by the shape the node carries. A
-              // diagram that is a replica of a camera is not that picture: it is a node of its own
-              // on this canvas, and hiding it hid the whole readings panel. So only the replica
-              // standing exactly on a placement is skipped.
-              skipIds={new Set(here
-                .map((placement) => figureAtPlacement(mapData.figures, placement)?.id)
-                .filter((id): id is string => !!id))}
-              editable={mode === 'select'}
-              interactive={!picking}
-              onGeometryChange={handleGeometryChange}
-            />
-            {draftPoints && <DrawingPreview points={draftPoints} closed={drawingRing} />}
-            {drawingPath && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
-            <Footprints
-              nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
-              selectedId={selectionNodeId}
-              levels={levels}
-              zoomLevels={spaceZoomLevels}
-              interactive={!picking}
-              onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
-            />
-            {selectedNested && mode === 'select' && (
-              <FootprintEditor
-                footprint={draftFootprint ?? selectedNested.footprint}
-                onChange={(f, commit) => (commit ? commitFootprint(selectedNested, f) : setDraftFootprint(f))}
-              />
-            )}
-            {here.map((stored) => {
-              const p = draft?.cameraId === stored.cameraId ? draft : stored
-              const camera = camerasById[p.cameraId]
-              // The node behind the placement carries the camera's scale layer.
-              const node = nodeForPlacement(p)
-              return (
-                <CameraMarker
-                  key={p.cameraId}
-                  placement={p}
-                  label={camera?.name || p.cameraId}
-                  color={STATUS_COLOR[cameraMapStatus(camera)]}
-                  // The picture is the placement node's own: the map turns it by the heading, as it
-                  // turns its dot.
-                  visual={node ? figuresById[node.id]?.visual : undefined}
-                  // A marker is the picture the placement draws: the one node, not every picture
-                  // of that camera.
-                  selected={selection?.kind === 'camera'
-                    ? selection.id === p.cameraId
-                    : nodeForPlacement(p)?.id === selectedNodeId}
-                  // The device's diagram is a link beside the picked camera, not a node of its own:
-                  // clicking it opens the diagram, and the plan stays one point per camera.
-                  diagramLink={deviceDiagram && node?.id === selectedNodeId
-                    ? {
-                        label: t('diagramEditor.openDeviceDiagram'),
-                        visual: deviceDiagram.visual,
-                        onOpen: () => selectNode(deviceDiagram.diagram.id),
-                      }
-                    : undefined}
-                  editable={mode === 'select'}
-                  interactive={!picking}
-                  levels={levels}
-                  zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
-                  onSelect={() => {
-                    const node = nodeForPlacement(p)
-                    setSelection(node ? { kind: 'node', id: node.id } : { kind: 'camera', id: p.cameraId })
-                  }}
-                  onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
+          <>
+            <CanvasTruncatedNotice canvasId={spaceId} />
+            <SpaceCanvas
+              key={spaceId}
+              space={space}
+              alignOnMap={alignOnMap}
+              onMapClick={handleMapClick}
+              picking={picking}
+              focus={focus}
+              overlay={<SpaceNav spaces={spaces} space={space} />}
+              onNodeDrop={(at, nodeId) => void run(async () => {
+                const marker = await dispatch(createReplicaAt({
+                  ownerId: nodeId, parentId: spaceId, lat: at.lat, lon: at.lon,
+                })).unwrap()
+                setSelection({ kind: 'node', id: marker.id })
+              })}
+            >
+              <MapBridge mapRef={mapRef} />
+              {plan && (
+                <PlanOverlay
+                  space={space}
+                  corners={planCorners}
+                  editable={mode === 'plan'}
+                  onCornersChange={(c, commit) => (commit ? void commitCorners(c) : setDraftCorners(c))}
                 />
-              )
-            })}
-            {landmarks.map((m) => (
-              <LandmarkMarker
-                key={m.id}
-                landmark={m}
-                // The node whichever way it was picked: a row in the tree selects the node, the
-                // map itself selects the landmark.
-                selected={selectionNodeId === m.id}
-                // A landmark is picked while selecting and while placing one; the drawing tools,
-                // a camera waiting for its spot and a part about to be dropped take the click
-                // instead.
-                interactive={!pendingCameraId && !pendingPart && !pendingDiagramId
-                  && (mode === 'select' || mode === 'landmark')}
-                editable={mode === 'select'}
+              )}
+              <FiguresLayer
+                figures={mapData.figures.map((figure) => (draftFigure?.id === figure.id ? draftFigure : figure))}
+                states={{}}
+                alarms={{}}
+                descriptions={{}}
                 levels={levels}
-                zoomLevel={m.id ? figuresById[m.id]?.zoomLevel : undefined}
-                onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}
-                onMove={(lat, lon) => void run(() => dispatch(upsertLandmark({ ...m, lat, lon })).unwrap())}
+                selectedId={selectedNodeId}
+                onSelect={selectOnCanvas}
+                // A camera placed here is drawn by its marker, not by the shape the node carries. A
+                // diagram that is a replica of a camera is not that picture: it is a node of its own
+                // on this canvas, and hiding it hid the whole readings panel. So only the replica
+                // standing exactly on a placement is skipped.
+                skipIds={new Set(here
+                  .map((placement) => figureAtPlacement(mapData.figures, placement)?.id)
+                  .filter((id): id is string => !!id))}
+                editable={mode === 'select'}
+                interactive={!picking}
+                onGeometryChange={handleGeometryChange}
               />
-            ))}
-          </SpaceCanvas>
+              {draftPoints && <DrawingPreview points={draftPoints} closed={drawingRing} />}
+              {drawingPath && <FinishOnDoubleClick onFinish={() => finishRef.current()} />}
+              <Footprints
+                nested={nested.map((s) => (s.id === selectedNested?.id && draftFootprint ? { ...s, footprint: draftFootprint } : s))}
+                selectedId={selectionNodeId}
+                levels={levels}
+                zoomLevels={spaceZoomLevels}
+                interactive={!picking}
+                onPick={(s) => s.id && setSelection({ kind: 'footprint', id: s.id })}
+              />
+              {selectedNested && mode === 'select' && (
+                <FootprintEditor
+                  footprint={draftFootprint ?? selectedNested.footprint}
+                  onChange={(f, commit) => (commit ? commitFootprint(selectedNested, f) : setDraftFootprint(f))}
+                />
+              )}
+              {here.map((stored) => {
+                const p = draft?.cameraId === stored.cameraId ? draft : stored
+                const camera = camerasById[p.cameraId]
+                // The node behind the placement carries the camera's scale layer.
+                const node = nodeForPlacement(p)
+                return (
+                  <CameraMarker
+                    key={p.cameraId}
+                    placement={p}
+                    label={camera?.name || p.cameraId}
+                    color={STATUS_COLOR[cameraMapStatus(camera)]}
+                    // The picture is the placement node's own: the map turns it by the heading, as it
+                    // turns its dot.
+                    visual={node ? figuresById[node.id]?.visual : undefined}
+                    // A marker is the picture the placement draws: the one node, not every picture
+                    // of that camera.
+                    selected={selection?.kind === 'camera'
+                      ? selection.id === p.cameraId
+                      : nodeForPlacement(p)?.id === selectedNodeId}
+                    // The device's diagram is a link beside the picked camera, not a node of its own:
+                    // clicking it opens the diagram, and the plan stays one point per camera.
+                    diagramLink={deviceDiagram && node?.id === selectedNodeId
+                      ? {
+                          label: t('diagramEditor.openDeviceDiagram'),
+                          visual: deviceDiagram.visual,
+                          onOpen: () => selectNode(deviceDiagram.diagram.id),
+                        }
+                      : undefined}
+                    editable={mode === 'select'}
+                    interactive={!picking}
+                    levels={levels}
+                    zoomLevel={node ? figuresById[node.id]?.zoomLevel : undefined}
+                    onSelect={() => {
+                      const node = nodeForPlacement(p)
+                      setSelection(node ? { kind: 'node', id: node.id } : { kind: 'camera', id: p.cameraId })
+                    }}
+                    onChange={(next, commit) => (commit ? void savePlacement(next) : setDraft(next))}
+                  />
+                )
+              })}
+              {landmarks.map((m) => (
+                <LandmarkMarker
+                  key={m.id}
+                  landmark={m}
+                  // The node whichever way it was picked: a row in the tree selects the node, the
+                  // map itself selects the landmark.
+                  selected={selectionNodeId === m.id}
+                  // A landmark is picked while selecting and while placing one; the drawing tools,
+                  // a camera waiting for its spot and a part about to be dropped take the click
+                  // instead.
+                  interactive={!pendingCameraId && !pendingPart && !pendingDiagramId
+                    && (mode === 'select' || mode === 'landmark')}
+                  editable={mode === 'select'}
+                  levels={levels}
+                  zoomLevel={m.id ? figuresById[m.id]?.zoomLevel : undefined}
+                  onSelect={() => m.id && setSelection({ kind: 'landmark', id: m.id })}
+                  onMove={(lat, lon) => void run(() => dispatch(upsertLandmark({ ...m, lat, lon })).unwrap())}
+                />
+              ))}
+            </SpaceCanvas>
+          </>
         )}
       </Box>
 

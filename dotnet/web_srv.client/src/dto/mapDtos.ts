@@ -52,7 +52,13 @@ export type MapFigure = MapMarker & {
   visual?: MapVisual
 }
 
-export type MapFigures = { figs?: MapFigure[]; addTracks?: boolean }
+export type MapFigures = {
+  figs?: MapFigure[]
+  addTracks?: boolean
+  /** Set by GetByBox when the read stopped at its limit: the figures are an ordered prefix of the
+   *  box, not the whole of it. Absent when nothing was cut. */
+  truncated?: boolean
+}
 
 /** A node as a write carries it: the tree row alone, without its geometry. */
 export type MapObject = {
