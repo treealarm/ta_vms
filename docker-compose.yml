@@ -697,6 +697,11 @@ services:
       - vmsfs
     env_file:
       - .env
+    environment:
+      # The gateway writes its own log file and appears as a source in the Logs tab; without the
+      # shared volume the file would live inside this container, where VmsLogger cannot read it.
+      APP_ID: web-vms
+    volumes: *data-volume
 
   web_vms-dapr:
     profiles: [app]

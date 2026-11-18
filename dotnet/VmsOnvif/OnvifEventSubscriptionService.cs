@@ -280,7 +280,9 @@ public sealed class OnvifEventSubscriptionService(
       var topic = ExtractTopicText(msg.Topic);
       var payload = msg.Message?.OuterXml ?? string.Empty;
 
-      logger.LogDebug("Camera {CameraId}: ONVIF event received — topic='{Topic}'", cameraId, topic);
+      // Trace: a camera can announce several topics a second, and the same events are what the
+      // ONVIF events panel shows. At Debug this was the largest single source in the logs.
+      logger.LogTrace("Camera {CameraId}: ONVIF event received — topic='{Topic}'", cameraId, topic);
 
       var record = new OnvifEventEntry(DateTime.UtcNow, topic, payload);
 
@@ -300,7 +302,7 @@ public sealed class OnvifEventSubscriptionService(
       // and skip the live banner for the same reason.
       if (msg.Message?.GetAttribute("PropertyOperation") == "Initialized")
       {
-        logger.LogDebug(
+        logger.LogTrace(
           "Camera {CameraId}: skipping alarm check for 'Initialized' snapshot — topic='{Topic}'", cameraId, topic);
         continue;
       }
@@ -326,7 +328,7 @@ public sealed class OnvifEventSubscriptionService(
       using (var cfgCts = new CancellationTokenSource(CfgTimeout))
         filters = await filterCache.GetAsync(cameraId, cfgCts.Token);
 
-      logger.LogDebug(
+      logger.LogTrace(
         "Camera {CameraId}: checking {Count} filter(s) against topic='{Topic}'",
         cameraId, filters.Count, topic);
 
@@ -349,7 +351,7 @@ public sealed class OnvifEventSubscriptionService(
 
       if (matched == null)
       {
-        logger.LogDebug(
+        logger.LogTrace(
           "Camera {CameraId}: no filter matched topic='{Topic}' (filters: {Filters})",
           cameraId, topic, string.Join(", ", filters.Select(f =>
             string.IsNullOrEmpty(f.TextFilter) ? $"'{f.FilterText}'" : $"'{f.FilterText}'+'{f.TextFilter}'")));
@@ -360,7 +362,7 @@ public sealed class OnvifEventSubscriptionService(
       var armed = await armedCache.GetAsync(cameraId, armedCts.Token);
       if (!armed)
       {
-        logger.LogDebug(
+        logger.LogTrace(
           "Camera {CameraId}: filter '{Filter}' matched but camera is not armed — skipping retention",
           cameraId, matched.FilterText);
         return;
@@ -374,7 +376,7 @@ public sealed class OnvifEventSubscriptionService(
       if (!parsed.Active)
       {
         episodes.Clear(episodeKey);
-        logger.LogDebug(
+        logger.LogTrace(
           "Camera {CameraId}: filter '{Filter}' matched a clearing edge — episode closed",
           cameraId, matched.FilterText);
         return;
@@ -394,7 +396,7 @@ public sealed class OnvifEventSubscriptionService(
       }
       else
       {
-        logger.LogDebug(
+        logger.LogTrace(
           "Camera {CameraId}: extending alarm episode {EventId}", cameraId, decision.EventId);
       }
 

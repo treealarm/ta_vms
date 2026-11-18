@@ -10,6 +10,10 @@
 
 namespace {
 constexpr auto kWatchdogInterval = std::chrono::seconds(5);
+// The reconnect-failure lines double their interval up to this: a camera that stays off for a day
+// then costs one line every five minutes instead of one every five seconds, while the reconnects
+// themselves keep happening at kWatchdogInterval.
+constexpr auto kMaxConnectFailureLogInterval = std::chrono::minutes(5);
 // Between failed reads while the watchdog runs: a failing read can return at once, and FFmpeg logs
 // every one, so without a pause the loop spins and fills the log at hundreds of thousands of lines
 // a second.
@@ -71,7 +75,29 @@ rtsp_reader::rtsp_reader(
   , m_user(user)
   , m_password(pass)
 {
+  reset_connect_failure_log();
+}
 
+void rtsp_reader::log_connect_failure(const std::string& message)
+{
+  ++m_connect_failures;
+
+  const auto now = std::chrono::steady_clock::now();
+  if (now < m_next_connect_failure_log_at)
+    return;
+
+  logger::instance().error(std::format("{} (attempt {})", message, m_connect_failures));
+
+  m_next_connect_failure_log_at = now + m_connect_failure_log_interval;
+  m_connect_failure_log_interval = std::min<std::chrono::seconds>(
+    m_connect_failure_log_interval * 2, kMaxConnectFailureLogInterval);
+}
+
+void rtsp_reader::reset_connect_failure_log()
+{
+  m_connect_failures = 0;
+  m_connect_failure_log_interval = kWatchdogInterval;
+  m_next_connect_failure_log_at = {};
 }
 rtsp_reader::~rtsp_reader() 
 {
@@ -79,10 +105,13 @@ rtsp_reader::~rtsp_reader()
   disconnect();
 }
 
-bool rtsp_reader::open(const std::string& url) 
+bool rtsp_reader::open(const std::string& url)
 {
   m_rtsp_url = url;
-  
+  // A reader pointed at another source starts its failure history over. Called before start(),
+  // so this is the same thread that will read these members.
+  reset_connect_failure_log();
+
   return true;
 }
 
@@ -197,7 +226,7 @@ bool rtsp_reader::connect()
   if (avformat_open_input(&ctx, final_url.c_str(), nullptr, &opts) < 0)
   {
     if (m_running)
-      logger::instance().error(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
+      log_connect_failure(std::format("Failed to open RTSP [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     av_dict_free(&opts);
     avformat_close_input(&ctx);
     return false;
@@ -209,7 +238,7 @@ bool rtsp_reader::connect()
 
   if (avformat_find_stream_info(m_ctx.get(), nullptr) < 0)
   {
-    logger::instance().error(std::format("Failed to get stream info [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
+    log_connect_failure(std::format("Failed to get stream info [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     disconnect();
     return false;
   }
@@ -242,7 +271,7 @@ bool rtsp_reader::connect()
 
   if (m_video_index < 0)
   {
-    logger::instance().error(std::format("No video stream [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
+    log_connect_failure(std::format("No video stream [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
     disconnect();
     return false;
   }
@@ -254,6 +283,7 @@ bool rtsp_reader::connect()
   }
 
   logger::instance().info(std::format("RTSP connected [cam={}]: {}", m_cam_id, rtsp_url_for_log(m_rtsp_url)));
+  reset_connect_failure_log();
   return true;
 }
 
