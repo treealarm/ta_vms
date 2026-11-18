@@ -23,6 +23,23 @@ For all new code and refactors, treat these as hard constraints rather than styl
 
 `video_srv` is built with **C++20**. Prefer modern C++20 techniques and standard library facilities over legacy patterns whenever the result is clearer and safer (`std::span`, ranges, RAII, `std::optional`, `std::variant`, structured bindings, constexpr helpers, etc.). Do not introduce pre-C++20 workarounds where a direct C++20 solution is available.
 
+## Test code: name the contract, do not spell out its position
+
+A test is read as the statement of a contract, so a bare number or a bare string hides the
+contract instead of stating it:
+
+- **Entity names and domain values in a test are lowercase** (`"city"`, `"floor plan"`,
+  `"camera-1"`). A value that has to be the same in more than one place — an action name, a subject,
+  a protocol string — is a named `const`.
+- **A page size, a limit or a count is a named constant**, used both in the call and in the
+  assertion (`const int pageSize = 2;` then `count = pageSize`, `ordered.Take(pageSize)`). Changing
+  the size then keeps the test meaningful instead of silently breaking it.
+- **An assertion names the thing it checks, not its position**: `page.Objects.Keys.Last()` rather
+  than `ordered[3]`, `ordered.Skip(pageSize)` rather than `ordered.Skip(2)`, `messages.First()`
+  rather than `messages[0]`.
+- **Prefer the typed value where one exists** — a `Guid` for an identifier, a DTO property for a
+  field — over repeating its wire form.
+
 ## MediaMTX API access
 
 All interaction with the MediaMTX REST API goes through **VmsUtils** (`vmsutils` Dapr app-id). No other service (video_srv, VmsCfg, web_srv, etc.) calls the MediaMTX API directly.

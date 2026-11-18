@@ -251,19 +251,19 @@ public class SpatialPostgresTests
     Assert.False(await test.Db.GeoObjects.AnyAsync(g => g.id == canonical));
   }
 
-  [Fact]
-  public async Task ACutCanvasKeepsItsOrderAndSaysItIsCut()
+  // Figures on a canvas, seeded straight into the database: the truncation tests only read them.
+  private static async Task<GeoService> SeedCanvasAsync(
+    Services test, string canvasId, int figureCount)
   {
-    await using var test = await OpenAsync();
-    if (test is null)
-      return;
-
-    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
-
     var ids = new List<string>();
-    for (var i = 0; i < 3; i++)
+    for (var i = 0; i < figureCount; i++)
     {
-      var node = new DBMarker { id = Guid.NewGuid(), parent_id = Guid.Parse(map.Id), name = "Node " + i };
+      var node = new DBMarker
+      {
+        id = Guid.NewGuid(),
+        parent_id = Guid.Parse(canvasId),
+        name = "node " + i,
+      };
       test.Db.Markers.Add(node);
       ids.Add(Utils.ConvertGuidToObjectId(node.id));
     }
@@ -276,57 +276,61 @@ public class SpatialPostgresTests
       geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = 0.5, Lon = 0.5 }),
     }).ToList());
 
-    var read = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = 2 });
+    return geo;
+  }
+
+  [Fact]
+  public async Task ACutCanvasKeepsItsOrderAndSaysItIsCut()
+  {
+    const int pageSize = 2;
+    const int figureCount = pageSize + 1; // one figure beyond the cut
+
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    var geo = await SeedCanvasAsync(test, map.Id, figureCount);
+
+    var read = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = pageSize });
 
     Assert.True(read.Truncated);
-    Assert.Equal(2, read.Objects.Count);
+    Assert.Equal(pageSize, read.Objects.Count);
 
     // The cut is the database's own order by id, not whichever rows it happened to return first.
     var ordered = await test.Db.GeoObjects
       .Where(g => g.canvas_id == Guid.Parse(map.Id))
       .OrderBy(g => g.id)
-      .Take(2)
+      .Take(pageSize)
       .Select(g => g.id)
       .ToListAsync();
     Assert.Equal(ordered.Select(id => Utils.ConvertGuidToObjectId(id)), read.Objects.Keys);
 
-    var again = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = 2 });
+    var again = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = pageSize });
     Assert.Equal(read.Objects.Keys, again.Objects.Keys);
   }
 
   [Fact]
   public async Task ACutCanvasIsPagedByItsCursor()
   {
+    const int pageSize = 2;
+    const int figureCount = pageSize + 1; // a cut page, then a tail
+
     await using var test = await OpenAsync();
     if (test is null)
       return;
 
     var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    var geo = await SeedCanvasAsync(test, map.Id, figureCount);
 
-    var ids = new List<string>();
-    for (var i = 0; i < 3; i++)
-    {
-      var node = new DBMarker { id = Guid.NewGuid(), parent_id = Guid.Parse(map.Id), name = "Node " + i };
-      test.Db.Markers.Add(node);
-      ids.Add(Utils.ConvertGuidToObjectId(node.id));
-    }
-    await test.Db.SaveChangesAsync();
-
-    var geo = new GeoService(test.Db, new LevelService(test.Db));
-    await geo.CreateGeo(ids.Select(id => new FigureGeoDTO
-    {
-      id = id,
-      geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = 0.5, Lon = 0.5 }),
-    }).ToList());
-
-    var first = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = 2 });
+    var first = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = pageSize });
     Assert.True(first.Truncated);
-    Assert.NotNull(first.NextCursor);
+    Assert.Equal(first.Objects.Keys.Last(), first.NextCursor);
 
     var second = await geo.GetGeoAsync(new BoxDTO
     {
       canvas_id = map.Id,
-      count = 2,
+      count = pageSize,
       after_id = Guid.Parse(first.NextCursor!),
     });
 
@@ -338,7 +342,7 @@ public class SpatialPostgresTests
       .ToListAsync();
 
     Assert.Equal(
-      ordered.Skip(2).Select(id => Utils.ConvertGuidToObjectId(id)),
+      ordered.Skip(pageSize).Select(id => Utils.ConvertGuidToObjectId(id)),
       second.Objects.Keys);
     Assert.False(second.Truncated);
     Assert.Null(second.NextCursor);

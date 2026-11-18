@@ -17,6 +17,10 @@ namespace VmsMap.Tests;
 // never sent by an id scope, which lists its nodes explicitly.
 public class WatchPollerTests
 {
+  // The two actions these tests judge by name; a misspelt one must fail here, not in the browser.
+  private const string SetBoxTruncated = "set_box_truncated";
+  private const string SetIdsUpdate = "set_ids2update";
+
   private sealed record Env(VmsMapDbContext Db, GeoService Geo, WatchSnapshotService Snapshot);
 
   private static readonly CallerContext Admin = new(null, ["admin"], true);
@@ -60,26 +64,29 @@ public class WatchPollerTests
   [Fact]
   public async Task ATruncatedBoxIsAnnouncedBeforeTheDiffItExplains()
   {
+    const int pageSize = 2;
+    const int figureCount = pageSize + 1; // one figure beyond the cut
+
     var env = Create();
-    var ids = Ids(3);
+    var ids = Ids(figureCount);
     await env.Geo.CreateGeo(ids.Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
 
     using var subscription = new WatchSubscription();
-    subscription.SetBox(Box(2), Admin);
+    subscription.SetBox(Box(pageSize), Admin);
 
     var messages = await Poll(subscription, env.Snapshot);
 
-    var announcement = messages[0];
-    Assert.Equal("set_box_truncated", announcement.Action);
+    var announcement = messages.First();
+    Assert.Equal(SetBoxTruncated, announcement.Action);
     Assert.True(announcement.Truncated);
     Assert.Empty(announcement.Items);
 
-    var update = Assert.Single(messages, m => m.Action == "set_ids2update");
+    var update = Assert.Single(messages, m => m.Action == SetIdsUpdate);
     // The cut is a prefix of the read's order, which is the database's order by id.
     var prefix = ids
       .Select(Guid.Parse)
       .OrderBy(id => id)
-      .Take(2)
+      .Take(pageSize)
       .Select(id => id.ToString())
       .ToList();
     Assert.Equal(prefix, update.Items.Select(item => item.ObjectId));
@@ -88,11 +95,14 @@ public class WatchPollerTests
   [Fact]
   public async Task AQuietTickRepeatsNothing()
   {
+    const int pageSize = 2;
+    const int figureCount = pageSize + 1;
+
     var env = Create();
-    await env.Geo.CreateGeo(Ids(3).Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
+    await env.Geo.CreateGeo(Ids(figureCount).Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
 
     using var subscription = new WatchSubscription();
-    subscription.SetBox(Box(2), Admin);
+    subscription.SetBox(Box(pageSize), Admin);
     await Poll(subscription, env.Snapshot);
 
     var messages = await Poll(subscription, env.Snapshot);
@@ -103,27 +113,32 @@ public class WatchPollerTests
   [Fact]
   public async Task ABoxThatFitsIsAnnouncedAsWhole()
   {
+    const int figureCount = 2; // the box holds exactly the page
+
     var env = Create();
-    await env.Geo.CreateGeo(Ids(2).Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
+    await env.Geo.CreateGeo(Ids(figureCount).Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
 
     using var subscription = new WatchSubscription();
-    subscription.SetBox(Box(2), Admin);
+    subscription.SetBox(Box(figureCount), Admin);
 
     var messages = await Poll(subscription, env.Snapshot);
 
-    var announcement = Assert.Single(messages, m => m.Action == "set_box_truncated");
+    var announcement = Assert.Single(messages, m => m.Action == SetBoxTruncated);
     Assert.False(announcement.Truncated);
   }
 
   [Fact]
   public async Task ABoxThatShrinksIsAnnouncedAsWholeAgain()
   {
+    const int pageSize = 2;
+    const int figureCount = pageSize + 1;
+
     var env = Create();
-    var ids = Ids(3);
+    var ids = Ids(figureCount);
     await env.Geo.CreateGeo(ids.Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
 
     using var subscription = new WatchSubscription();
-    subscription.SetBox(Box(2), Admin);
+    subscription.SetBox(Box(pageSize), Admin);
     await Poll(subscription, env.Snapshot);
 
     // The figure beyond the cut goes: nothing the watcher was sent leaves the rectangle, so the
@@ -134,22 +149,23 @@ public class WatchPollerTests
     var messages = await Poll(subscription, env.Snapshot);
 
     var announcement = Assert.Single(messages);
-    Assert.Equal("set_box_truncated", announcement.Action);
+    Assert.Equal(SetBoxTruncated, announcement.Action);
     Assert.False(announcement.Truncated);
   }
 
   [Fact]
   public async Task AnIdScopeNeverAnnouncesTruncation()
   {
+    // A scope that lists its nodes has no read to cut, however many it lists.
     var env = Create();
-    var ids = Ids(3);
+    var ids = Ids(1);
     await env.Geo.CreateGeo(ids.Select((id, i) => Point(id, 0.5, 0.5 + i * 0.01)));
 
     using var subscription = new WatchSubscription();
-    subscription.SetIds(ids.Take(1).ToList(), Admin);
+    subscription.SetIds(ids, Admin);
 
     var messages = await Poll(subscription, env.Snapshot);
 
-    Assert.DoesNotContain(messages, m => m.Action == "set_box_truncated");
+    Assert.DoesNotContain(messages, m => m.Action == SetBoxTruncated);
   }
 }
