@@ -252,6 +252,49 @@ public class SpatialPostgresTests
   }
 
   [Fact]
+  public async Task ACutCanvasKeepsItsOrderAndSaysItIsCut()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+
+    var ids = new List<string>();
+    for (var i = 0; i < 3; i++)
+    {
+      var node = new DBMarker { id = Guid.NewGuid(), parent_id = Guid.Parse(map.Id), name = "Node " + i };
+      test.Db.Markers.Add(node);
+      ids.Add(Utils.ConvertGuidToObjectId(node.id));
+    }
+    await test.Db.SaveChangesAsync();
+
+    var geo = new GeoService(test.Db, new LevelService(test.Db));
+    await geo.CreateGeo(ids.Select(id => new FigureGeoDTO
+    {
+      id = id,
+      geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = 0.5, Lon = 0.5 }),
+    }).ToList());
+
+    var read = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = 2 });
+
+    Assert.True(read.Truncated);
+    Assert.Equal(2, read.Objects.Count);
+
+    // The cut is the database's own order by id, not whichever rows it happened to return first.
+    var ordered = await test.Db.GeoObjects
+      .Where(g => g.canvas_id == Guid.Parse(map.Id))
+      .OrderBy(g => g.id)
+      .Take(2)
+      .Select(g => g.id)
+      .ToListAsync();
+    Assert.Equal(ordered.Select(id => Utils.ConvertGuidToObjectId(id)), read.Objects.Keys);
+
+    var again = await geo.GetGeoAsync(new BoxDTO { canvas_id = map.Id, count = 2 });
+    Assert.Equal(read.Objects.Keys, again.Objects.Keys);
+  }
+
+  [Fact]
   public async Task PromotingTheReferenceSwapsItWithoutTrippingTheIndex()
   {
     await using var test = await OpenAsync();

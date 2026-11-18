@@ -164,7 +164,7 @@ public class CanvasQueryTests
       Point(farAway.id!, 0.5, 0.5),
     ]);
 
-    var geo = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id });
+    var geo = (await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id })).Objects;
 
     Assert.Equal(
       new[] { district.id!, building.id!, camera.id! }.OrderBy(id => id, StringComparer.Ordinal),
@@ -179,7 +179,7 @@ public class CanvasQueryTests
     var node = await Node(s.Map, "Node", city.Id);
     await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
 
-    var geo = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = "not-a-canvas" });
+    var geo = (await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = "not-a-canvas" })).Objects;
 
     Assert.Empty(geo);
   }
@@ -195,11 +195,11 @@ public class CanvasQueryTests
 
     await s.Geo.CreateGeo([Point(here.id!, 0.5, 0.5), Point(there.id!, 0.5, 0.5)]);
 
-    var geo = await s.Geo.GetGeoAsync(new BoxDTO
+    var geo = (await s.Geo.GetGeoAsync(new BoxDTO
     {
       canvas_id = city.Id,
       ids = [here.id!, there.id!],
-    });
+    })).Objects;
 
     Assert.Equal([here.id!], geo.Keys);
   }
@@ -228,5 +228,57 @@ public class CanvasQueryTests
     }, new TestContext());
 
     Assert.Equal([seen.id!], figures.Figs.Select(figure => figure.Id));
+  }
+
+  [Fact]
+  public async Task ACutCanvasSaysSoAndKeepsTheSamePrefixEveryTime()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+
+    var nodes = new List<BaseMarkerDTO>();
+    for (var i = 0; i < 3; i++)
+      nodes.Add(await Node(s.Map, "Node " + i, city.Id));
+    await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
+
+    var first = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id, count = 2 });
+    var second = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id, count = 2 });
+
+    Assert.True(first.Truncated);
+    Assert.Equal(2, first.Objects.Count);
+    Assert.Equal(first.Objects.Keys, second.Objects.Keys);
+  }
+
+  [Fact]
+  public async Task ACanvasThatFitsIsNotTruncated()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+    var node = await Node(s.Map, "Node", city.Id);
+    await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
+
+    var read = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id });
+
+    Assert.False(read.Truncated);
+    Assert.Equal([node.id!], read.Objects.Keys);
+  }
+
+  [Fact]
+  public async Task GetByBoxCarriesTheCutToTheClient()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+    var first = await Node(s.Map, "First", city.Id);
+    var second = await Node(s.Map, "Second", city.Id);
+    await s.Geo.CreateGeo([Point(first.id!, 0.5, 0.5), Point(second.id!, 0.5, 0.5)]);
+
+    var figures = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = city.Id, Count = 1 },
+      Caller = Caller("root", "admin"),
+    }, new TestContext());
+
+    Assert.True(figures.Truncated);
+    Assert.Single(figures.Figs);
   }
 }
