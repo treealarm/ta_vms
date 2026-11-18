@@ -470,6 +470,9 @@ message Figures {
   repeated Figure figs = 1;
   // Also record a track point for every figure, as Square's producer protocol did.
   bool add_tracks = 2;
+  // Set by GetByBox when the read stopped at its limit: the figures are an ordered prefix of the
+  // box, not the whole of it. Without it a clipped canvas is indistinguishable from a small one.
+  bool truncated = 3;
 }
 
 message GeoObject {

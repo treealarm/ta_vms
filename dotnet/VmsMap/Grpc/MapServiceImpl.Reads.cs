@@ -133,9 +133,9 @@ namespace VmsMap.Grpc
         }
       }
 
-      var geo = await _geoService.GetGeoAsync(box);
-      var visible = await _rightsService.VisibleAsync(geo.Keys.ToList(), caller, ct);
-      geo = geo
+      var read = await _geoService.GetGeoAsync(box);
+      var visible = await _rightsService.VisibleAsync(read.Objects.Keys.ToList(), caller, ct);
+      var geo = read.Objects
         .Where(kv => visible.Contains(kv.Key))
         .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
 
@@ -143,8 +143,13 @@ namespace VmsMap.Grpc
 
       // A canvas is drawn whole: the client shows the composition of one space and paging it into
       // centroids would drop the very containers it exists to draw. A rectangle keeps the cut.
+      // Either way the read's own cut, if any, travels with the answer.
       if (!string.IsNullOrEmpty(box.canvas_id) || figures.figs.Count < 1000)
-        return await ToProtoFiguresAsync(figures, geo.Keys, ct);
+      {
+        var whole = await ToProtoFiguresAsync(figures, geo.Keys, ct);
+        whole.Truncated = read.Truncated;
+        return whole;
+      }
 
       var zooms = await _levelService.GetAllZooms();
       figures.figs.Sort(new ZoomComparer(zooms));
@@ -154,7 +159,9 @@ namespace VmsMap.Grpc
       var centroids = KMeans.GetCentroids(rest, Math.Max(100, 1 + rest.Count / 1000));
       centroids.figs.AddRange(raw);
 
-      return await ToProtoFiguresAsync(centroids, geo.Keys, ct);
+      var clustered = await ToProtoFiguresAsync(centroids, geo.Keys, ct);
+      clustered.Truncated = read.Truncated;
+      return clustered;
     }
 
     public override async Task<MapProto.MarkerList> GetByName(

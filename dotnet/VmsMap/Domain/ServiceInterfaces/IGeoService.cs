@@ -7,7 +7,7 @@ namespace VmsMap.Domain
   public interface IGeoService
   {
     Task<Dictionary<string, GeoObjectDTO>> GetGeoObjectsAsync(List<string> ids);
-    Task<Dictionary<string, GeoObjectDTO>> GetGeoAsync(BoxDTO box);
+    Task<GeoResultDTO> GetGeoAsync(BoxDTO box);
     Task<GeoObjectDTO> GetGeoObjectAsync(string id);
     Task<Dictionary<string, GeoObjectDTO>> CreateGeo(IEnumerable<FigureGeoDTO> figures);
 

@@ -35,8 +35,10 @@ namespace VmsMap.Watch
       _db = db ?? throw new ArgumentNullException(nameof(db));
     }
 
-    public Task<Dictionary<string, GeoObjectDTO>> GeoAsync(BoxDTO box, CancellationToken ct) =>
-      _geo.GetGeoAsync(box);
+    // The poll reads the same capped box the browser does; a truncated one yields the same
+    // ordered prefix on every tick, so the watcher sees a stable set.
+    public async Task<Dictionary<string, GeoObjectDTO>> GeoAsync(BoxDTO box, CancellationToken ct) =>
+      (await _geo.GetGeoAsync(box)).Objects;
 
     public Task<HashSet<string>> VisibleAsync(
       IReadOnlyCollection<string> ids, CallerContext caller, CancellationToken ct) =>

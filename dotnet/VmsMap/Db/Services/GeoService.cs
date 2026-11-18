@@ -11,6 +11,10 @@ namespace VmsMap.Db
 {
   internal class GeoService : IGeoService
   {
+    // The cap of a box nobody narrowed. Above it the answer says it was cut instead of letting a
+    // partial canvas pass for the whole one.
+    private const int DefaultBoxCount = 10_000;
+
     private readonly ILevelService _levelService;
     private readonly VmsMapDbContext _dbContext;
     public GeoService(
@@ -22,9 +26,9 @@ namespace VmsMap.Db
       _levelService = levelService ?? throw new ArgumentNullException(nameof(levelService));
     }
 
-    public async Task<Dictionary<string, GeoObjectDTO>> GetGeoAsync(BoxDTO box)
+    public async Task<GeoResultDTO> GetGeoAsync(BoxDTO box)
     {
-      int limit = box.count.HasValue && box.count.Value > 0 ? box.count.Value : 10000;
+      int limit = box.count.HasValue && box.count.Value > 0 ? box.count.Value : DefaultBoxCount;
       IQueryable<DBGeoObject> query = _dbContext.GeoObjects;
       var geometryFactory = NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
 
@@ -86,9 +90,20 @@ namespace VmsMap.Db
         query = query.Where(p => guidIds.Contains(p.id));
       }
 
-      // run the query
-      var list = await query.Take(limit).ToListAsync();
-      return ModelGate.ConvertListDB2DTO(list);
+      // The order is part of the answer: without it the database decides which figures a cut box
+      // loses, and that decision may differ from call to call. One row past the limit tells us
+      // whether anything was left behind.
+      int fetch = limit == int.MaxValue ? limit : limit + 1;
+      var list = await query
+          .OrderBy(t => t.id)
+          .Take(fetch)
+          .ToListAsync();
+
+      bool truncated = list.Count > limit;
+      if (truncated)
+        list.RemoveAt(list.Count - 1);
+
+      return new GeoResultDTO(ModelGate.ConvertListDB2DTO(list), truncated);
     }
 
 
@@ -107,18 +122,12 @@ namespace VmsMap.Db
       if (guidIds.Count == 0)
         return new Dictionary<string, GeoObjectDTO>();
 
-      List<DBGeoObject> obj = null;
-
-      try
-      {
-        obj = await _dbContext.GeoObjects
-            .Where(x => guidIds.Contains(x.id))
-            .ToListAsync();
-      }
-      catch (Exception)
-      {
-        // log and skip
-      }
+      // A failed read is an answer of its own kind: it reaches the caller and the log instead of
+      // being flattened into an empty dictionary, which the map would draw as "nothing here".
+      var obj = await _dbContext.GeoObjects
+          .Where(x => guidIds.Contains(x.id))
+          .OrderBy(x => x.id)
+          .ToListAsync();
 
       return ModelGate.ConvertListDB2DTO(obj);
     }
@@ -133,17 +142,9 @@ namespace VmsMap.Db
       if (!guidId.HasValue)
         return null;
 
-      DBGeoObject obj = null;
-
-      try
-      {
-        obj = await _dbContext.GeoObjects
-            .FirstOrDefaultAsync(x => x.id == guidId.Value);
-      }
-      catch (Exception)
-      {
-        // log the error
-      }
+      // As in GetGeoObjectsAsync: only "this node has no figure" is null, a failed read is not.
+      var obj = await _dbContext.GeoObjects
+          .FirstOrDefaultAsync(x => x.id == guidId.Value);
 
       return ModelGate.ConvertDB2DTO(obj);
     }
