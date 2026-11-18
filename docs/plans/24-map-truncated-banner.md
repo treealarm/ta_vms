@@ -115,3 +115,22 @@ Watch-поток флаг не трогает, `canvasAdd`/`canvasRemove` его
 2. DTO, стор, компонент, три места и переводы;
 3. тесты;
 4. документация (файл 24, README, отметка здесь).
+
+## Сделано (2026-11-18)
+
+- `MapFigures.truncated?: boolean` с комментарием как в proto; `CanvasPage.truncated`;
+  `loadCanvas` кладёт `response.truncated === true`, `loadCanvas.fulfilled` пишет его в страницу
+  (`3329ef5d`).
+- `src/map/CanvasTruncatedNotice.tsx` — `Alert severity="warning"`, не закрываемый, ключ
+  `maps.canvas.truncated` (en/es). Поставлен над холстом у оператора (`MapsOperatorPanel`),
+  в редакторе (`SpaceEditor`) и в мнемосхеме (`DiagramViewer`) (`3329ef5d`).
+- Тесты: флаг поднимается чтением и сбрасывается следующим полным; thunk превращает отсутствие
+  поля в `false`, `true` доводит до страницы; существующие ожидания дополнены `truncated: false`
+  (`5d007464`).
+- Прогоны: `npm test` — 77 тестов зелёные; `npm run build` (`tsc -b` + vite) — 0 ошибок;
+  `npm run lint` — два **уже существующих** на `master` отказа в
+  `src/components/objects/NodeSettingsCard.tsx` (react-hooks/set-state-in-effect), к этой ветке
+  не относятся; в изменённых файлах отказов нет.
+- Живой стек не поднимался: уведомление требует холста больше 10 000 фигур, а подмену ответа
+  `by-box` без стека проверить не на чем. Компонент держится на тестах стора и на сборке.
+- Отклонений от плана нет.
