@@ -13,6 +13,7 @@ var ownServerId = Environment.GetEnvironmentVariable("OWN_SERVER_ID")
 var actorTypeName = CameraActorType.For(ownServerId);
 
 builder.Services.AddSingleton(new CameraActorDomain(ownServerId));
+builder.Services.AddSingleton(TimeProvider.System);
 // See VmsOnvif's Program.cs: OnvifLib under its own category, kept at Information by VmsLog.
 builder.Services.AddSingleton<IOnvifLogger>(sp => new OnvifLoggerAdapter(
   sp.GetRequiredService<ILoggerFactory>().CreateLogger(VmsLogExtensions.OnvifLibCategory)));

@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsSingleton.Tests", "VmsSi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "web_srv.Tests", "web_srv.Tests\web_srv.Tests.csproj", "{2B154951-448F-4759-B246-A3B6C95C6485}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VmsOnvifActors.Tests", "VmsOnvifActors.Tests\VmsOnvifActors.Tests.csproj", "{59783E2F-11FB-416D-A77D-83D26B2B28CD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -333,6 +335,18 @@ Global
 		{2B154951-448F-4759-B246-A3B6C95C6485}.Release|x64.Build.0 = Release|Any CPU
 		{2B154951-448F-4759-B246-A3B6C95C6485}.Release|x86.ActiveCfg = Release|Any CPU
 		{2B154951-448F-4759-B246-A3B6C95C6485}.Release|x86.Build.0 = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|x64.Build.0 = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Debug|x86.Build.0 = Debug|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|x64.ActiveCfg = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|x64.Build.0 = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|x86.ActiveCfg = Release|Any CPU
+		{59783E2F-11FB-416D-A77D-83D26B2B28CD}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
