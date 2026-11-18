@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { configureStore } from '@reduxjs/toolkit'
+import { describe, expect, it, vi } from 'vitest'
 import type { MapFigure } from '../dto/mapDtos'
+import { mapApi } from '../api/mapApi'
 import reducer, { canvasAdd, canvasRemove, dropNodes, loadCanvas } from './objectsSlice'
+
+// The read itself is mocked: what these tests pin is what the store makes of its answer, the
+// truncation flag included.
+vi.mock('../api/mapApi', () => ({ mapApi: { getByBox: vi.fn() } }))
 
 const figure = (id: string, parentId = 'map'): MapFigure => ({
   id,
@@ -9,8 +15,10 @@ const figure = (id: string, parentId = 'map'): MapFigure => ({
   geometry: { type: 'Point', coord: [{ lat: 0.5, lon: 0.5 }] },
 })
 
-const loaded = (canvasId: string, figures: MapFigure[]) =>
-  reducer(undefined, loadCanvas.fulfilled({ canvasId, figures }, 'request', canvasId))
+const loaded = (canvasId: string, figures: MapFigure[], truncated = false) =>
+  reducer(undefined, loadCanvas.fulfilled({ canvasId, figures, truncated }, 'request', canvasId))
+
+const store = () => configureStore({ reducer: { objects: reducer } })
 
 describe('the canvas page', () => {
   it('records every figure of the read, at whatever depth of the tree', () => {
@@ -23,6 +31,7 @@ describe('the canvas page', () => {
     expect(state.canvases.city).toEqual({
       ids: ['district', 'building', 'camera'],
       loaded: true,
+      truncated: false,
     })
     // A figure is a marker: the canvas response fills both.
     expect(Object.keys(state.markers).sort()).toEqual(['building', 'camera', 'district'])
@@ -51,12 +60,42 @@ describe('the canvas page', () => {
 
   it('forgets a deleted node on every canvas', () => {
     const withTwo = reducer(loaded('city', [figure('district')]), loadCanvas.fulfilled(
-      { canvasId: 'town', figures: [figure('district', 'town')] }, 'request', 'town'))
+      { canvasId: 'town', figures: [figure('district', 'town')], truncated: false }, 'request', 'town'))
 
     const state = reducer(withTwo, dropNodes(['district']))
 
     expect(state.canvases.city.ids).toEqual([])
     expect(state.canvases.town.ids).toEqual([])
     expect(state.markers.district).toBeUndefined()
+  })
+
+  it('keeps the cut flag of a canvas read that stopped at its limit', () => {
+    const state = loaded('city', [figure('district')], true)
+    expect(state.canvases.city.truncated).toBe(true)
+  })
+
+  it('clears the flag when a later read brings the whole canvas', () => {
+    const state = reducer(loaded('city', [figure('district')], true), loadCanvas.fulfilled(
+      { canvasId: 'city', figures: [figure('district')], truncated: false }, 'request', 'city'))
+
+    expect(state.canvases.city.truncated).toBe(false)
+  })
+})
+
+describe('the canvas read', () => {
+  it('reads an absent truncation flag as a whole canvas', async () => {
+    vi.mocked(mapApi.getByBox).mockResolvedValueOnce({ figs: [figure('district')] })
+
+    const canvas = await store().dispatch(loadCanvas('city')).unwrap()
+
+    expect(canvas.truncated).toBe(false)
+  })
+
+  it("carries the server's cut through to the page", async () => {
+    vi.mocked(mapApi.getByBox).mockResolvedValueOnce({ figs: [figure('district')], truncated: true })
+
+    const canvas = await store().dispatch(loadCanvas('city')).unwrap()
+
+    expect(canvas.truncated).toBe(true)
   })
 })

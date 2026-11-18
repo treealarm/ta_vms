@@ -26,6 +26,7 @@ import { useMapSpace } from '../../hooks/useMapSpace'
 import { useAlarmFeed } from '../../hooks/useAlarmFeed'
 import { acknowledgeZoneAlarms } from '../../api/controlApi'
 import SpaceCanvas, { type MapFocus } from '../../map/SpaceCanvas'
+import CanvasTruncatedNotice from '../../map/CanvasTruncatedNotice'
 import PlanOverlay from '../../map/PlanOverlay'
 import FiguresLayer from '../../map/FiguresLayer'
 import TracksLayer from '../../map/TracksLayer'
@@ -646,7 +647,7 @@ export default function MapsOperatorPanel() {
           </Box>
         </Box>
 
-        <Box sx={{ flex: 1, minWidth: 0, display: 'flex' }}>
+        <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
           {diagramId ? (
             <DiagramViewer
               diagramId={diagramId}
@@ -659,85 +660,88 @@ export default function MapsOperatorPanel() {
               }}
             />
           ) : (
-            <SpaceCanvas
-              key={space.id}
-              space={space}
-              picking={aiming}
-              focus={focus}
-              onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
-              overlay={(
-                <>
-                  <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
-                  <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
-                </>
-              )}
-            >
-              {space.plan && <PlanOverlay space={space} />}
-              {detections && space.id && <DetectionsLayer spaceId={space.id} />}
-              <FiguresLayer
-                figures={spaceData.figures}
-                states={statesById}
-                alarms={alarmsById}
-                descriptions={descriptions}
-                levels={levels}
-                selectedId={selectedNodeId}
-                onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
-                skipIds={cameraFigureIds}
-              />
-              {tracksSpaceId === space.id && tracks.length > 0 && (
-                <TracksLayer tracks={tracks} markers={markers} />
-              )}
-              {/* A plan picked on the map is selected, so its guard and its Enter are in the
-                  panel beside it; the outline is the zone, not a door. */}
-              <Footprints
-                nested={nested}
-                alarmed={alarmed}
-                levels={levels}
-                zoomLevels={spaceZoomLevels}
-                onPick={(s) => {
-                  if (!s.id) return
-                  const marker = markers[s.id]
-                  if (marker) selectZone(marker)
-                  else setSelectedNodeId(s.id)
-                }}
-              />
-              {here.map((p) => {
-                const camera = camerasById[p.cameraId]
-                const node = nodeForPlacement(p)
-                return (
-                  <CameraMarker
-                    key={p.cameraId}
-                    placement={p}
-                    label={camera?.name || p.cameraId}
-                    color={placementColor(p)}
-                    selected={p.cameraId === selectedCameraId}
-                    dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
-                    alarm={byCamera.get(p.cameraId) ?? null}
-                    levels={levels}
-                    visual={node ? figureById.get(node.id)?.visual : undefined}
-                    zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
-                    diagramLink={deviceDiagram && node?.id === selectedNodeId
-                      ? {
-                          label: t('diagramEditor.openDeviceDiagram'),
-                          visual: deviceDiagram.visual,
-                          onOpen: () => {
-                            setDiagramId(deviceDiagram.diagram.id)
-                            setSelectedNodeId(deviceDiagram.diagram.id)
-                          },
-                        }
-                      : undefined}
-                    onSelect={() => void selectCamera(p.cameraId)}
-                  />
-                )
-              })}
-              {selectedPlacement && aimTarget && (
-                <Polyline
-                  positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
-                  pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
-                  interactive={false}
+            <>
+              <CanvasTruncatedNotice canvasId={space.id} />
+              <SpaceCanvas
+                key={space.id}
+                space={space}
+                picking={aiming}
+                focus={focus}
+                onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
+                overlay={(
+                  <>
+                    <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
+                    <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
+                  </>
+                )}
+              >
+                {space.plan && <PlanOverlay space={space} />}
+                {detections && space.id && <DetectionsLayer spaceId={space.id} />}
+                <FiguresLayer
+                  figures={spaceData.figures}
+                  states={statesById}
+                  alarms={alarmsById}
+                  descriptions={descriptions}
+                  levels={levels}
+                  selectedId={selectedNodeId}
+                  onSelect={(id) => { const marker = markers[id]; if (marker) selectNode(marker) }}
+                  skipIds={cameraFigureIds}
                 />
-              )}
-            </SpaceCanvas>
+                {tracksSpaceId === space.id && tracks.length > 0 && (
+                  <TracksLayer tracks={tracks} markers={markers} />
+                )}
+                {/* A plan picked on the map is selected, so its guard and its Enter are in the
+                    panel beside it; the outline is the zone, not a door. */}
+                <Footprints
+                  nested={nested}
+                  alarmed={alarmed}
+                  levels={levels}
+                  zoomLevels={spaceZoomLevels}
+                  onPick={(s) => {
+                    if (!s.id) return
+                    const marker = markers[s.id]
+                    if (marker) selectZone(marker)
+                    else setSelectedNodeId(s.id)
+                  }}
+                />
+                {here.map((p) => {
+                  const camera = camerasById[p.cameraId]
+                  const node = nodeForPlacement(p)
+                  return (
+                    <CameraMarker
+                      key={p.cameraId}
+                      placement={p}
+                      label={camera?.name || p.cameraId}
+                      color={placementColor(p)}
+                      selected={p.cameraId === selectedCameraId}
+                      dimmed={!!selectedCameraId && p.cameraId !== selectedCameraId}
+                      alarm={byCamera.get(p.cameraId) ?? null}
+                      levels={levels}
+                      visual={node ? figureById.get(node.id)?.visual : undefined}
+                      zoomLevel={node ? figureById.get(node.id)?.zoomLevel : undefined}
+                      diagramLink={deviceDiagram && node?.id === selectedNodeId
+                        ? {
+                            label: t('diagramEditor.openDeviceDiagram'),
+                            visual: deviceDiagram.visual,
+                            onOpen: () => {
+                              setDiagramId(deviceDiagram.diagram.id)
+                              setSelectedNodeId(deviceDiagram.diagram.id)
+                            },
+                          }
+                        : undefined}
+                      onSelect={() => void selectCamera(p.cameraId)}
+                    />
+                  )
+                })}
+                {selectedPlacement && aimTarget && (
+                  <Polyline
+                    positions={[[selectedPlacement.lat, selectedPlacement.lon], [aimTarget.lat, aimTarget.lon]]}
+                    pathOptions={{ color: aimError ? '#ef5350' : '#ffca28', weight: 2, dashArray: '6 6' }}
+                    interactive={false}
+                  />
+                )}
+              </SpaceCanvas>
+            </>
           )}
         </Box>
 

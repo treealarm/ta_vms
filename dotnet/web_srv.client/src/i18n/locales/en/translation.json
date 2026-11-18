@@ -1248,6 +1248,9 @@
   },
   "maps": {
     "title": "Maps & plans",
+    "canvas": {
+      "truncated": "The canvas is shown in part: it holds more figures than one read returns. Open a nested space or plan to see the rest."
+    },
     "tree": {
       "tab": "Objects",
       "empty": "No objects yet",

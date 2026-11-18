@@ -9,7 +9,13 @@ export const CHILDREN_PAGE = 1000
 export type ChildrenPage = { ids: string[]; loaded: boolean; hasMore: boolean }
 
 /** What is drawn on one canvas: every figure whose coordinates are the space's, at any depth. */
-export type CanvasPage = { ids: string[]; loaded: boolean }
+export type CanvasPage = {
+  ids: string[]
+  loaded: boolean
+  /** The read stopped at its limit: the ids are a prefix of the canvas, not the whole of it. Only
+   *  a new read resets it -- a watch update does not prove the canvas is complete. */
+  truncated: boolean
+}
 
 export type ObjectsState = {
   markers: Record<string, MapMarker>
@@ -65,7 +71,7 @@ export const loadChildren = createAsyncThunk(
  */
 export const loadCanvas = createAsyncThunk('objects/loadCanvas', async (canvasId: string) => {
   const response = await mapApi.getByBox({ canvasId })
-  return { canvasId, figures: response.figs ?? [] }
+  return { canvasId, figures: response.figs ?? [], truncated: response.truncated === true }
 })
 
 /**
@@ -299,12 +305,13 @@ const objectsSlice = createSlice({
         for (const figure of action.payload.figures) mergeFigure(state, figure)
       })
       .addCase(loadCanvas.fulfilled, (state, action) => {
-        const { canvasId, figures } = action.payload
+        const { canvasId, figures, truncated } = action.payload
         for (const figure of figures) mergeFigure(state, figure)
 
         state.canvases[canvasId] = {
           ids: figures.map((figure) => figure.id).filter((id): id is string => !!id),
           loaded: true,
+          truncated,
         }
       })
       .addCase(resolveCameraNode.fulfilled, (state, action) => {

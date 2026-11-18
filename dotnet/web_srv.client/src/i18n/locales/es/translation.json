@@ -1248,6 +1248,9 @@
   },
   "maps": {
     "title": "Mapas y planos",
+    "canvas": {
+      "truncated": "El lienzo se muestra parcialmente: contiene más figuras de las que devuelve una lectura. Abra un espacio o plano anidado para ver el resto."
+    },
     "tree": {
       "tab": "Objetos",
       "empty": "Aún no hay objetos",

@@ -23,6 +23,7 @@ import {
   createDiagramNode, createReplicaOnDiagram, deleteNode, saveDiagramPlacement, saveFigure,
   saveNodeDetails,
 } from '../../store/mapEditsSlice'
+import CanvasTruncatedNotice from '../../map/CanvasTruncatedNotice'
 import { useMapLive } from '../../hooks/useMapLive'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { NODE_DRAG_TYPE } from '../../map/dragTypes'
@@ -513,6 +514,8 @@ export default function DiagramViewer({
           </>
         ) : null}
       </Stack>
+
+      <CanvasTruncatedNotice canvasId={diagramId} />
 
       <Box ref={containerRef} sx={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative' }}>
         {loading && !shown ? (
