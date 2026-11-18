@@ -1,6 +1,6 @@
 # Призмы: контур с отверстиями и редактирование вершин
 
-Найдено при постройке M2.9 (`docs/plans/square-merge/m2.9-real-campus-world.md`), 2026-11-07.
+Найдено при постройке M2.9 (`docs/plans/archive/m2.9-real-campus-world.md`), 2026-11-07.
 Сюда сведены прежние `prism-holes.md` и `prism-vertex-editing.md`.
 
 `prism` — объект OnvifSim: по одному контуру он рисует стены, крышу и пол
