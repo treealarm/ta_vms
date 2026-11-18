@@ -1,9 +1,31 @@
 # PTZ-команда к выключенной камере: результат вместо исключения
 
 > Ветка `fix/ptz-move-stack-traces` от `master` (1502760f). Исходник —
-> `docs/future_plans/26-ptz-move-stack-traces.md` (удаляется при закрытии).
+> `docs/future_plans/26-ptz-move-stack-traces.md` (удалён при закрытии).
 > Стенд — OnvifSim (`tests/onvifsim/`, `Sim.set_network`) и dev-стек, поднятый
 > `scripts/dev-up.sh`.
+>
+> **Закрыт 2026-11-18.**
+
+## Сделано
+
+- **2026-11-18: контракт актёра.** `PtzCommandActorResult(bool Success, string? Error)` в
+  `web_srv.Types`; четыре move/stop-метода `ICameraActor` возвращают его. `CameraActor`:
+  `GetPtzOrThrow` → `FindPtzAsync`, общее тело `CommandAsync` ловит и исключение самого
+  ONVIF-вызова; `GetPtzStatusAsync`/`GetPtzCapabilitiesAsync` переведены на `FindPtzAsync`.
+  `PtzServiceImpl` отображает результат в `PtzResponse`. Proto не менялся.
+- **2026-11-18: тесты.** `CameraActorPtzCommandTests` — 5 тестов (четыре команды к
+  недостижимой камере `127.0.0.1:1` и повтор внутри окна бэкоффа); `VmsOnvifActors.Tests` —
+  8/8, полный `dotnet test dotnet/ta_vms.sln` — **708 из 708**, `dotnet build` — 0 ошибок и
+  предупреждений.
+- **2026-11-18: замер после правки на стенде.** Тёплый случай (камера снята с сети при живом
+  актёре, 150 с): в `vmsonvif-actors.log` — **0** «unhandled exception» вместо 69; ошибки
+  OnvifLib о неудачном `GetServices` — 23 короткие строки без стека, примерно раз в 6,5 с;
+  трекер — **3** строки «cannot aim» / 774 байта вместо 102 строк / 422 КБ, `lastError` =
+  «PTZ service not available for 127.0.0.1:8102». Холодный случай (хост перезапущен при
+  выключенной камере, 60 с) — **0** стеков вместо 28, 10 коротких ERR-строк, одна строка
+  трекера. Восстановление: камера вернулась в сеть в 16:14:56, первая успешная наводка —
+  16:14:57.9 (1,9 с), `lastError` пуст, поза снова меняется.
 
 ## Что видно (замер до правки)
 
@@ -177,14 +199,16 @@ private static PtzResponse From(PtzCommandActorResult result) =>
 
 1. `dotnet build dotnet/ta_vms.sln` — 0 ошибок и предупреждений.
 2. `dotnet test dotnet/VmsOnvifActors.Tests`; перед merge — полный `dotnet test dotnet/ta_vms.sln`.
-3. Стенд по шагам выше; замеры «до» (69/150 с тёплый, 28/60 с холодный) записаны в этот файл,
-   «после» — вписываются при закрытии.
+3. Стенд по шагам выше — выполнен 2026-11-18, результаты в «Сделано»: 0 стеков в обоих
+   случаях (до правки — 69 за 150 с и 28 за 60 с), одна строка трекера вместо строки на
+   команду, восстановление за 1,9 с.
 
 ## Коммиты и закрытие
 
 - `Return a PTZ command result instead of throwing in CameraActor` (+ тесты);
-- `Close the PTZ move stack traces` — удалить `docs/future_plans/26-ptz-move-stack-traces.md` и
-  его строку из `docs/future_plans/README.md`.
+- `Close the PTZ move stack traces` — план переехал в `docs/plans/archive/`, удалены
+  `docs/future_plans/26-ptz-move-stack-traces.md` и его строка из
+  `docs/future_plans/README.md`.
 
 Push и merge в `master` — только по просьбе.
 
