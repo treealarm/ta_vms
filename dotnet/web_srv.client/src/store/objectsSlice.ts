@@ -12,8 +12,9 @@ export type ChildrenPage = { ids: string[]; loaded: boolean; hasMore: boolean }
 export type CanvasPage = {
   ids: string[]
   loaded: boolean
-  /** The read stopped at its limit: the ids are a prefix of the canvas, not the whole of it. Only
-   *  a new read resets it -- a watch update does not prove the canvas is complete. */
+  /** The read stopped at its limit: the ids are a prefix of the canvas, not the whole of it. A new
+   *  read and the box watch both state the truth: the watch reads the same capped box, so its
+   *  `set_box_truncated` may set or clear it, while a watch update of the ids proves nothing. */
   truncated: boolean
 }
 
@@ -262,6 +263,14 @@ const objectsSlice = createSlice({
       const gone = new Set(action.payload.ids)
       page.ids = page.ids.filter((id) => !gone.has(id))
     },
+    /** The box watch says whether the canvas it reads is whole; a page not read yet keeps this
+     *  for its own first read, which reads the same box. */
+    canvasTruncated: (state, action: PayloadAction<{ canvasId: string; truncated: boolean }>) => {
+      const page = state.canvases[action.payload.canvasId]
+      if (!page) return
+
+      page.truncated = action.payload.truncated
+    },
     clearObjectsError: (state) => {
       state.error = null
     },
@@ -347,7 +356,8 @@ const objectsSlice = createSlice({
   },
 })
 
-export const { dropNodes, canvasAdd, canvasRemove, clearObjectsError } = objectsSlice.actions
+export const { dropNodes, canvasAdd, canvasRemove, canvasTruncated, clearObjectsError } =
+  objectsSlice.actions
 export default objectsSlice.reducer
 
 /** The nodes currently known for a parent, in the order the server returned them. */

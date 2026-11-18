@@ -406,8 +406,15 @@ export type MapWatchAction =
   | 'set_ids2delete'
   | 'set_visual_states'
   | 'on_values_changed'
+  /** A box scope's completeness: the rectangle holds more figures than one read returns. */
+  | 'set_box_truncated'
 
-export type MapWatchMessage = { action?: string; items?: MapWatchItem[] }
+export type MapWatchMessage = {
+  action?: string
+  items?: MapWatchItem[]
+  /** Only on `set_box_truncated`; absent means false (an id scope is never truncated). */
+  truncated?: boolean
+}
 
 // ── The alarm entity ────────────────────────────────────────────────────────────────────────────
 
