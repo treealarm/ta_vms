@@ -1,5 +1,10 @@
 # Architecture rules
 
+These rules override any default behaviour. The ones that apply to every change are stated in full
+here; a rule that applies only when you touch a particular area is one short statement plus a link
+to the document that holds the full version — read that document before changing the area. Keeping
+this file short is deliberate: a rule that is always visible is a rule that is always followed.
+
 ## Language conventions
 
 Chat communication with the user is in Russian. Code — comments, identifiers, commit messages, log messages, docs — is always in English.
@@ -68,128 +73,23 @@ commit message. When work on it starts, the file is deleted or cut down to what 
 
 ## ta-deps is shared with video_a
 
-`ta-deps` (this repo's `ta-deps/Dockerfile`) is the C++ toolchain + vcpkg base image for **two**
-consumers: this repo's `video_srv` (`vms` service) and the separate `video_a` repo's
-`analytics-worker`, which builds `FROM ta-deps` via a sibling checkout (see `video_a/scripts/build.sh`).
-It installs protobuf/grpc/spdlog/ffmpeg for video_srv plus openvino for video_a — when changing
-its package list, consider both consumers.
-
-`video_a`'s CI does not follow this repo: it builds against the `treealarm/ta-deps` tag written in
-`video_a/ta-deps.tag`. After publishing a new `ta-deps` (`../ta_install/scripts/push-deps-images.sh`),
-bump that file in `video_a`, in a commit of its own — until then video_a keeps building on the old
-base, which is safe but means a package added here for video_a is not there yet.
-
-**Adding an ffmpeg feature to the shared vcpkg tree breaks every stale build directory.**
-`video_srv` and `video_a` configure against `/mnt/wdblue/vcpkg` in classic mode, and both
-link ffmpeg through `pkg_check_modules(FFMPEG ...)` — as does `roi_transcode`, from its own
-repository, against the same tree. That call caches its answer in `CMakeCache.txt` and never
-asks pkg-config again. So when ffmpeg was once rebuilt there with `qsv,vaapi`,
-`libavutil.a` gained
-`hwcontext_vaapi.o` while every build directory configured before that kept a link line with
-no `-lva`. The result is a wall of `undefined reference to vaGetDisplayDRM` that looks like a
-source problem and is not: the `.pc` file is already correct, the cache is not. Delete the
-build directory and reconfigure. Docker builds never hit this — they configure from scratch.
-
-**`roi_transcode` does not use it.** It lives in its own repository now (github
-`treealarm/roi_transcode`, checked out beside this one) and has its own base, `roi-deps`,
-built there by `./docker/build.sh`. The split is load-bearing for `qsv` — the oneVPL
-dispatcher is dead weight without `libmfx-gen1.2` in a runtime image — and for openvino,
-which is 143 of the 234 minutes ta-deps takes to build and which roi_transcode does not link.
-
-**`vaapi` is the exception, and it is in `ta-deps` deliberately.** video_srv transcodes live
-HEVC to H.264 for every WebRTC viewer, one encode per stream, continuously; that is the largest
-sustained CPU cost in the service, and `h264_vaapi` measured 43% less CPU per stream on an
-i7-12700 iGPU. It brings the system `libdrm-dev` vcpkg's libva demands into `ta-deps` with it.
-`video_a`'s analytics-worker pays for this in image size and nothing else.
-
-Building it is not using it. Three things have to line up in the *runtime* image, and each one
-failing looks the same from outside — a service that merely burns CPU: an iHD driver new enough
-to encode (hence ubuntu:24.04 in the root `Dockerfile`'s runtime stage, not 22.04), vcpkg's own
-`libva.so.2` shipped beside the binary (the distribution's older one wins otherwise and the first
-hardware encode dies on `undefined symbol: vaMapBuffer2`, lazily, hours after startup), and
-`LIBVA_DRIVERS_PATH` pointing at the distribution's `dri` directory (vcpkg's libva searches its
-own build prefix, which does not exist in the image). `/dev/dri` passthrough is opt-in per host —
-see `../ta_install/docker-compose.gpu.yml.example`.
-
-Both images use an overlay vcpkg triplet
-(`<image>/triplets/x64-linux.cmake`) to build release-only (no debug artifacts — vcpkg's
-`VCPKG_BUILD_TYPE` env var is a no-op, it only works from inside a triplet file); consumers must
-still pass `-DCMAKE_BUILD_TYPE=Release` on their own `cmake` configure step to select the release
-libs.
+`ta-deps` is the C++ toolchain + vcpkg base image for **two** consumers: this repo's `video_srv`
+(`vms`) and the `video_a` repo's `analytics-worker`, which builds `FROM ta-deps` through a sibling
+checkout. When changing its package list, consider both. After publishing a new `ta-deps`, bump
+`video_a/ta-deps.tag` in a commit of its own. Adding an ffmpeg feature to the shared vcpkg tree
+breaks every stale build directory — delete the build directory and reconfigure.
+Full statement: [docs/architecture/ta-deps.md](docs/architecture/ta-deps.md).
 
 ## The boundary between `roitrc/` and `roitrc/ta_roienc/`
 
-`roitrc/ta_roienc` is a submodule on github `treealarm/roi_transcode`, the `ta_roienc` library
-(adaptive ROI encoding). That repository holds only the library's code and its C++ unit tests; it
-deliberately knows nothing of gRPC, Dapr or protobuf. It may be edited — it is our library — but
-everything that makes sense only for ta_vms lives here, not there.
-
-**It has three consumers, and the second raises the cost of a mistake.** Besides `roitrc`, it is
-linked by `video_srv` — live HEVC→H.264 transcoding for WebRTC goes through
-`ta_roienc::Transcoder`, because libavcodec has no automatic choice of hardware and
-`avcodec_find_encoder` always returns libx264 (see
-`video_srv/writer/processors/hw_transcode_processor.cpp`).
-**The default engine is hardware only — `Engine::Auto` restricted to VA-API, NVENC, then QSV — not
-the library's whole `Engine::Auto`**, and the difference is one of meaning: the library is linked
-only for the hardware. Whichever of them the build or the machine lacks declines at once ("not
-in this FFmpeg build", "no CUDA device"), so one order serves both platforms. If neither opened — or
-an `auto` chain set explicitly through `VMS_VIDEO_ENCODER` came down to a software one — the stream
-is handed back to `compat_sink`, and `video_transcode_processor` takes it. That one has
-`tune=zerolatency`, and the library's software engine does not: 34 frames in the pipeline against
-4 through `h264_vaapi`, which is a second and a half of delay on live video.
-**On Windows the hardware engines are NVENC and QSV**: the Windows FFmpeg has nvcodec and qsv and
-no `h264_vaapi`. On the i5-750 test machine with a GTX 1050 Ti a 1080p25 HEVC stream costs vms 7%
-of a core through NVDEC→NVENC against 121–135% through `video_transcode_processor`
-(`../ta_install/windows/FINDINGS.md`). A GeForce opens at most 8 encode sessions; the ninth
-stream fails to open ("incompatible client key") and takes the CPU path. NVENC is reached through
-libavcodec, which reads no regions, so it holds the bitrate target with its own VBR rather than the
-library's outer loop — that loop moves a background QP offset carried as a region, and on NVENC
-it moved nothing (10 Mbit/s against a 3.9 Mbit/s target). There NVENC runs on a Direct3D 11
-device rather than CUDA — the library asks whether the FFmpeg has D3D11VA, which only the Windows
-one does — on the NVIDIA adapter by vendor id, and the decoder it hands that device to is
-D3D11VA, the decode every Windows GPU has. QSV runs the same way on the Intel adapter: a QSV
-device derived from a D3D11 one, the decoder handed the D3D11 device, and each decoded texture
-mapped into QSV's pool rather than copied (on Linux the same code runs on VA-API instead of D3D11).
-That pool has to be a dynamic one — a fixed pool refuses surfaces it did not allocate — and the
-mapping goes through a pool derived from the decoder's, the only kind QSV can unmap. NVENC comes
-first, so a machine with both uses the card. vms decodes on the encoder's device or not at all, so
-a Windows machine with neither — AMD — has no hardware engine, and the stream goes to
-`video_transcode_processor`, decode included (`docs/future_plans/10-windows-hardware-encoders.md`).
-Do not build Windows `vms.exe` without the library — the engines arrive through it.
-The third is the separate `video_a` repository, which has its own `ta_roienc` submodule and links
-only the decoder (`ta_roienc_decode`) for the analytics worker; a rename in the library's public
-API has to be carried there too, and its submodule bumped in a commit of its own.
-
-**A build without the submodule must keep working** — a clone made without `--recursive` has an
-empty `roitrc/ta_roienc`, and that is a reason to warn, not to fail.
-`video_srv/CMakeLists.txt` adds it only when `roitrc/ta_roienc` is checked out; otherwise it
-warns, leaves `hw_transcode_processor` out (`VMS_WITH_TA_ROIENC` is undefined) and every HEVC
-stream takes `video_transcode_processor`. Such a binary refuses to start with `VMS_VIDEO_ENCODER`
-set, since it cannot honour it. `roitrc/CMakeLists.txt` warns and builds an empty `roitrc` target.
-The image build passes `-DVMS_REQUIRE_TA_ROIENC=ON`, so an image can never lose the hardware path
-silently — keep it that way. New code that touches `ta_roienc` from `video_srv` goes behind the
-same switch.
-A broken submodule bump takes live video down, not only the clip queue. Bump the version in a
-commit of its own and check both paths.
-
-`roitrc/` is everything about re-compression that is ours: the gRPC contract `VmsFs` calls, the job
-model (it mirrors EdgeImport in `video_srv`), the Dapr notifications and the `ROI_ALLOWED_ROOTS`
-path sandbox. The dependency arrow is one and narrow: only the public API is linked —
-`ta_roienc/ta_roienc.h`, `ta_roienc/transcoder.h` and the headers they include — and nothing reaches into the
-library's internals. If new code needs the encoder's `src/`, that is a sign it is on the wrong side
-of the boundary.
-
-The contract `proto/roi_transcode.proto` lives here, beside the others, in a single copy.
-
-It is built by `roitrc/CMakeLists.txt` through `add_subdirectory(ta_roienc)` with
-`TA_ROIENC_BUILD_TESTS` and `TA_ROIENC_INSTALL` off: the library's unit tests run in its own
-repository. The service's own checks are `roitrc/scripts/check.sh` (startup with a broken
-configuration, both gRPC entry points, the sandbox). The `roi-deps` base image is built from the
-submodule's `docker/intel/`; `roitrc/Dockerfile` takes the repository root as its context, because
-it needs both `roitrc/` and `proto/`.
-
-Updating the library's version is an ordinary submodule bump, in a commit of its own, so that the
-history shows which encoder went into a release.
+`roitrc/ta_roienc` is a submodule on github `treealarm/roi_transcode`, our `ta_roienc` library. It
+has three consumers: `roitrc`, `video_srv` (live HEVC→H.264 for WebRTC) and `video_a`; only its
+public API is linked, and nothing reaches into its `src/`. A build without the submodule must keep
+working — warn, leave `hw_transcode_processor` out, never fail. Rename in its public API and bump
+the submodule in commits of their own, checking both paths. Do not build Windows `vms.exe` without
+the library — the hardware engines arrive through it. Its default engine is hardware only.
+Full statement, including the Windows engines and the vaapi rules:
+[docs/architecture/roi-encoder-boundary.md](docs/architecture/roi-encoder-boundary.md).
 
 ## Source names and runtime names differ on purpose
 
@@ -299,290 +199,42 @@ Do not "fix" this with a per-instance `consumerID`: it works, but leaves an orph
 every restart — one per instance that ever started, each still bound to the topic exchange and each
 accumulating messages nobody reads.
 
-### Scaling model per service
+## Scaling model and deployment layout
 
-- `web_srv.Server` — stateless, scales by **replicas**. Keep it that way: no per-instance session
-  tables (WHEP session state travels in an AES-GCM sealed token, see `WhepSessionToken`), no
-  subscriptions, no local files.
-- `video_srv` (`vms`) and `VmsFs` — scale by **sharding**: one pair per node, pinned to that
-  node's storage. More capacity means another server↔FS pair, never a second replica of the same
-  app id.
-- `VmsOnvif` and `VmsOnvifActors` — also **sharded by node**, for a different reason: ONVIF reaches a
-  camera over the same local subnet RTSP does, so an instance can only serve the cameras of the media
-  server it sits next to. `OWN_SERVER_ID` names that node; the actor type name carries it too
-  (`CameraActorType`), because Dapr placement routes actors by type name and would otherwise put a
-  camera's actor on a host with no route to it.
-- `VmsSingleton` — **exactly one instance, ever.** The suffix is the deployment contract: this is
-  where work that must happen once for the whole system lives, together with in-memory aggregation a
-  second copy would split rather than share (all replicas of one app id share a Dapr consumer group,
-  so each would see half the events). Anything that does not need that property must not go here —
-  otherwise it becomes a dumping ground and the guarantee stops meaning anything.
-- `VmsAnalyticsSingleton` — also exactly one instance, but for its own reason: it is the control
-  plane of analytics, not a worker. It decides which `analytics-worker` watches which camera and
-  holds one long-lived `StreamDetections` per worker — and a stream, unlike a queue, is delivered to
-  every subscriber in full, so a second instance would duplicate every detection: the row, the crop
-  file and the `RetainEvent`. Its re-identification gallery, event grouping and debounce are shared
-  state in the same way. **The scaling axis is the workers**, which are already sharded across
-  `DAPR_ANALYTICS_WORKER_APP_IDS` by rendezvous hash. Sharding this service by camera is possible but
-  costs cross-camera re-identification between shards — decide that deliberately, not by adding a
-  replica.
-- `VmsCfg`, `VmsUtils`, `VmsLogger` — `VmsCfg` and `VmsUtils` are replicable (their once-only work
-  lives in `VmsSingleton`); `VmsLogger` is sharded by node, because it reads node-local files.
-- `VmsMap` — the map's tree, states, events, rights and files, and the only owner of `ta_map`; also
-  the adapter that turns camera configuration, retention episodes and source outages into nodes,
-  states and journal events, and the `Watch` stream the web turns into SSE. **Replicable**: all its
-  state is in the database, files included, and an alarm update recomputes the affected path's
-  counters in its own transaction, so two replicas cannot each hold half the truth the way an
-  in-memory aggregator would. It runs on the core, like `VmsCfg`.
-- `roitrc` (the ROI re-compression service; the `ta_roienc` library it links lives in its own repository) — **sharded by node**, and this one is a correctness requirement
-  rather than a capacity choice. It is handed absolute paths to clips on the node's own disk, so an
-  instance elsewhere either finds nothing there or finds a *different* node's file at the same path
-  and overwrites it. Which instance a node talks to therefore comes from that node's entry in
-  VmsCfg's node registry (`roi_id`; the fifth part of a `MEDIA_SERVER_PAIRS` entry), resolved through VmsCfg — never from a global env
-  var, which cannot express "the one next to me". A node that names none simply does not
-  re-compress.
-
-### Distributed layout: a core and nodes
-
-A deployment is one **core** and any number of **nodes**, and one machine may be both.
-- The core holds the shared infrastructure and everything system-wide: PostgreSQL, RabbitMQ, Dapr
-  placement, Keycloak, `VmsCfg`, `VmsUtils` and the singletons.
-- A node holds what is pinned to its own disk and subnet: its `vms`↔`vmsfs` pair, `vmsonvif`,
-  `vmsonvif-actors` and `vmslogger`, each with app ids and an `OWN_SERVER_ID` of its own and an
-  entry in VmsCfg's node registry. A node may run Linux (compose) or Windows (the installer).
-- **Every machine runs a `web_srv`** (`web-vms-<node>` on a node): an operator opens any of them and
-  sees the whole deployment as one system, logged in at the core's Keycloak, which therefore
-  listens on the core's address. User administration (mt_admin) stays on the core.
-- **MediaMTX runs on the core, and on a node unless it was joined without one** (`--no-mediamtx`,
-  the installer's `NodeMediaMtx=0`). Which one a camera publishes to is configuration: a MediaMTX
-  row in VmsCfg pinned to a node (`server_id`) or shared, and VmsCfg gives a camera its own node's
-  first, so that its live video stays on that machine. Every MediaMTX of a deployment uses the
-  core's accounts. Its API and WHEP listen on the machine's address, where VmsUtils and every web
-  reach them.
-- A standalone install — the Windows installer by default, `../ta_install` compose — is a core and
-  a node on one machine, with fixed app ids.
-- Over several machines, each is a core or a node, on Linux or Windows in any mix: on Linux
-  `../ta_install/docker-compose.distributed.yml` through `scripts/distributed.sh core|join`,
-  on Windows the installer with `Role=core|node` (`TAVMS_ROLE`), which runs
-  `TaVmsHost core|join`. Both lay out the same files and read the same node package, so a
-  core of either kind takes nodes of either.
-
-Nothing may tie a service to "everything is on this machine": addresses and ports come only from
-env, and the only place that fixes app ids and `OWN_SERVER_ID` for one machine is
-`../ta_install/windows/config/services.json`, per role (and, on Linux,
-`../ta_install/docker-compose.distributed.yml`); a node's app ids carry its name. Between
-machines, sidecars cannot use the sqlite resolver (see "Infrastructure of its own" below); they use
-HashiCorp Consul, and talk over mutual TLS with certificates from Dapr Sentry on the core, which
-signs one only against a token for that app id (`../ta_install/scripts/distributed.sh`,
-`../ta_install/windows/TaVmsHost/Distributed.cs`). A node takes from its core only the credentials
-and ports of its PostgreSQL, RabbitMQ, MediaMTX and Keycloak and the WHEP session key (`core.env`
-in the package), never the core's whole environment: a Windows core's holds Windows paths. Dapr's
-other resolvers do not fit: `mdns` has no settings at all, so two installations on one LAN share
-every app id, and `nameformat` returns a host name without a port, while on Windows every sidecar
-has a port of its own. Consul and Sentry exist only in a deployment over several machines; one
-machine runs neither.
-
-A node's services find their partners through its entry in VmsCfg's node registry, which they read
-from VmsCfg (`ListMediaServers`) — never from a deployment-wide app id variable, which on a node
-would name the core's service.
-
-**The node registry is VmsCfg's table, and joining is a request to the core's web.** A machine that
-is to become a node asks `POST /api/deployment/join` for its package (`node-<name>.tar.gz`): VmsCfg
-registers it and signs its Sentry tokens with the core's key (`TAVMS_DISTRIBUTED_DIR`). The core
-learns the node there and then; nothing restarts. Joining has two stages. While the deployment is
-being set up, enrollment is open and any machine that reaches the core's web gets in; once the
-administrator closes it (Administration → Deployment), a new node needs an administrator's user name
-and password, checked at Keycloak. A new package for a node already there (installed over, or at a
-new address it then moves to) needs them even while enrollment is open: an added node shows in the
-list, but a second package would let anyone become one unseen. Without Keycloak the join endpoint
-takes nobody for an administrator. Enrollment starts open only on a new database; one VmsCfg ran on
-before the switch existed starts closed. The administrator removes a node there as well; removal
-does not yet revoke its tokens (`docs/future_plans/16-distributed-hardening.md`). `MEDIA_SERVER_PAIRS`
-names only what this machine's own configuration fixes — the core's own node, and nodes joined with
-a package before the registry existed — and VmsCfg writes those rows at every start, marked
-configured: they cannot be removed in the web, since they would be back on the next start.
-
-**The registry belongs to a tenant, not to a cluster.** In Kubernetes several companies may share a
-cluster (`../multitenant_admin`: a tenant is a Keycloak realm, its databases and a namespace), each
-with VmsCfg and webs of its own, so each has its own nodes, its own enrollment switch and its own
-signing key — a Secret of its namespace there, a directory on a machine. multitenant_admin manages
-who the users are; whether one of them may add servers is the realm's `admin` role, which is what
-closed enrollment checks. Do not move the registry into multitenant_admin: it has no database and no
-Dapr of its own, and a second copy of the nodes would have to be kept in step with this one. For
-the same reason the package names each of the core's services by its own address (`POSTGRES_HOST`,
-`RABBITMQ_HOST`, `VMS_MTX_HOST`, `KEYCLOAK_URL` in `core.env`) instead of leaving them to
-`CORE_ADDRESS`: behind a cluster they are different addresses, and on a machine they are all the
-core's.
-
-**An app listens on the loopback only** (`ListenLocalhost`, `127.0.0.1` in `vms`): its own sidecar
-is its one client, and it always runs beside it — the same host on Windows, the app's network
-namespace in compose (`network_mode: service:<app>`). The one exception is `web_srv`, the browser's
-way in. The sidecar's own API is its app's alone in the same way (`-dapr-listen-addresses
-127.0.0.1` in both compose files and from TaVmsHost; daprd listens on every address otherwise, and
-that API invokes any service and reads and writes the state store without asking who calls). What
-crosses machines is the sidecar's internal gRPC port, never an app port or the API, so do not open
-either to the network to make a call between machines work.
-
-**Naming rule:** a service that cannot be replicated carries `Singleton` in its project name and Dapr
-app-id. A reader must be able to tell the scaling class from the name alone, without reading
-`Program.cs` to discover a background job hiding inside.
+A service's scaling class is in its name and is a hard constraint: `web_srv.Server` — replicas;
+`video_srv` (`vms`) with `VmsFs`, `VmsOnvif`, `VmsOnvifActors`, `VmsLogger` and `roitrc` — sharded
+by node; `VmsSingleton` and `VmsAnalyticsSingleton` — exactly one instance, ever; `VmsCfg`,
+`VmsUtils` and `VmsMap` — replicable. Nothing may tie a service to "everything is on this machine":
+addresses and ports come only from env, and an app listens on the loopback only.
+The core-and-nodes layout, the node registry and enrollment, Consul/Sentry/mTLS, the distributed
+env package: [docs/architecture/distributed.md](docs/architecture/distributed.md).
 
 ## Debug "entity state" presence registry
 
-For runtime debugging, any service can publish a periodic snapshot of an entity's in-memory
-state (e.g. "camera X stream Y is currently recording into file Z") to the `debug-entity-state`
-topic on the existing `orderpubsub` pub/sub component. This is a **best-effort, non-persistent**
-mechanism — no delivery guarantees, no history, nothing is written to a database.
-
-**Envelope** (raw JSON, one message per entity per tick):
-```json
-{ "service": "vms", "entity_type": "stream", "entity_id": "cam1/main", "state": { "...": "..." } }
-```
-- `service` — publisher's `APP_ID`.
-- `entity_type` / `entity_id` — free-form identifiers chosen by the publisher.
-- `state` — arbitrary JSON object, no fixed schema; each entity publishes whatever fields are
-  relevant to it.
-
-**VmsSingleton** owns the in-memory registry: it subscribes to `debug-entity-state`, keys entries by
-`(service, entity_type, entity_id)`, and tracks `last_seen`. `stale` is computed on read
-(`now - last_seen > 30s`); a periodic sweep removes entries not seen for `> 5min`. The registry is
-exposed via the `ListEntityStates` gRPC (consumed by `web_srv.Server`'s `/api/entitystate`
-endpoint and the "Entity State" debug tab in the frontend).
-
-**Publishing:**
-- C# services: call `builder.AddVmsDebugState()` (from `VmsLog`), then inject
-  `EntityStatePublisher` and call `Publish(entityType, entityId, state)`.
-- C++ services: use `entity_state_publisher` (in `video_srv/grpc_layer`) which wraps
-  `dapr_publisher::publish_json`.
+Any service may publish a periodic snapshot of an entity's in-memory state to the
+`debug-entity-state` topic — best-effort, no history, nothing written to a database. VmsSingleton
+keeps the registry and `ListEntityStates` serves it. C# services: `builder.AddVmsDebugState()` plus
+`EntityStatePublisher`; C++ services: `entity_state_publisher`. Envelope and staleness rules:
+[docs/architecture/debug-entity-state.md](docs/architecture/debug-entity-state.md).
 
 ## Maps & plans: positions belong to ta_vms
 
 Spaces (maps and nested plans), plan images, camera placements, landmarks and their calibrations
-live in **VmsMap**, on Square's object tree; see [`docs/maps-and-plans.md`](docs/maps-and-plans.md)
-and the migration `dotnet/VmsMap/Grpc/migrations/0000_init.sql`. VmsCfg keeps the cameras
-themselves; a placement write checks the camera exists through `GetCamera` (there is no foreign key
-across the two databases). These are the invariants a change must keep:
-
-- **One tree.** A space is a node of `objects` with a `spaces` row (kind map/plan, its view, floor
-  elevation and order); its name and parent are the object's. A landmark is a node too. A camera is
-  one node whose id is derived from its camera id (`CameraObjectId`), never a node per placement.
-- Spaces nest like Square's diagrams, but each has its own coordinates: a nested plan is never laid
-  over its parent's map, its footprint there (its `geo_objects` figure) is only the way in.
-- A position is WGS84 plus metres **above the floor of its space**, never above sea level, and is
-  never stored in plan pixels. A plan in made-up coordinates uses made-up WGS84 around (0, 0) rather
-  than a second coordinate system. `geo_objects.canvas_id` records the nearest canvas ancestor —
-  a space or a mnemoscheme — whose coordinates a figure is drawn in.
-- Two spaces share geometry only when they are the same space or both have real coordinates; every
-  cross-space feature (calibration, aiming, master/slave) checks that rule.
-- A camera has at most one **reference** placement — the `camera_placement` row with
-  `is_reference`, where it really stands, the only one aiming uses — and any number of pictures.
-  A picture is a replica of the camera node (`objects.owner_id`) with its own point and placement
-  row. Another placement is never promoted to reference behind the administrator's back.
-- **A replica's owner is an original, one level deep.** `objects.owner_id` never names another
-  replica: a picture dropped from a replica's canvas is written as a picture of the node both show,
-  because states, values, camera id, node kind and rights all resolve an owner in one hop.
-- Heading is a compass bearing, 0 = north, clockwise (Square's `__image_rotate`), and lives only in
-  `camera_placement.heading_deg`.
-- Calibration fits are never stored — raw observations and ground marks in VmsMap, the PTZ fit and
-  the fixed camera's ground homography in `VmsPtzTrackingSingleton/Geo`, as with the slave binding.
-  The browser only multiplies by the matrix it is handed; it never fits.
-- Detections on the map come from the existing live stream (`api/analytics/live`), projected in the
-  browser — no second detection stream for maps.
-- Map changes are announced on **`map-config-changed`**, payload
-  `{"object_ids": [...], "camera_ids": [...]}`: the nodes that changed, and the cameras whose
-  spatial model did. An empty `camera_ids` means "everything" — a space or a landmark moved.
-  `VmsPtzTrackingSingleton` drops its cached models by it. Placement and observation writes no
-  longer travel on `server-config-changed`.
-- Map tiles reach browsers only through web_srv's caching proxy (`api/map/tiles`), cached in the
-  state store — never on local disk and never fetched by the browser from the provider directly.
-
-### States, events and rights
-
-The tree is also where the system's states, journal and permissions live; nothing in video_srv,
-VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
-
-- **Every camera is a node from creation.** The adapter (`VmsMap/Adapter/`) creates the canonical
-  node from `server-config-changed`, **always under its server node**: the canonical tree of a
-  device is one place, and where the camera is drawn is a replica's business. Any placement — map,
-  plan or diagram — is a replica (`objects.owner_id`) with its own view; the reference placement
-  (`is_reference`, what aiming and calibration go by) belongs to a replica, not to the canonical
-  node, which carries no `visual` and no `geo_objects`. `device_node` (`source_kind`, `source_id`,
-  `part_kind`, `part_token`) maps a device or one of its parts back to its node, because the node id
-  is a one-way MD5; parts are rows of the same registry with their own `part_kind`. A camera VmsCfg
-  no longer lists is removed with its replicas, placements and observations.
-- **Device rights are anchored to the space of the reference replica.** A canonical node under the
-  server does not inherit a right granted on the space the camera is drawn in, so a device node (a
-  camera or one of its parts) is also checked from its reference replica and that replica's space;
-  with no reference replica the server node's path is all there is.
-- **States come from their owners, not from the map.** `retention-event-created` becomes `ALARM`
-  plus one `alarm` event (the event id is the episode's `event_uuid`, so a redelivery is a no-op);
-  a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` come from VmsFs's
-  open source outages — not from a MediaMTX path, which `video_srv` tears down when nobody watches.
-  `camera-state-changed` re-derives a camera's arming and re-checks its sensors — it does not write
-  a property on the camera's node: the camera's mode is the map's row and its flag is VmsCfg's,
-  which the map writes. The alarm counters bubble up `alarm_states` in the same transaction as the
-  state write.
-- **A device's parts are nodes of the same device, and a node need not be placed.** A digital input
-  or a relay is a canonical node under its camera (`device_node.part_kind`), created from
-  `device-event`/`device-snapshot` and named by the settings that configure it; it has no geometry
-  and no placement of its own until M2.6 gives it a replica. **Admin → Nodes** shows the whole
-  logical tree (server → camera → parts) a level at a time, with a server-side search; **Admin →
-  Maps → Devices** is the placement palette (a click makes a picture, and the first placement
-  becomes the reference); the map's **Nodes** tab is only what is drawn on that canvas.
-- **Device events are monotonic.** The publisher's `(epoch, seq)` decides what is accepted; a clock
-  is only the fallback across processes. A repeat of the value already stored is not a transition
-  and writes no journal row, but it still advances the cursor — that is how a lost message or a
-  restart is repaired.
-- **`ALARM` is the condition; acknowledgement is the operator's mark.** ack is refused (409) while
-  the condition holds on an armed node; it never removes `ALARM`, and closing is what does.
-- **The routing engine is VmsSingleton's module**, not VmsMap's: VmsMap writes the journal row and
-  its outbox row in one transaction, and the router trusts `map-event-created` for the id only — it
-  re-reads the event, the subscriptions and the arming. A run's progress, cooldowns and diagnostics
-  live in the shared state store, so a second instance would degrade delivery but not duplicate it.
-- **An analytics detection reaches the journal only while an enabled `analytics` subscription asks
-  for one.** The detection stays in `ta_analytics` regardless; `map_event_at` and the publisher's
-  sweep make a crash between the insert and the bus harmless. VmsMap's gate is evaluated when the
-  detection is processed (≤30 s of staleness) and fails closed until it has loaded the
-  subscriptions once.
-- **Rights are rows on tree nodes**: `rights(object_id, subject, action)`, with `subject` a Keycloak
-  role or user name and `action` from the open set `RightActions`. They inherit downwards; `admin`
-  bypasses them and the single open/enforced switch decides what a node with no rows means. VmsMap
-  computes the effective set (`GetEffectiveRights`) and also applies it to every multi-node read, so
-  a node the caller may not see never leaves the service. web_srv's `RightsService` caches that set
-  per user and drops it on `rights-version`; `[RequiresRight(...)]` replaces the old camera ACL
-  attributes. VmsCfg keeps no permission tables.
-- **`Watch`** is one server stream per client (`box`, `ids`, `values` in the request; a change of
-  view is a new stream, because Dapr proxies server-streaming but not a bidirectional call). One
-  poller per VmsMap process reads every watched set once a second and diffs by xmin; web_srv serves
-  it as `api/map/live` SSE. The browser fetches the changed nodes over `api/map/*`.
+live in **VmsMap**, on Square's object tree; VmsCfg keeps the cameras, and a placement write checks
+the camera exists through `GetCamera`. These are the invariants a change must keep: one tree, each
+space with its own coordinates and WGS84 plus metres above the floor of its space, one **reference**
+placement per camera, `owner_id` naming an original one level deep, heading as a compass bearing,
+and calibration fits never stored. The model, the storage and the events:
+[docs/maps-and-plans.md](docs/maps-and-plans.md). States, the journal and rights:
+[docs/maps/states-and-alarms.md](docs/maps/states-and-alarms.md).
 
 ## Login: Keycloak everywhere, the standalone installs bring their own
 
-web_srv logs users in with Keycloak's password grant, server-side; the browser never talks to
-Keycloak, so `KEYCLOAK_URL` only has to be reachable from web_srv. `KEYCLOAK_URL` empty still means
-"no authentication at all", but no product deployment runs that way any more: both standalone
-installs in `../ta_install` ship a Keycloak of their own and import its realm from
-`../ta_install/init_files/keycloak/realm.json` on the first start. Dev runs against
-multitenant_admin's, on `localhost:8080` from the services debugged on the host (F5).
-
-- Realm roles are the whole model: `admin` sees and administers everything; anyone else sees the
-  tree nodes granted to their `preferred_username` or one of their realm roles. Client roles are
-  ignored.
-- Rights live on the tree in VmsMap (`rights(object_id, subject, action)`, inherited downwards);
-  VmsCfg no longer has permission tables of its own. web_srv's `RightsService` asks
-  `GetEffectiveRights` for the signed-in user, caches the answer and drops it when VmsMap bumps
-  `rights-version`; `[RequiresRight(...)]` is the attribute every action carries. The open/enforced
-  switch is one value for the whole deployment, also on the tree.
-- Nobody is made to change a password, the initial `admin`/`admin` included (user, 2026-10-22:
-  whoever wants to changes it): the view controls lead to `POST /api/auth/change-password`. If a
-  forced change is ever wanted back, it cannot be Keycloak's "temporary password" or required
-  actions: Keycloak refuses the password grant for those ("Account is not fully set up"), so the
-  user could never log in to change anything.
-- The realm has no password policy (Keycloak would refuse to import `admin`/`admin` under one) and
-  no required profile fields (a user without an email could not log in); web_srv checks a new
-  password's length itself.
-- `[AllowAnonymous]` belongs on actions, never on a controller: on the class it overrides every
-  `[Authorize]` inside, which is how `/api/auth/users` was once open to anyone.
+web_srv logs users in with Keycloak's password grant, server-side, so `KEYCLOAK_URL` only has to be
+reachable from web_srv. Realm roles are the whole model: `admin` administers everything, anyone else
+sees the tree nodes granted to their `preferred_username` or a realm role. Rights are rows on the
+tree in VmsMap, inherited downwards; `[AllowAnonymous]` belongs on actions, never on a controller.
+Details: [docs/architecture/login.md](docs/architecture/login.md).
 
 ## Database access
 
@@ -592,21 +244,11 @@ Exceptions where raw SQL is acceptable: complex bulk operations or SQL construct
 
 ### Creating a database: name it in `.env`, nothing else
 
-Databases are created by exactly one thing per platform, and both read the same names: in Docker
-`scripts/prepare-databases.sh`, run as the `db-init` compose service; on Windows the supervisor
-`TaVmsHost` (`../ta_install/windows`), at every start. Each creates **every** database named by a
-`POSTGRES_*_DB` variable in the environment. (On Windows there is nothing to cross-check against
-the Dapr components either: `TaVmsHost` writes them from the same environment.) So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
-`../ta_install/.env`), and by nothing else.
-
-Do **not** go back to `docker-entrypoint-initdb.d`: that hook only fires when the data directory is
-initialised from empty, so anything added to it is silently skipped on every deployment that
-already has data — which is all of them after the first. And do not hardcode a list of database
-names anywhere: names are stamped per tenant (see `multitenant_admin/mt_admin/DbAdmin`), so a fixed
-list is wrong by construction.
-
-`DbMigrator` migrates the schema *inside* an existing database; it does not create one. A missing
-database now fails fast with a message naming it, instead of retrying "Postgres not ready" forever.
+A database is created by exactly one thing per platform — `scripts/prepare-databases.sh` in Docker,
+`TaVmsHost` on Windows — and both create every database named by a `POSTGRES_*_DB` variable in the
+environment. So a new service's database is added by putting `POSTGRES_<NAME>_DB` into `.env` (and
+`../ta_install/.env`), and by nothing else. Never `docker-entrypoint-initdb.d`, never a hardcoded
+list of names. Why: [docs/architecture/database.md](docs/architecture/database.md).
 
 ## VmsOnvifActors — actors only
 
@@ -645,24 +287,10 @@ Only add columns that are actively used. Do not add `created_at`, `updated_at`, 
 
 ## Infrastructure of its own
 
-ta_vms joins no other project's docker network and keeps no data in another project's container.
-The dev compose and `../ta_install` compose each run in compose's own default network; the Windows
-installer has no Docker at all.
-
-- **The state store is its own PostgreSQL** (database `POSTGRES_STATE_DB`, component
-  `init_files/dapr_components/statestore.yaml`), **the pub/sub its own `rabbitmq`**
-  (`init_files/dapr_components/orderpubsub.yaml`; the component name `orderpubsub` is historical).
-  Another project's `redis` belongs in neither: it is declared without a volume, and when databases
-  are stamped out per tenant, a shared Redis with `keyPrefix: "name"` would give every tenant the
-  same `cam-perm-version` key. Separately about Redis: two different containers with the same alias
-  `redis` in one network make Docker answer DNS queries with a random round-robin between them
-  (verified empirically) — so keeping our own Redis beside another one was impossible, and that is
-  one of the reasons the broker became RabbitMQ (the second: Redis does not install natively on
-  Windows, and the standalone installer needs it there).
-- **App ids resolve over mDNS in Docker**; the single-machine Windows install uses Dapr's `sqlite`
-  resolver with `DAPR_HOST_IP=127.0.0.1` instead, because mDNS announced the sidecars on the
-  machine's LAN address — calls broke when that address changed or went away, and two installs on
-  one LAN mixed their identical app ids.
+ta_vms joins no other project's docker network and keeps no data in another project's container:
+its own PostgreSQL state store and its own RabbitMQ. App ids resolve over mDNS in Docker; the
+single-machine Windows install uses Dapr's `sqlite` resolver instead.
+Why: [docs/architecture/distributed.md](docs/architecture/distributed.md#infrastructure-of-its-own).
 
 ## Square merges into ta_vms
 
