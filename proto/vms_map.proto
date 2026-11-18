@@ -356,6 +356,13 @@ message GetByBoxRequest {
   Box box = 1;
   repeated PropertyFilter property_filter = 2;
   Caller caller = 3;
+  // Continue a read that stopped at its limit: the `next_cursor` the previous answer gave. The
+  // next answer starts strictly after it in the same order by id, so a canvas can be read whole a
+  // page at a time. Empty asks from the beginning. A cursor is a position, not a snapshot: a
+  // figure written between two pages with an id below the cursor is only seen by a fresh read.
+  // It belongs to a read, not to an area, which is why it is here rather than in Box: a watch
+  // scope is always whole.
+  string after_id = 4;
 }
 
 message GetObjPropsRequest {
@@ -473,6 +480,12 @@ message Figures {
   // Set by GetByBox when the read stopped at its limit: the figures are an ordered prefix of the
   // box, not the whole of it. Without it a clipped canvas is indistinguishable from a small one.
   bool truncated = 3;
+  // Set with `truncated`: the id the read ended at, to be sent back as GetByBoxRequest.after_id
+  // for the next page. It is the read's bookmark, not the last figure of the answer — rights may
+  // hide figures up to it, and the next page starts after it all the same. Empty when the read
+  // was not cut, and on a clustered rectangle answer: centroids are an aggregate of the read, not
+  // its prefix, so they cannot be paged.
+  string next_cursor = 4;
 }
 
 message GeoObject {

@@ -281,4 +281,220 @@ public class CanvasQueryTests
     Assert.True(figures.Truncated);
     Assert.Single(figures.Figs);
   }
+
+  // The order the pages are read in is the Guid order, not the text of its id.
+  private static List<string> OrderedIds(IEnumerable<BaseMarkerDTO> nodes) => nodes
+    .Select(n => Guid.Parse(n.id!))
+    .OrderBy(id => id)
+    .Select(id => Utils.ConvertGuidToObjectId(id))
+    .ToList();
+
+  // A cut canvas is whole when its pages are read in turn: every answer names where it ended, and
+  // the next starts strictly after it in the same order, so nothing is repeated or skipped.
+  [Fact]
+  public async Task ACutCanvasIsReadWholeAPageAtATime()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+
+    var nodes = new List<BaseMarkerDTO>();
+    for (var i = 0; i < 5; i++)
+      nodes.Add(await Node(s.Map, "Node " + i, city.Id));
+    await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
+
+    var ordered = OrderedIds(nodes);
+
+    var page1 = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id, count = 2 });
+    var page2 = await s.Geo.GetGeoAsync(new BoxDTO
+    {
+      canvas_id = city.Id,
+      count = 2,
+      after_id = Guid.Parse(page1.NextCursor!),
+    });
+    var page3 = await s.Geo.GetGeoAsync(new BoxDTO
+    {
+      canvas_id = city.Id,
+      count = 2,
+      after_id = Guid.Parse(page2.NextCursor!),
+    });
+
+    Assert.True(page1.Truncated);
+    Assert.Equal(ordered.Take(2), page1.Objects.Keys);
+    Assert.Equal(ordered[1], page1.NextCursor);
+
+    Assert.True(page2.Truncated);
+    Assert.Equal(ordered.Skip(2).Take(2), page2.Objects.Keys);
+    Assert.Equal(ordered[3], page2.NextCursor);
+
+    Assert.False(page3.Truncated);
+    Assert.Equal(ordered.Skip(4), page3.Objects.Keys);
+    Assert.Null(page3.NextCursor);
+
+    Assert.Equal(
+      ordered,
+      page1.Objects.Keys.Concat(page2.Objects.Keys).Concat(page3.Objects.Keys));
+  }
+
+  [Fact]
+  public async Task ACursorAtTheLastFigureIsAnEmptyTail()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+    var nodes = new List<BaseMarkerDTO>();
+    for (var i = 0; i < 2; i++)
+      nodes.Add(await Node(s.Map, "Node " + i, city.Id));
+    await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
+
+    var whole = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id });
+    var last = OrderedIds(nodes)[^1];
+
+    var tail = await s.Geo.GetGeoAsync(new BoxDTO
+    {
+      canvas_id = city.Id,
+      after_id = Guid.Parse(last),
+    });
+
+    Assert.False(whole.Truncated);
+    Assert.Null(whole.NextCursor);
+    Assert.Empty(tail.Objects);
+    Assert.False(tail.Truncated);
+    Assert.Null(tail.NextCursor);
+  }
+
+  // The cursor is the read's cut, not the last figure of the answer: a page can end on a figure
+  // the caller may not see, and the next page still has to start after it, or the walk would
+  // stall on a page that is empty by rights alone.
+  [Fact]
+  public async Task ACursorNamesTheReadsCutEvenWhenRightsHideIt()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+
+    var nodes = new List<BaseMarkerDTO>();
+    for (var i = 0; i < 4; i++)
+      nodes.Add(await Node(s.Map, "Node " + i, city.Id));
+    await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
+
+    var ordered = OrderedIds(nodes);
+    foreach (var id in new[] { ordered[0], ordered[3] })
+    {
+      s.Db.Rights.Add(new DBRight
+      {
+        object_id = Guid.Parse(id),
+        subject = "alice",
+        action = RightActions.View,
+      });
+    }
+    await s.Db.SaveChangesAsync();
+
+    var first = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = city.Id, Count = 2 },
+      Caller = Caller("alice"),
+    }, new TestContext());
+
+    Assert.Equal([ordered[0]], first.Figs.Select(figure => figure.Id));
+    Assert.True(first.Truncated);
+    Assert.Equal(ordered[1], first.NextCursor);
+
+    var second = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = city.Id, Count = 2 },
+      AfterId = first.NextCursor,
+      Caller = Caller("alice"),
+    }, new TestContext());
+
+    Assert.Equal([ordered[3]], second.Figs.Select(figure => figure.Id));
+    Assert.False(second.Truncated);
+    Assert.Empty(second.NextCursor);
+  }
+
+  [Fact]
+  public async Task GetByBoxCarriesTheCursorToTheClient()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+    var nodes = new List<BaseMarkerDTO>();
+    for (var i = 0; i < 3; i++)
+      nodes.Add(await Node(s.Map, "Node " + i, city.Id));
+    await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
+
+    var ordered = OrderedIds(nodes);
+
+    var first = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = city.Id, Count = 1 },
+      Caller = Caller("root", "admin"),
+    }, new TestContext());
+
+    Assert.Equal([ordered[0]], first.Figs.Select(figure => figure.Id));
+    Assert.True(first.Truncated);
+    Assert.Equal(ordered[0], first.NextCursor);
+
+    var second = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = city.Id, Count = 1 },
+      AfterId = first.NextCursor,
+      Caller = Caller("root", "admin"),
+    }, new TestContext());
+
+    Assert.Equal([ordered[1]], second.Figs.Select(figure => figure.Id));
+    Assert.True(second.Truncated);
+    Assert.Equal(ordered[1], second.NextCursor);
+  }
+
+  [Fact]
+  public async Task GetByBoxRefusesACursorThatIsNotAUuid()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.GetByBox(
+      new MapProto.GetByBoxRequest
+      {
+        Box = new MapProto.Box { CanvasId = city.Id },
+        AfterId = "not-a-uuid",
+        Caller = Caller("root", "admin"),
+      }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+  }
+
+  // Centroids are an aggregate of the read, not its prefix, so a clustered answer cannot be
+  // continued: the flag still says the rectangle is partial, the cursor is left empty.
+  [Fact]
+  public async Task AClusteredAnswerGivesNoCursor()
+  {
+    var s = Create();
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
+
+    var nodes = Enumerable.Range(0, 1001)
+      .Select(i => new DBMarker
+      {
+        id = Guid.NewGuid(),
+        parent_id = Guid.Parse(city.Id),
+        name = "Node " + i,
+      })
+      .ToList();
+    s.Db.Markers.AddRange(nodes);
+    await s.Db.SaveChangesAsync();
+    await s.Geo.CreateGeo(nodes
+      .Select(n => Point(Utils.ConvertGuidToObjectId(n.id), 0.5, 0.5))
+      .ToList());
+
+    var figures = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box
+      {
+        Wn = new MapProto.Coordinate { Lat = 0, Lon = 0 },
+        Es = new MapProto.Coordinate { Lat = 1, Lon = 1 },
+        Count = 1000,
+      },
+      Caller = Caller("root", "admin"),
+    }, new TestContext());
+
+    Assert.True(figures.Truncated);
+    Assert.NotEmpty(figures.Figs);
+    Assert.Empty(figures.NextCursor);
+  }
 }

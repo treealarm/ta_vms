@@ -36,6 +36,14 @@ Conventions that hold everywhere:
   at all) can hold children, and those children are drawn on the same canvas as the container, not
   only after entering it. A nested space is a canvas of its own: its footprint is drawn on the
   parent's canvas, its children on its own.
+- **A canvas larger than one read is read in pages.** A read is capped at `count` (10 000 by
+  default) and says `truncated` when it stopped short; `next_cursor` names the id it ended at, and
+  the next read passes it back as `after_id` to continue strictly after it in the same order by id,
+  so the pages add up to the canvas with nothing repeated or skipped. The cursor is the read's
+  bookmark, not the last figure of the answer: rights filter after the cut, so a page may end on a
+  figure the caller cannot see. A clustered rectangle answer has no cursor — its centroids are an
+  aggregate of the read, not its prefix — and the UI does not page a canvas: it narrows the space
+  instead, and says so beside a cut one.
 - **A diagram carries free objects as well as its typed children.** Text, lines, polygons and icons
   laid on a mnemoscheme are ordinary figures whose `canvas_id` is the diagram; their coordinates
   are that canvas's pixels, carried in the geometry's lon/lat slots, the same way a made-up plan
