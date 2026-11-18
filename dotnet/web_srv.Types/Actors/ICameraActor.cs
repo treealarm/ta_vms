@@ -6,10 +6,10 @@ public interface ICameraActor : IActor
 {
   Task<List<ProfileInfoDto>> GetProfilesAsync(CameraConnInfo conn);
   Task<GetStreamUriActorResult> GetStreamUriAsync(GetStreamUriActorRequest request);
-  Task PtzContinuousMoveAsync(PtzMoveActorRequest request);
-  Task PtzAbsoluteMoveAsync(PtzAbsoluteMoveActorRequest request);
-  Task PtzRelativeMoveAsync(PtzMoveActorRequest request);
-  Task PtzStopAsync(PtzStopActorRequest request);
+  Task<PtzCommandActorResult> PtzContinuousMoveAsync(PtzMoveActorRequest request);
+  Task<PtzCommandActorResult> PtzAbsoluteMoveAsync(PtzAbsoluteMoveActorRequest request);
+  Task<PtzCommandActorResult> PtzRelativeMoveAsync(PtzMoveActorRequest request);
+  Task<PtzCommandActorResult> PtzStopAsync(PtzStopActorRequest request);
   Task<PtzCapabilitiesDto> GetPtzCapabilitiesAsync(CameraConnInfo conn);
   Task<PtzStatusDto?> GetPtzStatusAsync(PtzStopActorRequest request);
   Task<SnapshotActorResult> GetSnapshotAsync(CameraConnInfo conn);
@@ -29,6 +29,14 @@ public record PtzMoveActorRequest(CameraConnInfo Conn, string ProfileToken, floa
 public record PtzAbsoluteMoveActorRequest(CameraConnInfo Conn, string ProfileToken, float Pan, float Tilt, float Zoom, float Speed);
 public record PtzStopActorRequest(CameraConnInfo Conn, string ProfileToken);
 public record PtzCapabilitiesDto(bool AbsoluteMove, bool RelativeMove, bool ContinuousMove);
+
+/// <summary>The outcome of a PTZ command.</summary>
+/// <remarks>
+/// Failure is a value rather than an exception: a camera that cannot be reached is an ordinary
+/// state of the network, and a method that throws is what the actor host logs as an unhandled
+/// exception, with its stack, on every call. The status read answers the same way, with null.
+/// </remarks>
+public record PtzCommandActorResult(bool Success, string? Error = null);
 
 /// <summary>Where a camera says it is pointing, in its own units.</summary>
 /// <remarks>

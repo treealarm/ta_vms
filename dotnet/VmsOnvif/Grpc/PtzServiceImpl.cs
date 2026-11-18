@@ -76,11 +76,11 @@ public class PtzServiceImpl(
     try
     {
       var actor = CameraActorProxy(request.SourceId);
-      await actor.InvokeMethodAsync<PtzMoveActorRequest>(
+      var result = await actor.InvokeMethodAsync<PtzMoveActorRequest, PtzCommandActorResult>(
         "PtzContinuousMoveAsync",
         new PtzMoveActorRequest(conn, request.ProfileToken, request.Pan, request.Tilt, request.Zoom),
         context.CancellationToken);
-      return Ok();
+      return From(result);
     }
     catch (Exception ex)
     {
@@ -97,11 +97,11 @@ public class PtzServiceImpl(
     try
     {
       var actor = CameraActorProxy(request.SourceId);
-      await actor.InvokeMethodAsync<PtzAbsoluteMoveActorRequest>(
+      var result = await actor.InvokeMethodAsync<PtzAbsoluteMoveActorRequest, PtzCommandActorResult>(
         "PtzAbsoluteMoveAsync",
         new PtzAbsoluteMoveActorRequest(conn, request.ProfileToken, request.Pan, request.Tilt, request.Zoom, request.Speed),
         context.CancellationToken);
-      return Ok();
+      return From(result);
     }
     catch (Exception ex)
     {
@@ -118,11 +118,11 @@ public class PtzServiceImpl(
     try
     {
       var actor = CameraActorProxy(request.SourceId);
-      await actor.InvokeMethodAsync<PtzMoveActorRequest>(
+      var result = await actor.InvokeMethodAsync<PtzMoveActorRequest, PtzCommandActorResult>(
         "PtzRelativeMoveAsync",
         new PtzMoveActorRequest(conn, request.ProfileToken, request.Pan, request.Tilt, request.Zoom),
         context.CancellationToken);
-      return Ok();
+      return From(result);
     }
     catch (Exception ex)
     {
@@ -139,11 +139,11 @@ public class PtzServiceImpl(
     try
     {
       var actor = CameraActorProxy(request.SourceId);
-      await actor.InvokeMethodAsync<PtzStopActorRequest>(
+      var result = await actor.InvokeMethodAsync<PtzStopActorRequest, PtzCommandActorResult>(
         "PtzStopAsync",
         new PtzStopActorRequest(conn, request.ProfileToken),
         context.CancellationToken);
-      return Ok();
+      return From(result);
     }
     catch (Exception ex)
     {
@@ -219,4 +219,9 @@ public class PtzServiceImpl(
 
   private static PtzResponse Ok() => new() { Success = true };
   private static PtzResponse Fail(string error) => new() { Success = false, Error = error };
+
+  // A camera that cannot be reached is an ordinary answer from the actor, not an exception; only
+  // what escapes the actor's contract lands in the catch above.
+  private static PtzResponse From(PtzCommandActorResult result) =>
+    result.Success ? Ok() : Fail(result.Error ?? "The camera did not accept the PTZ command");
 }

@@ -61,47 +61,31 @@ public class CameraActor(ActorHost host, CameraActorDomain domain, IOnvifLogger 
     return new GetStreamUriActorResult(await mediaService.GetStreamUri(token));
   }
 
-  public async Task PtzContinuousMoveAsync(PtzMoveActorRequest request)
-  {
-    var ptz = await GetPtzOrThrow(request.Conn);
-    await ptz.ContinuousMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom);
-  }
+  public Task<PtzCommandActorResult> PtzContinuousMoveAsync(PtzMoveActorRequest request) =>
+    CommandAsync(request.Conn, ptz =>
+      ptz.ContinuousMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom));
 
-  public async Task PtzAbsoluteMoveAsync(PtzAbsoluteMoveActorRequest request)
-  {
-    var ptz = await GetPtzOrThrow(request.Conn);
-    var speed = request.Speed > 0 ? request.Speed : 0.5f;
-    await ptz.AbsoluteMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
-  }
+  public Task<PtzCommandActorResult> PtzAbsoluteMoveAsync(PtzAbsoluteMoveActorRequest request) =>
+    CommandAsync(request.Conn, ptz =>
+    {
+      var speed = request.Speed > 0 ? request.Speed : 0.5f;
+      return ptz.AbsoluteMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
+    });
 
-  public async Task PtzRelativeMoveAsync(PtzMoveActorRequest request)
-  {
-    var ptz = await GetPtzOrThrow(request.Conn);
-    var speed = 0.5f;
-    await ptz.RelativeMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
-  }
+  public Task<PtzCommandActorResult> PtzRelativeMoveAsync(PtzMoveActorRequest request) =>
+    CommandAsync(request.Conn, ptz =>
+    {
+      var speed = 0.5f;
+      return ptz.RelativeMoveAsync(request.ProfileToken, request.Pan, request.Tilt, request.Zoom, speed, speed);
+    });
 
-  public async Task PtzStopAsync(PtzStopActorRequest request)
-  {
-    var ptz = await GetPtzOrThrow(request.Conn);
-    await ptz.StopAsync(request.ProfileToken);
-  }
+  public Task<PtzCommandActorResult> PtzStopAsync(PtzStopActorRequest request) =>
+    CommandAsync(request.Conn, ptz => ptz.StopAsync(request.ProfileToken));
 
   public async Task<PtzCapabilitiesDto> GetPtzCapabilitiesAsync(CameraConnInfo conn)
   {
-    var key = CameraKey(conn);
-    if (_backoff.IsBackedOff(key))
-      return new PtzCapabilitiesDto(false, false, false);
-
-    var camera = EnsureCamera(conn, key);
-    if (await camera.GetServicesAsync() is null)
-    {
-      NoteServiceFailure(key);
-      return new PtzCapabilitiesDto(false, false, false);
-    }
-
-    var ptz = await camera.GetPtzService();
-    if (ptz == null)
+    var ptz = await FindPtzAsync(conn, CameraKey(conn));
+    if (ptz is null)
       return new PtzCapabilitiesDto(false, false, false);
 
     var caps = await ptz.GetCapabilitiesAsync(string.Empty);
@@ -117,18 +101,8 @@ public class CameraActor(ActorHost host, CameraActorDomain domain, IOnvifLogger 
   public async Task<PtzStatusDto?> GetPtzStatusAsync(PtzStopActorRequest request)
   {
     var key = CameraKey(request.Conn);
-    if (_backoff.IsBackedOff(key))
-      return null;
-
-    var camera = EnsureCamera(request.Conn, key);
-    if (await camera.GetServicesAsync() is null)
-    {
-      NoteServiceFailure(key);
-      return null;
-    }
-
-    var ptz = await camera.GetPtzService();
-    if (ptz == null)
+    var ptz = await FindPtzAsync(request.Conn, key);
+    if (ptz is null)
       return null;
 
     var status = await ptz.GetStatusAsync(request.ProfileToken);
@@ -164,24 +138,48 @@ public class CameraActor(ActorHost host, CameraActorDomain domain, IOnvifLogger 
     return image == null ? new SnapshotActorResult([], null) : new SnapshotActorResult(image.Data, image.MimeType);
   }
 
-  private async Task<PtzService2> GetPtzOrThrow(CameraConnInfo conn)
+  /// <summary>Runs one PTZ command and reports its outcome as a value.</summary>
+  /// <remarks>
+  /// Both halves of an outage end here as a failed result. Discovery failing is the cold half;
+  /// the command itself throwing is the warm one — the camera stopped answering after its services
+  /// were resolved, and OnvifLib's move calls, unlike its status call, do not swallow that.
+  /// </remarks>
+  private async Task<PtzCommandActorResult> CommandAsync(
+    CameraConnInfo conn, Func<PtzService2, Task> command)
   {
     var key = CameraKey(conn);
+    var ptz = await FindPtzAsync(conn, key);
+    if (ptz == null)
+      return new PtzCommandActorResult(false, $"PTZ service not available for {conn.Ip}:{conn.Port}");
+
+    try
+    {
+      await command(ptz);
+      return new PtzCommandActorResult(true);
+    }
+    catch (Exception ex)
+    {
+      // Without this note every command would go to the dead camera again; on a camera that drops
+      // packets rather than refusing them, each attempt also holds the actor for the ONVIF timeout.
+      NoteServiceFailure(key);
+      return new PtzCommandActorResult(false, $"{ex.GetType().Name}: {ex.Message}");
+    }
+  }
+
+  /// <returns>Null while backed off, when the camera does not answer, or when it has no PTZ.</returns>
+  private async Task<PtzService2?> FindPtzAsync(CameraConnInfo conn, string key)
+  {
     if (_backoff.IsBackedOff(key))
-      throw new InvalidOperationException($"PTZ service not available for {conn.Ip}:{conn.Port}");
+      return null;
 
     var camera = EnsureCamera(conn, key);
     if (await camera.GetServicesAsync() is null)
     {
       NoteServiceFailure(key);
-      throw new InvalidOperationException($"PTZ service not available for {conn.Ip}:{conn.Port}");
+      return null;
     }
 
-    var ptz = await camera.GetPtzService();
-    if (ptz == null)
-      throw new InvalidOperationException($"PTZ service not available for {conn.Ip}:{conn.Port}");
-
-    return ptz;
+    return await camera.GetPtzService();
   }
 
   protected override Task OnDeactivateAsync()
