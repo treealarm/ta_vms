@@ -97,7 +97,8 @@ namespace VmsMap.Watch
       WatchSubscription.Snapshot state,
       CancellationToken ct)
     {
-      var geo = await snapshot.GeoAsync(state.Box!, ct);
+      var read = await snapshot.GeoAsync(state.Box!, ct);
+      var geo = read.Objects;
       var visible = await snapshot.VisibleAsync(geo.Keys.ToList(), state.Caller, ct);
 
       var updates = visible
@@ -109,6 +110,7 @@ namespace VmsMap.Watch
         .Where(id => !visible.Contains(id))
         .OrderBy(id => id, StringComparer.Ordinal)
         .ToList();
+      var truncationChanged = subscription.SentTruncated != read.Truncated;
 
       var cameras = await snapshot.CameraIdsAsync(updates, ct);
 
@@ -117,9 +119,15 @@ namespace VmsMap.Watch
         subscription.GeoVersions = geo.ToDictionary(
           kv => kv.Key, kv => kv.Value.Version, StringComparer.Ordinal);
         subscription.SentGeo = visible;
+        subscription.SentTruncated = read.Truncated;
       });
       if (!applied)
         return;
+
+      // The completeness of the rectangle is stated before the diff built from it: the subscriber
+      // learns the set is partial before it draws anything as the whole.
+      if (truncationChanged)
+        SendTruncated(subscription, read.Truncated);
 
       if (updates.Count > 0)
       {
@@ -239,5 +247,15 @@ namespace VmsMap.Watch
       message.Items.AddRange(items);
       subscription.Send(message);
     }
+
+    // The box scope's completeness, as a state rather than an event: sent on the first poll and
+    // whenever the answer changes. The channel may drop it under load (DropOldest); a reconnect
+    // re-reads the canvas, and the next change states it again.
+    private static void SendTruncated(WatchSubscription subscription, bool truncated) =>
+      subscription.Send(new MapProto.WatchMessage
+      {
+        Action = "set_box_truncated",
+        Truncated = truncated,
+      });
   }
 }
