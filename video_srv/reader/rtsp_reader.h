@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <unordered_set>
 #include <memory>
@@ -117,6 +118,16 @@ private:
 
   /// False until the first packet of the current session has been stamped. Reader thread only.
   bool m_stamped_since_connect = false;
+
+  /// Reconnect failures, for the log only: how many in a row, how long between the lines that
+  /// report them, and when the next one is due. The reconnect interval itself stays
+  /// kWatchdogInterval — only the recording of the failure grows quieter. Reader thread only.
+  void log_connect_failure(const std::string& message);
+  void reset_connect_failure_log();
+
+  std::int64_t m_connect_failures = 0;
+  std::chrono::seconds m_connect_failure_log_interval{};
+  std::chrono::steady_clock::time_point m_next_connect_failure_log_at{};
 
   /// Set once before start(), then only read by the reader thread — no synchronisation needed.
   source_lost_handler m_on_source_lost;

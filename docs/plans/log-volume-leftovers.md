@@ -9,6 +9,9 @@
 
 - **A. CameraActor** (2026-11-18): окно 5 с, `CameraUnavailableBackoff`, тесты
   `VmsOnvifActors.Tests` (3 зелёных), проект в solution. Проверка на стенде — ниже.
+- **B. video_srv** (2026-11-18): `log_connect_failure`/`reset_connect_failure_log`, три
+  connect-фазовых Error, номер попытки, потолок 5 минут; `vms` собирается. Проверка на стенде —
+  ниже.
 
 ## Что измерено (2026-10-25, чистая Windows-установка)
 
