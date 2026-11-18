@@ -36,9 +36,10 @@ namespace VmsMap.Watch
     }
 
     // The poll reads the same capped box the browser does; a truncated one yields the same
-    // ordered prefix on every tick, so the watcher sees a stable set.
-    public async Task<Dictionary<string, GeoObjectDTO>> GeoAsync(BoxDTO box, CancellationToken ct) =>
-      (await _geo.GetGeoAsync(box)).Objects;
+    // ordered prefix on every tick, so the watcher sees a stable set. The flag travels with the
+    // read instead of being dropped here: the watcher is told its rectangle is partial.
+    public Task<GeoResultDTO> GeoAsync(BoxDTO box, CancellationToken ct) =>
+      _geo.GetGeoAsync(box);
 
     public Task<HashSet<string>> VisibleAsync(
       IReadOnlyCollection<string> ids, CallerContext caller, CancellationToken ct) =>

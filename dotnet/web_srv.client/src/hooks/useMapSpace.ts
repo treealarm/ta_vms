@@ -3,7 +3,15 @@ import type { SpaceDto } from '../dto/dtos'
 import type { MapFigure, MapMarker, MapWatchMessage } from '../dto/mapDtos'
 import { mapLiveUrl } from '../api/mapApi'
 import { useAppDispatch, useAppSelector } from '../store'
-import { canvasAdd, canvasNodes, canvasRemove, dropNodes, loadCanvas, loadNodes } from '../store/objectsSlice'
+import {
+  canvasAdd,
+  canvasNodes,
+  canvasRemove,
+  canvasTruncated,
+  dropNodes,
+  loadCanvas,
+  loadNodes,
+} from '../store/objectsSlice'
 import { loadLevels } from '../store/levelsSlice'
 import { loadPlacements } from '../store/spatialSlice'
 import { loadVisualStates } from '../store/statesSlice'
@@ -84,9 +92,18 @@ export function useMapSpace(space: SpaceDto | null): MapSpaceData {
     void dispatch(loadVisualStates(missing))
   }, [ids, dispatch])
 
-  /** The canvas scope itself: what is drawn there, and what joins or leaves it. */
+  /** The canvas scope itself: what is drawn there, what joins or leaves it, and whether the
+   *  rectangle it reads holds more than one read returns. */
   const handleCanvas = (message: MapWatchMessage) => {
     if (!canvasId) return
+
+    // The completeness of the box is a state message with no items, and it arrives before the
+    // diff it describes.
+    if (message.action === 'set_box_truncated') {
+      dispatch(canvasTruncated({ canvasId, truncated: message.truncated === true }))
+      return
+    }
+
     const changed = (message.items ?? [])
       .map((item) => item.objectId)
       .filter((id): id is string => !!id)

@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit'
 import { describe, expect, it, vi } from 'vitest'
 import type { MapFigure } from '../dto/mapDtos'
 import { mapApi } from '../api/mapApi'
-import reducer, { canvasAdd, canvasRemove, dropNodes, loadCanvas } from './objectsSlice'
+import reducer, { canvasAdd, canvasRemove, canvasTruncated, dropNodes, loadCanvas } from './objectsSlice'
 
 // The read itself is mocked: what these tests pin is what the store makes of its answer, the
 // truncation flag included.
@@ -79,6 +79,33 @@ describe('the canvas page', () => {
       { canvasId: 'city', figures: [figure('district')], truncated: false }, 'request', 'city'))
 
     expect(state.canvases.city.truncated).toBe(false)
+  })
+
+  // The box watch reads the same capped box as the read, so it may state the truth as well as the
+  // read does -- but only that message does; an update of the ids proves nothing about the rest.
+  it('takes the cut the box watch announces, without touching the ids', () => {
+    const state = reducer(
+      loaded('city', [figure('district')]),
+      canvasTruncated({ canvasId: 'city', truncated: true }),
+    )
+
+    expect(state.canvases.city.truncated).toBe(true)
+    expect(state.canvases.city.ids).toEqual(['district'])
+  })
+
+  it('clears the flag when the box watch says the rectangle fits again', () => {
+    const state = reducer(
+      loaded('city', [figure('district')], true),
+      canvasTruncated({ canvasId: 'city', truncated: false }),
+    )
+
+    expect(state.canvases.city.truncated).toBe(false)
+  })
+
+  it('ignores a box watch message for a canvas no read has opened yet', () => {
+    const state = reducer(undefined, canvasTruncated({ canvasId: 'city', truncated: true }))
+
+    expect(state.canvases.city).toBeUndefined()
   })
 })
 

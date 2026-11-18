@@ -1448,10 +1448,17 @@ message WatchItem {
 }
 
 // Square's map protocol, kept by name so the client's handling does not change:
-// set_ids2update, set_ids2delete, set_visual_states, on_values_changed.
+// set_ids2update, set_ids2delete, set_visual_states, on_values_changed. A box scope adds
+// set_box_truncated, which carries the field below and no items.
 message WatchMessage {
   string action = 1;
   repeated WatchItem items = 2;
+  // Set on set_box_truncated, and nowhere else: whether the box the stream follows holds more
+  // figures than one read returns, so the subscriber never takes a partial rectangle for the
+  // whole one. The message is sent when the answer changes and on the first poll of a scope; an
+  // id scope is never truncated and never sends it. Optional so a false answer is written
+  // explicitly rather than as an absent field.
+  optional bool truncated = 3;
 }
 
 // ── Files ─────────────────────────────────────────────────────────────────────

@@ -43,6 +43,11 @@ namespace VmsMap.Watch
     public HashSet<string> SentIds { get; set; } = new(StringComparer.Ordinal);
     public Dictionary<string, uint> ValueVersions { get; set; } = new(StringComparer.Ordinal);
 
+    // The last truncation answer sent to this stream; null until the first poll of a scope says
+    // it. A box watch states its completeness on the first tick and on every change, so a client
+    // that reconnects learns it again.
+    public bool? SentTruncated { get; set; }
+
     public Snapshot GetSnapshot()
     {
       lock (_sync)
@@ -117,6 +122,7 @@ namespace VmsMap.Watch
       AlarmVersions.Clear();
       SentIds.Clear();
       ValueVersions.Clear();
+      SentTruncated = null;
     }
 
     public void Dispose()
