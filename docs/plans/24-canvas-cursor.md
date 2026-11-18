@@ -208,9 +208,10 @@ Postgres (`VMS_MAP_TEST_DSN`, `SpatialPostgresTests`):
   dotnet/web_srv.Server` — 0/0; `dotnet test dotnet/web_srv.Tests` — 20 зелёных.
 - Живой стек не поднимался: усечение требует холста больше 10 000 фигур.
 - Тесты приведены к новому правилу `CLAUDE.md` «Test code: name the contract, do not spell out its
-  position»: строчные имена сущностей, именованные `pageSize`/`figureCount` вместо чисел,
-  курсор проверяется через `Keys.Last()` / `Single().Id`, а не позицией в списке; в
-  `SpatialPostgresTests` посев фигур вынесен в общий `SeedCanvasAsync`.
+  position»: строчные имена сущностей, каждая повторяющаяся строка (имена пространств, узлов,
+  пользователей, роль, имена сообщений watch) — именованная константа, именованные
+  `pageSize`/`figureCount` вместо чисел, курсор проверяется через `Keys.Last()` / `Single().Id`, а
+  не позицией в списке; в `SpatialPostgresTests` посев фигур вынесен в общий `SeedCanvasAsync`.
 - Отклонений от плана нет: `web_srv` и `web_srv.client` не менялись, UI холст страницами не
   читает. Файл 24 перенесён в `docs/future_plans/legacy/` (ссылки в нём поправлены на
   `../../plans/`), строка из README удалена.

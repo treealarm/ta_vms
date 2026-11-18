@@ -29,8 +29,10 @@ A test is read as the statement of a contract, so a bare number or a bare string
 contract instead of stating it:
 
 - **Entity names and domain values in a test are lowercase** (`"city"`, `"floor plan"`,
-  `"camera-1"`). A value that has to be the same in more than one place — an action name, a subject,
-  a protocol string — is a named `const`.
+  `"camera-1"`).
+- **A string that occurs more than once in a test file is a named `const`** — a space name, a user,
+  a role, an action name, a protocol string, a name prefix. One occurrence is a literal; two are a
+  value waiting to be written twice.
 - **A page size, a limit or a count is a named constant**, used both in the call and in the
   assertion (`const int pageSize = 2;` then `count = pageSize`, `ordered.Take(pageSize)`). Changing
   the size then keeps the test meaningful instead of silently breaking it.

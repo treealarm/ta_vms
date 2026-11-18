@@ -95,6 +95,15 @@ public class CanvasQueryTests
     return node;
   }
 
+  // The fixtures these tests share. Space and node names are labels no test asserts; the users and
+  // the role are the subject the rights cases agree on.
+  private const string CityName = "city";
+  private const string OtherCityName = "other city";
+  private const string NodeNamePrefix = "node ";
+  private const string AliceName = "alice";
+  private const string AdminName = "root";
+  private const string AdminRole = "admin";
+
   private static Space MapSpace(string name) => new()
   {
     Name = name,
@@ -146,16 +155,16 @@ public class CanvasQueryTests
   public async Task ACanvasReturnsEveryFigureDrawnOnItAtAnyDepth()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
-    var otherCity = await s.Spatial.UpsertSpaceAsync(MapSpace("Other city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
+    var otherCity = await s.Spatial.UpsertSpaceAsync(MapSpace(OtherCityName), CancellationToken.None);
 
     // A container is an ordinary node: the district holds the building, and neither is a canvas.
-    var district = await Node(s.Map, "District", city.Id);
-    var building = await Node(s.Map, "Building", district.id);
-    var camera = await Node(s.Map, "Camera", building.id);
+    var district = await Node(s.Map, "district", city.Id);
+    var building = await Node(s.Map, "building", district.id);
+    var camera = await Node(s.Map, "camera", building.id);
 
     // The same numbers on both canvases: only canvas_id can tell them apart.
-    var farAway = await Node(s.Map, "Far away", otherCity.Id);
+    var farAway = await Node(s.Map, "far away", otherCity.Id);
 
     await s.Geo.CreateGeo([
       Point(district.id!, 0.5, 0.5),
@@ -175,8 +184,8 @@ public class CanvasQueryTests
   public async Task ACanvasReturnsNothingForAnIdThatIsNotACanvas()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
-    var node = await Node(s.Map, "Node", city.Id);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
+    var node = await Node(s.Map, "node", city.Id);
     await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
 
     var geo = (await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = "not-a-canvas" })).Objects;
@@ -188,10 +197,10 @@ public class CanvasQueryTests
   public async Task TheCanvasNarrowsTheBoxThatTheIdsAlsoAskFor()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
-    var otherCity = await s.Spatial.UpsertSpaceAsync(MapSpace("Other city"), CancellationToken.None);
-    var here = await Node(s.Map, "Here", city.Id);
-    var there = await Node(s.Map, "There", otherCity.Id);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
+    var otherCity = await s.Spatial.UpsertSpaceAsync(MapSpace(OtherCityName), CancellationToken.None);
+    var here = await Node(s.Map, "here", city.Id);
+    var there = await Node(s.Map, "there", otherCity.Id);
 
     await s.Geo.CreateGeo([Point(here.id!, 0.5, 0.5), Point(there.id!, 0.5, 0.5)]);
 
@@ -208,15 +217,15 @@ public class CanvasQueryTests
   public async Task GetByBoxOnACanvasKeepsTheRightsFilter()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("City"), CancellationToken.None);
-    var seen = await Node(s.Map, "Seen", city.Id);
-    var hidden = await Node(s.Map, "Hidden", city.Id);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
+    var seen = await Node(s.Map, "seen", city.Id);
+    var hidden = await Node(s.Map, "hidden", city.Id);
     await s.Geo.CreateGeo([Point(seen.id!, 0.5, 0.5), Point(hidden.id!, 0.5, 0.5)]);
 
     s.Db.Rights.Add(new DBRight
     {
       object_id = Guid.Parse(seen.id!),
-      subject = "alice",
+      subject = AliceName,
       action = RightActions.View,
     });
     await s.Db.SaveChangesAsync();
@@ -224,7 +233,7 @@ public class CanvasQueryTests
     var figures = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
     {
       Box = new MapProto.Box { CanvasId = city.Id },
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.Equal([seen.id!], figures.Figs.Select(figure => figure.Id));
@@ -237,11 +246,11 @@ public class CanvasQueryTests
     const int figureCount = pageSize + 1; // one figure beyond the cut
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
 
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < figureCount; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var first = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id, count = pageSize });
@@ -256,7 +265,7 @@ public class CanvasQueryTests
   public async Task ACanvasThatFitsIsNotTruncated()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
     var node = await Node(s.Map, "node", city.Id);
     await s.Geo.CreateGeo([Point(node.id!, 0.5, 0.5)]);
 
@@ -273,16 +282,16 @@ public class CanvasQueryTests
     const int figureCount = pageSize + 1; // one figure beyond the cut
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < figureCount; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var figures = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
     {
       Box = new MapProto.Box { CanvasId = city.Id, Count = pageSize },
-      Caller = Caller("root", "admin"),
+      Caller = Caller(AdminName, AdminRole),
     }, new TestContext());
 
     Assert.True(figures.Truncated);
@@ -305,11 +314,11 @@ public class CanvasQueryTests
     const int figureCount = pageSize * 2 + 1; // two full pages and a tail
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
 
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < figureCount; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var ordered = OrderedIds(nodes);
@@ -349,10 +358,10 @@ public class CanvasQueryTests
   public async Task ACursorAtTheLastFigureIsAnEmptyTail()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < 2; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var whole = await s.Geo.GetGeoAsync(new BoxDTO { canvas_id = city.Id });
@@ -381,11 +390,11 @@ public class CanvasQueryTests
     const int figureCount = pageSize * 2; // a cut page, then a page with nothing left over
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
 
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < figureCount; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var ordered = OrderedIds(nodes);
@@ -396,7 +405,7 @@ public class CanvasQueryTests
       s.Db.Rights.Add(new DBRight
       {
         object_id = Guid.Parse(id),
-        subject = "alice",
+        subject = AliceName,
         action = RightActions.View,
       });
     }
@@ -405,7 +414,7 @@ public class CanvasQueryTests
     var first = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
     {
       Box = new MapProto.Box { CanvasId = city.Id, Count = pageSize },
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.Equal([visibleFirst], first.Figs.Select(figure => figure.Id));
@@ -417,7 +426,7 @@ public class CanvasQueryTests
     {
       Box = new MapProto.Box { CanvasId = city.Id, Count = pageSize },
       AfterId = first.NextCursor,
-      Caller = Caller("alice"),
+      Caller = Caller(AliceName),
     }, new TestContext());
 
     Assert.Equal([visibleLast], second.Figs.Select(figure => figure.Id));
@@ -431,10 +440,10 @@ public class CanvasQueryTests
     const int pageSize = 1;
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
     var nodes = new List<BaseMarkerDTO>();
     for (var i = 0; i < 3; i++)
-      nodes.Add(await Node(s.Map, "node " + i, city.Id));
+      nodes.Add(await Node(s.Map, NodeNamePrefix + i, city.Id));
     await s.Geo.CreateGeo(nodes.Select(n => Point(n.id!, 0.5, 0.5)).ToList());
 
     var ordered = OrderedIds(nodes);
@@ -442,7 +451,7 @@ public class CanvasQueryTests
     var first = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
     {
       Box = new MapProto.Box { CanvasId = city.Id, Count = pageSize },
-      Caller = Caller("root", "admin"),
+      Caller = Caller(AdminName, AdminRole),
     }, new TestContext());
 
     Assert.Equal(ordered.Take(pageSize), first.Figs.Select(figure => figure.Id));
@@ -453,7 +462,7 @@ public class CanvasQueryTests
     {
       Box = new MapProto.Box { CanvasId = city.Id, Count = pageSize },
       AfterId = first.NextCursor,
-      Caller = Caller("root", "admin"),
+      Caller = Caller(AdminName, AdminRole),
     }, new TestContext());
 
     Assert.Equal(ordered.Skip(pageSize).Take(pageSize), second.Figs.Select(figure => figure.Id));
@@ -465,14 +474,14 @@ public class CanvasQueryTests
   public async Task GetByBoxRefusesACursorThatIsNotAUuid()
   {
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
 
     var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.GetByBox(
       new MapProto.GetByBoxRequest
       {
         Box = new MapProto.Box { CanvasId = city.Id },
         AfterId = "not-a-uuid",
-        Caller = Caller("root", "admin"),
+        Caller = Caller(AdminName, AdminRole),
       }, new TestContext()));
 
     Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
@@ -487,14 +496,14 @@ public class CanvasQueryTests
     const int pageSize = 1000;
 
     var s = Create();
-    var city = await s.Spatial.UpsertSpaceAsync(MapSpace("city"), CancellationToken.None);
+    var city = await s.Spatial.UpsertSpaceAsync(MapSpace(CityName), CancellationToken.None);
 
     var nodes = Enumerable.Range(0, pageSize + 1)
       .Select(i => new DBMarker
       {
         id = Guid.NewGuid(),
         parent_id = Guid.Parse(city.Id),
-        name = "node " + i,
+        name = NodeNamePrefix + i,
       })
       .ToList();
     s.Db.Markers.AddRange(nodes);
@@ -511,7 +520,7 @@ public class CanvasQueryTests
         Es = new MapProto.Coordinate { Lat = 1, Lon = 1 },
         Count = pageSize,
       },
-      Caller = Caller("root", "admin"),
+      Caller = Caller(AdminName, AdminRole),
     }, new TestContext());
 
     Assert.True(figures.Truncated);
