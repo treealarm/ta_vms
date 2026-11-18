@@ -46,6 +46,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\VmsCfg\VmsCfg.csproj" />
+    <ProjectReference Include="..\VmsLog\VmsLog.csproj" />
     <ProjectReference Include="..\web_srv.Types\web_srv.Types.csproj" />
     <ProjectReference Include="..\web_srv.client\web_srv.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

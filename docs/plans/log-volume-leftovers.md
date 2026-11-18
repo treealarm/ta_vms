@@ -12,6 +12,9 @@
 - **B. video_srv** (2026-11-18): `log_connect_failure`/`reset_connect_failure_log`, три
   connect-фазовых Error, номер попытки, потолок 5 минут; `vms` собирается. Проверка на стенде —
   ниже.
+- **C. web_srv** (2026-11-18): `AddVmsLogging`, ссылка на VmsLog, `APP_ID`/`VMS_LOG_PATH` в
+  launch.json, `APP_ID` и `data`-том в dev- и `../ta_install` compose; `dotnet build` и
+  `docker compose config` проходят. Проверка на стенде — ниже.
 
 ## Что измерено (2026-10-25, чистая Windows-установка)
 

@@ -9,8 +9,12 @@ using web_srv;
 using web_srv.Authentication;
 using web_srv.Authorization;
 using Vms.Logger;
+using VmsLog;
 
 var builder = WebApplication.CreateBuilder(args);
+// Its own log file under VMS_LOG_PATH and its own source in the Logs tab, like every other
+// service; the gateway's own messages are otherwise visible only in the container's console.
+builder.AddVmsLogging();
 
 // RightsFilter is global on purpose: it is what guarantees no endpoint reaches video without
 // having declared which permission it needs (see the fail-closed branch in the filter).
