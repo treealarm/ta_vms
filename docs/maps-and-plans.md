@@ -357,6 +357,9 @@ work; the panel is where a whole space is worked through.
 - **`api/map/live`** is SSE over `MapService.Watch`; the client sends a box or a set of ids, gets
   the changed ids back and fetches them over `api/map/*`. The subscription is in the request, so a
   change of view opens a new stream — Dapr proxies server-streaming but not a bidirectional call.
+  A box scope also states its completeness: `set_box_truncated` (`{"truncated": true|false}`, no
+  items) is sent on the first poll and whenever the answer changes, because the box read is capped
+  at 10 000 figures; an id scope lists its nodes explicitly and never sends it.
 
 ## Demo configuration
 

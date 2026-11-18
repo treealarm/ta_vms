@@ -184,3 +184,27 @@ admin (`new CallerContext(null, ["admin"], true)`), чтобы права не �
 3. клиент (DTO, редьюсер, хук);
 4. тесты;
 5. документация (файл 24, README, maps-and-plans, отметка здесь).
+
+## Сделано (2026-11-18)
+
+- `optional bool truncated = 3` у `WatchMessage` с комментарием; `WatchSnapshotService.GeoAsync`
+  возвращает `GeoResultDTO`; `WatchSubscription.SentTruncated` сбрасывается в `ResetDiff`;
+  `PollBoxAsync` считает смену флага до `TryApply`, пишет её внутри и шлёт `set_box_truncated`
+  первым сообщением тика (`ea5eb3a6`). Отправка — через отдельный `SendTruncated`; оговорка про
+  `DropOldest` записана комментарием там же.
+- Клиент: `MapWatchMessage.truncated?: boolean`, `MapWatchAction` дополнен `set_box_truncated`,
+  редьюсер `canvasTruncated` (неизвестный холст — no-op), ветка в `useMapSpace.handleCanvas` до
+  раннего выхода на пустых `items` (`bcdb657f`). Комментарий `CanvasPage.truncated` уточнён: watch
+  теперь тоже источник правды о полноте, но только этим сообщением.
+- Тесты: новый `WatchPollerTests` — пять случаев (объявление раньше диффа и стабильный префикс,
+  тихий тик ничего не повторяет, помещающийся холст, холст, снова влезший после удаления, id-scope
+  молчит); три теста стора на `canvasTruncated` (`655ee065`).
+- Прогоны: `dotnet test dotnet/VmsMap.Tests` — 384 зелёных и без DSN, и с `VMS_MAP_TEST_DSN` на
+  `ta_map_test`; `dotnet build dotnet/web_srv.Server` — 0/0; `dotnet test dotnet/web_srv.Tests` —
+  20 зелёных; `npm test` — 80 зелёных; `npm run build` — 0 ошибок; `npm run lint` — те же два
+  **уже существующих** на `master` отказа в `src/components/objects/NodeSettingsCard.tsx`
+  (react-hooks/set-state-in-effect). В изменённых файлах отказов нет.
+- Живой стек не поднимался: усечение требует холста больше 10 000 фигур, а SSE-поток подменой
+  ответа не проверить. Связка держится на серверном тесте формы сообщения, тестах стора и сборке.
+- Отклонений от плана нет: `dotnet/web_srv.Server` не менялся, `DiagramViewer` и
+  `NodesAdminPanel` — тоже (id-scope).
