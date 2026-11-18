@@ -1,20 +1,34 @@
 # Хвосты объёма логов
 
 > Ветка `fix/log-volume-leftovers` от `master` (7854160f). Исходник —
-> [`docs/future_plans/03-log-volume-leftovers.md`](../future_plans/03-log-volume-leftovers.md);
-> после закрытия он удаляется, а строка в `future_plans/README.md` — вместе с ним.
+> `docs/future_plans/03-log-volume-leftovers.md` (удалён вместе с закрытием).
 > Стенд — OnvifSim (`tests/onvifsim/`) и dev-стек, поднятый `scripts/dev-up.sh`.
+> **Закрыт 2026-11-18.**
 
 ## Сделано
 
 - **A. CameraActor** (2026-11-18): окно 5 с, `CameraUnavailableBackoff`, тесты
-  `VmsOnvifActors.Tests` (3 зелёных), проект в solution. Проверка на стенде — ниже.
+  `VmsOnvifActors.Tests` (3 зелёных), проект в solution. На стенде: 40 вызовов
+  `/api/ptz/status` к выключенной камере — 8 попыток `GetServices` (одна на окно) и все ответы
+  быстрее 50 мс; до правки каждая из 40 попыток шла в камеру.
 - **B. video_srv** (2026-11-18): `log_connect_failure`/`reset_connect_failure_log`, три
-  connect-фазовых Error, номер попытки, потолок 5 минут; `vms` собирается. Проверка на стенде —
-  ниже.
+  connect-фазовых Error, номер попытки, потолок 5 минут; `vms` собирается. На стенде строки
+  пришли на попытках 1, 2, 4, 8, 16, 32 через 5, 10, 20, 40, 80, 160 с; после возврата камеры
+  `RTSP connected` — через 5 с, переподключение не замедлилось.
 - **C. web_srv** (2026-11-18): `AddVmsLogging`, ссылка на VmsLog, `APP_ID`/`VMS_LOG_PATH` в
   launch.json, `APP_ID` и `data`-том в dev- и `../ta_install` compose; `dotnet build` и
-  `docker compose config` проходят. Проверка на стенде — ниже.
+  `docker compose config` проходят. На стенде пишется `logs/web-vms/web-vms.log`, а
+  `/api/logger/sources` перечисляет `web-vms`.
+- **D. Debug** (2026-11-18): до правки `VmsOnvif.OnvifEventSubscriptionService` давал 146 строк
+  Debug за 5 минут — 51% всех Debug в системе (следующий источник — 63). Построчные сообщения о
+  событиях переведены в Trace; в следующем пятиминутном окне из этого источника 0 строк (всего
+  Debug — 5, все от `DeviceIoDiscoveryService`), при этом события по-прежнему доходят —
+  `/api/onvif/cameras/{id}/recent-events` их отдаёт.
+- **Попутно** (2026-11-18): найдены и записаны `docs/future_plans/26-ptz-move-stack-traces.md` и
+  `27-onvif-pull-point-retry-log.md` — стек на каждую PTZ-команду к выключенной камере и
+  трёхстрочный ретрай pull point в OnvifLib каждые 2 секунды.
+- **Проверки**: `dotnet build dotnet/ta_vms.sln` — 0 ошибок и предупреждений,
+  `dotnet test dotnet/ta_vms.sln` — 703 из 703, `cmake --build video_srv/build` — успешно.
 
 ## Что измерено (2026-10-25, чистая Windows-установка)
 
@@ -42,8 +56,8 @@
   нельзя, иначе камера без PTZ или с одним неудачным кадром выпадала бы из работы на окно.
 - **Переподключение в `video_srv` не меняется.** Меняется только момент записи строки: первая
   неудача пишется сразу, дальше — каждый раз, когда интервал с предыдущей записи удвоился
-  (5, 10, 20, 40, 80, 160, 320 с, потолок 5 минут). Попытки открыть RTSP идут по-прежнему каждые
-  `kWatchdogInterval` (5 с).
+  (5, 10, 20, 40, 80, 160, 300 с — потолок 5 минут). Попытки открыть RTSP идут по-прежнему
+  каждые `kWatchdogInterval` (5 с).
 - **`web_srv` получает `APP_ID = web-vms`** — это его runtime-имя (Dapr app id; `web_vms` —
   только имя compose-сервиса). Так папка лога и источник во вкладке Logs называются `web-vms`,
   как остальные сервисы называются своими app id. На Windows `APP_ID` подставляет
@@ -147,15 +161,15 @@ std::chrono::steady_clock::time_point m_next_connect_failure_log_at{};
   `logger::instance().error(message + " (attempt N)")`, затем
   `m_next_connect_failure_log_at = now + m_connect_failure_log_interval` и
   `m_connect_failure_log_interval = std::min(m_connect_failure_log_interval * 2, cap)`;
-- `note_connect_success()` — сброс счётчика и интервала к начальным значениям.
+- `reset_connect_failure_log()` — сброс счётчика и интервала к начальным значениям.
 
 Вызовы: все три connect-фазовых Error в `connect()` — `Failed to open RTSP`,
 `Failed to get stream info`, `No video stream`. Успех — единственная точка перед
-`return true` (`RTSP connected`), там же `note_connect_success()`. `open()` дополнительно
+`return true` (`RTSP connected`), там же `reset_connect_failure_log()`. `open()` дополнительно
 сбрасывает состояние, потому что может прийти новый URL.
 
 Поток: попытки каждые 5 с, строки — на 1-й, 2-й, 4-й, 8-й, 16-й, 32-й… неудаче (5, 10, 20, 40,
-80, 160, 320 с, дальше раз в 5 минут). За пять минут на камеру 7 строк вместо 60.
+80, 160 с, дальше раз в 5 минут). За пять минут на камеру 6 строк вместо 60.
 
 ## Часть C. web_srv — собственный лог и вкладка Logs
 
@@ -180,16 +194,14 @@ std::chrono::steady_clock::time_point m_next_connect_failure_log_at{};
 Ожидаемый результат: файл `logs/web-vms/web-vms.log`, источник `web-vms` во вкладке Logs,
 `Microsoft.*` на Warning (как у остальных через VmsLog).
 
-## Часть D. Debug — измерить и решить
+## Часть D. Debug — измерено и решено
 
-После A–C на стенде снять пятиминутные окна (простой стек; выключенная камера; камера с
-событиями) и посчитать строки по `file`/уровню. Решение:
-
-- если доминирует один источник — перевести его построчные сообщения в Trace (VmsLog держит
-  `MinimumLevel.Debug`, поэтому Trace не пишется). Первый кандидат —
-  `VmsOnvif/OnvifEventSubscriptionService.cs`: 2–3 строки Debug на каждое ONVIF-событие
-  («received», «checking N filter(s)», «no filter matched»), а камера шлёт события часто;
-- если доминанты нет — записать измерение в план и не менять код.
+Пятиминутное окно на стенде с камерой, шлющей события, показало доминанту:
+`VmsOnvif/OnvifEventSubscriptionService.cs` — 146 строк Debug, 51% всех Debug в системе
+(следующий источник — 63). Это 2–3 строки на каждое событие («received», «checking N
+filter(s)», «no filter matched»); события видны во вкладке ONVIF events, поэтому строки
+переведены в Trace — VmsLog держит `MinimumLevel.Debug`, и Trace не пишется. Контрольное окно:
+0 строк из этого источника, события по-прежнему доходят до `recent-events`.
 
 ## Проверки
 
