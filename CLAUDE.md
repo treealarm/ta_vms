@@ -2,8 +2,9 @@
 
 These rules override any default behaviour. The ones that apply to every change are stated in full
 here; a rule that applies only when you touch a particular area is one short statement plus a link
-to the document that holds the full version — read that document before changing the area. Keeping
-this file short is deliberate: a rule that is always visible is a rule that is always followed.
+to the document that holds the full version — read that document before changing the area. All the
+documents are indexed in [docs/README.md](docs/README.md). Keeping this file short is deliberate: a
+rule that is always visible is a rule that is always followed.
 
 ## Language conventions
 
