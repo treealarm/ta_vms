@@ -90,6 +90,11 @@ namespace VmsMap.Db
         query = query.Where(p => guidIds.Contains(p.id));
       }
 
+      // A page of a cut read: strictly after the cursor, in the same order the answer is read in.
+      // Strictly, so the next page does not repeat the row the previous one ended at.
+      if (box.after_id.HasValue)
+        query = query.Where(p => p.id.CompareTo(box.after_id.Value) > 0);
+
       // The order is part of the answer: without it the database decides which figures a cut box
       // loses, and that decision may differ from call to call. One row past the limit tells us
       // whether anything was left behind.
@@ -103,7 +108,13 @@ namespace VmsMap.Db
       if (truncated)
         list.RemoveAt(list.Count - 1);
 
-      return new GeoResultDTO(ModelGate.ConvertListDB2DTO(list), truncated);
+      // The cursor is where the read ended, not the last figure of the answer: the caller filters
+      // by rights afterwards, so a visible figure below the cut would not move the read forward.
+      var nextCursor = truncated
+        ? Utils.ConvertGuidToObjectId(list[^1].id)
+        : null;
+
+      return new GeoResultDTO(ModelGate.ConvertListDB2DTO(list), truncated, nextCursor);
     }
 
 

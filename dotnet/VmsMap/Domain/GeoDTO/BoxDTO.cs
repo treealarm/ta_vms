@@ -1,4 +1,5 @@
 
+using System;
 using System.Collections.Generic;
 
 namespace VmsMap.Domain
@@ -16,5 +17,8 @@ namespace VmsMap.Domain
     /// The canvas to ask for instead of the rectangle: everything whose figure is drawn in this
     /// space's coordinates, at any depth of the tree.
     public string? canvas_id { get; set; }
+    /// The page of a cut read: only figures whose id is strictly after this one. Set from
+    /// GetByBoxRequest.after_id, never from the area itself, so a watch scope stays whole.
+    public Guid? after_id { get; set; }
   }
 }

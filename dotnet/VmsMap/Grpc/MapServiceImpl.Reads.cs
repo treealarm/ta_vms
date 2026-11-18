@@ -113,6 +113,15 @@ namespace VmsMap.Grpc
       var caller = ToCaller(request.Caller);
       var box = ToBoxDto(request.Box);
 
+      // The cursor is read here, at the boundary: a malformed one is a client bug, and answering
+      // "nothing after it" would pass for the end of the canvas.
+      if (!string.IsNullOrEmpty(request.AfterId))
+      {
+        if (!Guid.TryParse(request.AfterId, out var afterId))
+          throw new RpcException(new Status(StatusCode.InvalidArgument, "after_id must be a UUID"));
+        box.after_id = afterId;
+      }
+
       var ids = new List<string>();
       if (request.PropertyFilter.Count > 0)
       {
@@ -143,11 +152,13 @@ namespace VmsMap.Grpc
 
       // A canvas is drawn whole: the client shows the composition of one space and paging it into
       // centroids would drop the very containers it exists to draw. A rectangle keeps the cut.
-      // Either way the read's own cut, if any, travels with the answer.
+      // Either way the read's own cut, if any, travels with the answer, and so does where to
+      // continue.
       if (!string.IsNullOrEmpty(box.canvas_id) || figures.figs.Count < 1000)
       {
         var whole = await ToProtoFiguresAsync(figures, geo.Keys, ct);
         whole.Truncated = read.Truncated;
+        whole.NextCursor = read.NextCursor ?? string.Empty;
         return whole;
       }
 
@@ -159,6 +170,9 @@ namespace VmsMap.Grpc
       var centroids = KMeans.GetCentroids(rest, Math.Max(100, 1 + rest.Count / 1000));
       centroids.figs.AddRange(raw);
 
+      // A clustered answer has no cursor, even when the read was cut: centroids are an aggregate
+      // of the read rather than its prefix, so pages of them cannot be added up into one map.
+      // The flag still says the cluster is not the whole rectangle; narrowing it is the way on.
       var clustered = await ToProtoFiguresAsync(centroids, geo.Keys, ct);
       clustered.Truncated = read.Truncated;
       return clustered;
