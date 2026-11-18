@@ -157,26 +157,28 @@ export default function DiagramViewer({
   const openType = shown?.dgrTypes?.find((candidate) => candidate.id === root?.dgrType)
 
   // A diagram placed on a map has no size of its own to store: the sheet is the picture its type
-  // draws it on, so the picture is measured. A diagram with a stored rectangle never asks.
+  // draws it on, so the picture is measured. A diagram with a stored rectangle never asks. The
+  // measurement carries the URL it was taken at, so the previous diagram's picture is never taken
+  // for this one's while the new one loads.
   const backgroundUrl = useMapFileImage(openType?.fileId)
-  const [picture, setPicture] = useState<{ width: number; height: number } | null>(null)
+  const [picture, setPicture] = useState<{ url: string; width: number; height: number } | null>(null)
   useEffect(() => {
-    if (!backgroundUrl) {
-      setPicture(null)
-      return
-    }
+    if (!backgroundUrl) return
 
     let cancelled = false
     const image = new Image()
     image.onload = () => {
-      if (!cancelled) setPicture({ width: image.naturalWidth, height: image.naturalHeight })
+      if (!cancelled) {
+        setPicture({ url: backgroundUrl, width: image.naturalWidth, height: image.naturalHeight })
+      }
     }
     image.src = backgroundUrl
     return () => { cancelled = true }
   }, [backgroundUrl])
 
+  const sheet = backgroundUrl && picture?.url === backgroundUrl ? picture : null
   // The paper is the diagram's own canvas; where it stands in its parent is the parent's business.
-  const paper = diagramPaper(root, picture)
+  const paper = diagramPaper(root, sheet)
   const scale = fitScale(size, paper) * factor
   const shownDepth = shown?.depth ?? depth
 

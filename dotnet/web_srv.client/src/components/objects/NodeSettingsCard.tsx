@@ -13,16 +13,19 @@ import ObjectSettingsCard from './ObjectSettingsCard'
  */
 export default function NodeSettingsCard(
   { nodeId, divider }: { nodeId: string; divider?: boolean }) {
-  const [kind, setKind] = useState<string | null | undefined>(undefined)
+  // The answer keeps the node it belongs to: the previous node's mode is not this one's, and the
+  // card stays hidden until this node answers.
+  const [answer, setAnswer] = useState<{ nodeId: string; kind: string | null } | null>(null)
 
   useEffect(() => {
     let live = true
-    setKind(undefined)
     void getControlObject(nodeId)
-      .then((row) => { if (live) setKind(row?.kind ?? null) })
-      .catch(() => { if (live) setKind(null) })
+      .then((row) => { if (live) setAnswer({ nodeId, kind: row?.kind ?? null }) })
+      .catch(() => { if (live) setAnswer({ nodeId, kind: null }) })
     return () => { live = false }
   }, [nodeId])
+
+  const kind = answer?.nodeId === nodeId ? answer.kind : undefined
 
   if (kind === undefined || kind === null)
     return null
