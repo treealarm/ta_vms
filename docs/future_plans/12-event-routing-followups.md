@@ -1,7 +1,7 @@
 # Маршрутизация событий: что осталось за M2.4
 
 Найдено при переработке плана M2.4 (2026-11-06) и ревью: всё, что сознательно не вошло в
-[`docs/plans/square-merge/m2.4-devices-alarms-automation.md`](../plans/square-merge/m2.4-devices-alarms-automation.md).
+[`docs/plans/square-merge/m2.4-devices-alarms-automation.md`](../plans/archive/m2.4-devices-alarms-automation.md).
 
 Дефект, из-за которого правка подписки иногда не доходила до роутера, исправлен 2026-11-09
 (`03ce448`, см. [legacy/01-event-subscription-signal.md](legacy/01-event-subscription-signal.md)).

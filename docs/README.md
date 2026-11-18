@@ -38,7 +38,7 @@ runbooks for doing something rather than changing something.
 
 | Where | What |
 |---|---|
-| [plans/](plans/) | active plans, in Russian: [`square-merge/`](plans/square-merge/README.md), the map and events layer by milestone, and dated files for one piece of work. A file is cut to what is left when its work lands. |
+| [plans/](plans/) | active plans, in Russian: [`square-merge/`](plans/square-merge/README.md), the map and events layer by milestone. Closed milestones and finished pieces of work are in [`plans/archive/`](plans/archive/) — history, not a task. |
 | [future_plans/](future_plans/) | found while doing something else, needs doing, not next: one file per topic, in Russian, listed in [its README](future_plans/README.md). Closed topics stay in [`future_plans/legacy/`](future_plans/legacy/) as history. |
 | [handoff.md](handoff.md) | a handover note of 2026-08-26 on the live-view freeze — history, not current state |
 
