@@ -137,3 +137,21 @@ Postgres (`VMS_MAP_TEST_DSN`, `SpatialPostgresTests`):
 2. сервис, proto и вызывающие;
 3. тесты;
 4. документация (файл 24 и README).
+
+## Сделано (2026-11-18)
+
+- `GeoResultDTO`, `IGeoService.GetGeoAsync` → `GeoResultDTO`, порядок `OrderBy(id)` и чтение
+  `limit + 1` в `GeoService`; оба `catch` удалены, `GetGeoObjectsAsync` тоже сортирует по `id`
+  (`1ba6ed10`).
+- `Figures.truncated = 3` в `proto/vms_map.proto`; `GetByBox` заполняет его на обоих путях;
+  `WatchSnapshotService.GeoAsync` берёт `.Objects` (`1ba6ed10`).
+- Тесты: три в `CanvasQueryTests` (усечение и детерминированный префикс, холст в пределе,
+  флаг в `GetByBox`), новый `GeoReadTests` (проброс отказа через освобождённый контекст,
+  пустые и невалидные id — обычный `null`), один Postgres-тест в `SpatialPostgresTests`
+  (`97506447`).
+- Прогоны: `dotnet test dotnet/VmsMap.Tests` — 379 тестов зелёные и без DSN, и с
+  `VMS_MAP_TEST_DSN` на `ta_map_test` (Postgres-тесты включаются); `dotnet test
+  dotnet/web_srv.Tests` — 20 зелёных; `dotnet build dotnet/web_srv.Server` — 0/0.
+- Отклонений от плана нет: `AclService` в репозитории не оказалось, логгер в `GeoService` не
+  добавлялся — отказ логирует gRPC-фреймворк.
+- Файл 24 сокращён до трёх оставшихся пунктов, строка в его README поправлена.
