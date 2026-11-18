@@ -338,7 +338,7 @@ master's picture; arrival is where the head stopped against where the person was
   the sign and the units.
 - A leaning pan axis costs roughly a fifth of a degree per degree of lean sideways and a sixteenth
   forward, here; it shows in the leave-one-out column long before it misses. `fence` is beyond the
-  two lines altogether, which is what "PTZ fit by mount orientation" in `docs/maps-and-plans.md` is
+  two lines altogether, which is what `docs/future_plans/25-ptz-mounts-and-self-guidance.md` is
   for.
 - `seam` is the one that can catch an ordinary camera: its pan zero is wherever the installer
   screwed it, so the seam falls inside the sector it watches with the odds of that sector's share

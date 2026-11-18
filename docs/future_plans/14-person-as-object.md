@@ -59,4 +59,4 @@
 
 Связано: [15-distributed-analytics.md](15-distributed-analytics.md) (re-id и архивный поиск),
 [17-scale-bench-100k.md](17-scale-bench-100k.md) (объём), [`docs/maps-and-plans.md`](../maps-and-plans.md)
-(дерево, состояния, права).
+(дерево), [`docs/maps/states-and-alarms.md`](../maps/states-and-alarms.md) (состояния, права).

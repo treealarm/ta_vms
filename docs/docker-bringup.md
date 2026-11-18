@@ -204,8 +204,7 @@ Installing twice is idempotent and a removal takes only the demo's own rows. The
 are OnvifSim's; without them it installs without cameras and the report names the ones it skipped.
 `tests/onvifsim provision` (or the simulator's own editor) adds them, and **Install demo** again
 places them. `../ta_install` has an optional `demo` compose profile that raises OnvifSim behind
-`docker compose --profile demo up -d`. Details: [`maps-and-plans.md`](maps-and-plans.md),
-"Demo configuration".
+`docker compose --profile demo up -d`. Details: [`maps/demo.md`](maps/demo.md).
 
 ---
 

@@ -114,8 +114,7 @@ The same cameras stand in the optional demo world: with `DEMO_CONFIG=umd-datacen
 **Install demo** at the foot of Admin → Maps, a fresh installation is filled with a fictional data
 centre — a map, a building, two rooms, racks, switches and ports — that closes the loop between
 configuration, the map and an alarm. Without the simulator the world installs without cameras and
-says which ones it is missing. See [docs/maps-and-plans.md](docs/maps-and-plans.md), "Demo
-configuration".
+says which ones it is missing. See [docs/maps/demo.md](docs/maps/demo.md).
 
 ## Related repositories
 
