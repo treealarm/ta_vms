@@ -1,27 +1,27 @@
-# 24 — VmsMap: остаток честного чтения геометрии
+# 24 — VmsMap: ревью дерева и честное чтение (закрыто)
 
-**Найдено 2026-11-17** по внешнему ревью VmsMap (ChatGPT, по GitHub).
+**Найдено 2026-11-17** по внешнему ревью VmsMap (ChatGPT, по GitHub). Все пункты закрыты; файл
+перенесён сюда как история темы.
 **Инварианты дерева закрыты 2026-11-17** на ветке `fix/vmsmap-tree-invariants`
 (`3f7044e0`, `f4ff62a7`); что было сделано и почему — в
-[`docs/plans/24-vmsmap-tree-invariants.md`](../plans/24-vmsmap-tree-invariants.md).
+[`docs/plans/24-vmsmap-tree-invariants.md`](../../plans/24-vmsmap-tree-invariants.md).
 **Геометрия холста закрыта 2026-11-18** на ветке `fix/vmsmap-geo-honesty`: `GetGeoAsync` идёт
 `ORDER BY id`, читает `limit + 1` и отдаёт `Figures.truncated`; оба by-id чтения больше не глушат
-отказ — см. [`docs/plans/24-vmsmap-geo-honesty.md`](../plans/24-vmsmap-geo-honesty.md).
+отказ — см. [`docs/plans/24-vmsmap-geo-honesty.md`](../../plans/24-vmsmap-geo-honesty.md).
 **Фронтенд показывает усечение 2026-11-18** на ветке `feat/map-truncated-banner`: признак идёт из
 `MapFigures` в страницу холста, и рядом с каждым нарисованным холстом стоит предупреждение — см.
-[`docs/plans/24-map-truncated-banner.md`](../plans/24-map-truncated-banner.md).
+[`docs/plans/24-map-truncated-banner.md`](../../plans/24-map-truncated-banner.md).
 **Watch по прямоугольнику закрыт 2026-11-18** на ветке `feat/watch-truncated`: box-scope шлёт
 `set_box_truncated` с признаком усечения на первом тике и при каждой смене, а клиент ставит и
 снимает флаг страницы холста по нему — см.
-[`docs/plans/24-watch-truncated.md`](../plans/24-watch-truncated.md).
-Ниже — только то, что осталось.
-
-## Что осталось
-
-- **Остаток обрезанного холста нельзя дозапросить.** Курсор по `id` ляжет на уже
-  детерминированный порядок, когда появится потребность; до тех пор — сужение прямоугольника, а
-  на масштабе [17-scale-bench-100k.md](17-scale-bench-100k.md) — серверная агрегация вместо
-  выдачи всех фигур.
+[`docs/plans/24-watch-truncated.md`](../../plans/24-watch-truncated.md).
+**Остаток обрезанного холста дозапрашивается 2026-11-18** на ветке `feat/canvas-cursor`:
+`GetByBoxRequest.after_id` продолжает чтение строго после id, которым оно закончилось, а
+`Figures.next_cursor` этот id называет — см.
+[`docs/plans/24-canvas-cursor.md`](../../plans/24-canvas-cursor.md). UI холст страницами не читает:
+он сужает пространство, а на масштабе
+[17-scale-bench-100k.md](../17-scale-bench-100k.md) нужна серверная агрегация, а не выдача всех
+фигур.
 
 ## Что из ревью не берём (решено в 2026-11-17)
 

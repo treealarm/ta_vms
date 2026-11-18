@@ -5,7 +5,8 @@
 > `dotnet/web_srv.Server` и `dotnet/web_srv.client` не меняются: шлюз разбирает
 > `GetByBoxRequest` целиком и отдаёт ответ как есть, а фронтенд курсор сознательно не получает
 > (решение 6). Живой стек не нужен.
-> Источник — последний пункт «Что осталось» в `docs/future_plans/24-vmsmap-tree-invariants.md`.
+> Источник — последний пункт «Что осталось» в `docs/future_plans/24-vmsmap-tree-invariants.md`
+> (после этой работы — `docs/future_plans/legacy/`).
 > Порядок и флаг усечения закрыты в [`24-vmsmap-geo-honesty.md`](24-vmsmap-geo-honesty.md), показ
 > усечения — в [`24-map-truncated-banner.md`](24-map-truncated-banner.md), watch по
 > прямоугольнику — в [`24-watch-truncated.md`](24-watch-truncated.md).
@@ -189,3 +190,23 @@ Postgres (`VMS_MAP_TEST_DSN`, `SpatialPostgresTests`):
 2. proto, DTO и сервис;
 3. тесты;
 4. документация (файл 24 в legacy, README, maps-and-plans, отметка здесь).
+
+## Сделано (2026-11-18)
+
+- `GetByBoxRequest.after_id = 4` и `Figures.next_cursor = 4` с комментариями (точка разреза,
+  права, кластеризация, отсутствие снимка); `BoxDTO.after_id` (`Guid?`), `GeoResultDTO.NextCursor`;
+  `GeoService` фильтрует `id.CompareTo(after_id) > 0` и берёт курсор из последней оставшейся строки
+  (`16b2ba1a`). В `GetByBox` курсор разбирается на границе (`InvalidArgument` на не-UUID) и
+  заполняет `NextCursor` только на целом пути; кластеризованный путь оставляет его пустым.
+- Тесты: `CanvasQueryTests` — страницы склеиваются в холст по порядку `Guid`, курсор на последней
+  фигуре даёт пустой хвост, страница, скрытая правами, всё равно называет точку разреза, gRPC
+  проносит курсор и отвергает не-UUID, кластеризованный прямоугольник курсора не даёт; в
+  `SpatialPostgresTests` — вторая страница после `after_id` совпадает с `OrderBy(g => g.id)` самой
+  базы (`5c453ab4`).
+- Прогоны: `dotnet test dotnet/VmsMap.Tests` — 391 зелёный с `VMS_MAP_TEST_DSN` на `ta_map_test`
+  (Postgres-тест в том числе проверяет трансляцию `Guid.CompareTo` в Npgsql); `dotnet build
+  dotnet/web_srv.Server` — 0/0; `dotnet test dotnet/web_srv.Tests` — 20 зелёных.
+- Живой стек не поднимался: усечение требует холста больше 10 000 фигур.
+- Отклонений от плана нет: `web_srv` и `web_srv.client` не менялись, UI холст страницами не
+  читает. Файл 24 перенесён в `docs/future_plans/legacy/` (ссылки в нём поправлены на
+  `../../plans/`), строка из README удалена.
