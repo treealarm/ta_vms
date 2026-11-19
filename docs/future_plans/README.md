@@ -16,7 +16,6 @@
 
 | Файл | Тема | Объём |
 |---|---|---|
-| [04-prism-footprints.md](04-prism-footprints.md) | Призмы в OnvifSim: контур с двором отвергается, точки контура не тянутся мышью | средний, локальный |
 | [05-demo-gui-parity.md](05-demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; осталось: Playwright-прогон, текст и картинки на планах | средний |
 | [06-onvif-live-parameters.md](06-onvif-live-parameters.md) | Хвосты M2.3: чтение списка за оверлеем, совпадение демо и `Maryland`, первая запись follower'а | средний |
 | [07-camera-connection-state.md](07-camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` опрашивается у VmsFs; нужно событие от video_srv и разбор `recording_expected` | средний |
