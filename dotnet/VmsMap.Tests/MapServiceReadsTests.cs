@@ -692,15 +692,18 @@ public class MapServiceReadsTests
     Assert.True(alarm.CanAck);
     Assert.StartsWith(CameraNamePrefix, alarm.ObjectName);
 
-    // Armed: the condition is live, so the acknowledgement is the store's to refuse. The camera's
-    // own mode lives in the map.
+    // Armed: the acknowledgement stays available, but it asks for a comment. The camera's own
+    // mode lives in the map.
     s.Arming.Armed = true;
     await TestWiring.ObjectSettings(s.Db).SetModeAsync(node, ArmMode.Armed, default);
     pages = await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
     {
       Caller = Caller(AliceName),
     }, new TestContext());
-    Assert.False(Assert.Single(pages.Open.Alarms).CanAck);
+    var armed = Assert.Single(pages.Open.Alarms);
+    Assert.True(armed.CanAck);
+    Assert.True(armed.AckRequiresComment);
+    Assert.Equal(string.Empty, armed.AckBlockedReason);
 
     // No view right at all: the row never leaves the service.
     var other = await AlarmCameraAsync(s, RightActions.View);
@@ -768,6 +771,7 @@ public class MapServiceReadsTests
       Caller = Caller(AliceName),
     }, new TestContext())).Open.Alarms.Single();
     Assert.False(raised.CanAck);
+    Assert.Equal("no_right", raised.AckBlockedReason);
 
     var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.AcknowledgeAlarm(
       new MapProto.AcknowledgeAlarmRequest { Id = raised.Id, Caller = Caller(AliceName) },
@@ -887,5 +891,67 @@ public class MapServiceReadsTests
       .SingleAsync(m => m.id == Guid.Parse(floor.id!));
     Assert.Equal(Guid.Parse(building.id!), stored.parent_id);
     Assert.Equal(FloorLabel, stored.name);
+  }
+
+  [Fact]
+  public async Task GetAlarmAnswersTheRowThePageHas()
+  {
+    var s = Create();
+    var node = await AlarmCameraAsync(s, RightActions.View, RightActions.Acknowledge);
+    var raised = await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      Guid.Parse(node), AlarmSource.Sensor, SensorId), default);
+
+    var alarm = await s.Grpc.GetAlarm(new MapProto.GetAlarmRequest
+    {
+      Id = raised.Alarm!.id.ToString(),
+      Caller = Caller(AliceName),
+    }, new TestContext());
+
+    Assert.Equal(node, alarm.ObjectId);
+    Assert.True(alarm.CanAck);
+    Assert.False(alarm.DeviceAbsent);
+    Assert.Equal(string.Empty, alarm.AckBlockedReason);
+  }
+
+  [Fact]
+  public async Task AGonePartIsReportedAbsentAndClosesOnlyWithAComment()
+  {
+    var s = Create();
+    var (_, _, part) = await ZoneWithSensorAsync(s);
+    var raised = await s.Alarms.RaiseAsync(
+      new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
+
+    var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == part);
+    node.present = false;
+    await s.Db.SaveChangesAsync();
+
+    var alarm = await s.Grpc.GetAlarm(new MapProto.GetAlarmRequest
+    {
+      Id = raised.Alarm!.id.ToString(),
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+    Assert.True(alarm.DeviceAbsent);
+    Assert.True(alarm.CanAck);
+
+    var missingComment = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.CloseAlarm(
+      new MapProto.CloseAlarmRequest
+      {
+        Id = alarm.Id,
+        Reason = AlarmCloseReason.Other,
+        Caller = Caller(AdminRole, AdminRole),
+      },
+      new TestContext()));
+    Assert.Equal(StatusCode.FailedPrecondition, missingComment.StatusCode);
+
+    var closed = await s.Grpc.CloseAlarm(
+      new MapProto.CloseAlarmRequest
+      {
+        Id = alarm.Id,
+        Reason = AlarmCloseReason.Other,
+        Comment = AckComment,
+        Caller = Caller(AdminRole, AdminRole),
+      },
+      new TestContext());
+    Assert.Equal(AlarmStatus.Closed, closed.Status);
   }
 }

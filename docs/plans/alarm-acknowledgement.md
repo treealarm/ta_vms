@@ -27,6 +27,12 @@
   `condition_active && armed` без комментария; массовое принятие зоны отдаёт
   `comment_required` вместо `armed`. Тесты: `AlarmStoreTests` (оба исхода), новый
   `AcceptingAZoneOnGuardRequiresAComment`. Проверено: `VmsMap.Tests` — 401.
+- ☑ **proto и web_srv: `GetAlarm` и три поля.** `ack_blocked_reason`, `ack_requires_comment`,
+  `device_absent` в `Alarm`; `rpc GetAlarm` и `GET api/map/alarms/{id}`; `can_ack` больше не
+  зависит от охраны; `MetadataAsync` отдаёт `present`/`part_kind` страницы одним запросом. Тесты:
+  `GetAlarmAnswersTheRowThePageHas`, `AGonePartIsReportedAbsentAndClosesOnlyWithAComment`,
+  обновлённые проверки `can_ack`. Проверено: `dotnet build` — 0/0, `VmsMap.Tests` — 403,
+  `web_srv.Tests` — 20.
 
 ## Что установлено
 

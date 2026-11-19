@@ -445,6 +445,12 @@ export type MapAlarm = {
   sourceEventId?: string
   /** Whether this caller may acknowledge the row now; the service computes it. */
   canAck?: boolean
+  /** Why acknowledging is unavailable: "closed", "no_right", or empty when it is available. */
+  ackBlockedReason?: string
+  /** The condition is live and the node is armed: acknowledging requires a comment. */
+  ackRequiresComment?: boolean
+  /** The alarm stands on a device part its device no longer reports. */
+  deviceAbsent?: boolean
   objectName?: string
   cameraId?: string
   /** The zone whose armed property settles this device's arming: the group its alarm belongs to.

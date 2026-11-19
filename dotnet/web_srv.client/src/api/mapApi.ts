@@ -116,7 +116,11 @@ export const mapApi = {
   getAlarms: (request: MapGetAlarmsRequest = {}) =>
     post<MapAlarmList>(`${BASE}/alarms`, request),
 
-  /** Refused with 409 when the condition is still active and the node is armed. */
+  /** One row, for a panel or an event that named an alarm id rather than a page. */
+  getAlarm: (id: string) =>
+    requestJson<MapAlarm>(`${BASE}/alarms/${enc(id)}`),
+
+  /** A live condition on an armed node is refused with 409 until a comment is given. */
   acknowledgeAlarm: (id: string, comment: string) =>
     post<MapAlarm>(`${BASE}/alarms/${enc(id)}/acknowledge`, { comment }),
 
