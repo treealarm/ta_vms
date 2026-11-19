@@ -33,6 +33,11 @@
   `GetAlarmAnswersTheRowThePageHas`, `AGonePartIsReportedAbsentAndClosesOnlyWithAComment`,
   обновлённые проверки `can_ack`. Проверено: `dotnet build` — 0/0, `VmsMap.Tests` — 403,
   `web_srv.Tests` — 20.
+- ☑ **Фронтенд: подписанная кнопка и общий диалог в трёх местах.** `alarms/AlarmAction.tsx`
+  (`AlarmActionButton`, `AlarmHandleDialog`), чистая `alarms/alarmActions.ts` (+тест); подпись у
+  действия строки в `MapObjectList`; секция тревог в `ObjectPanel` (камера — свои и датчиков);
+  кнопка в деталях события по `alarm_id`; зона спрашивает комментарий, когда он обязателен;
+  локали en/es. Проверено: `npm run build`, `npm run lint`, `npm test` — 93.
 
 ## Что установлено
 

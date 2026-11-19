@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel,
-  Radio, RadioGroup, Snackbar, Tab, Tabs, TextField, ToggleButton, Tooltip, Typography,
+  Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Snackbar, Tab, Tabs,
+  TextField, ToggleButton, Tooltip, Typography,
 } from '@mui/material'
 import { useSearchParams } from 'react-router-dom'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next'
 import type { GeoPointDto, PtzGeoAimResultDto } from '../../dto/dtos'
 import type { MapAlarm, MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
-import { acknowledgeAlarm, closeAlarm, loadAlarms } from '../../store/alarmsSlice'
+import { loadAlarms } from '../../store/alarmsSlice'
 import { loadCameras } from '../../store/liveSlice'
 import { errorText, loadPlacements, loadSpaces, spatialRequest } from '../../store/spatialSlice'
 import { loadNodes, resolveCameraNode, revealNodePath, childrenOf, loadChildren } from '../../store/objectsSlice'
@@ -36,6 +36,8 @@ import { CameraMarker } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
 import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
+import { AlarmHandleDialog } from '../alarms/AlarmAction'
+import { ackBlockedKey } from '../alarms/alarmActions'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import ObjectSearch from '../objects/ObjectSearch'
@@ -64,8 +66,8 @@ const DETECTIONS_KEY = 'maps.operator.detections'
 const readDetections = () => { try { return localStorage.getItem(DETECTIONS_KEY) !== 'off' } catch { return true } }
 const writeDetections = (on: boolean) => { try { localStorage.setItem(DETECTIONS_KEY, on ? 'on' : 'off') } catch { /* private mode */ } }
 
-/** What the alarm dialog is open for, and what it will do when confirmed. */
-type AlarmDialogState = { alarm: MapAlarm; action: 'acknowledge' | 'close' }
+/** The zone whose alarms the comment dialog is about to accept as one pass. */
+type ZoneDialogState = { zoneId: string; title: string; requiresComment: boolean }
 
 /**
  * Operator → Map: the one tree of nodes on the left, the space where the chosen node stands in the
@@ -112,14 +114,14 @@ export default function MapsOperatorPanel() {
   const [focus, setFocus] = useState<MapFocus | null>(null)
   const [detections, setDetections] = useState(readDetections)
   const [notice, setNotice] = useState<string | null>(null)
-  // The row an operator picked and the action they picked for it; confirmed in one dialog.
-  const [alarmDialog, setAlarmDialog] = useState<AlarmDialogState | null>(null)
-  const [alarmComment, setAlarmComment] = useState('')
-  const [alarmReason, setAlarmReason] = useState<'false_alarm' | 'other'>('false_alarm')
-  const [alarmError, setAlarmError] = useState<string | null>(null)
+  // The alarm row an operator picked; the shared dialog asks for the comment or the close reason.
+  const [alarmDialog, setAlarmDialog] = useState<MapAlarm | null>(null)
   // The result of accepting a whole zone: counts and what was left, not one status.
   const [zoneNotice, setZoneNotice] = useState<{ severity: 'success' | 'warning' | 'error'; text: string } | null>(null)
-  const [alarmBusy, setAlarmBusy] = useState(false)
+  // A zone's "accept all" asks for a comment when any alarm in it is on guard.
+  const [zoneDialog, setZoneDialog] = useState<ZoneDialogState | null>(null)
+  const [zoneComment, setZoneComment] = useState('')
+  const [zoneBusy, setZoneBusy] = useState(false)
 
   const space = spaces.find((s) => s.id === spaceId) ?? rootsOf(spaces)[0] ?? null
   const spaceData = useMapSpace(space)
@@ -470,37 +472,6 @@ export default function MapsOperatorPanel() {
   }
   if (!space) return null
 
-  const openAlarmDialog = (alarm: MapAlarm, action: 'acknowledge' | 'close') => {
-    setAlarmDialog({ alarm, action })
-    setAlarmComment('')
-    setAlarmReason('false_alarm')
-    setAlarmError(null)
-  }
-
-  const submitAlarmDialog = async () => {
-    if (!alarmDialog?.alarm.id) return
-
-    setAlarmBusy(true)
-    setAlarmError(null)
-    try {
-      if (alarmDialog.action === 'close') {
-        await dispatch(closeAlarm({
-          id: alarmDialog.alarm.id, reason: alarmReason, comment: alarmComment,
-        })).unwrap()
-      } else {
-        await dispatch(acknowledgeAlarm({
-          id: alarmDialog.alarm.id, comment: alarmComment,
-        })).unwrap()
-      }
-      setAlarmDialog(null)
-    } catch (e) {
-      // 409 is the rule refusing a live condition on an armed node; show its own sentence.
-      setAlarmError(errorText(e))
-    } finally {
-      setAlarmBusy(false)
-    }
-  }
-
   /** An alarm whose node is not on any loaded canvas yet: read it, then reveal it in the tree. */
   const openAlarmNode = async (objectId: string) => {
     const loaded = await dispatch(loadNodes([objectId])).unwrap().catch(() => null)
@@ -520,6 +491,7 @@ export default function MapsOperatorPanel() {
       const marker = markers[nodeId]
       const cameraId = alarm.cameraId || marker?.cameraId
       const active = alarm.status !== 'closed'
+      const blocked = ackBlockedKey(alarm)
       return {
         key: alarm.id ?? `${nodeId}:${alarm.raisedAt}`,
         primary: alarm.objectName || marker?.name || (cameraId ? camerasById[cameraId]?.name : '') || nodeId,
@@ -533,10 +505,11 @@ export default function MapsOperatorPanel() {
           else void openAlarmNode(nodeId)
         },
         action: {
-          title: alarm.canAck ? t('alarms.acknowledge') : t('alarms.cannotAcknowledge'),
+          title: blocked ? t(blocked) : t('alarms.acknowledgeHint'),
+          label: t('alarms.acknowledge'),
           icon: <CheckCircleOutlineIcon fontSize="small" />,
-          disabled: !alarm.canAck,
-          onClick: () => openAlarmDialog(alarm, 'acknowledge'),
+          disabled: !!blocked,
+          onClick: () => setAlarmDialog(alarm),
         },
       }
     }
@@ -559,35 +532,55 @@ export default function MapsOperatorPanel() {
       (a, b) => (a[0] === '' ? 1 : 0) - (b[0] === '' ? 1 : 0)))
   }
 
-  const acknowledgeZone = async (zoneId: string) => {
+  // A zone with any alarm on guard needs a comment for the whole pass; one note covers the batch.
+  const openZoneDialog = (zoneId: string, title: string, alarms: MapAlarm[]) => {
+    setZoneDialog({
+      zoneId,
+      title,
+      requiresComment: alarms.some(
+        (alarm) => alarm.status !== 'closed' && !!alarm.ackRequiresComment),
+    })
+    setZoneComment('')
+  }
+
+  const submitZone = async () => {
+    if (!zoneDialog) return
+
+    setZoneBusy(true)
     try {
-      const result = await acknowledgeZoneAlarms(zoneId)
+      const result = await acknowledgeZoneAlarms(zoneDialog.zoneId, zoneComment)
       const accepted = t('control.acknowledgeAccepted', { count: result.acknowledged })
       const left = t('control.acknowledgeRejected', { count: result.rejected.length })
       setZoneNotice({
         severity: result.rejected.length === 0 ? 'success' : 'warning',
         text: result.rejected.length === 0 ? accepted : `${accepted} · ${left}`,
       })
+      setZoneDialog(null)
       void dispatch(loadAlarms({}))
     } catch (e) {
       setZoneNotice({ severity: 'error', text: errorText(e) })
+    } finally {
+      setZoneBusy(false)
     }
   }
 
-  const alarmSections: MapObjectSection[] = alarmGroups.map(([zoneId, alarms]) => ({
-    title: zoneId
+  const alarmSections: MapObjectSection[] = alarmGroups.map(([zoneId, alarms]) => {
+    const title = zoneId
       ? markers[zoneId]?.name || spaces.find((s) => s.id === zoneId)?.name || zoneId
-      : t('maps.alarmsUnguarded'),
-    hint: zoneId ? t('maps.alarmsZoneHint') : t('maps.alarmsUnguardedHint'),
-    action: zoneId
-      ? {
-          title: t('control.acknowledgeAll'),
-          label: t('control.acknowledgeAll'),
-          onClick: () => void acknowledgeZone(zoneId),
-        }
-      : undefined,
-    items: alarms.map(alarmItem),
-  }))
+      : t('maps.alarmsUnguarded')
+    return {
+      title,
+      hint: zoneId ? t('maps.alarmsZoneHint') : t('maps.alarmsUnguardedHint'),
+      action: zoneId
+        ? {
+            title: t('control.acknowledgeAll'),
+            label: t('control.acknowledgeAll'),
+            onClick: () => openZoneDialog(zoneId, title, alarms),
+          }
+        : undefined,
+      items: alarms.map(alarmItem),
+    }
+  })
 
   if (alarmSections.length === 0) {
     alarmSections.push({
@@ -774,49 +767,32 @@ export default function MapsOperatorPanel() {
       />
 
       {alarmDialog && (
-        <Dialog open onClose={() => setAlarmDialog(null)} maxWidth="xs" fullWidth>
-          <DialogTitle>{t('alarms.handle')}</DialogTitle>
+        <AlarmHandleDialog alarm={alarmDialog} onClose={() => setAlarmDialog(null)} />
+      )}
+
+      {zoneDialog && (
+        <Dialog open onClose={() => setZoneDialog(null)} maxWidth="xs" fullWidth>
+          <DialogTitle>{t('control.acknowledgeAll')}</DialogTitle>
           <DialogContent>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              {alarmDialog.alarm.objectName || alarmDialog.alarm.objectId} · {t(`alarms.status.${alarmDialog.alarm.status || 'active'}`)}
-            </Typography>
-
-            {alarmDialog.action === 'close' && (
-              <RadioGroup
-                row
-                value={alarmReason}
-                onChange={(_, value) => setAlarmReason(value as 'false_alarm' | 'other')}
-              >
-                <FormControlLabel value="false_alarm" control={<Radio size="small" />} label={t('alarms.reason.falseAlarm')} />
-                <FormControlLabel value="other" control={<Radio size="small" />} label={t('alarms.reason.other')} />
-              </RadioGroup>
-            )}
-
+            <Typography variant="body2" sx={{ mb: 2 }}>{zoneDialog.title}</Typography>
             <TextField
               multiline
               minRows={2}
               fullWidth
-              label={t('alarms.comment')}
-              value={alarmComment}
-              onChange={(event) => setAlarmComment(event.target.value)}
-              sx={{ mt: 2 }}
+              required={zoneDialog.requiresComment}
+              label={zoneDialog.requiresComment ? t('alarms.commentRequired') : t('alarms.comment')}
+              value={zoneComment}
+              onChange={(event) => setZoneComment(event.target.value)}
             />
-
-            {alarmError && <Alert severity="error" sx={{ mt: 2 }}>{alarmError}</Alert>}
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => setAlarmDialog(null)}>{t('common.cancel')}</Button>
-            {alarmDialog.action === 'acknowledge' && alarmDialog.alarm.status === 'returned' && (
-              <Button onClick={() => setAlarmDialog({ ...alarmDialog, action: 'close' })}>
-                {t('alarms.close')}
-              </Button>
-            )}
+            <Button onClick={() => setZoneDialog(null)}>{t('common.cancel')}</Button>
             <Button
               variant="contained"
-              disabled={alarmBusy || (alarmDialog.action === 'acknowledge' && !alarmDialog.alarm.canAck)}
-              onClick={() => void submitAlarmDialog()}
+              disabled={zoneBusy || (zoneDialog.requiresComment && zoneComment.trim() === '')}
+              onClick={() => void submitZone()}
             >
-              {alarmDialog.action === 'close' ? t('alarms.close') : t('alarms.acknowledge')}
+              {t('control.acknowledgeAll')}
             </Button>
           </DialogActions>
         </Dialog>
