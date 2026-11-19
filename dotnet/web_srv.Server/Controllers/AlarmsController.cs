@@ -30,7 +30,20 @@ public class AlarmsController(MapProto.MapService.MapServiceClient map) : Contro
     return MapApi.Json(await map.GetAlarmsAsync(request, MapApi.Options(ct)));
   }
 
-  // 409 when the condition is active and the node is armed; 403 without the `acknowledge` right.
+  // One row, for a panel or an event's details that named an alarm id rather than a page.
+  [HttpGet("{id}")]
+  public async Task<IActionResult> GetAlarm(string id, CancellationToken ct)
+  {
+    var response = await map.GetAlarmAsync(new MapProto.GetAlarmRequest
+    {
+      Id = id,
+      Caller = User.ToMapCaller(),
+    }, MapApi.Options(ct));
+
+    return MapApi.Json(response);
+  }
+
+  // A live condition on an armed node needs a comment; 403 without the `acknowledge` right.
   [HttpPost("{id}/acknowledge")]
   public async Task<IActionResult> Acknowledge(
     string id, [FromBody] AlarmActionDto? body, CancellationToken ct)

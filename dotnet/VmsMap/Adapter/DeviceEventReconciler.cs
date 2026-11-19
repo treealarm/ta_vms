@@ -20,9 +20,11 @@ namespace VmsMap.Adapter
   /// event: the state is written and the journal gets one, with a deterministic id derived from the
   /// snapshot so a redelivery is a no-op.
   /// <para>
-  /// A part that disappears from the manifest is marked <c>present=false</c>; its node, state and
-  /// history stay. A camera that did not answer at all only has <c>reachable</c> changed — nothing
-  /// is marked absent by an unanswered call.
+  /// A part that disappears from the manifest is marked <c>present=false</c> and loses its live
+  /// contact state — it must not read as open or closed when the device no longer reports it. Its
+  /// node and history stay, and its open alarm stays too: a part vanishing from a manifest is a
+  /// fault an operator resolves, not the condition going away. A camera that did not answer at all
+  /// only has <c>reachable</c> changed — nothing is marked absent by an unanswered call.
   /// </para>
   /// </remarks>
   internal sealed class DeviceEventReconciler
@@ -33,7 +35,6 @@ namespace VmsMap.Adapter
     private readonly EventsWriter _eventsWriter;
     private readonly DeviceEventTranslator _translator;
     private readonly SensorAlarmService _sensorAlarms;
-    private readonly AlarmStore _alarms;
     private readonly ILogger<DeviceEventReconciler> _logger;
 
     public DeviceEventReconciler(
@@ -43,7 +44,6 @@ namespace VmsMap.Adapter
       EventsWriter eventsWriter,
       DeviceEventTranslator translator,
       SensorAlarmService sensorAlarms,
-      AlarmStore alarms,
       ILogger<DeviceEventReconciler> logger)
     {
       _db = db;
@@ -52,7 +52,6 @@ namespace VmsMap.Adapter
       _eventsWriter = eventsWriter;
       _translator = translator;
       _sensorAlarms = sensorAlarms;
-      _alarms = alarms;
       _logger = logger;
     }
 
@@ -92,7 +91,7 @@ namespace VmsMap.Adapter
       // The alarm work is collected here and done after the transaction commits: the rule needs
       // the effective arming, which is a call to two other services, and a network call must not
       // happen with the camera's rows locked.
-      var gone = new List<Guid>();
+      var absent = new List<Guid>();
       var toReconcile = new List<(Guid ObjectId, string Kind, string Token, string? Contact)>();
 
       // The manifest is brought in line before the state transaction opens: one pass for the whole
@@ -135,16 +134,9 @@ namespace VmsMap.Adapter
           continue;
 
         row.reachable = true;
-        row.present = part.Present;
 
-        if (!part.Present)
-        {
-          // A successful answer that no longer lists the part. Its node, state and history stay;
-          // its alarms are dealt with as the device being gone.
-          gone.Add(row.object_id);
-          continue;
-        }
-
+        // The same ordering guard as a state change: a snapshot from a dead process must not
+        // mark a part absent after a newer one restored it.
         if (!DeviceCursor.Accept(
               row.last_epoch, row.last_seq, row.last_observed_at,
               message.Epoch, seq: null, message.ObservedAt))
@@ -152,6 +144,18 @@ namespace VmsMap.Adapter
           continue;
         }
 
+        if (!part.Present)
+        {
+          // A successful answer that no longer lists the part. Its node and history stay, but it
+          // is no longer live, and its alarm is left alone: a part vanishing from a manifest is a
+          // fault for an operator to resolve, not the condition clearing.
+          row.present = false;
+          absent.Add(row.object_id);
+          AdvanceCursor(row, message);
+          continue;
+        }
+
+        row.present = true;
         var objectId = Utils.ConvertGuidToObjectId(row.object_id);
 
         var synthetic = new DeviceEventMessage(
@@ -199,38 +203,77 @@ namespace VmsMap.Adapter
           }
         }
 
-        DeviceCursor.Advance(
-          lastEpoch: row.last_epoch,
-          setEpoch: value => row.last_epoch = value,
-          setSeq: value => row.last_seq = value,
-          setObservedAt: value => row.last_observed_at = value,
-          epoch: message.Epoch!,
-          seq: null,
-          observedAt: message.ObservedAt);
+        AdvanceCursor(row, message);
       }
 
-      // Everything the camera no longer lists is absent, but its node and history stay.
+      // Everything the camera no longer lists is absent, but its node and history stay. The
+      // camera's own row is not a part of the manifest: it answered, so it is present — this also
+      // heals rows the old sweep marked absent.
       foreach (var row in rows)
       {
         row.reachable = true;
-        if (!listed.Contains((row.part_kind, row.part_token)) && row.present)
+
+        if (string.Equals(row.part_kind, DeviceObjectId.DevicePart, StringComparison.Ordinal))
         {
-          row.present = false;
-          gone.Add(row.object_id);
+          row.present = true;
+          continue;
         }
+
+        // Listed parts already had their own flag set from the manifest above.
+        if (listed.Contains((row.part_kind, row.part_token)))
+          continue;
+
+        if (!DeviceCursor.Accept(
+              row.last_epoch, row.last_seq, row.last_observed_at,
+              message.Epoch, seq: null, message.ObservedAt))
+        {
+          continue;
+        }
+
+        row.present = false;
+        absent.Add(row.object_id);
+        AdvanceCursor(row, message);
       }
 
       await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      foreach (var objectId in gone)
-        await _alarms.CloseForDeviceGoneAsync(objectId, ct);
+      foreach (var objectId in absent)
+        await ClearContactStateAsync(objectId, ct);
 
       foreach (var part in toReconcile)
         await _sensorAlarms.ReconcileAsync(
           part.ObjectId, cameraId, part.Kind, part.Token, part.Contact, part.Contact, ct);
     }
+
+    private static void AdvanceCursor(DBDeviceNode row, DeviceSnapshotMessage message) =>
+      DeviceCursor.Advance(
+        lastEpoch: row.last_epoch,
+        setEpoch: value => row.last_epoch = value,
+        setSeq: value => row.last_seq = value,
+        setObservedAt: value => row.last_observed_at = value,
+        epoch: message.Epoch!,
+        seq: null,
+        observedAt: message.ObservedAt);
+
+    /// <summary>
+    /// Takes the live contact off a part the device no longer reports: it must not read as open or
+    /// closed when nobody is saying so. The alarm and its ALARM state stay — the condition did not
+    /// go away, it stopped being observable.
+    /// </summary>
+    private Task ClearContactStateAsync(Guid objectId, CancellationToken ct) =>
+      _stateWriter.ChangeAsync(
+        Utils.ConvertGuidToObjectId(objectId),
+        add: [],
+        remove:
+        [
+          DeviceEventTranslator.SensorOpen,
+          DeviceEventTranslator.SensorClosed,
+          DeviceEventTranslator.RelayActive,
+          DeviceEventTranslator.RelayInactive,
+        ],
+        ct);
 
     /// <summary>
     /// Stores what the device said about itself. Called only for a snapshot that carries an

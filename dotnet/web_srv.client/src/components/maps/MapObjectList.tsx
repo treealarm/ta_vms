@@ -14,8 +14,15 @@ export type MapObjectItem = {
   disabled?: boolean
   /** Indents the row under the device it belongs to. */
   indent?: boolean
-  /** A second action at the end of the row -- entering a container, say -- without selecting it. */
-  action?: { title: string; icon: React.ReactNode; onClick: () => void; disabled?: boolean }
+  /** A second action at the end of the row -- accepting an alarm, say -- without selecting it.
+   * With a label it is a named button; without one, an icon the tooltip explains. */
+  action?: {
+    title: string
+    icon: React.ReactNode
+    label?: string
+    onClick: () => void
+    disabled?: boolean
+  }
 }
 
 export type MapObjectSection = {
@@ -91,19 +98,38 @@ export default function MapObjectList({ sections }: { sections: MapObjectSection
                       secondaryTypographyProps={{ component: 'div' }}
                     />
                     {item.action && (
+                      // A disabled button swallows pointer events, so the tooltip that explains
+                      // the refusal hangs on the wrapper.
                       <Tooltip title={item.action.title}>
-                        <IconButton
-                          size="small"
-                          edge="end"
-                          disabled={item.action.disabled}
-                          sx={{ ml: 0.5 }}
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            item.action?.onClick()
-                          }}
-                        >
-                          {item.action.icon}
-                        </IconButton>
+                        <span>
+                          {item.action.label ? (
+                            <Button
+                              size="small"
+                              startIcon={item.action.icon}
+                              disabled={item.action.disabled}
+                              sx={{ ml: 0.5, flexShrink: 0 }}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                item.action?.onClick()
+                              }}
+                            >
+                              {item.action.label}
+                            </Button>
+                          ) : (
+                            <IconButton
+                              size="small"
+                              edge="end"
+                              disabled={item.action.disabled}
+                              sx={{ ml: 0.5 }}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                item.action?.onClick()
+                              }}
+                            >
+                              {item.action.icon}
+                            </IconButton>
+                          )}
+                        </span>
                       </Tooltip>
                     )}
                   </ListItemButton>

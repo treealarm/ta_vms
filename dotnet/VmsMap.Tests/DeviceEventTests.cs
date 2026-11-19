@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VmsMap.Adapter;
 using VmsMap.Db;
 using VmsMap.Domain;
+using VmsMap.Domain.Arming;
 
 namespace VmsMap.Tests;
 
@@ -100,9 +101,10 @@ public class DeviceEventWriterTests
 
   private sealed record Services(
     VmsMapDbContext Db, DeviceNodeService Nodes, DeviceEventWriter Writer,
-    DeviceEventReconciler Reconciler, string ObjectId);
+    DeviceEventReconciler Reconciler, AlarmStore Alarms, string ObjectId);
 
-  private static async Task<Services> CreateAsync()
+  private static async Task<Services> CreateAsync(
+    bool armed = false, DBDeviceObjectSettings? settings = null)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -117,7 +119,13 @@ public class DeviceEventWriterTests
     var updates = new MapUpdateService(db, map, tracks, statesUpdate);
     var nodes = TestWiring.DeviceNodes(db, map, updates);
 
-    var sensorAlarms = TestWiring.SensorAlarms(db, statesUpdate, map);
+    var arming = new TestCameraState(armed);
+    var objectSettings = TestWiring.ObjectSettings(db);
+    var alarms = TestWiring.Alarms(db, map, statesUpdate, arming);
+    var sensorAlarms = new SensorAlarmService(
+      db, objectSettings, TestWiring.Arming(db, arming, objectSettings), alarms, map,
+      NullLogger<SensorAlarmService>.Instance);
+
     var stateWriter = new ObjectStateWriter(db, stateService, statesUpdate);
     var eventsWriter = new EventsWriter(db, new EventsService(db, map));
     var writer = new DeviceEventWriter(
@@ -130,13 +138,18 @@ public class DeviceEventWriterTests
 
     var reconciler = new DeviceEventReconciler(
       db, nodes, stateWriter, eventsWriter, new DeviceEventTranslator(), sensorAlarms,
-      TestWiring.Alarms(db, map, statesUpdate),
       NullLogger<DeviceEventReconciler>.Instance);
 
     var objectId = await nodes.EnsureAsync(
       DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token, default);
 
-    return new Services(db, nodes, writer, reconciler, objectId!);
+    if (settings is not null)
+    {
+      db.DeviceObjectSettings.Add(settings);
+      await db.SaveChangesAsync();
+    }
+
+    return new Services(db, nodes, writer, reconciler, alarms, objectId!);
   }
 
   private static DeviceEventMessage Input(
@@ -316,5 +329,160 @@ public class DeviceEventWriterTests
 
     Assert.Equal(1, await s.Db.Events.CountAsync());
     Assert.Equal(2, (await s.Db.DeviceNodes.SingleAsync(n => n.object_id == Guid.Parse(s.ObjectId))).last_seq);
+  }
+
+  // ── A part that vanishes from the manifest ───────────────────────────────────────────────────
+
+  private static DBDeviceObjectSettings AlarmOn(string triggerOn) => new()
+  {
+    object_id = Guid.Parse(DeviceObjectId.For(
+      DeviceObjectId.CameraSource, CameraId, DeviceObjectId.DigitalInputPart, Token)),
+    arm_mode = ArmMode.Inherit,
+    trigger_on = triggerOn,
+    alarm_enabled = true,
+  };
+
+  private static DeviceSnapshotPartMessage Part(string contact, bool present = true) =>
+    new(DeviceObjectId.DigitalInputPart, Token, IdleState: null,
+        System.Text.Json.JsonSerializer.SerializeToElement(contact), Active: null, present);
+
+  private static DeviceSnapshotMessage SnapshotOf(
+    DateTimeOffset at, DeviceSnapshotPartMessage[] parts,
+    string? epoch = null, bool reachable = true) =>
+    new(CameraSourceKind, CameraId, reachable, at,
+        epoch ?? Guid.NewGuid().ToString(), Device: null, parts);
+
+  private static Task<DBAlarm?> OpenAlarm(VmsMapDbContext db) =>
+    db.Alarms.AsNoTracking()
+      .Where(a => a.status != AlarmStatus.Closed)
+      .OrderByDescending(a => a.raised_at)
+      .FirstOrDefaultAsync();
+
+  private static async Task<bool> PresentAsync(VmsMapDbContext db, string objectId) =>
+    (await db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == Guid.Parse(objectId))).present;
+
+  // The manifest is the only statement allowed to say a part is gone. A part it no longer lists
+  // stops reading as live, but its alarm is not the system's to close: the condition cannot clear
+  // by itself, and an operator resolves that fault with a comment.
+  [Fact]
+  public async Task APartMissingFromTheManifestLosesItsStateButKeepsItsAlarm()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+
+    Assert.NotNull(await OpenAlarm(s.Db));
+    Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+
+    var states = await States(s.Db, s.ObjectId);
+    Assert.DoesNotContain(DeviceEventTranslator.SensorClosed, states);
+    Assert.DoesNotContain(DeviceEventTranslator.SensorOpen, states);
+    Assert.Contains(CameraStateWriter.Alarm, states);
+    Assert.Equal(AlarmStatus.Active, (await OpenAlarm(s.Db))!.status);
+    Assert.False(await PresentAsync(s.Db, s.ObjectId));
+  }
+
+  [Fact]
+  public async Task RepeatedMissesDoNotCloseTheAlarmByThemselves()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+
+    for (var minute = 1; minute <= 3; minute++)
+      await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(minute), []), default);
+
+    Assert.Equal(AlarmStatus.Active, (await OpenAlarm(s.Db))!.status);
+    Assert.Single(await s.Db.Alarms.Where(a => a.status != AlarmStatus.Closed).ToListAsync());
+  }
+
+  [Fact]
+  public async Task APartThatComesBackRestoresItsStateWithoutASecondAlarm()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(2), [Part(ClosedContact)]), default);
+
+    Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+    Assert.True(await PresentAsync(s.Db, s.ObjectId));
+    Assert.Single(await s.Db.Alarms.Where(a => a.status != AlarmStatus.Closed).ToListAsync());
+  }
+
+  [Fact]
+  public async Task APartClosedByTheOperatorRaisesAgainWhenItComesBack()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+
+    var alarm = (await OpenAlarm(s.Db))!;
+    var outcome = await s.Alarms.CloseAsync(
+      alarm.id, "alice", AlarmCloseReason.Other, "the sensor was removed", default);
+    Assert.Equal(AlarmMove.Applied, outcome.Move);
+    Assert.Null(await OpenAlarm(s.Db));
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(2), [Part(ClosedContact)]), default);
+
+    Assert.NotNull(await OpenAlarm(s.Db));
+    Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+  }
+
+  [Fact]
+  public async Task AnUnansweredSweepDoesNotMarkAPartAbsent()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(
+      SnapshotOf(at.AddMinutes(1), [], reachable: false), default);
+
+    Assert.True(await PresentAsync(s.Db, s.ObjectId));
+    Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+    Assert.NotNull(await OpenAlarm(s.Db));
+  }
+
+  [Fact]
+  public async Task ALateSnapshotCannotMarkAPartAbsent()
+  {
+    var s = await CreateAsync(armed: true, settings: AlarmOn(ClosedContact));
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(
+      SnapshotOf(at, [Part(ClosedContact)], epoch: Guid.NewGuid().ToString()), default);
+
+    // A process whose answer was observed five minutes ago, and which no longer lists the part.
+    await s.Reconciler.ApplyAsync(
+      SnapshotOf(at.AddMinutes(-5), [], epoch: Guid.NewGuid().ToString()), default);
+
+    Assert.True(await PresentAsync(s.Db, s.ObjectId));
+    Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+  }
+
+  // The camera's own row is not part of the manifest a sweep restates: the camera answered, so it
+  // is present. A retention alarm on its node must survive every snapshot.
+  [Fact]
+  public async Task ACameraSnapshotNeverMarksTheCameraAbsent()
+  {
+    var s = await CreateAsync();
+    var camera = Guid.Parse(CameraObjectId.For(CameraId));
+
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      camera, AlarmSource.Retention, "retention:1"), default);
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(DateTimeOffset.UtcNow, []), default);
+
+    Assert.True(await PresentAsync(s.Db, camera.ToString()));
+    Assert.NotNull(await OpenAlarm(s.Db));
   }
 }

@@ -97,6 +97,7 @@ public sealed class CameraConfigSubscriber(
         subscriptionService.NotifyConfigChanged(cameraId);
         // The I/O watcher holds a connection of its own; a changed address or credential would
         // leave it polling the old one forever. The next settings read opens a new subscription.
+        // Nothing is announced as absent: a configuration edit is not a device fact.
         await deviceIoState.ForgetAsync(cameraId);
       }
       logger.LogDebug("ONVIF caches invalidated for {Count} camera(s)", evt.CameraIds.Count);

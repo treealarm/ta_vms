@@ -66,7 +66,6 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
     _logger = logger;
 
     _state.DeviceEventRaised += Enqueue;
-    _state.PartsForgotten += OnPartsForgotten;
   }
 
   /// <summary>The epoch every message of this process carries.</summary>
@@ -86,31 +85,6 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
       _logger.LogWarning(
         "Device event queue is full — dropping {Kind}/{Token} of camera {CameraId}",
         evt.Kind, evt.Token, evt.CameraId);
-  }
-
-  private void OnPartsForgotten(ForgottenParts forgotten)
-  {
-    // A part that disappeared is not a transition; the whole manifest is restated with present
-    // false, leaving the node and its history in the tree.
-    var parts = forgotten.Parts
-      .Select(p => new DeviceSnapshotPart(
-        DeviceJson.KindName(p.Kind),
-        p.Descriptor.Token,
-        p.Descriptor.IdleState,
-        Contact: null,
-        Active: null,
-        Present: false))
-      .ToList();
-
-    EnqueueSnapshot(new DeviceSnapshotPayload(
-      "camera", forgotten.CameraId, Reachable: true, DateTimeOffset.UtcNow, Device: null, parts));
-  }
-
-  private void EnqueueSnapshot(DeviceSnapshotPayload snapshot)
-  {
-    if (!_snapshots.Writer.TryWrite(snapshot))
-      _logger.LogWarning(
-        "Device snapshot queue is full — dropping the snapshot of camera {CameraId}", snapshot.SourceId);
   }
 
   public Task StartAsync(CancellationToken cancellationToken)
@@ -202,7 +176,6 @@ public sealed class DeviceEventPublisher : IHostedService, IDeviceSnapshotPublis
   public Task StopAsync(CancellationToken cancellationToken)
   {
     _state.DeviceEventRaised -= Enqueue;
-    _state.PartsForgotten -= OnPartsForgotten;
     _cts.Cancel();
     return Task.CompletedTask;
   }

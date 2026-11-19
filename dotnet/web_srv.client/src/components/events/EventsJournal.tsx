@@ -12,13 +12,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { toIsoUtc } from '../../dto/dtos'
 import type { EpisodeDto } from '../../dto/dtos'
-import type { MapEvent } from '../../dto/mapDtos'
+import type { MapAlarm, MapEvent } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes } from '../../store/objectsSlice'
 import {
   DEFAULT_EVENT_COUNT, emptyEventsFilter, eventProp, loadEvents, type EventsFilter,
 } from '../../store/eventsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
+import { mapApi } from '../../api/mapApi'
+import { AlarmActionButton } from '../alarms/AlarmAction'
 import ArchiveHlsPreview from '../ArchiveHlsPreview'
 import EventDetailsPanel from '../EventDetailsPanel'
 import EventOpenInPlayback from '../EventOpenInPlayback'
@@ -376,6 +378,9 @@ function MapEventDetails({ event }: { event: MapEvent }) {
   const { t } = useTranslation()
   const images = imagesOf(event)
   const props = (event.extraProps ?? []).filter((prop) => prop.visualType !== 'image_fs')
+  // An alarm lifecycle event names the row it belongs to; the plain retention `alarm` event does
+  // not, and has no separate row to accept.
+  const alarmId = eventProp(event, 'alarm_id')
 
   return (
     <Box sx={{ my: 1.5 }}>
@@ -390,11 +395,36 @@ function MapEventDetails({ event }: { event: MapEvent }) {
           <PropertyRow key={prop.propName} name={prop.propName} value={prop.strVal} />
         ))}
       </Stack>
+      {alarmId ? <EventAlarmAction alarmId={alarmId} /> : null}
       {images.length > 0 ? (
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           {images.map((image) => <EventImage key={image} fileId={image} height={120} />)}
         </Stack>
       ) : null}
+    </Box>
+  )
+}
+
+/**
+ * The alarm a lifecycle event names: read once, because the journal holds no alarm page. The
+ * control is the same one the map's list and the object panel show.
+ */
+function EventAlarmAction({ alarmId }: { alarmId: string }) {
+  const [alarm, setAlarm] = useState<MapAlarm | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void mapApi.getAlarm(alarmId)
+      .then((row) => { if (!cancelled) setAlarm(row) })
+      .catch(() => { if (!cancelled) setAlarm(null) })
+    return () => { cancelled = true }
+  }, [alarmId])
+
+  if (!alarm || alarm.status === 'closed') return null
+
+  return (
+    <Box sx={{ mb: 1.5 }}>
+      <AlarmActionButton alarm={alarm} onDone={() => setAlarm(null)} />
     </Box>
   )
 }

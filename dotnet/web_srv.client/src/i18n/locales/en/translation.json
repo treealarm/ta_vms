@@ -1611,9 +1611,17 @@
   "alarms": {
     "handle": "Handle the alarm",
     "acknowledge": "Acknowledge",
+    "acknowledgeHint": "Acknowledge this alarm",
     "close": "Close the alarm",
     "cannotAcknowledge": "This alarm cannot be acknowledged now",
     "comment": "Comment",
+    "commentRequired": "A comment is required",
+    "deviceAbsent": "The device no longer reports this part",
+    "section": "Alarms",
+    "blocked": {
+      "closed": "This alarm is already closed",
+      "noRight": "You do not have the acknowledge right on this node"
+    },
     "openOnMap": "Open on the map",
     "source": {
       "sensor": "Sensor",

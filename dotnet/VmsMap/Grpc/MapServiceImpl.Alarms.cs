@@ -49,6 +49,15 @@ namespace VmsMap.Grpc
       return new MapProto.AlarmList { Open = open, Closed = closed };
     }
 
+    public override async Task<MapProto.Alarm> GetAlarm(
+      MapProto.GetAlarmRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      var caller = ToCaller(request.Caller);
+      var alarm = await RequireVisibleAlarmAsync(request.Id, caller, ct);
+      return await ToAlarmAsync(alarm, caller, ct);
+    }
+
     public override async Task<MapProto.Alarm> AcknowledgeAlarm(
       MapProto.AcknowledgeAlarmRequest request, ServerCallContext context)
     {
@@ -203,13 +212,14 @@ namespace VmsMap.Grpc
             });
             break;
           default:
-            // Refused: either the row closed under us or its condition still holds on a guarded
-            // node. Asking the row is sturdier than reading the store's message text.
+            // Refused: either the row closed under us, or its live condition sits on an armed node
+            // and the request carried no comment. Asking the row is sturdier than reading the
+            // store's message text.
             var fresh = await _alarmStore.FindAsync(alarm.id, ct);
             response.Rejected.Add(new MapProto.AlarmRejection
             {
               AlarmId = alarm.id.ToString(),
-              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "armed",
+              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "comment_required",
             });
             break;
         }
@@ -280,9 +290,9 @@ namespace VmsMap.Grpc
       return result;
     }
 
-    /// <summary>The names and camera ids of a page's nodes, in one query each.</summary>
-    private async Task<Dictionary<Guid, (string Name, string? CameraId)>> MetadataAsync(
-      IReadOnlyCollection<DBAlarm> alarms, CancellationToken ct)
+    /// <summary>The names, camera ids and absent marks of a page's nodes, in one query each.</summary>
+    private async Task<Dictionary<Guid, (string Name, string? CameraId, bool DeviceAbsent)>>
+      MetadataAsync(IReadOnlyCollection<DBAlarm> alarms, CancellationToken ct)
     {
       if (alarms.Count == 0)
         return [];
@@ -294,14 +304,23 @@ namespace VmsMap.Grpc
         .Select(m => new { m.id, m.name })
         .ToDictionaryAsync(m => m.id, m => m.name, ct);
 
-      var cameras = await _db.DeviceNodes.AsNoTracking()
+      // A camera that answered is present; only a part can be absent, and only while its device
+      // does not list it.
+      var devices = await _db.DeviceNodes.AsNoTracking()
         .Where(n => ids.Contains(n.object_id))
-        .Select(n => new { n.object_id, n.source_id })
-        .ToDictionaryAsync(n => n.object_id, n => n.source_id, ct);
+        .Select(n => new { n.object_id, n.source_id, n.part_kind, n.present })
+        .ToDictionaryAsync(n => n.object_id, ct);
 
       return ids.ToDictionary(
         id => id,
-        id => (names.GetValueOrDefault(id) ?? id.ToString(), cameras.GetValueOrDefault(id)));
+        id =>
+        {
+          devices.TryGetValue(id, out var device);
+          var absent = device is not null
+            && !string.Equals(device.part_kind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
+            && !device.present;
+          return (names.GetValueOrDefault(id) ?? id.ToString(), device?.source_id, absent);
+        });
     }
 
     private async Task<MapProto.Alarm> ToAlarmAsync(
@@ -309,32 +328,36 @@ namespace VmsMap.Grpc
       CallerContext caller,
       CancellationToken ct,
       bool? mayAcknowledge = null,
-      Dictionary<Guid, (string Name, string? CameraId)>? metadata = null,
+      Dictionary<Guid, (string Name, string? CameraId, bool DeviceAbsent)>? metadata = null,
       Dictionary<string, string>? armingZones = null)
     {
       var permitted = mayAcknowledge
         ?? await _rightsService.IsAllowedAsync(
           Utils.ConvertGuidToObjectId(alarm.object_id), RightActions.Acknowledge, caller, ct);
 
-      // The gate the store enforces, mirrored so the browser does not have to guess: an active
-      // condition may only be acknowledged on a disarmed node.
+      // The row's own state decides availability; the arming no longer blocks it, it asks for a
+      // comment. Everything is mirrored here so the browser never guesses.
       var armed = alarm.status == AlarmStatus.Active && alarm.condition_active
         && await _alarmStore.IsArmedAsync(alarm.object_id, ct);
 
-      var canAck = permitted && alarm.status != AlarmStatus.Closed
-        && (!alarm.condition_active || !armed);
+      var canAck = permitted && alarm.status != AlarmStatus.Closed;
+      var ackBlockedReason =
+        alarm.status == AlarmStatus.Closed ? "closed"
+        : !permitted ? "no_right"
+        : string.Empty;
 
       string? name = null;
       string? cameraId = null;
+      bool deviceAbsent = false;
       if (metadata is null)
       {
         var meta = await MetadataAsync([alarm], ct);
-        (name, cameraId) = meta.GetValueOrDefault(alarm.object_id);
+        (name, cameraId, deviceAbsent) = meta.GetValueOrDefault(alarm.object_id);
         name ??= Utils.ConvertGuidToObjectId(alarm.object_id);
       }
       else
       {
-        (name, cameraId) = metadata.GetValueOrDefault(alarm.object_id);
+        (name, cameraId, deviceAbsent) = metadata.GetValueOrDefault(alarm.object_id);
         name ??= Utils.ConvertGuidToObjectId(alarm.object_id);
       }
 
@@ -361,6 +384,9 @@ namespace VmsMap.Grpc
         ClosedBy = alarm.closed_by ?? string.Empty,
         SourceEventId = alarm.source_event_id?.ToString() ?? string.Empty,
         CanAck = canAck,
+        AckBlockedReason = ackBlockedReason,
+        AckRequiresComment = canAck && alarm.condition_active && armed,
+        DeviceAbsent = deviceAbsent,
         ObjectName = name ?? string.Empty,
         CameraId = cameraId ?? string.Empty,
         // The zone the alarm is accepted by: the node whose armed property settles this device's

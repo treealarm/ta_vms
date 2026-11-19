@@ -45,8 +45,16 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   is only the fallback across processes. A repeat of the value already stored is not a transition
   and writes no journal row, but it still advances the cursor — that is how a lost message or a
   restart is repaired.
-- **`ALARM` is the condition; acknowledgement is the operator's mark.** ack is refused (409) while
-  the condition holds on an armed node; it never removes `ALARM`, and closing is what does.
+- **A part that vanishes from its device's manifest is a fault, not a closure.** A successful
+  snapshot that no longer lists the part (or lists it `present=false`) clears its live contact
+  state, so nothing reads as open or closed; its node, history and open alarm stay. The system
+  never closes such an alarm — an operator closes it by hand with a comment. A returning part
+  restores its state and either continues the same alarm or raises a new one if the operator had
+  closed it. Only a successful manifest may say a part is gone; an unreachable camera says nothing.
+- **`ALARM` is the condition; acknowledgement is the operator's mark.** A live condition on an
+  armed node may be acknowledged, but only with a comment; the ack never removes `ALARM`, and
+  closing is what does. The row carries why the action is unavailable (`ack_blocked_reason`) so
+  the button says it rather than staying a mute check mark.
 - **The routing engine is VmsSingleton's module**, not VmsMap's: VmsMap writes the journal row and
   its outbox row in one transaction, and the router trusts `map-event-created` for the id only — it
   re-reads the event, the subscriptions and the arming. A run's progress, cooldowns and diagnostics
@@ -96,3 +104,6 @@ left open by a crash.
 - The list beside the map starts with the alarms; picking one opens the space the camera is drawn
   in (this one if it is here, otherwise where it really stands) and selects it. The camera's panel
   then says since when and why, and offers the recording of the alarm beside the live picture.
+- Accepting is offered wherever an alarm is met — the list's row, the node's panel (a camera shows
+  its sensors' alarms too) and an alarm event's details — as the same labelled control, with the
+  same explanation of a refusal.

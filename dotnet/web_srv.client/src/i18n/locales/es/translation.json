@@ -1610,9 +1610,17 @@
   "alarms": {
     "handle": "Atender la alarma",
     "acknowledge": "Confirmar",
+    "acknowledgeHint": "Confirmar esta alarma",
     "close": "Cerrar la alarma",
     "cannotAcknowledge": "Esta alarma no se puede confirmar ahora",
     "comment": "Comentario",
+    "commentRequired": "Se requiere un comentario",
+    "deviceAbsent": "El dispositivo ya no informa de esta pieza",
+    "section": "Alarmas",
+    "blocked": {
+      "closed": "Esta alarma ya está cerrada",
+      "noRight": "No tiene permiso para confirmar alarmas en este nodo"
+    },
     "openOnMap": "Abrir en el mapa",
     "source": {
       "sensor": "Sensor",

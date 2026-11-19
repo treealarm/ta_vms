@@ -16,6 +16,8 @@ import { getControlObject, getNodeArming } from '../../api/controlApi'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes, loadObjProps } from '../../store/objectsSlice'
 import { loadObjectEvents } from '../../store/eventsSlice'
+import { AlarmActionButton } from '../alarms/AlarmAction'
+import { alarmsForNode } from '../alarms/alarmActions'
 import CameraUnifiedCard from '../CameraUnifiedCard'
 import ObjectControl from '../control/ObjectControl'
 import NodeGuard from '../control/NodeGuard'
@@ -62,6 +64,8 @@ export default function ObjectPanel({
   const alarm = useAppSelector((s) => s.states.alarms[nodeId])
   const descriptions = useAppSelector((s) => s.states.descriptions)
   const events = useAppSelector((s) => s.events.byObject[nodeId])
+  const openAlarms = useAppSelector((s) => s.alarms.open)
+  const closedAlarms = useAppSelector((s) => s.alarms.closed)
   const camera = useAppSelector((s) => {
     const cameraId = s.objects.markers[nodeId]?.cameraId
     return cameraId ? s.live.cameraStatesById[cameraId] : undefined
@@ -86,6 +90,11 @@ export default function ObjectPanel({
   const kind = marker?.nodeKind ?? 'object'
   const childrenAlarms = alarm?.childrenAlarms ?? 0
   const states = state?.states ?? []
+  // The alarm entity is the map's, not this panel's: a camera shows its sensors' alarms too, since
+  // the circle on the map is the camera while the condition may stand on a part of it.
+  const nodeAlarms = marker
+    ? alarmsForNode([...openAlarms, ...closedAlarms], marker)
+    : []
 
   // A device part — a sensor or a relay, canonical or the replica the operator clicked — answers
   // with the same control row the Control panel shows, resolved by the server through its owner.
@@ -250,6 +259,40 @@ export default function ObjectPanel({
             <NodeGuard objectId={nodeId} onChanged={() => setControlNonce((n) => n + 1)} />
           </Section>
         )}
+
+        {nodeAlarms.length > 0 ? (
+          <Section title={t('alarms.section')}>
+            <Stack spacing={1}>
+              {nodeAlarms.map((row) => (
+                <Box key={row.id ?? `${row.objectId}:${row.raisedAt}`}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                      {row.objectName || nodeId}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t(`alarms.status.${row.status || 'active'}`)}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                    {[
+                      t(`alarms.source.${row.source || 'sensor'}`),
+                      row.severity ? t(`alarms.severity.${row.severity}`) : '',
+                      row.raisedAt ? formatTime(row.raisedAt) : '',
+                    ].filter(Boolean).join(' · ')}
+                  </Typography>
+                  {row.deviceAbsent ? (
+                    <Chip size="small" color="warning" label={t('alarms.deviceAbsent')} sx={{ my: 0.5 }} />
+                  ) : null}
+                  {row.status !== 'closed' ? (
+                    <Box sx={{ mt: 0.5 }}>
+                      <AlarmActionButton alarm={row} />
+                    </Box>
+                  ) : null}
+                </Box>
+              ))}
+            </Stack>
+          </Section>
+        ) : null}
 
         <Section title={t('maps.node.states')}>
           <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>

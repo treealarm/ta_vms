@@ -48,10 +48,10 @@ namespace VmsMap.Adapter
   /// and <c>ALARM</c> comes off only when no open alarm on the object still has an active
   /// condition.
   /// <para>
-  /// Acknowledging is gated by the effective arming, but that check is a UX gate, not a lock: the
-  /// arming lives in two other services and cannot be serialised with this transaction. Disarming
-  /// concurrently may refuse one acknowledgement — the operator repeats it — and the other order
-  /// (the ack got in first) does nothing an unarmed node would not allow anyway.
+  /// Acknowledging a live condition on an armed node is allowed, but requires a comment: the
+  /// arming lives in two other services and cannot be serialised with this transaction, so the
+  /// check is a UX gate rather than a lock. The comment is what makes the acknowledgement a
+  /// decision instead of a reflex; a disarmed node or a cleared condition needs no such note.
   /// </para>
   /// </remarks>
   public sealed class AlarmStore
@@ -370,13 +370,15 @@ namespace VmsMap.Adapter
 
       if (alarm.status == AlarmStatus.Active)
       {
-        // A live condition may only be acknowledged on a node the operator has disarmed: an
-        // acknowledgement is "I have seen it", not "make it go away".
-        if (alarm.condition_active && armed)
+        // A live condition on an armed node may be acknowledged — an acknowledgement is "I have
+        // seen it", not "make it go away" — but the comment makes that a decision rather than a
+        // reflex. Disarming, or a condition that already cleared, needs no such note.
+        if (alarm.condition_active && armed && string.IsNullOrWhiteSpace(comment))
         {
           await CommitAsync(tx, ct);
           return new AlarmOutcome(
-            AlarmMove.Refused, alarm, "the condition is active and the node is armed");
+            AlarmMove.Refused, alarm,
+            "the condition is active and the node is armed; a comment is required");
         }
 
         alarm.status = AlarmStatus.Acknowledged;
@@ -415,9 +417,9 @@ namespace VmsMap.Adapter
     }
 
     /// <summary>
-    /// An operator closing an alarm whose condition is already gone. An active condition may not be
-    /// closed by hand — that would suppress an alarm that is still true; the reason says whether the
-    /// alarm was real.
+    /// An operator closing an alarm whose condition is already gone — or one on a part the device
+    /// no longer reports. Any other active condition may not be closed by hand: that would
+    /// suppress an alarm that is still true. The reason says whether the alarm was real.
     /// </summary>
     public async Task<AlarmOutcome> CloseAsync(
       Guid alarmId, string actor, string reason, string? comment, CancellationToken ct)
@@ -439,9 +441,25 @@ namespace VmsMap.Adapter
 
       if (alarm.condition_active)
       {
-        await CommitAsync(tx, ct);
-        return new AlarmOutcome(
-          AlarmMove.Refused, alarm, "the condition is active; it cannot be closed by hand");
+        // A part that vanished from its device's manifest cannot clear its condition by itself;
+        // an operator resolves that fault by hand. The comment is the record of what they decided.
+        if (!await IsPartAbsentAsync(alarm.object_id, ct))
+        {
+          await CommitAsync(tx, ct);
+          return new AlarmOutcome(
+            AlarmMove.Refused, alarm, "the condition is active; it cannot be closed by hand");
+        }
+
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+          await CommitAsync(tx, ct);
+          return new AlarmOutcome(
+            AlarmMove.Refused, alarm,
+            "the device no longer reports this part; a comment is required to close its alarm");
+        }
+
+        alarm.condition_active = false;
+        alarm.cleared_at ??= DateTime.UtcNow;
       }
 
       alarm.status = AlarmStatus.Closed;
@@ -451,54 +469,16 @@ namespace VmsMap.Adapter
       alarm.closed_by = actor;
       await _db.SaveChangesAsync(ct);
 
+      // A returned alarm already lost ALARM when its condition cleared; one closed on an absent
+      // part still holds it, and that is the transition this call removes. Idempotent either way.
+      await SyncObjectAlarmStateAsync(alarm.object_id, ct);
+
       await WriteEventAsync(alarm, ClosedEvent, null, null, ct,
         ("close_reason", alarm.close_reason),
         ("close_comment", comment));
 
       await CommitAsync(tx, ct);
       return new AlarmOutcome(AlarmMove.Applied, alarm);
-    }
-
-    /// <summary>
-    /// The device or its part is gone: every open alarm on the node closes as device_gone. Being
-    /// unreachable is not being gone — only a successful answer that no longer lists the part, or a
-    /// removed camera, gets here.
-    /// </summary>
-    public async Task CloseForDeviceGoneAsync(Guid objectId, CancellationToken ct)
-    {
-      await using var tx = await BeginAsync(ct);
-
-      var open = await _db.Alarms
-        .Where(a => a.object_id == objectId && a.status != AlarmStatus.Closed)
-        .ToListAsync(ct);
-      if (open.Count == 0)
-      {
-        await CommitAsync(tx, ct);
-        return;
-      }
-
-      var now = DateTime.UtcNow;
-      foreach (var alarm in open)
-      {
-        alarm.status = AlarmStatus.Closed;
-        alarm.condition_active = false;
-        alarm.cleared_at ??= now;
-        alarm.closed_at = now;
-        alarm.close_reason = AlarmCloseReason.DeviceGone;
-        alarm.closed_by = SystemActor;
-      }
-
-      await _db.SaveChangesAsync(ct);
-
-      foreach (var alarm in open)
-      {
-        await WriteEventAsync(alarm, ClosedEvent, null, null, ct,
-          ("close_reason", alarm.close_reason),
-          ("close_comment", null));
-      }
-
-      await SyncObjectAlarmStateAsync(objectId, ct);
-      await CommitAsync(tx, ct);
     }
 
     // ── Internals ────────────────────────────────────────────────────────────────────────────────
@@ -584,6 +564,22 @@ namespace VmsMap.Adapter
         .Where(n => n.object_id == objectId)
         .Select(n => n.source_id)
         .FirstOrDefaultAsync(ct);
+
+    /// <summary>
+    /// Whether the alarm stands on a part its device no longer reports. A camera that answered is
+    /// present, so only a part row can be absent; a node that is not a device at all is not.
+    /// </summary>
+    private async Task<bool> IsPartAbsentAsync(Guid objectId, CancellationToken ct)
+    {
+      var node = await _db.DeviceNodes.AsNoTracking()
+        .Where(n => n.object_id == objectId)
+        .Select(n => new { n.part_kind, n.present })
+        .FirstOrDefaultAsync(ct);
+
+      return node is not null
+        && !string.Equals(node.part_kind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
+        && !node.present;
+    }
 
     private async Task WriteEventAsync(
       DBAlarm alarm,

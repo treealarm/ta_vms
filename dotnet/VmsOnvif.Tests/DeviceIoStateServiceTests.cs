@@ -329,38 +329,37 @@ public class DeviceIoStateServiceTests
     Assert.False(polarity.Initialized);
   }
 
+  // A dropped subscription is not a device fact. Forgetting a camera's I/O — because its
+  // configuration changed, or both lists turned out empty — forgets the presence and publishes
+  // nothing: the next discovery sweep restates the manifest, and that is the only statement
+  // allowed to say a part is absent.
   [Fact]
-  public async Task ForgettingACameraAnnouncesItsPartsAsAbsent()
+  public async Task ForgettingACameraDropsItsPartsWithoutAnnouncingThem()
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    ForgottenParts? forgotten = null;
-    service.PartsForgotten += f => forgotten = f;
 
     await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
     await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
 
     await service.ForgetAsync(CameraId);
 
-    Assert.NotNull(forgotten);
-    Assert.Equal(CameraId, forgotten!.CameraId);
-    Assert.Equal(2, forgotten.Parts.Count);
-    Assert.Contains(forgotten.Parts, p => p.Descriptor.Token == "input1");
-    Assert.Contains(forgotten.Parts, p => p.Descriptor.Token == "relay1");
+    Assert.Null(service.TryGetSnapshot(CameraId, DeviceIoKind.DigitalInput, "input1"));
+    Assert.Null(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1"));
+    Assert.Empty(service.Snapshots());
   }
 
   [Fact]
-  public async Task ANodeWideForgetDoesNotAnnounceEveryCamera()
+  public async Task ANodeWideForgetAlsoForgetsEveryCameraSilently()
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    var announced = 0;
-    service.PartsForgotten += _ => announced++;
 
     await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
     await service.ForgetAllAsync();
 
-    Assert.Equal(0, announced);
+    Assert.Null(service.TryGetSnapshot(CameraId, DeviceIoKind.DigitalInput, "input1"));
+    Assert.Empty(service.Snapshots());
   }
 
   // The operator's command is a wish, not a report: it is shown at once, because the camera may

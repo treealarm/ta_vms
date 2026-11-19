@@ -71,6 +71,14 @@ public class AlarmStoreTests
     return (camera, input);
   }
 
+  /// <summary>The last successful manifest no longer listed the part.</summary>
+  private static async Task MarkAbsentAsync(Services s, Guid objectId)
+  {
+    var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == objectId);
+    node.present = false;
+    await s.Db.SaveChangesAsync();
+  }
+
   private static RaiseAlarmSpec Sensor(Guid objectId, string key = SensorOneKey, string? trigger = "open") =>
     new(objectId, AlarmSource.Sensor, key, Trigger: trigger);
 
@@ -128,7 +136,7 @@ public class AlarmStoreTests
   }
 
   [Fact]
-  public async Task AcknowledgingALiveConditionIsRefusedWhileArmed()
+  public async Task AcknowledgingALiveConditionWhileArmedRequiresAComment()
   {
     var s = Create();
     var (_, input) = await DeviceAsync(s);
@@ -136,10 +144,18 @@ public class AlarmStoreTests
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
 
-    var outcome = await s.Store.AcknowledgeAsync(alarm.id, AliceName, "seen", default);
-
-    Assert.Equal(AlarmMove.Refused, outcome.Move);
+    var refused = await s.Store.AcknowledgeAsync(alarm.id, AliceName, "   ", default);
+    Assert.Equal(AlarmMove.Refused, refused.Move);
     Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
+
+    var applied = await s.Store.AcknowledgeAsync(alarm.id, AliceName, AckComment, default);
+    Assert.Equal(AlarmMove.Applied, applied.Move);
+
+    var row = await ById(s.Db, alarm.id);
+    Assert.Equal(AlarmStatus.Acknowledged, row!.status);
+    Assert.True(row.condition_active);
+    Assert.Equal(AckComment, row.ack_comment);
+    Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
   }
 
   [Fact]
@@ -251,27 +267,64 @@ public class AlarmStoreTests
   }
 
   [Fact]
-  public async Task ADroppedPartClosesEveryOpenAlarmOnIt()
+  public async Task AnActiveConditionStillCannotBeClosedByHand()
   {
     var s = Create();
     var (_, input) = await DeviceAsync(s);
 
-    var first = (await s.Store.RaiseAsync(Sensor(input, SensorOneKey), default)).Alarm!;
-    var second = (await s.Store.RaiseAsync(Sensor(input, SensorTwoKey), default)).Alarm!;
+    var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
 
-    await s.Store.CloseForDeviceGoneAsync(input, default);
+    var outcome = await s.Store.CloseAsync(
+      alarm.id, AliceName, AlarmCloseReason.Other, AckComment, default);
 
-    foreach (var id in new[] { first.id, second.id })
-    {
-      var row = await ById(s.Db, id);
-      Assert.Equal(AlarmStatus.Closed, row!.status);
-      Assert.Equal(AlarmCloseReason.DeviceGone, row.close_reason);
-      Assert.Equal(SystemActorName, row.closed_by);
-      Assert.False(row.condition_active);
-      Assert.NotNull(row.cleared_at);
-    }
+    Assert.Equal(AlarmMove.Refused, outcome.Move);
+    Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
+    Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
+  }
 
+  // A part can vanish from its device's manifest; the condition then cannot clear by itself. The
+  // operator resolves that fault by hand, and the comment is the record of what they decided.
+  [Fact]
+  public async Task APartTheDeviceNoLongerReportsClosesWithAComment()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+
+    var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
+    await MarkAbsentAsync(s, input);
+
+    var comment = "the sensor was removed from the camera";
+    var outcome = await s.Store.CloseAsync(
+      alarm.id, AliceName, AlarmCloseReason.Other, comment, default);
+
+    Assert.Equal(AlarmMove.Applied, outcome.Move);
+
+    var row = await ById(s.Db, alarm.id);
+    Assert.Equal(AlarmStatus.Closed, row!.status);
+    Assert.Equal(AlarmCloseReason.Other, row.close_reason);
+    Assert.Equal(comment, row.close_comment);
+    Assert.Equal(AliceName, row.closed_by);
+    Assert.False(row.condition_active);
+    Assert.NotNull(row.cleared_at);
     Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, input));
+    Assert.Contains(AlarmStore.ClosedEvent, await Events(s.Db));
+  }
+
+  [Fact]
+  public async Task ClosingAnAbsentPartsAlarmRequiresAComment()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+
+    var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
+    await MarkAbsentAsync(s, input);
+
+    var outcome = await s.Store.CloseAsync(
+      alarm.id, AliceName, AlarmCloseReason.Other, "   ", default);
+
+    Assert.Equal(AlarmMove.Refused, outcome.Move);
+    Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
+    Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
   }
 
   [Fact]

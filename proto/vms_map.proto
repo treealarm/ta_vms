@@ -145,6 +145,8 @@ service MapService {
   // acknowledgement and a close reason. GetAlarms answers two keyset pages, open and recently
   // closed, each with its own cursor; the state stays the way the map paints it.
   rpc GetAlarms(GetAlarmsRequest) returns (AlarmList);
+  // One row, for a panel or an event's details that named an alarm id rather than a page.
+  rpc GetAlarm(GetAlarmRequest) returns (Alarm);
   // The acknowledgement, close and raise transitions. Their refusals are gRPC statuses:
   // PERMISSION_DENIED without the right, FAILED_PRECONDITION for a transition the table forbids,
   // NOT_FOUND for an unknown alarm.
@@ -1014,8 +1016,9 @@ message Alarm {
   string closed_by = 19;   // the operator's name, or "system"
   string source_event_id = 20;
 
-  // Whether this caller may acknowledge the row now: the `acknowledge` right, not closed, and
-  // either the condition is gone or the node is disarmed. The browser never guesses this.
+  // Whether this caller may acknowledge the row now: the `acknowledge` right and not closed. A
+  // live condition on an armed node does not block it — it asks for a comment instead
+  // (`ack_requires_comment`). The browser never guesses this.
   bool can_ack = 21;
   // The node's name and its camera id, so a list row needs no second read.
   string object_name = 22;
@@ -1024,6 +1027,15 @@ message Alarm {
   // effective arming, empty while the device is not on guard. The browser groups by it instead of
   // guessing from the tree.
   string arming_source_object_id = 24;
+  // Why the acknowledge action is unavailable to this caller: "closed", "no_right", or empty when
+  // it is available. A single reason, so the button's tooltip has something to say.
+  string ack_blocked_reason = 25;
+  // The condition is live and the node is effectively armed: acknowledging is allowed, but only
+  // with a non-empty comment.
+  bool ack_requires_comment = 26;
+  // The alarm stands on a device part its device no longer reports. It is not live — its contact
+  // state was cleared — and an operator may close it by hand, with a comment.
+  bool device_absent = 27;
 }
 
 // A keyset position: the last row of the previous page. Open pages order by (raised_at, id), the
@@ -1042,6 +1054,11 @@ message GetAlarmsRequest {
   AlarmCursor closed_after = 4;
   // How far back the closed branch reads; 0 means 15 minutes.
   int32 closed_window_minutes = 5;
+}
+
+message GetAlarmRequest {
+  string id = 1;
+  Caller caller = 2;
 }
 
 message AlarmPage {
