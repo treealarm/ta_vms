@@ -48,10 +48,10 @@ namespace VmsMap.Adapter
   /// and <c>ALARM</c> comes off only when no open alarm on the object still has an active
   /// condition.
   /// <para>
-  /// Acknowledging is gated by the effective arming, but that check is a UX gate, not a lock: the
-  /// arming lives in two other services and cannot be serialised with this transaction. Disarming
-  /// concurrently may refuse one acknowledgement — the operator repeats it — and the other order
-  /// (the ack got in first) does nothing an unarmed node would not allow anyway.
+  /// Acknowledging a live condition on an armed node is allowed, but requires a comment: the
+  /// arming lives in two other services and cannot be serialised with this transaction, so the
+  /// check is a UX gate rather than a lock. The comment is what makes the acknowledgement a
+  /// decision instead of a reflex; a disarmed node or a cleared condition needs no such note.
   /// </para>
   /// </remarks>
   public sealed class AlarmStore
@@ -370,13 +370,15 @@ namespace VmsMap.Adapter
 
       if (alarm.status == AlarmStatus.Active)
       {
-        // A live condition may only be acknowledged on a node the operator has disarmed: an
-        // acknowledgement is "I have seen it", not "make it go away".
-        if (alarm.condition_active && armed)
+        // A live condition on an armed node may be acknowledged — an acknowledgement is "I have
+        // seen it", not "make it go away" — but the comment makes that a decision rather than a
+        // reflex. Disarming, or a condition that already cleared, needs no such note.
+        if (alarm.condition_active && armed && string.IsNullOrWhiteSpace(comment))
         {
           await CommitAsync(tx, ct);
           return new AlarmOutcome(
-            AlarmMove.Refused, alarm, "the condition is active and the node is armed");
+            AlarmMove.Refused, alarm,
+            "the condition is active and the node is armed; a comment is required");
         }
 
         alarm.status = AlarmStatus.Acknowledged;

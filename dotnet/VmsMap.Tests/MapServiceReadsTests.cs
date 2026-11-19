@@ -44,6 +44,7 @@ public class MapServiceReadsTests
   private const string FirstRegionKey = "slot-1";
   private const string SecondRegionKey = "slot-2";
   private const string SensorId = "sensor:1";
+  private const string AckComment = "seen";
   private const string AlarmState = "ALARM";
   private const string FigureColor = "#123456";
   private const string FigureKind = "figure";
@@ -780,7 +781,56 @@ public class MapServiceReadsTests
   public async Task AcceptingAZoneReachesTheDevicesThatStandInIt()
   {
     var s = Create();
+    var (space, _, part) = await ZoneWithSensorAsync(s);
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
 
+    var result = await s.Grpc.AcknowledgeSubtreeAlarms(
+      new MapProto.AcknowledgeSubtreeAlarmsRequest
+      {
+        ObjectId = space.ToString(),
+        Caller = Caller(AdminRole, AdminRole),
+      },
+      new TestContext());
+
+    Assert.Equal(1, result.Acknowledged);
+    Assert.Empty(result.Rejected);
+  }
+
+  [Fact]
+  public async Task AcceptingAZoneOnGuardRequiresAComment()
+  {
+    var s = Create();
+    var (space, _, part) = await ZoneWithSensorAsync(s);
+    s.Arming.Armed = true;
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
+
+    var withoutComment = await s.Grpc.AcknowledgeSubtreeAlarms(
+      new MapProto.AcknowledgeSubtreeAlarmsRequest
+      {
+        ObjectId = space.ToString(),
+        Caller = Caller(AdminRole, AdminRole),
+      },
+      new TestContext());
+
+    Assert.Equal(0, withoutComment.Acknowledged);
+    Assert.Equal("comment_required", Assert.Single(withoutComment.Rejected).Reason);
+
+    var withComment = await s.Grpc.AcknowledgeSubtreeAlarms(
+      new MapProto.AcknowledgeSubtreeAlarmsRequest
+      {
+        ObjectId = space.ToString(),
+        Comment = AckComment,
+        Caller = Caller(AdminRole, AdminRole),
+      },
+      new TestContext());
+
+    Assert.Equal(1, withComment.Acknowledged);
+    Assert.Empty(withComment.Rejected);
+  }
+
+  /// <summary>A space with a camera's reference replica in it and a digital input under the camera.</summary>
+  private static async Task<(Guid Space, Guid Camera, Guid Part)> ZoneWithSensorAsync(Services s)
+  {
     var space = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([new BaseMarkerDTO { id = space.ToString(), name = FloorLabel }]);
     s.Db.Spaces.Add(new DBSpace { object_id = space, kind = SpaceKinds.Map });
@@ -814,18 +864,8 @@ public class MapServiceReadsTests
       object_id = replica, camera_id = cameraId, is_reference = true,
     });
     await s.Db.SaveChangesAsync();
-    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
 
-    var result = await s.Grpc.AcknowledgeSubtreeAlarms(
-      new MapProto.AcknowledgeSubtreeAlarmsRequest
-      {
-        ObjectId = space.ToString(),
-        Caller = Caller(AdminRole, AdminRole),
-      },
-      new TestContext());
-
-    Assert.Equal(1, result.Acknowledged);
-    Assert.Empty(result.Rejected);
+    return (space, cameraNode, part);
   }
 
   [Fact]

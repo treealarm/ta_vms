@@ -23,6 +23,10 @@
   отсутствующей части с обязательным комментарием и снимает `ALARM` (вызов
   `SyncObjectAlarmStateAsync`). Семь новых тестов в `DeviceEventTests`, три в `AlarmStoreTests`
   вместо удалённого. Проверено: `dotnet build dotnet/ta_vms.sln` — 0/0, `VmsMap.Tests` — 400.
+- ☑ **VmsMap: принятие на охране с комментарием.** `AcknowledgeAsync` отказывает только при
+  `condition_active && armed` без комментария; массовое принятие зоны отдаёт
+  `comment_required` вместо `armed`. Тесты: `AlarmStoreTests` (оба исхода), новый
+  `AcceptingAZoneOnGuardRequiresAComment`. Проверено: `VmsMap.Tests` — 401.
 
 ## Что установлено
 

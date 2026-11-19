@@ -136,7 +136,7 @@ public class AlarmStoreTests
   }
 
   [Fact]
-  public async Task AcknowledgingALiveConditionIsRefusedWhileArmed()
+  public async Task AcknowledgingALiveConditionWhileArmedRequiresAComment()
   {
     var s = Create();
     var (_, input) = await DeviceAsync(s);
@@ -144,10 +144,18 @@ public class AlarmStoreTests
 
     var alarm = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
 
-    var outcome = await s.Store.AcknowledgeAsync(alarm.id, AliceName, "seen", default);
-
-    Assert.Equal(AlarmMove.Refused, outcome.Move);
+    var refused = await s.Store.AcknowledgeAsync(alarm.id, AliceName, "   ", default);
+    Assert.Equal(AlarmMove.Refused, refused.Move);
     Assert.Equal(AlarmStatus.Active, (await ById(s.Db, alarm.id))!.status);
+
+    var applied = await s.Store.AcknowledgeAsync(alarm.id, AliceName, AckComment, default);
+    Assert.Equal(AlarmMove.Applied, applied.Move);
+
+    var row = await ById(s.Db, alarm.id);
+    Assert.Equal(AlarmStatus.Acknowledged, row!.status);
+    Assert.True(row.condition_active);
+    Assert.Equal(AckComment, row.ack_comment);
+    Assert.Contains(CameraStateWriter.Alarm, await States(s.Db, input));
   }
 
   [Fact]

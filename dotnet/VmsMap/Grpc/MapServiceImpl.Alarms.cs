@@ -203,13 +203,14 @@ namespace VmsMap.Grpc
             });
             break;
           default:
-            // Refused: either the row closed under us or its condition still holds on a guarded
-            // node. Asking the row is sturdier than reading the store's message text.
+            // Refused: either the row closed under us, or its live condition sits on an armed node
+            // and the request carried no comment. Asking the row is sturdier than reading the
+            // store's message text.
             var fresh = await _alarmStore.FindAsync(alarm.id, ct);
             response.Rejected.Add(new MapProto.AlarmRejection
             {
               AlarmId = alarm.id.ToString(),
-              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "armed",
+              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "comment_required",
             });
             break;
         }
