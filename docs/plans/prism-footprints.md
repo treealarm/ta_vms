@@ -10,6 +10,15 @@
 >
 > Стенд — OnvifSim в Docker (`tests/onvifsim/onvifsim_lab.py`), порт 8090. Демо-мир — `maryland`.
 
+## Сделано
+
+- **2026-11-19: серверная модель и геометрия (п. 1).** `WorldObject.Holes`; `Polygon.NormalizeHole`,
+  `RingsCross`, `HoleFits`, `Contains(outline, holes, p)`, `Triangulate(outline, holes)` с мостами;
+  `Primitives.Prism(..., holes, ...)`, плитка и парковка не заходят в двор; проверки
+  `WorldValidation.CheckHoles`; тесты `PrismGeometryTests` (двор, два двора, стены внутрь, 13
+  отказов) и `WorldFilesTests` (дыры в файле мира). `dotnet test` — **361 из 361**. Коммит
+  `3f023aa` в OnvifSim.
+
 ## Что есть сейчас
 
 - `prism` — объект мира с одним кольцом `WorldObject.Points` (локальные метры, направление
