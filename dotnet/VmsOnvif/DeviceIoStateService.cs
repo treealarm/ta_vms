@@ -67,14 +67,6 @@ public readonly record struct DeviceIoSnapshot(
   bool Pending);
 
 /// <summary>
-/// The camera's parts that were just forgotten, and therefore are no longer present. Published as
-/// a snapshot with <c>present=false</c>: the node and its history stay, only the part is gone.
-/// </summary>
-public sealed record ForgottenParts(
-  string CameraId,
-  IReadOnlyList<(DeviceIoKind Kind, DeviceDescriptor Descriptor)> Parts);
-
-/// <summary>
 /// What discovery needs from the state service: report what the camera's configuration says it has,
 /// and read the last state it announced. Kept apart from the events so discovery can be tested
 /// without a watcher.
@@ -159,12 +151,6 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
 
   /// <summary>One transition of one part, ready to be published.</summary>
   public event Action<DeviceEvent>? DeviceEventRaised;
-
-  /// <summary>
-  /// The camera's parts are gone from the tree's point of view — the camera was reconfigured or
-  /// deleted. The map marks them absent; it never deletes the nodes.
-  /// </summary>
-  public event Action<ForgottenParts>? PartsForgotten;
 
   /// <summary>
   /// The last logical state the camera reported for one device, or null when it has said nothing
@@ -418,20 +404,14 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   /// gone, and when its configuration changed: the connection the watcher holds may no longer be
   /// the right one, and the next settings read opens a new subscription on the current one.
   /// <para>
-  /// The parts that were known are announced as absent, so the map does not wait for a discovery
-  /// sweep to notice that a camera no longer has them.
+  /// The parts are not announced as absent: a dropped subscription is not a device fact. The next
+  /// discovery sweep publishes the manifest, and that is the only statement allowed to say a part
+  /// is gone.
   /// </para>
   /// </summary>
-  public Task ForgetAsync(string cameraId) => ForgetAsync(cameraId, announce: true);
-
-  private async Task ForgetAsync(string cameraId, bool announce)
+  public async Task ForgetAsync(string cameraId)
   {
-    if (_presence.TryRemove(cameraId, out var presence) && announce)
-    {
-      var parts = presence.All();
-      if (parts.Count > 0)
-        PartsForgotten?.Invoke(new ForgottenParts(cameraId, parts));
-    }
+    _presence.TryRemove(cameraId, out _);
 
     if (!_watchers.TryRemove(cameraId, out var lazy) || !lazy.IsValueCreated)
       return;
@@ -452,14 +432,13 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
 
   /// <summary>
   /// Drops every subscription — a change that names no camera may have moved or reconfigured any of
-  /// them. The parts are not announced one by one: a node-wide change at this scale would turn into
-  /// thousands of messages, and discovery re-establishes the manifest on its next sweep.
+  /// them. Nothing is announced: discovery re-establishes each camera's manifest on its next sweep.
   /// </summary>
   public async Task ForgetAllAsync()
   {
     _presence.Clear();
     foreach (var cameraId in _watchers.Keys.ToArray())
-      await ForgetAsync(cameraId, announce: false);
+      await ForgetAsync(cameraId);
   }
 
   public async ValueTask DisposeAsync()
