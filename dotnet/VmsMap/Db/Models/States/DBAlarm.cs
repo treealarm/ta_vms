@@ -56,6 +56,8 @@ namespace VmsMap.Db
     public const string ReturnedToNormal = "returned_to_normal";
     public const string AcknowledgedAfterNormal = "acknowledged_after_normal";
     public const string AutoReturnedToNormal = "auto_returned_to_normal";
+    // Kept for the history: no longer written. A part that vanishes from its device's manifest
+    // leaves its alarm open, and an operator closes it with a comment.
     public const string DeviceGone = "device_gone";
     public const string FalseAlarm = "false_alarm";
     public const string Other = "other";
