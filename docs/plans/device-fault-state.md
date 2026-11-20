@@ -19,6 +19,14 @@
 - ☑ Уточнены два пункта: `present` и fault-тревога пишутся в одной транзакции снимка под общим
   порядком блокировок, инвариант проверяется PostgreSQL-тестом гонки; `reason='reset'` — расширение
   контракта закрытия через proto/валидацию/CHECK/UI, а не уже существующая возможность.
+- ☑ Схема и константы: `0004_device_fault.sql` (`source='fault'`, `close_reason='reset'`),
+  `AlarmSource.Fault`, `AlarmCloseReason.Reset`; `dotnet build` — 0/0.
+- ☑ Серверная часть: `DeviceFaultService`, `DeviceEventReconciler` (fault-сервис в транзакции
+  снимка), `DeviceNodeService` (объединение частей манифеста и настроек), `AlarmStore`
+  (`RaiseAsync`, `NormalFaultAsync`, `AcknowledgeAsync`, `CloseAsync`), DI. Проверено 2026-11-20:
+  `VmsMap.Tests` — 417 с `VMS_MAP_TEST_DSN` на `ta_map_test`, в том числе последовательность
+  `active → acknowledged → returned → active → returned → closed`, откат `present`+fault и гонка
+  сброса со снимком (11 Postgres-тестов `AlarmStorePostgresTests`).
 
 ## Что установлено
 
