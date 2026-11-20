@@ -37,6 +37,13 @@
   `AcknowledgeSubtreeAlarms` пропускает fault; `AlarmCloseDto`/контроллер и proto-комментарий
   обновлены. Проверено 2026-11-20: `VmsMap.Tests` — 421 (с DSN), `web_srv.Tests` — 25, включая
   JSON `present`/`source`/`closeReason`.
+- ☑ Фронтенд: `present` в `MapMarker`/`MapFigure`; `FAULT_COLOR` и янтарный `nodeStyle` при
+  `present=false` (красный `ALARM` важнее); янтарные `PartStateDot`/`NodeStateChips`/`StatesTable`
+  и предупреждение `ObjectPanel`; `CameraAlarm` `fault`/`faultReturned` и приоритет кольца;
+  секция **Faults** отдельно от групп зон; `alarmActions` (`isFault`, `canResetFault`,
+  `resetBlockedKey`), `AlarmAction` — «Reset fault» через `closeAlarm(..., 'reset', comment)`;
+  локали en/es. Проверено 2026-11-20: `npm run build`, `npm run lint`, `npm test` — 109 тестов,
+  включая `nodeStyle` и переходы `alarmActions`.
 
 ## Что установлено
 
