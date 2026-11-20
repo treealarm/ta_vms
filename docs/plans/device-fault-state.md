@@ -32,6 +32,11 @@
   `source`/`close_reason`/`CloseAlarmRequest`. Проверено 2026-11-20: `VmsMap.Tests` — 419 с
   `VMS_MAP_TEST_DSN`, в том числе `present` у части и её реплики в `GetMarkersByIds`/`GetByIds`;
   `dotnet build` — 0/0.
+- ☑ API/web_srv: `CloseAlarm` принимает `reset` только для fault и не для тревоги условия;
+  `ToAlarmAsync` отдаёт `reset_required` у `returned`-fault и `ack_requires_comment=false`;
+  `AcknowledgeSubtreeAlarms` пропускает fault; `AlarmCloseDto`/контроллер и proto-комментарий
+  обновлены. Проверено 2026-11-20: `VmsMap.Tests` — 421 (с DSN), `web_srv.Tests` — 25, включая
+  JSON `present`/`source`/`closeReason`.
 
 ## Что установлено
 
