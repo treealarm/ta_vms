@@ -122,6 +122,7 @@ public class DeviceEventWriterTests
     var arming = new TestCameraState(armed);
     var objectSettings = TestWiring.ObjectSettings(db);
     var alarms = TestWiring.Alarms(db, map, statesUpdate, arming);
+    var faults = new DeviceFaultService(db, alarms);
     var sensorAlarms = new SensorAlarmService(
       db, objectSettings, TestWiring.Arming(db, arming, objectSettings), alarms, map,
       NullLogger<SensorAlarmService>.Instance);
@@ -137,7 +138,7 @@ public class DeviceEventWriterTests
       NullLogger<DeviceEventWriter>.Instance);
 
     var reconciler = new DeviceEventReconciler(
-      db, nodes, stateWriter, eventsWriter, new DeviceEventTranslator(), sensorAlarms,
+      db, nodes, stateWriter, eventsWriter, new DeviceEventTranslator(), sensorAlarms, faults,
       NullLogger<DeviceEventReconciler>.Instance);
 
     var objectId = await nodes.EnsureAsync(
@@ -358,6 +359,13 @@ public class DeviceEventWriterTests
       .OrderByDescending(a => a.raised_at)
       .FirstOrDefaultAsync();
 
+  /// <summary>The open alarm of one source: the condition alarm and the fault are separate rows.</summary>
+  private static Task<DBAlarm?> AlarmBySource(VmsMapDbContext db, string source) =>
+    db.Alarms.AsNoTracking()
+      .Where(a => a.source == source && a.status != AlarmStatus.Closed)
+      .OrderByDescending(a => a.raised_at)
+      .FirstOrDefaultAsync();
+
   private static async Task<bool> PresentAsync(VmsMapDbContext db, string objectId) =>
     (await db.DeviceNodes.AsNoTracking()
       .SingleAsync(n => n.object_id == Guid.Parse(objectId))).present;
@@ -382,7 +390,12 @@ public class DeviceEventWriterTests
     Assert.DoesNotContain(DeviceEventTranslator.SensorClosed, states);
     Assert.DoesNotContain(DeviceEventTranslator.SensorOpen, states);
     Assert.Contains(CameraStateWriter.Alarm, states);
-    Assert.Equal(AlarmStatus.Active, (await OpenAlarm(s.Db))!.status);
+    Assert.Equal(AlarmStatus.Active, (await AlarmBySource(s.Db, AlarmSource.Sensor))!.status);
+
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+    Assert.Equal(AlarmStatus.Active, fault!.status);
+    Assert.True(fault.condition_active);
     Assert.False(await PresentAsync(s.Db, s.ObjectId));
   }
 
@@ -397,8 +410,13 @@ public class DeviceEventWriterTests
     for (var minute = 1; minute <= 3; minute++)
       await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(minute), []), default);
 
-    Assert.Equal(AlarmStatus.Active, (await OpenAlarm(s.Db))!.status);
-    Assert.Single(await s.Db.Alarms.Where(a => a.status != AlarmStatus.Closed).ToListAsync());
+    Assert.Equal(AlarmStatus.Active, (await AlarmBySource(s.Db, AlarmSource.Sensor))!.status);
+    Assert.Single(await s.Db.Alarms
+      .Where(a => a.source == AlarmSource.Sensor && a.status != AlarmStatus.Closed)
+      .ToListAsync());
+    Assert.Single(await s.Db.Alarms
+      .Where(a => a.source == AlarmSource.Fault && a.status != AlarmStatus.Closed)
+      .ToListAsync());
   }
 
   [Fact]
@@ -413,7 +431,14 @@ public class DeviceEventWriterTests
 
     Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
     Assert.True(await PresentAsync(s.Db, s.ObjectId));
-    Assert.Single(await s.Db.Alarms.Where(a => a.status != AlarmStatus.Closed).ToListAsync());
+    Assert.Single(await s.Db.Alarms
+      .Where(a => a.source == AlarmSource.Sensor && a.status != AlarmStatus.Closed)
+      .ToListAsync());
+
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+    Assert.Equal(AlarmStatus.Returned, fault!.status);
+    Assert.False(fault.condition_active);
   }
 
   [Fact]
@@ -425,16 +450,138 @@ public class DeviceEventWriterTests
     await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
     await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
 
-    var alarm = (await OpenAlarm(s.Db))!;
+    var alarm = (await AlarmBySource(s.Db, AlarmSource.Sensor))!;
     var outcome = await s.Alarms.CloseAsync(
       alarm.id, "alice", AlarmCloseReason.Other, "the sensor was removed", default);
     Assert.Equal(AlarmMove.Applied, outcome.Move);
-    Assert.Null(await OpenAlarm(s.Db));
+    Assert.Null(await AlarmBySource(s.Db, AlarmSource.Sensor));
 
     await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(2), [Part(ClosedContact)]), default);
 
-    Assert.NotNull(await OpenAlarm(s.Db));
+    Assert.NotNull(await AlarmBySource(s.Db, AlarmSource.Sensor));
+    Assert.Equal(AlarmStatus.Returned, (await AlarmBySource(s.Db, AlarmSource.Fault))!.status);
     Assert.Contains(DeviceEventTranslator.SensorClosed, await States(s.Db, s.ObjectId));
+  }
+
+  [Fact]
+  public async Task APartMissingWithoutAConditionAlarmStillRaisesAFault()
+  {
+    var s = await CreateAsync();
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+    Assert.Equal(AlarmStatus.Active, fault!.status);
+    Assert.True(fault.condition_active);
+    Assert.Null(await AlarmBySource(s.Db, AlarmSource.Sensor));
+    Assert.False(await PresentAsync(s.Db, s.ObjectId));
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, s.ObjectId));
+  }
+
+  [Fact]
+  public async Task ARelayMissingFromTheManifestRaisesAFault()
+  {
+    var s = await CreateAsync();
+    var at = DateTimeOffset.UtcNow;
+    var relay = Guid.Parse(DeviceObjectId.For(
+      CameraSourceKind, CameraId, DeviceObjectId.RelayPart, "relay1"));
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at,
+      [new DeviceSnapshotPartMessage(
+        DeviceObjectId.RelayPart, "relay1", IdleState: null, Contact: null,
+        Active: System.Text.Json.JsonSerializer.SerializeToElement(true), Present: true)]),
+      default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+    Assert.Equal(relay, fault!.object_id);
+    Assert.Equal(AlarmStatus.Active, fault.status);
+  }
+
+  [Fact]
+  public async Task AConfiguredPartMissingFromTheFirstManifestGetsAFault()
+  {
+    var s = await CreateAsync();
+    var configured = await s.Nodes.EnsureAsync(
+      CameraSourceKind, CameraId, DeviceObjectId.DigitalInputPart, "configured", default);
+    Assert.NotNull(configured);
+
+    await s.Reconciler.ApplyAsync(
+      SnapshotOf(DateTimeOffset.UtcNow, [Part(ClosedContact)]), default);
+
+    var node = await s.Db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == Guid.Parse(configured!));
+    Assert.False(node.present);
+
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+    Assert.Equal(Guid.Parse(configured!), fault!.object_id);
+  }
+
+  [Fact]
+  public async Task AFaultIsReturnedWhenThePartComesBackWithoutAConditionAlarm()
+  {
+    var s = await CreateAsync();
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+    var fault = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(fault);
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(2), [Part(ClosedContact)]), default);
+
+    var row = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(row);
+    Assert.Equal(fault!.id, row!.id);
+    Assert.Equal(AlarmStatus.Returned, row.status);
+    Assert.False(row.condition_active);
+    Assert.True(await PresentAsync(s.Db, s.ObjectId));
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, s.ObjectId));
+  }
+
+  [Fact]
+  public async Task AFaultReactivatesTheSameRowWhenThePartGoesAgain()
+  {
+    var s = await CreateAsync();
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+    var first = (await AlarmBySource(s.Db, AlarmSource.Fault))!;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(2), [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(3), []), default);
+
+    var again = await AlarmBySource(s.Db, AlarmSource.Fault);
+    Assert.NotNull(again);
+    Assert.Equal(first.id, again!.id);
+    Assert.Equal(AlarmStatus.Active, again.status);
+    Assert.Equal(2, await s.Db.Events.CountAsync(e => e.event_name == AlarmStore.RaisedEvent));
+  }
+
+  [Fact]
+  public async Task AFaultDoesNotLightTheNodeOrItsParents()
+  {
+    var s = await CreateAsync();
+    var at = DateTimeOffset.UtcNow;
+
+    await s.Reconciler.ApplyAsync(SnapshotOf(at, [Part(ClosedContact)]), default);
+    await s.Reconciler.ApplyAsync(SnapshotOf(at.AddMinutes(1), []), default);
+
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, s.ObjectId));
+
+    var nodeAlarm = await s.Db.AlarmStates.AsNoTracking()
+      .FirstOrDefaultAsync(a => a.id == Guid.Parse(s.ObjectId));
+    Assert.True(nodeAlarm is null || !nodeAlarm.alarm);
+
+    var cameraAlarm = await s.Db.AlarmStates.AsNoTracking()
+      .FirstOrDefaultAsync(a => a.id == Guid.Parse(CameraObjectId.For(CameraId)));
+    Assert.True(cameraAlarm is null || cameraAlarm.children_alarms == 0);
   }
 
   [Fact]
