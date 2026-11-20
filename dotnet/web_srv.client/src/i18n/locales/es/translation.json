@@ -1382,7 +1382,8 @@
       "locate": "Mostrar en el mapa",
       "showInTree": "Mostrar en el árbol",
       "deviceOf": "Diagrama de",
-      "showDevice": "Mostrar dispositivo"
+      "showDevice": "Mostrar dispositivo",
+      "fault": "Avería"
     },
     "tabSpaces": "Espacios",
     "tabDevices": "Dispositivos",
@@ -1520,7 +1521,8 @@
     "viewLive": "En vivo",
     "viewAlarm": "Grabación de la alarma",
     "tabObject": "Objeto",
-    "objectOnItsTab": "Los ajustes propios de este nodo — nombre, aspecto, propiedades — están en la pestaña Objeto."
+    "objectOnItsTab": "Los ajustes propios de este nodo — nombre, aspecto, propiedades — están en la pestaña Objeto.",
+    "faults": "Averías"
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",
@@ -1619,13 +1621,15 @@
     "section": "Alarmas",
     "blocked": {
       "closed": "Esta alarma ya está cerrada",
-      "noRight": "No tiene permiso para confirmar alarmas en este nodo"
+      "noRight": "No tiene permiso para confirmar alarmas en este nodo",
+      "resetRequired": "Una avería se restablece, no se confirma"
     },
     "openOnMap": "Abrir en el mapa",
     "source": {
       "sensor": "Sensor",
       "retention": "Retención",
-      "subscription": "Suscripción"
+      "subscription": "Suscripción",
+      "fault": "Avería"
     },
     "status": {
       "active": "Activa",
@@ -1640,6 +1644,13 @@
     "reason": {
       "falseAlarm": "Falsa alarma",
       "other": "Otra"
+    },
+    "reset": "Restablecer avería",
+    "resetHint": "Restablezca la avería cuando el dispositivo vuelva a informar de la pieza. El comentario queda en el registro.",
+    "faultStillPresent": "El dispositivo aún no informa de esta pieza. La avería solo se puede restablecer cuando vuelva a informar.",
+    "handleFault": "Atender la avería",
+    "closeReason": {
+      "reset": "Restablecida"
     }
   },
   "control": {

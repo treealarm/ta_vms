@@ -199,7 +199,7 @@ function TreeRow({ marker, depth }: { marker: MapMarker; depth: number }) {
         {/* A part is driven from the Control panel, not from here; the tree only says what it
             currently is. */}
         {marker.nodeKind === 'part' ? (
-          <PartStateDot state={ctx.states[marker.id]} descriptions={ctx.descriptions} />
+          <PartStateDot state={ctx.states[marker.id]} descriptions={ctx.descriptions} present={marker.present} />
         ) : null}
         {alarming ? (
           <Tooltip title={alarm?.alarm

@@ -4,7 +4,7 @@ import L from 'leaflet'
 import type { CameraPlacementDto, LandmarkDto } from '../dto/dtos'
 import type { MapLevel, MapVisual } from '../dto/mapDtos'
 import { bearing, destination, distance, fovPolygon } from './geo'
-import { ALARM_COLOR } from './cameraStatus'
+import { ALARM_COLOR, FAULT_COLOR } from './cameraStatus'
 import { inLayer, levelRanges } from './zoomLevels'
 import { useMapZoom } from '../hooks/useMapZoom'
 import { visualImageUrl } from './visualImage'
@@ -21,6 +21,13 @@ const cameraIcon = (
   const width = visual?.imageWidth || 26
   const height = visual?.imageHeight || 26
   const picture = visualImageUrl(visual?.image)
+  // A live condition is red and pulses; a fault is amber. "Recent" and "returned" keep the colour
+  // of their own kind at a lower opacity, so the two never read as the same event.
+  const ring = alarm === 'active' ? { color: ALARM_COLOR, opacity: 1, pulse: true }
+    : alarm === 'recent' ? { color: ALARM_COLOR, opacity: 0.45, pulse: false }
+      : alarm === 'fault' ? { color: FAULT_COLOR, opacity: 1, pulse: true }
+        : alarm === 'faultReturned' ? { color: FAULT_COLOR, opacity: 0.45, pulse: false }
+          : null
 
   const body = picture
     ? `<img src="${picture}" alt="" draggable="false" style="width:${width}px;height:${height}px;`
@@ -35,9 +42,9 @@ const cameraIcon = (
   return L.divIcon({
     className: 'vms-map-camera',
     html: `<div style="position:relative;width:${width}px;height:${height}px">`
-      + (alarm ? `<div class="${alarm === 'active' ? 'vms-alarm-pulse' : ''}" style="position:absolute;left:-4px;top:-4px;`
+      + (ring ? `<div class="${ring.pulse ? 'vms-alarm-pulse' : ''}" style="position:absolute;left:-4px;top:-4px;`
         + `width:${width + 8}px;height:${height + 8}px;`
-        + `border-radius:50%;border:3px solid ${ALARM_COLOR};opacity:${alarm === 'active' ? 1 : 0.45};box-sizing:border-box"></div>` : '')
+        + `border-radius:50%;border:3px solid ${ring.color};opacity:${ring.opacity};box-sizing:border-box"></div>` : '')
       + `<div style="width:${width}px;height:${height}px;transform:rotate(${headingDeg}deg);transform-origin:center">`
       + body
       + `</div></div>`,
@@ -76,8 +83,11 @@ const diagramLinkIcon = (visual?: MapVisual) => {
 /** The diagram a selected camera offers a way into, beside it on the canvas. */
 export type CameraDiagramLink = { label: string; visual?: MapVisual; onOpen: () => void }
 
-/** Whether a camera is alarming now, did lately, or neither. */
-export type CameraAlarm = 'active' | 'recent' | null
+/**
+ * What a camera's ring says: a live condition alarm, one closed lately, a live fault, or a fault
+ * whose part reports again and waits for the operator's reset. A reset fault has no ring.
+ */
+export type CameraAlarm = 'active' | 'recent' | 'fault' | 'faultReturned' | null
 
 const headingHandleIcon = L.divIcon({
   className: 'vms-map-handle',

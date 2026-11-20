@@ -8,6 +8,7 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import PersonPinCircleIcon from '@mui/icons-material/PersonPinCircle'
+import RestartAltIcon from '@mui/icons-material/RestartAlt'
 import SearchIcon from '@mui/icons-material/Search'
 import TableRowsIcon from '@mui/icons-material/TableRows'
 import { Polyline } from 'react-leaflet'
@@ -32,12 +33,12 @@ import FiguresLayer from '../../map/FiguresLayer'
 import TracksLayer from '../../map/TracksLayer'
 import { figureAtPlacement, pointsCentre } from '../../map/geo'
 import { enterZoom } from '../../map/zoomLevels'
-import { CameraMarker } from '../../map/markers'
+import { CameraMarker, type CameraAlarm } from '../../map/markers'
 import { Footprints } from '../../map/footprints'
 import DetectionsLayer from '../../map/DetectionsLayer'
-import { ALARM_COLOR, DEFAULT_NODE_COLOR, nodeStyle } from '../../map/nodeStyle'
+import { ALARM_COLOR, DEFAULT_NODE_COLOR, FAULT_COLOR, nodeStyle } from '../../map/nodeStyle'
 import { AlarmHandleDialog } from '../alarms/AlarmAction'
-import { ackBlockedKey } from '../alarms/alarmActions'
+import { ackBlockedKey, isFault, resetBlockedKey } from '../alarms/alarmActions'
 import ObjectTree from '../objects/ObjectTree'
 import ObjectPanel from '../objects/ObjectPanel'
 import ObjectSearch from '../objects/ObjectSearch'
@@ -183,7 +184,9 @@ export default function MapsOperatorPanel() {
   const placementColor = (p: { cameraId: string; isReference: boolean }) => {
     const node = nodeForPlacement(p)
     if (!node) return DEFAULT_NODE_COLOR
-    return nodeStyle(figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions).color
+    return nodeStyle(
+      figureById.get(node.id), statesById[node.id], alarmsById[node.id], descriptions, node.present,
+    ).color
   }
 
   // Only the picture a placement draws: a camera may have another replica in the same space — a
@@ -216,13 +219,25 @@ export default function MapsOperatorPanel() {
     [openAlarms, closedAlarms],
   )
 
+  // The ring a camera carries, by how urgent its rows are: a live condition alarm, then a live
+  // fault, then a fault whose part is back and waits for its reset, then a condition alarm closed
+  // lately. A reset fault leaves no ring; a fault never outranks the condition it stands beside.
   const byCamera = useMemo(() => {
-    const result = new Map<string, 'active' | 'recent'>()
+    const rank: Record<Exclude<CameraAlarm, null>, number> = {
+      active: 4, fault: 3, faultReturned: 2, recent: 1,
+    }
+    const result = new Map<string, CameraAlarm>()
     for (const alarm of alarmRows) {
       const cameraId = alarm.cameraId || (alarm.objectId ? markers[alarm.objectId]?.cameraId : undefined)
       if (!cameraId) continue
-      const active = alarm.status !== 'closed'
-      if (!result.has(cameraId) || active) result.set(cameraId, active ? 'active' : 'recent')
+
+      const kind: CameraAlarm = isFault(alarm)
+        ? alarm.status === 'closed' ? null : alarm.conditionActive ? 'fault' : 'faultReturned'
+        : alarm.status === 'closed' ? 'recent' : 'active'
+      if (!kind) continue
+
+      const known = result.get(cameraId)
+      if (!known || rank[kind] > rank[known]) result.set(cameraId, kind)
     }
     return result
   }, [alarmRows, markers])
@@ -483,6 +498,7 @@ export default function MapsOperatorPanel() {
     t(`alarms.source.${alarm.source || 'sensor'}`),
     t(`alarms.status.${alarm.status || 'active'}`),
     t(`alarms.severity.${alarm.severity || 'warning'}`),
+    alarm.status === 'closed' && alarm.closeReason === 'reset' ? t('alarms.closeReason.reset') : '',
     alarm.raisedAt ? clock(alarm.raisedAt) : '',
   ].filter(Boolean).join(' · ')
 
@@ -491,12 +507,16 @@ export default function MapsOperatorPanel() {
       const marker = markers[nodeId]
       const cameraId = alarm.cameraId || marker?.cameraId
       const active = alarm.status !== 'closed'
-      const blocked = ackBlockedKey(alarm)
+      // A returned fault is settled by a reset; an active one is acknowledged like any alarm.
+      const fault = isFault(alarm)
+      const reset = fault && alarm.status === 'returned'
+      const blocked = reset ? resetBlockedKey(alarm) : ackBlockedKey(alarm)
+      const colour = fault ? FAULT_COLOR : ALARM_COLOR
       return {
         key: alarm.id ?? `${nodeId}:${alarm.raisedAt}`,
         primary: alarm.objectName || marker?.name || (cameraId ? camerasById[cameraId]?.name : '') || nodeId,
         secondary: alarmSecondary(alarm),
-        dot: active ? ALARM_COLOR : `${ALARM_COLOR}66`,
+        dot: active ? colour : `${colour}66`,
         selected: nodeId === selectedNodeId,
         onClick: () => {
           const clicked = markers[nodeId]
@@ -505,9 +525,11 @@ export default function MapsOperatorPanel() {
           else void openAlarmNode(nodeId)
         },
         action: {
-          title: blocked ? t(blocked) : t('alarms.acknowledgeHint'),
-          label: t('alarms.acknowledge'),
-          icon: <CheckCircleOutlineIcon fontSize="small" />,
+          title: blocked ? t(blocked) : t(reset ? 'alarms.resetHint' : 'alarms.acknowledgeHint'),
+          label: t(reset ? 'alarms.reset' : 'alarms.acknowledge'),
+          icon: reset
+            ? <RestartAltIcon fontSize="small" />
+            : <CheckCircleOutlineIcon fontSize="small" />,
           disabled: !!blocked,
           onClick: () => setAlarmDialog(alarm),
         },
@@ -522,7 +544,9 @@ export default function MapsOperatorPanel() {
   const alarmGroups: [string, MapAlarm[]][] = []
   {
     const groups = new Map<string, MapAlarm[]>()
-    for (const alarm of alarmRows) {
+    // A fault is not a guarded device's condition and is not accepted with its zone: it has its
+    // own section and its own verb.
+    for (const alarm of alarmRows.filter((row) => !isFault(row))) {
       const zone = alarm.armingSourceObjectId ?? ''
       const bucket = groups.get(zone)
       if (bucket) bucket.push(alarm)
@@ -564,7 +588,14 @@ export default function MapsOperatorPanel() {
     }
   }
 
-  const alarmSections: MapObjectSection[] = alarmGroups.map(([zoneId, alarms]) => {
+  // Faults first and apart: they are not a guarded device's condition, they are not accepted with
+  // a zone, and "accept all" never touches one.
+  const faultAlarms = alarmRows.filter(isFault)
+  const faultSection: MapObjectSection[] = faultAlarms.length > 0
+    ? [{ title: t('maps.faults'), items: faultAlarms.map(alarmItem) }]
+    : []
+
+  const alarmSections: MapObjectSection[] = [...faultSection, ...alarmGroups.map(([zoneId, alarms]) => {
     const title = zoneId
       ? markers[zoneId]?.name || spaces.find((s) => s.id === zoneId)?.name || zoneId
       : t('maps.alarmsUnguarded')
@@ -580,7 +611,7 @@ export default function MapsOperatorPanel() {
         : undefined,
       items: alarms.map(alarmItem),
     }
-  })
+  })]
 
   if (alarmSections.length === 0) {
     alarmSections.push({

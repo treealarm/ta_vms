@@ -1,20 +1,23 @@
 import { Box, Chip, Stack } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import type { MapAlarmState, MapObjectState, MapStateDescription } from '../../dto/mapDtos'
-import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
+import { ALARM_COLOR, ALARM_STATE, FAULT_COLOR } from '../../map/nodeStyle'
 
 type Props = {
   state?: MapObjectState
   alarm?: MapAlarmState
   descriptions: Record<string, MapStateDescription>
+  /** Set only on a device part: false means the device no longer reports it. */
+  present?: boolean
 }
 
 /**
- * The states a node carries, one chip each in its dictionary's colour, with the alarm first. A
- * replica answers with its owner's states, so the same chips describe a camera on the map and the
- * device's relay inside its diagram. The caller decides what to say when there is nothing to show.
+ * The states a node carries, one chip each in its dictionary's colour, with the alarm first and the
+ * fault after it. A replica answers with its owner's states, so the same chips describe a camera on
+ * the map and the device's relay inside its diagram. The caller decides what to say when there is
+ * nothing to show; a fault is a chip of its own, not a state.
  */
-export default function NodeStateChips({ state, alarm, descriptions }: Props) {
+export default function NodeStateChips({ state, alarm, descriptions, present }: Props) {
   const { t } = useTranslation()
   // The alarm chip already says "Alarm"; the ALARM state chip would repeat it.
   const states = (state?.states ?? []).filter((name) => !(alarm?.alarm && name === ALARM_STATE))
@@ -23,6 +26,9 @@ export default function NodeStateChips({ state, alarm, descriptions }: Props) {
     <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
       {alarm?.alarm ? (
         <Chip size="small" label={t('maps.node.alarm')} sx={{ bgcolor: ALARM_COLOR, color: '#fff' }} />
+      ) : null}
+      {present === false ? (
+        <Chip size="small" label={t('maps.node.fault')} sx={{ bgcolor: FAULT_COLOR, color: '#000' }} />
       ) : null}
       {states.map((name) => {
         const description = descriptions[name]

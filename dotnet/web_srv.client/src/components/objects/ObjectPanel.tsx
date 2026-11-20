@@ -207,6 +207,12 @@ export default function ObjectPanel({
             />
           </Box>
         ) : null}
+        {/* Presence is read from the node itself, not from a fault alarm: the part can be gone
+            while its alarm was never raised or is already closed. */}
+        {marker?.present === false ? (
+          <Alert severity="warning" sx={{ mb: 1.5 }}>{t('alarms.deviceAbsent')}</Alert>
+        ) : null}
+
         {camera ? (
           <>
             <Box sx={{ height: 340, flexShrink: 0, mb: 1 }}>
@@ -280,6 +286,11 @@ export default function ObjectPanel({
                       row.raisedAt ? formatTime(row.raisedAt) : '',
                     ].filter(Boolean).join(' · ')}
                   </Typography>
+                  {row.status === 'closed' && row.closeReason === 'reset' ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {t('alarms.closeReason.reset')}
+                    </Typography>
+                  ) : null}
                   {row.deviceAbsent ? (
                     <Chip size="small" color="warning" label={t('alarms.deviceAbsent')} sx={{ my: 0.5 }} />
                   ) : null}
@@ -304,8 +315,8 @@ export default function ObjectPanel({
                 label={t('maps.node.childAlarms', { count: childrenAlarms })}
               />
             ) : null}
-            <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} />
-            {!alarm?.alarm && childrenAlarms === 0 && states.length === 0 ? (
+            <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} present={marker?.present} />
+            {!alarm?.alarm && childrenAlarms === 0 && marker?.present !== false && states.length === 0 ? (
               <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>
             ) : null}
           </Stack>

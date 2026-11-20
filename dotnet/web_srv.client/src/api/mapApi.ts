@@ -124,8 +124,9 @@ export const mapApi = {
   acknowledgeAlarm: (id: string, comment: string) =>
     post<MapAlarm>(`${BASE}/alarms/${enc(id)}/acknowledge`, { comment }),
 
-  /** Only an alarm whose condition is already gone may be closed by hand. */
-  closeAlarm: (id: string, reason: 'false_alarm' | 'other', comment: string) =>
+  /** Only an alarm whose condition is already gone may be closed by hand. A returned fault is
+   *  closed with `reset` and a comment; a condition alarm never is. */
+  closeAlarm: (id: string, reason: 'false_alarm' | 'other' | 'reset', comment: string) =>
     post<MapAlarm>(`${BASE}/alarms/${enc(id)}/close`, { reason, comment }),
 
   // ── Events ─────────────────────────────────────────────────────────────────────────────────

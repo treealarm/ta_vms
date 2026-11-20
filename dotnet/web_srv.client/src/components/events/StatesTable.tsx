@@ -4,7 +4,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppSelector } from '../../store'
-import { ALARM_COLOR, ALARM_STATE } from '../../map/nodeStyle'
+import { ALARM_COLOR, ALARM_STATE, FAULT_COLOR } from '../../map/nodeStyle'
 
 type Props = {
   /** The nodes checked in the tree, in the order they were checked. */
@@ -65,6 +65,11 @@ export default function StatesTable({ ids, selectedId, onSelect }: Props) {
                   {alarm?.alarm ? (
                     <Chip size="small" label={t('maps.node.alarm')} sx={{ bgcolor: ALARM_COLOR, color: '#fff' }} />
                   ) : null}
+                  {/* A part the device no longer reports has no states left to show; the chip says
+                      why, and the empty "—" below must not claim there is nothing wrong. */}
+                  {marker.present === false ? (
+                    <Chip size="small" label={t('maps.node.fault')} sx={{ bgcolor: FAULT_COLOR, color: '#000' }} />
+                  ) : null}
                   {(alarm?.childrenAlarms ?? 0) > 0 ? (
                     <Chip size="small" variant="outlined" color="error"
                       label={t('maps.node.childAlarms', { count: alarm?.childrenAlarms })} />
@@ -81,7 +86,8 @@ export default function StatesTable({ ids, selectedId, onSelect }: Props) {
                       />
                     )
                   })}
-                  {!alarm?.alarm && !(alarm?.childrenAlarms ?? 0) && names.length === 0 ? (
+                  {!alarm?.alarm && !(alarm?.childrenAlarms ?? 0)
+                    && marker.present !== false && names.length === 0 ? (
                     <Box component="span"><Typography variant="caption" color="text.secondary">—</Typography></Box>
                   ) : null}
                 </Stack>

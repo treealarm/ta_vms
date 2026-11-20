@@ -40,6 +40,9 @@ export type MapMarker = {
   cameraId?: string
   version?: number
   nodeKind?: MapNodeKind
+  /** Set only on a device part: whether the device still reports it. A replica answers with its
+   *  owner's presence. Absent on every other node, so `undefined` never means "missing". */
+  present?: boolean
 }
 
 export type MapFigure = MapMarker & {
@@ -424,7 +427,8 @@ export type MapAlarm = {
   objectId?: string
   definitionId?: string
   subscriptionId?: string
-  /** "sensor" | "retention" | "subscription". */
+  /** "sensor" | "retention" | "subscription" | "fault". A fault is the device no longer reporting
+   *  a part; it does not write the ALARM state. */
   source?: string
   dedupKey?: string
   conditionActive?: boolean
@@ -445,7 +449,8 @@ export type MapAlarm = {
   sourceEventId?: string
   /** Whether this caller may acknowledge the row now; the service computes it. */
   canAck?: boolean
-  /** Why acknowledging is unavailable: "closed", "no_right", or empty when it is available. */
+  /** Why acknowledging is unavailable: "closed", "no_right", "reset_required" (a returned fault
+   *  is reset, not acknowledged), or empty when it is available. */
   ackBlockedReason?: string
   /** The condition is live and the node is armed: acknowledging requires a comment. */
   ackRequiresComment?: boolean
