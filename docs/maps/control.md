@@ -113,8 +113,10 @@ of the wish and shows the value the command produced.
 **The tree reads a part's state, it does not drive it.** A part's row in the operator map's tree and
 in Admin → Nodes carries a state dot from the same `states` the Control panel reads, and no switch:
 one place drives a relay, and a second switch would be a second path that could disagree with the
-first. Admin → Nodes follows the map's watch stream, so a relay switched in the panel changes there
-without reopening the row.
+first. The dot is amber when the device no longer reports the part (`present=false`), even though
+the row has no contact state left; that is read from the node too, and the fault is settled in the
+alarm list, not from here. Admin → Nodes follows the map's watch stream, so a relay switched in the
+panel changes there without reopening the row.
 
 **The card keeps its switch.** The camera card's Device I/O overlay arms a sensor on a line of its
 own, under the caption "Guard", beside the effective state — not on the token line beside the live

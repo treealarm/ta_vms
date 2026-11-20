@@ -44,6 +44,10 @@
   `resetBlockedKey`), `AlarmAction` — «Reset fault» через `closeAlarm(..., 'reset', comment)`;
   локали en/es. Проверено 2026-11-20: `npm run build`, `npm run lint`, `npm test` — 109 тестов,
   включая `nodeStyle` и переходы `alarmActions`.
+- ☑ Документация: `maps/states-and-alarms.md` — `present` как истина, тревога `source='fault'`,
+  защёлка и сброс; `maps/control.md` — янтарная точка в дереве; `future_plans/13` сокращён до
+  пожарной панели (классы и always-armed, защёлка тревоги условия, состояния, зоны/шлейфы,
+  адаптер), строка в индексе future plans обновлена.
 
 ## Что установлено
 
