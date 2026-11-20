@@ -27,6 +27,11 @@
   `VmsMap.Tests` — 417 с `VMS_MAP_TEST_DSN` на `ta_map_test`, в том числе последовательность
   `active → acknowledged → returned → active → returned → closed`, откат `present`+fault и гонка
   сброса со снимком (11 Postgres-тестов `AlarmStorePostgresTests`).
+- ☑ proto и `present` наружу: `Marker`/`Figure` — `optional present`, `PresenceLookup`
+  (каноническая часть и реплика через `owner_id`), все чтения маркеров/фигур, комментарии
+  `source`/`close_reason`/`CloseAlarmRequest`. Проверено 2026-11-20: `VmsMap.Tests` — 419 с
+  `VMS_MAP_TEST_DSN`, в том числе `present` у части и её реплики в `GetMarkersByIds`/`GetByIds`;
+  `dotnet build` — 0/0.
 
 ## Что установлено
 
