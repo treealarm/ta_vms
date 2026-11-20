@@ -42,6 +42,9 @@ namespace VmsMap.Db
     public const string Sensor = "sensor";
     public const string Retention = "retention";
     public const string Subscription = "subscription";
+    // A part a successful manifest no longer lists. Raised by the device adapter, not by a
+    // condition; it never writes ALARM and is reset by an operator after the part reports again.
+    public const string Fault = "fault";
   }
 
   public static class AlarmSeverity
@@ -61,6 +64,9 @@ namespace VmsMap.Db
     public const string DeviceGone = "device_gone";
     public const string FalseAlarm = "false_alarm";
     public const string Other = "other";
+    // A fault the operator reset once the part reported again. A fault is closed by this reason
+    // only; it is never a false_alarm or other.
+    public const string Reset = "reset";
   }
 
   /// <summary>The acknowledgement policies a definition may carry.</summary>
