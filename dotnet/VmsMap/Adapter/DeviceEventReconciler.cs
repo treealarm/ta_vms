@@ -22,9 +22,12 @@ namespace VmsMap.Adapter
   /// <para>
   /// A part that disappears from the manifest is marked <c>present=false</c> and loses its live
   /// contact state — it must not read as open or closed when the device no longer reports it. Its
-  /// node and history stay, and its open alarm stays too: a part vanishing from a manifest is a
-  /// fault an operator resolves, not the condition going away. A camera that did not answer at all
-  /// only has <c>reachable</c> changed — nothing is marked absent by an unanswered call.
+  /// node and history stay, and its condition alarm stays too: a part vanishing from a manifest is
+  /// a fault an operator resolves, not the condition going away. The fault itself is a separate
+  /// <c>source='fault'</c> alarm, raised in this transaction from the same manifest; a returning
+  /// part clears its condition but the alarm waits for an operator's reset. A camera that did not
+  /// answer at all only has <c>reachable</c> changed — nothing is marked absent by an unanswered
+  /// call.
   /// </para>
   /// </remarks>
   internal sealed class DeviceEventReconciler
@@ -35,6 +38,7 @@ namespace VmsMap.Adapter
     private readonly EventsWriter _eventsWriter;
     private readonly DeviceEventTranslator _translator;
     private readonly SensorAlarmService _sensorAlarms;
+    private readonly DeviceFaultService _faults;
     private readonly ILogger<DeviceEventReconciler> _logger;
 
     public DeviceEventReconciler(
@@ -44,6 +48,7 @@ namespace VmsMap.Adapter
       EventsWriter eventsWriter,
       DeviceEventTranslator translator,
       SensorAlarmService sensorAlarms,
+      DeviceFaultService faults,
       ILogger<DeviceEventReconciler> logger)
     {
       _db = db;
@@ -52,6 +57,7 @@ namespace VmsMap.Adapter
       _eventsWriter = eventsWriter;
       _translator = translator;
       _sensorAlarms = sensorAlarms;
+      _faults = faults;
       _logger = logger;
     }
 
@@ -235,6 +241,14 @@ namespace VmsMap.Adapter
         AdvanceCursor(row, message);
       }
 
+      // The fault alarm and the presence flag are one fact: both are written in this transaction,
+      // so a committed snapshot never leaves a part marked absent without its fault (or the
+      // reverse). The camera's own row is not a part of the manifest and carries no fault.
+      await _faults.ApplyAsync(
+        rows.Where(r => !string.Equals(
+          r.part_kind, DeviceObjectId.DevicePart, StringComparison.Ordinal)).ToList(),
+        ct);
+
       await _db.SaveChangesAsync(ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
@@ -259,8 +273,9 @@ namespace VmsMap.Adapter
 
     /// <summary>
     /// Takes the live contact off a part the device no longer reports: it must not read as open or
-    /// closed when nobody is saying so. The alarm and its ALARM state stay — the condition did not
-    /// go away, it stopped being observable.
+    /// closed when nobody is saying so. The condition alarm and its ALARM state stay — the
+    /// condition did not go away, it stopped being observable. The part's fault alarm is its own
+    /// row.
     /// </summary>
     private Task ClearContactStateAsync(Guid objectId, CancellationToken ct) =>
       _stateWriter.ChangeAsync(

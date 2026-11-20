@@ -233,6 +233,13 @@ namespace VmsMap.Adapter
     /// asking VmsCfg and the settings cache once per camera instead of once per part is what keeps
     /// a hundred thousand cameras a sweep rather than a storm.
     /// </summary>
+    /// <remarks>
+    /// The set is the snapshot's parts plus the camera's configured parts: a part the camera has
+    /// stopped listing still belongs in the tree, because its node is what the operator sees as
+    /// absent and what its fault alarm stands on. A camera with no snapshot part returns early —
+    /// its configured parts were already given nodes by the settings card, and a snapshot sweep
+    /// must not turn into a settings read for every camera that reports no I/O.
+    /// </remarks>
     public async Task<Dictionary<(string Kind, string Token), string>> EnsurePartsAsync(
       string sourceId,
       IReadOnlyList<(string Kind, string Token)> parts,
@@ -252,11 +259,17 @@ namespace VmsMap.Adapter
       var byKey = configured.ToDictionary(
         s => (s.Kind, s.Token), s => s, EqualityComparer<(string, string)>.Default);
 
-      foreach (var part in parts.Distinct())
-      {
-        if (string.IsNullOrWhiteSpace(part.Kind) || string.IsNullOrWhiteSpace(part.Token))
-          continue;
+      // A configured part the manifest no longer lists keeps its node. The snapshot's own list
+      // decides present; this only makes sure the node exists for the fault to stand on.
+      var all = parts
+        .Concat(configured
+          .Where(s => DevicePayload.IsDigitalInput(s.Kind) || DevicePayload.IsRelay(s.Kind))
+          .Select(s => (s.Kind, s.Token)))
+        .Where(p => !string.IsNullOrWhiteSpace(p.Kind) && !string.IsNullOrWhiteSpace(p.Token))
+        .Distinct();
 
+      foreach (var part in all)
+      {
         var name = byKey.TryGetValue(part, out var settings) ? settings.Name : null;
         var id = await EnsurePartNodeAsync(camera, sourceId, part.Kind, part.Token, name, ct);
         if (id is not null)

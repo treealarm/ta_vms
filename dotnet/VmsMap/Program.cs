@@ -151,6 +151,8 @@ builder.Services.AddScoped<EventsWriter>();
 builder.Services.AddScoped<DeviceEventTranslator>();
 // The contact-to-alarm rule, shared by the event, the snapshot and a settings change.
 builder.Services.AddScoped<SensorAlarmService>();
+// The presence-to-fault rule: one `source='fault'` alarm per part the manifest no longer lists.
+builder.Services.AddScoped<DeviceFaultService>();
 builder.Services.AddScoped<DeviceEventWriter>();
 builder.Services.AddScoped<DeviceEventReconciler>();
 // The behaviour of a logical device object — its arming mode and its contact rule — kept in the

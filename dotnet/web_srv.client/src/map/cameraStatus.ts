@@ -28,3 +28,6 @@ export const STATUS_COLOR: Record<CameraMapStatus, string> = {
 
 /** Brighter than recording's red, which an alarm is the cause of: a camera that keeps its recording. */
 export const ALARM_COLOR = '#ff1744'
+
+/** A part its device no longer reports. Amber, so it never reads as the condition alarm's red. */
+export const FAULT_COLOR = '#ffc107'

@@ -1383,7 +1383,8 @@
       "locate": "Show on map",
       "showInTree": "Show in tree",
       "deviceOf": "Diagram of",
-      "showDevice": "Show device"
+      "showDevice": "Show device",
+      "fault": "Fault"
     },
     "tabSpaces": "Spaces",
     "tabDevices": "Devices",
@@ -1521,7 +1522,8 @@
     "viewLive": "Live",
     "viewAlarm": "Alarm recording",
     "tabObject": "Object",
-    "objectOnItsTab": "This node's own settings — name, look, properties — are on the Object tab."
+    "objectOnItsTab": "This node's own settings — name, look, properties — are on the Object tab.",
+    "faults": "Faults"
   },
   "ptzGeo": {
     "open": "Calibrate by landmarks…",
@@ -1620,13 +1622,15 @@
     "section": "Alarms",
     "blocked": {
       "closed": "This alarm is already closed",
-      "noRight": "You do not have the acknowledge right on this node"
+      "noRight": "You do not have the acknowledge right on this node",
+      "resetRequired": "A fault is reset, not acknowledged"
     },
     "openOnMap": "Open on the map",
     "source": {
       "sensor": "Sensor",
       "retention": "Retention",
-      "subscription": "Subscription"
+      "subscription": "Subscription",
+      "fault": "Fault"
     },
     "status": {
       "active": "Active",
@@ -1641,6 +1645,13 @@
     "reason": {
       "falseAlarm": "False alarm",
       "other": "Other"
+    },
+    "reset": "Reset fault",
+    "resetHint": "Reset the fault after the device reports the part again. The comment stays in the journal.",
+    "faultStillPresent": "The device does not report this part yet. The fault can be reset only after it reports again.",
+    "handleFault": "Handle the fault",
+    "closeReason": {
+      "reset": "Reset"
     }
   },
   "control": {

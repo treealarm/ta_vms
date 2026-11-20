@@ -50,6 +50,7 @@ namespace VmsMap.Grpc
       var top = await _mapService.GetTopChildren(children.Keys.ToList());
       var cameras = await CameraIdsAsync(children.Keys, ct);
       var kinds = await NodeKindLookup.ResolveAsync(_db, candidates, ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, candidates, ct);
 
       var guids = children.Keys
         .Select(Utils.ConvertObjectIdToGuid)
@@ -63,13 +64,15 @@ namespace VmsMap.Grpc
         Parents =
         {
           parents.Select(p => ToMarker(
-            p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object)))
+            p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object),
+            PresentOf(presence, p.id ?? string.Empty)))
         },
         Children =
         {
           children.Select(kv => ToMarker(
             kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key),
-            kinds.GetValueOrDefault(kv.Key, NodeKind.Object)))
+            kinds.GetValueOrDefault(kv.Key, NodeKind.Object),
+            PresentOf(presence, kv.Key)))
         },
         StartId = guids.Count > 0 ? Utils.ConvertGuidToObjectId(guids.Min()) : string.Empty,
         EndId = guids.Count > 0 ? Utils.ConvertGuidToObjectId(guids.Max()) : string.Empty,
@@ -93,6 +96,7 @@ namespace VmsMap.Grpc
       var top = await _mapService.GetTopChildren(ids.ToList());
       var cameras = await CameraIdsAsync(ids, ct);
       var kinds = await NodeKindLookup.ResolveAsync(_db, ids, ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, ids, ct);
 
       return new MapProto.MarkerList
       {
@@ -101,7 +105,8 @@ namespace VmsMap.Grpc
           markers.Values.Select(m => ToMarker(
             m, top.ContainsKey(m.id ?? string.Empty),
             cameras.GetValueOrDefault(m.id ?? string.Empty),
-            kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object)))
+            kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object),
+            PresentOf(presence, m.id ?? string.Empty)))
         }
       };
     }
@@ -211,6 +216,7 @@ namespace VmsMap.Grpc
       var top = await _mapService.GetTopChildren(markers.Keys.ToList());
       var cameras = await CameraIdsAsync(markers.Keys, ct);
       var kinds = await NodeKindLookup.ResolveAsync(_db, markers.Keys, ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, markers.Keys, ct);
 
       return new MapProto.MarkerList
       {
@@ -218,7 +224,8 @@ namespace VmsMap.Grpc
         {
           markers.Select(kv => ToMarker(
             kv.Value, top.ContainsKey(kv.Key), cameras.GetValueOrDefault(kv.Key),
-            kinds.GetValueOrDefault(kv.Key, NodeKind.Object)))
+            kinds.GetValueOrDefault(kv.Key, NodeKind.Object),
+            PresentOf(presence, kv.Key)))
         }
       };
     }
@@ -261,6 +268,7 @@ namespace VmsMap.Grpc
         return new MapProto.ObjProps();
 
       var kinds = await NodeKindLookup.ResolveAsync(_db, [request.Id], ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, [request.Id], ct);
       // The panel that opens on this read replaces the node in the client's store: a hard-coded
       // "no children" here would take the "enter" action away from every container the moment it
       // is selected.
@@ -270,7 +278,8 @@ namespace VmsMap.Grpc
         Marker = ToMarker(
           marker, top.ContainsKey(request.Id),
           (await CameraIdsAsync([request.Id], ct)).GetValueOrDefault(request.Id),
-          kinds.GetValueOrDefault(request.Id, NodeKind.Object)),
+          kinds.GetValueOrDefault(request.Id, NodeKind.Object),
+          PresentOf(presence, request.Id)),
       };
 
       var props = await _mapService.GetPropAsync(request.Id);
@@ -397,10 +406,12 @@ namespace VmsMap.Grpc
         await tx.CommitAsync(ct);
 
       var kinds = await NodeKindLookup.ResolveAsync(_db, [dto.id!], ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, [dto.id!], ct);
       return ToMarker(
         dto, false,
         (await CameraIdsAsync([dto.id!], ct)).GetValueOrDefault(dto.id!),
-        kinds.GetValueOrDefault(dto.id!, NodeKind.Object));
+        kinds.GetValueOrDefault(dto.id!, NodeKind.Object),
+        PresentOf(presence, dto.id!));
     }
 
     // ── States ────────────────────────────────────────────────────────────────────────────────
@@ -751,17 +762,20 @@ namespace VmsMap.Grpc
         .Distinct(StringComparer.Ordinal)
         .ToList();
       var kinds = await NodeKindLookup.ResolveAsync(_db, allIds, ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, allIds, ct);
       var visuals = await _visualService.GetListByIdsAsync(allIds);
 
       content.Children.AddRange(markers.Values
         .Where(m => m.id != id)
         .Select(m => ToMarker(
           m, false, null,
-          kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object))));
+          kinds.GetValueOrDefault(m.id ?? string.Empty, NodeKind.Object),
+          PresentOf(presence, m.id ?? string.Empty))));
       content.Content.AddRange(diagrams.Values.Select(ToProto));
       content.DgrTypes.AddRange(types.Values.Select(ToProto));
       content.Parents.AddRange(parents.Select(p => ToMarker(
-        p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object))));
+        p, false, null, kinds.GetValueOrDefault(p.id ?? string.Empty, NodeKind.Object),
+        PresentOf(presence, p.id ?? string.Empty))));
       content.Visuals.AddRange(visuals.Values.Select(ToProto));
 
       return content;
@@ -883,6 +897,7 @@ namespace VmsMap.Grpc
       var top = await _mapService.GetTopChildren(requested);
       var cameras = await CameraIdsAsync(requested, ct);
       var kinds = await NodeKindLookup.ResolveAsync(_db, requested, ct);
+      var presence = await PresenceLookup.ResolveAsync(_db, requested, ct);
       var visuals = await _visualService.GetListByIdsAsync(requested);
 
       var result = new MapProto.Figures { AddTracks = figures.add_tracks };
@@ -890,7 +905,7 @@ namespace VmsMap.Grpc
       {
         var id = figure.id ?? string.Empty;
         markers.TryGetValue(id, out var marker);
-        result.Figs.Add(new MapProto.Figure
+        var proto = new MapProto.Figure
         {
           Id = id,
           ParentId = figure.parent_id ?? string.Empty,
@@ -905,7 +920,12 @@ namespace VmsMap.Grpc
           Version = marker?.Version ?? figure.Version,
           NodeKind = NodeKindLookup.Name(kinds.GetValueOrDefault(id, NodeKind.Object)),
           Visual = visuals.TryGetValue(id, out var visual) ? ToProto(visual) : null,
-        });
+        };
+
+        if (PresentOf(presence, id) is { } present)
+          proto.Present = present;
+
+        result.Figs.Add(proto);
       }
 
       return result;
@@ -949,17 +969,31 @@ namespace VmsMap.Grpc
     }
 
     private static MapProto.Marker ToMarker(
-      BaseMarkerDTO marker, bool hasChildren, string? cameraId, NodeKind kind) => new()
+      BaseMarkerDTO marker, bool hasChildren, string? cameraId, NodeKind kind,
+      bool? present = null)
     {
-      Id = marker.id ?? string.Empty,
-      ParentId = marker.parent_id ?? string.Empty,
-      OwnerId = marker.owner_id ?? string.Empty,
-      Name = marker.name ?? string.Empty,
-      HasChildren = hasChildren,
-      CameraId = cameraId ?? string.Empty,
-      Version = marker.Version,
-      NodeKind = NodeKindLookup.Name(kind),
-    };
+      var proto = new MapProto.Marker
+      {
+        Id = marker.id ?? string.Empty,
+        ParentId = marker.parent_id ?? string.Empty,
+        OwnerId = marker.owner_id ?? string.Empty,
+        Name = marker.name ?? string.Empty,
+        HasChildren = hasChildren,
+        CameraId = cameraId ?? string.Empty,
+        Version = marker.Version,
+        NodeKind = NodeKindLookup.Name(kind),
+      };
+
+      // A part carries its presence; every other node leaves the field unset, so the browser can
+      // tell "not a device part" from "a part that is absent".
+      if (present is { } value)
+        proto.Present = value;
+
+      return proto;
+    }
+
+    private static bool? PresentOf(Dictionary<string, bool> presence, string id) =>
+      presence.TryGetValue(id, out var present) ? present : null;
 
     private static MapProto.ExtraProperty ToProto(ObjExtraPropertyDTO prop) => new()
     {

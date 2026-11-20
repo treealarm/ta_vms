@@ -114,7 +114,7 @@ function renderFigure(
     .map((point) => [point.lat as number, point.lon as number] as [number, number])
   if (coords.length === 0) return null
 
-  const style = nodeStyle(figure, state, alarm, descriptions)
+  const style = nodeStyle(figure, state, alarm, descriptions, figure.present)
   const selected = figure.id === selectedId
   const handlers = interactive ? { click: () => onSelect(figure.id) } : undefined
   const pathOptions = {

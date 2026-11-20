@@ -151,8 +151,8 @@ export default function DiagramElementEditor({
         <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
           {t('maps.node.states')}
         </Typography>
-        {alarm?.alarm || (state?.states?.length ?? 0) > 0 ? (
-          <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} />
+        {alarm?.alarm || marker.present === false || (state?.states?.length ?? 0) > 0 ? (
+          <NodeStateChips state={state} alarm={alarm} descriptions={descriptions} present={marker.present} />
         ) : (
           <Typography variant="caption" color="text.secondary">{t('maps.node.noStates')}</Typography>
         )}

@@ -154,7 +154,11 @@ namespace VmsMap.Adapter
     {
       // Resolved before the transaction opens: the cache reads VmsCfg over the network when it is
       // stale, and a network call must not happen while the map's advisory locks are held.
-      var definition = await _definitions.FindAsync(spec.Source, ct);
+      // A fault has no definition: its severity comes from the adapter, and the call runs inside
+      // the snapshot transaction where a network read must not happen.
+      var definition = spec.Source == AlarmSource.Fault
+        ? null
+        : await _definitions.FindAsync(spec.Source, ct);
 
       await using var tx = await BeginAsync(ct);
 
@@ -182,7 +186,12 @@ namespace VmsMap.Adapter
       var existing = await LockOpenAsync(spec.ObjectId, spec.DedupKey, ct);
       if (existing is not null)
       {
-        if (existing.status != AlarmStatus.Returned)
+        // A returned alarm comes back. A fault whose condition was cleared but whose status is
+        // not returned is the same repair: the normal transition always sets returned, so this
+        // keeps a stale row from hiding a live absence.
+        var comesBack = existing.status == AlarmStatus.Returned
+          || (existing.source == AlarmSource.Fault && !existing.condition_active);
+        if (!comesBack)
         {
           // Still active or acknowledged: the condition never went away. A retention renewal may
           // move the projected end; nothing else about the alarm changes and no second event is
@@ -206,7 +215,8 @@ namespace VmsMap.Adapter
           existing.expected_end_ts = spec.ExpectedEndTs;
 
         await _db.SaveChangesAsync(ct);
-        await SetAlarmStateAsync(existing.object_id, ct);
+        if (existing.source != AlarmSource.Fault)
+          await SetAlarmStateAsync(existing.object_id, ct);
         if (spec.Source != AlarmSource.Retention)
           await WriteEventAsync(existing, RaisedEvent, existing.severity, spec.Trigger, ct,
             ("source_event_id", spec.SourceEventId?.ToString()));
@@ -215,7 +225,7 @@ namespace VmsMap.Adapter
         return new AlarmOutcome(AlarmMove.Applied, existing);
       }
 
-      if (definition is null)
+      if (definition is null && spec.Source != AlarmSource.Fault)
       {
         _logger.LogWarning(
           "Raising a {Source} alarm for {ObjectId} without a definition; using severity '{Severity}'",
@@ -245,7 +255,8 @@ namespace VmsMap.Adapter
       _db.Alarms.Add(alarm);
       await _db.SaveChangesAsync(ct);
 
-      await SetAlarmStateAsync(alarm.object_id, ct);
+      if (spec.Source != AlarmSource.Fault)
+        await SetAlarmStateAsync(alarm.object_id, ct);
 
       // Retention keeps its legacy `alarm` event, which the journal has always shown; a second
       // alarm_raised next to it would be the same fact twice.
@@ -276,6 +287,13 @@ namespace VmsMap.Adapter
         return alarm is null
           ? new AlarmOutcome(AlarmMove.Unchanged, null)
           : new AlarmOutcome(AlarmMove.Unchanged, alarm);
+      }
+
+      if (alarm.source == AlarmSource.Fault)
+      {
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(
+          AlarmMove.Refused, alarm, "a fault is normalized through NormalFaultAsync");
       }
 
       var now = DateTime.UtcNow;
@@ -335,6 +353,47 @@ namespace VmsMap.Adapter
       return new AlarmOutcome(AlarmMove.Applied, alarm);
     }
 
+    /// <summary>
+    /// The part reports again: the fault's condition is gone, but the alarm stays open. A fault is
+    /// latched — an operator resets it — and it has no definition to read, so this transition takes
+    /// the same transaction and locks as <see cref="NormalAsync"/> without the definitions load. It
+    /// runs inside the snapshot transaction, where a network call must not happen.
+    /// </summary>
+    public async Task<AlarmOutcome> NormalFaultAsync(
+      Guid objectId, string dedupKey, CancellationToken ct)
+    {
+      await using var tx = await BeginAsync(ct);
+
+      var alarm = await LockOpenAsync(objectId, dedupKey, ct);
+      if (alarm is null)
+      {
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(AlarmMove.Unchanged, null);
+      }
+
+      if (alarm.source != AlarmSource.Fault)
+      {
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(AlarmMove.Refused, alarm, "this alarm is not a fault");
+      }
+
+      if (!alarm.condition_active)
+      {
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(AlarmMove.Unchanged, alarm);
+      }
+
+      alarm.condition_active = false;
+      alarm.cleared_at = DateTime.UtcNow;
+      // Acknowledged or active, the row is not closed: a fault waits for an operator's reset.
+      alarm.status = AlarmStatus.Returned;
+      await _db.SaveChangesAsync(ct);
+      await WriteEventAsync(alarm, ReturnedEvent, null, null, ct);
+
+      await CommitAsync(tx, ct);
+      return new AlarmOutcome(AlarmMove.Applied, alarm);
+    }
+
     public async Task<AlarmOutcome> AcknowledgeAsync(
       Guid alarmId, string actor, string? comment, CancellationToken ct)
     {
@@ -343,6 +402,7 @@ namespace VmsMap.Adapter
       // condition that cleared in between simply takes the path it now deserves.
       var known = await _db.Alarms.AsNoTracking().FirstOrDefaultAsync(a => a.id == alarmId, ct);
       var armed = known is { status: AlarmStatus.Active, condition_active: true }
+        && known.source != AlarmSource.Fault
         && await IsArmedAsync(known.object_id, ct);
 
       await using var tx = await BeginAsync(ct);
@@ -364,6 +424,15 @@ namespace VmsMap.Adapter
       {
         await CommitAsync(tx, ct);
         return new AlarmOutcome(AlarmMove.Unchanged, alarm);
+      }
+
+      // A fault whose condition cleared waits for a reset, not for an acknowledgement: the
+      // acknowledgement would close it and skip the operator's reset record.
+      if (alarm.source == AlarmSource.Fault && alarm.status == AlarmStatus.Returned)
+      {
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(
+          AlarmMove.Refused, alarm, "the fault is reset, not acknowledged");
       }
 
       var now = DateTime.UtcNow;
@@ -437,6 +506,40 @@ namespace VmsMap.Adapter
       {
         await CommitAsync(tx, ct);
         return new AlarmOutcome(AlarmMove.Unchanged, alarm);
+      }
+
+      if (alarm.source == AlarmSource.Fault)
+      {
+        // A fault is reset, not closed: its condition is the part's absence, so it may be reset
+        // only once the part reports again, and the comment records who decided it was over.
+        if (alarm.condition_active)
+        {
+          await CommitAsync(tx, ct);
+          return new AlarmOutcome(
+            AlarmMove.Refused, alarm, "the fault is still present; it cannot be reset");
+        }
+
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+          await CommitAsync(tx, ct);
+          return new AlarmOutcome(
+            AlarmMove.Refused, alarm, "a comment is required to reset a fault");
+        }
+
+        alarm.status = AlarmStatus.Closed;
+        alarm.closed_at = DateTime.UtcNow;
+        alarm.close_reason = AlarmCloseReason.Reset;
+        alarm.close_comment = comment;
+        alarm.closed_by = actor;
+        await _db.SaveChangesAsync(ct);
+
+        // A fault never wrote ALARM: there is no state to sync.
+        await WriteEventAsync(alarm, ClosedEvent, null, null, ct,
+          ("close_reason", alarm.close_reason),
+          ("close_comment", comment));
+
+        await CommitAsync(tx, ct);
+        return new AlarmOutcome(AlarmMove.Applied, alarm);
       }
 
       if (alarm.condition_active)
@@ -535,7 +638,8 @@ namespace VmsMap.Adapter
 
     /// <summary>
     /// Takes <c>ALARM</c> off the node when nothing is alarming it any more. A camera goes back to
-    /// NORM; a part keeps its sensor state and only loses ALARM.
+    /// NORM; a part keeps its sensor state and only loses ALARM. A fault is not a condition alarm:
+    /// it never wrote ALARM, so it neither keeps it nor takes it away.
     /// </summary>
     private async Task SyncObjectAlarmStateAsync(Guid objectId, CancellationToken ct)
     {
@@ -543,6 +647,7 @@ namespace VmsMap.Adapter
 
       var stillAlarming = await _db.Alarms.AsNoTracking()
         .AnyAsync(a => a.object_id == objectId
+                       && a.source != AlarmSource.Fault
                        && a.status != AlarmStatus.Closed
                        && a.condition_active, ct);
       if (stillAlarming)

@@ -59,7 +59,11 @@ export const acknowledgeAlarm = createAsyncThunk(
 
 export const closeAlarm = createAsyncThunk(
   'alarms/close',
-  async ({ id, reason, comment }: { id: string; reason: 'false_alarm' | 'other'; comment: string }) =>
+  async ({ id, reason, comment }: {
+    id: string
+    reason: 'false_alarm' | 'other' | 'reset'
+    comment: string
+  }) =>
     mapApi.closeAlarm(id, reason, comment),
 )
 

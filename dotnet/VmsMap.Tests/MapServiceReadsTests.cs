@@ -644,6 +644,81 @@ public class MapServiceReadsTests
     Assert.Equal(45, fig.Visual.RotationDeg);
   }
 
+  [Fact]
+  public async Task GetMarkersByIdsReportsAPartsPresenceThroughItsReplica()
+  {
+    var s = Create();
+    var root = await Node(s.Map, RootLabel);
+    var plain = await Node(s.Map, NoteLabel, root.id);
+    var camera = await Node(s.Map, CameraLabel, root.id);
+    var part = await Node(s.Map, DoorLabel, camera.id);
+    var replica = await Node(s.Map, "door picture", root.id, ownerId: part.id);
+
+    s.Db.DeviceNodes.Add(TestCameras.DeviceNode(TestCameras.One, Guid.Parse(camera.id!)));
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = Guid.Parse(part.id!),
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      part_token = "1",
+      present = false,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var answer = await s.Grpc.GetMarkersByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { plain.id!, part.id!, replica.id! },
+      Caller = Caller(AliceName, AdminRole),
+    }, new TestContext());
+
+    var byId = answer.Markers.ToDictionary(m => m.Id);
+    Assert.True(byId[part.id!].HasPresent);
+    Assert.False(byId[part.id!].Present);
+    // A picture answers with its owner's part, as it answers with its owner's camera and kind.
+    Assert.True(byId[replica.id!].HasPresent);
+    Assert.False(byId[replica.id!].Present);
+    // A node with no device behind it says nothing, rather than "absent".
+    Assert.False(byId[plain.id!].HasPresent);
+  }
+
+  [Fact]
+  public async Task GetByIdsReportsAPartsPresenceOnItsFigure()
+  {
+    var s = Create();
+    var root = await Node(s.Map, RootLabel);
+    var camera = await Node(s.Map, CameraLabel, root.id);
+    var part = await Node(s.Map, DoorLabel, camera.id);
+    var guid = Guid.Parse(part.id!);
+
+    s.Db.DeviceNodes.Add(TestCameras.DeviceNode(TestCameras.One, Guid.Parse(camera.id!)));
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = guid,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      part_token = "1",
+      present = false,
+    });
+    s.Db.GeoObjects.Add(new DBGeoObject
+    {
+      id = guid,
+      figure = new NetTopologySuite.Geometries.Point(0, 0),
+    });
+    await s.Db.SaveChangesAsync();
+
+    var figures = await s.Grpc.GetByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { part.id! },
+      Caller = Caller(AliceName, AdminRole),
+    }, new TestContext());
+
+    var fig = Assert.Single(figures.Figs);
+    Assert.True(fig.HasPresent);
+    Assert.False(fig.Present);
+  }
+
   // ── Alarms ──────────────────────────────────────────────────────────────────────────────────
 
   private static async Task<string> AlarmCameraAsync(Services s, params string[] actions)
@@ -953,5 +1028,136 @@ public class MapServiceReadsTests
       },
       new TestContext());
     Assert.Equal(AlarmStatus.Closed, closed.Status);
+  }
+
+  // ── A fault's API ─────────────────────────────────────────────────────────────────────────────
+
+  private static async Task<(string Camera, Guid Part)> CameraWithPartAsync(
+    Services s, params string[] actions)
+  {
+    var camera = await AlarmCameraAsync(s, actions);
+    var part = await Node(s.Map, DoorLabel, camera);
+    var partId = Guid.Parse(part.id!);
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = partId,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      part_token = "1",
+    });
+    await s.Db.SaveChangesAsync();
+    return (camera, partId);
+  }
+
+  [Fact]
+  public async Task AFaultIsAcknowledgedAndResetButAConditionAlarmIsNot()
+  {
+    var s = Create();
+    var (camera, part) = await CameraWithPartAsync(
+      s, RightActions.View, RightActions.Acknowledge);
+    var key = DeviceFaultService.DedupKey(part);
+
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      part, AlarmSource.Fault, key, Severity: AlarmSeverity.Warning,
+      Trigger: DeviceFaultService.PartAbsentTrigger), default);
+
+    var active = (await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller(AliceName),
+    }, new TestContext())).Open.Alarms.Single();
+    Assert.True(active.CanAck);
+    Assert.False(active.AckRequiresComment);
+    Assert.Equal(string.Empty, active.AckBlockedReason);
+
+    await s.Alarms.NormalFaultAsync(part, key, default);
+
+    var returned = await s.Grpc.GetAlarm(new MapProto.GetAlarmRequest
+    {
+      Id = active.Id,
+      Caller = Caller(AliceName),
+    }, new TestContext());
+    Assert.True(returned.CanAck); // the right, not the acknowledge action
+    Assert.Equal("reset_required", returned.AckBlockedReason);
+    Assert.False(returned.AckRequiresComment);
+
+    var acknowledged = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.AcknowledgeAlarm(
+      new MapProto.AcknowledgeAlarmRequest { Id = active.Id, Caller = Caller(AliceName) },
+      new TestContext()));
+    Assert.Equal(StatusCode.FailedPrecondition, acknowledged.StatusCode);
+
+    var wrongReason = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.CloseAlarm(
+      new MapProto.CloseAlarmRequest
+      {
+        Id = active.Id,
+        Reason = AlarmCloseReason.Other,
+        Comment = AckComment,
+        Caller = Caller(AliceName),
+      },
+      new TestContext()));
+    Assert.Equal(StatusCode.InvalidArgument, wrongReason.StatusCode);
+
+    var missingComment = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.CloseAlarm(
+      new MapProto.CloseAlarmRequest
+      {
+        Id = active.Id,
+        Reason = AlarmCloseReason.Reset,
+        Caller = Caller(AliceName),
+      },
+      new TestContext()));
+    Assert.Equal(StatusCode.FailedPrecondition, missingComment.StatusCode);
+
+    var reset = await s.Grpc.CloseAlarm(new MapProto.CloseAlarmRequest
+    {
+      Id = active.Id,
+      Reason = AlarmCloseReason.Reset,
+      Comment = AckComment,
+      Caller = Caller(AliceName),
+    }, new TestContext());
+    Assert.Equal(AlarmStatus.Closed, reset.Status);
+    Assert.Equal(AlarmCloseReason.Reset, reset.CloseReason);
+
+    // A condition alarm keeps its own close reasons: reset is not one of them.
+    var sensor = await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      Guid.Parse(camera), AlarmSource.Sensor, SensorId), default);
+    var notAReset = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.CloseAlarm(
+      new MapProto.CloseAlarmRequest
+      {
+        Id = sensor.Alarm!.id.ToString(),
+        Reason = AlarmCloseReason.Reset,
+        Comment = AckComment,
+        Caller = Caller(AliceName),
+      },
+      new TestContext()));
+    Assert.Equal(StatusCode.InvalidArgument, notAReset.StatusCode);
+  }
+
+  [Fact]
+  public async Task AcceptingAZoneLeavesAFaultAlone()
+  {
+    var s = Create();
+    var (camera, part) = await CameraWithPartAsync(
+      s, RightActions.View, RightActions.Acknowledge);
+    var key = DeviceFaultService.DedupKey(part);
+
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(
+      part, AlarmSource.Fault, key, Severity: AlarmSeverity.Warning,
+      Trigger: DeviceFaultService.PartAbsentTrigger), default);
+
+    var result = await s.Grpc.AcknowledgeSubtreeAlarms(
+      new MapProto.AcknowledgeSubtreeAlarmsRequest
+      {
+        ObjectId = camera,
+        Comment = AckComment,
+        Caller = Caller(AliceName),
+      },
+      new TestContext());
+
+    Assert.Equal(0, result.Acknowledged);
+    Assert.Empty(result.Rejected);
+
+    var row = await s.Db.Alarms.AsNoTracking()
+      .SingleAsync(a => a.source == AlarmSource.Fault);
+    Assert.Equal(AlarmStatus.Active, row.status);
   }
 }

@@ -45,12 +45,26 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   is only the fallback across processes. A repeat of the value already stored is not a transition
   and writes no journal row, but it still advances the cursor — that is how a lost message or a
   restart is repaired.
-- **A part that vanishes from its device's manifest is a fault, not a closure.** A successful
-  snapshot that no longer lists the part (or lists it `present=false`) clears its live contact
-  state, so nothing reads as open or closed; its node, history and open alarm stay. The system
-  never closes such an alarm — an operator closes it by hand with a comment. A returning part
-  restores its state and either continues the same alarm or raises a new one if the operator had
-  closed it. Only a successful manifest may say a part is gone; an unreachable camera says nothing.
+- **A part that vanishes from its device's manifest is a fault, not a closure.** `device_node.present`
+  is the single truth: a successful snapshot that no longer lists the part (or lists it
+  `present=false`) clears its live contact state and marks the part absent; a part listed
+  `present=true` marks it present again. Only a successful manifest may say a part is gone — an
+  unreachable camera says nothing about its parts. The map reads `present` on every part marker and
+  figure, a replica's value coming from its owner, and the operator surface draws the fault from
+  that flag and not from an alarm: the tree's amber dot and the "Fault" chip stay while the fault is
+  open and after it is closed, because the absence is the fact and the alarm is the task.
+- **The absence is also an alarm of its own.** `source='fault'`, one open row per part under the
+  dedup key `fault:{object_id}`, written by the snapshot in the same transaction that writes
+  `present` — a commit or a rollback takes both, and an unreachable camera neither raises nor clears
+  one. It is latched: when the part reports again the row becomes `returned`, from `active` and from
+  `acknowledged`, and waits; a second disappearance before the reset reopens the same row. A fault
+  never writes `ALARM`, never raises `children_alarms`, and is independent of the condition alarm on
+  the same part, so a zone's "accept all" skips it.
+- **A fault is reset, not acknowledged.** A returned fault is closed through the ordinary
+  `CloseAlarm` with `reason='reset'` and a required comment, and only while its condition is
+  inactive; an active fault is acknowledged with an optional comment like any row. Both actions
+  need the same `acknowledge` right on the node. The returned fault's `ack_blocked_reason` is
+  `reset_required`, which is how a button knows to say "Reset fault".
 - **`ALARM` is the condition; acknowledgement is the operator's mark.** A live condition on an
   armed node may be acknowledged, but only with a comment; the ack never removes `ALARM`, and
   closing is what does. The row carries why the action is unavailable (`ack_blocked_reason`) so

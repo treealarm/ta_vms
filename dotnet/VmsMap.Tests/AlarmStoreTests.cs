@@ -375,4 +375,146 @@ public class AlarmStoreTests
     var close = await s.Store.CloseAsync(alarm.id, AliceName, AlarmCloseReason.Other, null, default);
     Assert.Equal(AlarmMove.Unchanged, close.Move);
   }
+
+  // ── A fault: a part the manifest no longer lists ──────────────────────────────────────────────
+
+  private static RaiseAlarmSpec Fault(Guid objectId) =>
+    new(objectId, AlarmSource.Fault, DeviceFaultService.DedupKey(objectId),
+        Severity: AlarmSeverity.Warning, Trigger: DeviceFaultService.PartAbsentTrigger);
+
+  [Fact]
+  public async Task AFaultIsLatchedAndResetThroughTheExistingClose()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+    var key = DeviceFaultService.DedupKey(input);
+
+    var raised = await s.Store.RaiseAsync(Fault(input), default);
+    Assert.Equal(AlarmMove.Applied, raised.Move);
+    var id = raised.Alarm!.id;
+
+    // A fault is not a condition alarm: it never writes ALARM.
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, input));
+
+    var acknowledged = await s.Store.AcknowledgeAsync(id, AliceName, null, default);
+    Assert.Equal(AlarmMove.Applied, acknowledged.Move);
+    var row = await ById(s.Db, id);
+    Assert.Equal(AlarmStatus.Acknowledged, row!.status);
+    Assert.True(row.condition_active);
+
+    var returned = await s.Store.NormalFaultAsync(input, key, default);
+    Assert.Equal(AlarmMove.Applied, returned.Move);
+
+    row = await ById(s.Db, id);
+    Assert.Equal(AlarmStatus.Returned, row!.status);
+    Assert.False(row.condition_active);
+    Assert.Equal(AliceName, row.acknowledged_by);
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, input));
+
+    var refusedAck = await s.Store.AcknowledgeAsync(id, AliceName, AckComment, default);
+    Assert.Equal(AlarmMove.Refused, refusedAck.Move);
+
+    var reset = await s.Store.CloseAsync(
+      id, AliceName, AlarmCloseReason.Reset, AckComment, default);
+    Assert.Equal(AlarmMove.Applied, reset.Move);
+
+    row = await ById(s.Db, id);
+    Assert.Equal(AlarmStatus.Closed, row!.status);
+    Assert.Equal(AlarmCloseReason.Reset, row.close_reason);
+    Assert.Equal(AliceName, row.closed_by);
+    Assert.Equal(AckComment, row.close_comment);
+
+    var events = await Events(s.Db);
+    Assert.Contains(AlarmStore.RaisedEvent, events);
+    Assert.Contains(AlarmStore.AcknowledgedEvent, events);
+    Assert.Contains(AlarmStore.ReturnedEvent, events);
+    Assert.Contains(AlarmStore.ClosedEvent, events);
+  }
+
+  [Fact]
+  public async Task AFaultCannotBeResetWhileThePartIsStillAbsent()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+
+    var raised = await s.Store.RaiseAsync(Fault(input), default);
+    var refused = await s.Store.CloseAsync(
+      raised.Alarm!.id, AliceName, AlarmCloseReason.Reset, AckComment, default);
+
+    Assert.Equal(AlarmMove.Refused, refused.Move);
+
+    var row = await ById(s.Db, raised.Alarm.id);
+    Assert.Equal(AlarmStatus.Active, row!.status);
+    Assert.True(row.condition_active);
+  }
+
+  [Fact]
+  public async Task AResetRequiresAComment()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+    var key = DeviceFaultService.DedupKey(input);
+
+    var raised = await s.Store.RaiseAsync(Fault(input), default);
+    await s.Store.NormalFaultAsync(input, key, default);
+
+    var refused = await s.Store.CloseAsync(
+      raised.Alarm!.id, AliceName, AlarmCloseReason.Reset, "   ", default);
+    Assert.Equal(AlarmMove.Refused, refused.Move);
+
+    var applied = await s.Store.CloseAsync(
+      raised.Alarm!.id, AliceName, AlarmCloseReason.Reset, AckComment, default);
+    Assert.Equal(AlarmMove.Applied, applied.Move);
+  }
+
+  [Fact]
+  public async Task AFaultThatComesBackReactivatesTheSameRow()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+    var key = DeviceFaultService.DedupKey(input);
+
+    var first = await s.Store.RaiseAsync(Fault(input), default);
+    var id = first.Alarm!.id;
+    await s.Store.NormalFaultAsync(input, key, default);
+
+    var again = await s.Store.RaiseAsync(Fault(input), default);
+
+    Assert.Equal(AlarmMove.Applied, again.Move);
+    Assert.Equal(id, again.Alarm!.id);
+
+    var row = await ById(s.Db, id);
+    Assert.Equal(AlarmStatus.Active, row!.status);
+    Assert.True(row.condition_active);
+    Assert.Null(row.cleared_at);
+    Assert.Equal(2, (await Events(s.Db)).Count(e => e == AlarmStore.RaisedEvent));
+  }
+
+  [Fact]
+  public async Task AFaultAndASensorAlarmOnTheSameNodeAreIndependent()
+  {
+    var s = Create();
+    var (_, input) = await DeviceAsync(s);
+    var faultKey = DeviceFaultService.DedupKey(input);
+
+    var sensor = (await s.Store.RaiseAsync(Sensor(input), default)).Alarm!;
+    var fault = (await s.Store.RaiseAsync(Fault(input), default)).Alarm!;
+    Assert.NotEqual(sensor.id, fault.id);
+
+    // The sensor's condition clears and is acknowledged; the fault stays active. The fault did not
+    // write ALARM and must not keep the sensor's ALARM alive.
+    await s.Store.NormalAsync(input, SensorOneKey, default);
+    await s.Store.AcknowledgeAsync(sensor.id, AliceName, null, default);
+
+    Assert.Equal(AlarmStatus.Closed, (await ById(s.Db, sensor.id))!.status);
+    Assert.Equal(AlarmStatus.Active, (await ById(s.Db, fault.id))!.status);
+    Assert.DoesNotContain(CameraStateWriter.Alarm, await States(s.Db, input));
+
+    // The fault clears and is reset; the sensor's row is untouched.
+    await s.Store.NormalFaultAsync(input, faultKey, default);
+    await s.Store.CloseAsync(fault.id, AliceName, AlarmCloseReason.Reset, AckComment, default);
+
+    Assert.Equal(AlarmStatus.Closed, (await ById(s.Db, fault.id))!.status);
+    Assert.Equal(AlarmStatus.Closed, (await ById(s.Db, sensor.id))!.status);
+  }
 }

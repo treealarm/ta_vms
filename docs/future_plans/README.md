@@ -24,7 +24,7 @@
 | [10-windows-hardware-encoders.md](10-windows-hardware-encoders.md) | Аппаратный кодировщик на Windows без NVIDIA: QSV проверен, остались AMF, Media Foundation и проверки на железе | средне-крупный, нужен стенд |
 | [11-devices.md](11-devices.md) | Модель устройств: второй тип «по аналогии», общее `device_placement`, открытые вопросы по терминологии и тестам | крупный |
 | [12-event-routing-followups.md](12-event-routing-followups.md) | Что осталось за M2.4: панельная логика охраны, ISA-18.2, окна подписок, уведомления, масштаб журнала | крупный |
-| [13-fire-alarm-integration.md](13-fire-alarm-integration.md) | Пожарная сигнализация — не ещё один цифровой вход: защёлка, зоны, неисправности, адаптер панели | крупный |
+| [13-fire-alarm-integration.md](13-fire-alarm-integration.md) | Пожарная сигнализация — не ещё один цифровой вход: классы и always-armed, защёлка тревоги условия, состояния и приоритеты, зоны/шлейфы, адаптер панели (неисправность части уже сделана) | крупный |
 | [14-person-as-object.md](14-person-as-object.md) | Человек и любое движущееся — как объект с треком: идентичность, история, поиск; хранилище уже есть, нужен производитель | крупный |
 | [15-distributed-analytics.md](15-distributed-analytics.md) | Re-id и поиск по архиву в базе (pgvector), затем аналитика на узел | крупный |
 | [16-distributed-hardening.md](16-distributed-hardening.md) | Что многомашинное развёртывание оставляет открытым в сети: TLS, ACL, отзыв токенов | крупный |

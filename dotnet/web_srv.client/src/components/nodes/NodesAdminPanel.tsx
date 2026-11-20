@@ -265,7 +265,7 @@ export default function NodesAdminPanel() {
                     secondaryTypographyProps={{ noWrap: true, variant: 'caption' }}
                   />
                   {marker.nodeKind === 'part' ? (
-                    <PartStateDot state={states[marker.id]} descriptions={descriptions} />
+                    <PartStateDot state={states[marker.id]} descriptions={descriptions} present={marker.present} />
                   ) : null}
                 </ListItemButton>
               )
@@ -328,11 +328,13 @@ export default function NodesAdminPanel() {
               {selected.nodeKind === 'part' || selectedCamera ? (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('maps.node.states')}</Typography>
-                  {alarms[selected.id]?.alarm || (states[selected.id]?.states?.length ?? 0) > 0 ? (
+                  {alarms[selected.id]?.alarm || selected.present === false
+                    || (states[selected.id]?.states?.length ?? 0) > 0 ? (
                     <NodeStateChips
                       state={states[selected.id]}
                       alarm={alarms[selected.id]}
                       descriptions={descriptions}
+                      present={selected.present}
                     />
                   ) : (
                     <Typography variant="body2" color="text.secondary">{t('maps.node.noStates')}</Typography>

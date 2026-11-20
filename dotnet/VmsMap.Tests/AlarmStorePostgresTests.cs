@@ -20,6 +20,7 @@ public class AlarmStorePostgresTests
   // The fixtures these tests share. The node names are labels no test asserts; the token is the
   // digital input's part address and the sensor keys are the store's dedup addresses.
   private const string AliceName = "alice";
+  private const string ResetComment = "the part reports again";
   private const string InputToken = "1";
   private const string BuildingName = "building";
   private const string FloorName = "floor";
@@ -144,6 +145,10 @@ public class AlarmStorePostgresTests
 
   private static RaiseAlarmSpec Sensor(Guid input, string key = SensorOneKey) =>
     new(input, AlarmSource.Sensor, key, Trigger: "open");
+
+  private static RaiseAlarmSpec Fault(Guid input) =>
+    new(input, AlarmSource.Fault, DeviceFaultService.DedupKey(input),
+        Severity: AlarmSeverity.Warning, Trigger: DeviceFaultService.PartAbsentTrigger);
 
   [Fact]
   public async Task ARaiseWritesTheRowAndTheStateInOneTransaction()
@@ -398,5 +403,130 @@ public class AlarmStorePostgresTests
 
     Assert.Empty(await s.Db.Alarms.AsNoTracking().ToListAsync());
     Assert.Empty(await s.Db.DeviceNodes.AsNoTracking().ToListAsync());
+  }
+
+  // ── A fault: the flag and its alarm are one transaction ──────────────────────────────────────
+
+  [Fact]
+  public async Task AFaultIsRaisedAndResetOnPostgres()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var tree = await SeedAsync(s);
+    var key = DeviceFaultService.DedupKey(tree.Input);
+
+    var raised = await s.Alarms.RaiseAsync(Fault(tree.Input), default);
+    Assert.Equal(AlarmMove.Applied, raised.Move);
+
+    // A fault never writes ALARM and never counts as a child alarm.
+    var nodeAlarm = await AlarmAsync(s.Db, tree.Input);
+    Assert.True(nodeAlarm is null || !nodeAlarm.alarm);
+    var cameraAlarm = await AlarmAsync(s.Db, tree.Camera);
+    Assert.True(cameraAlarm is null || cameraAlarm.children_alarms == 0);
+
+    await s.Alarms.NormalFaultAsync(tree.Input, key, default);
+    var reset = await s.Alarms.CloseAsync(
+      raised.Alarm!.id, AliceName, AlarmCloseReason.Reset, ResetComment, default);
+    Assert.Equal(AlarmMove.Applied, reset.Move);
+
+    var row = await s.Db.Alarms.AsNoTracking().SingleAsync();
+    Assert.Equal(AlarmSource.Fault, row.source);
+    Assert.Equal(AlarmCloseReason.Reset, row.close_reason);
+    Assert.False(row.condition_active);
+  }
+
+  [Fact]
+  public async Task APresentChangeAndItsFaultRollBackTogether()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var tree = await SeedAsync(s);
+    var faults = new DeviceFaultService(s.Db, s.Alarms);
+
+    // The service joins the snapshot's transaction: rolling the snapshot back must take both the
+    // presence flag and the fault with it.
+    await using (var tx = await s.Db.Database.BeginTransactionAsync())
+    {
+      var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == tree.Input);
+      node.present = false;
+      await faults.ApplyAsync([node], default);
+
+      Assert.Single(await s.Db.Alarms.AsNoTracking()
+        .Where(a => a.source == AlarmSource.Fault).ToListAsync());
+      await tx.RollbackAsync();
+    }
+
+    s.Db.ChangeTracker.Clear();
+    Assert.True((await s.Db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == tree.Input)).present);
+    Assert.Empty(await s.Db.Alarms.AsNoTracking()
+      .Where(a => a.source == AlarmSource.Fault).ToListAsync());
+
+    // The same pair commits together.
+    await using (var tx = await s.Db.Database.BeginTransactionAsync())
+    {
+      var node = await s.Db.DeviceNodes.SingleAsync(n => n.object_id == tree.Input);
+      node.present = false;
+      await faults.ApplyAsync([node], default);
+      await tx.CommitAsync();
+    }
+
+    Assert.False((await s.Db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == tree.Input)).present);
+    var fault = await s.Db.Alarms.AsNoTracking()
+      .SingleAsync(a => a.source == AlarmSource.Fault);
+    Assert.Equal(AlarmStatus.Active, fault.status);
+    Assert.True(fault.condition_active);
+  }
+
+  [Fact]
+  public async Task AResetRacingANewAbsenceLeavesTheFaultConsistentWithPresent()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var tree = await SeedAsync(s);
+    var key = DeviceFaultService.DedupKey(tree.Input);
+
+    var raised = await s.Alarms.RaiseAsync(Fault(tree.Input), default);
+    await s.Alarms.NormalFaultAsync(tree.Input, key, default); // returned; the part is present
+    var faultId = raised.Alarm!.id;
+
+    var second = SecondStore(s, out var otherDb);
+    await using var _ = otherDb;
+
+    // The snapshot side, on its own connection: mark the part absent and apply the fault rule in
+    // one transaction. It races the operator resetting the returned fault.
+    var snapshot = Task.Run(async () =>
+    {
+      var node = await otherDb.DeviceNodes.SingleAsync(n => n.object_id == tree.Input);
+      await using var tx = await otherDb.Database.BeginTransactionAsync();
+      node.present = false;
+      await new DeviceFaultService(otherDb, second).ApplyAsync([node], default);
+      await tx.CommitAsync();
+    });
+
+    var reset = s.Alarms.CloseAsync(
+      faultId, AliceName, AlarmCloseReason.Reset, ResetComment, default);
+
+    await Task.WhenAll(snapshot, reset);
+
+    Assert.False((await s.Db.DeviceNodes.AsNoTracking()
+      .SingleAsync(n => n.object_id == tree.Input)).present);
+
+    // Whichever transaction committed first, exactly one open fault remains and it describes the
+    // absence; a row closed by the reset never keeps a live condition.
+    var open = await s.Db.Alarms.AsNoTracking()
+      .Where(a => a.source == AlarmSource.Fault && a.status != AlarmStatus.Closed)
+      .ToListAsync();
+    Assert.Single(open);
+    Assert.True(open[0].condition_active);
+
+    var closed = await s.Db.Alarms.AsNoTracking()
+      .Where(a => a.source == AlarmSource.Fault && a.status == AlarmStatus.Closed)
+      .ToListAsync();
+    Assert.All(closed, a => Assert.False(a.condition_active));
   }
 }

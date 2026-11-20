@@ -79,11 +79,22 @@ namespace VmsMap.Grpc
       var ct = context.CancellationToken;
       var caller = ToCaller(request.Caller);
 
-      if (request.Reason is not (AlarmCloseReason.FalseAlarm or AlarmCloseReason.Other))
+      if (request.Reason is not (AlarmCloseReason.FalseAlarm or AlarmCloseReason.Other
+                                 or AlarmCloseReason.Reset))
         throw new RpcException(new Status(
-          StatusCode.InvalidArgument, "reason must be 'false_alarm' or 'other'"));
+          StatusCode.InvalidArgument, "reason must be 'false_alarm', 'other' or 'reset'"));
 
       var alarm = await RequireVisibleAlarmAsync(request.Id, caller, ct);
+
+      // A fault is reset, not closed: the operator's reason is the reset, and the store refuses it
+      // while the part is still absent. A condition alarm keeps its two close reasons.
+      if (alarm.source == AlarmSource.Fault && request.Reason != AlarmCloseReason.Reset)
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, "a fault is closed by 'reset'"));
+      if (alarm.source != AlarmSource.Fault && request.Reason == AlarmCloseReason.Reset)
+        throw new RpcException(new Status(
+          StatusCode.InvalidArgument, "'reset' is only a fault's reason"));
+
       await RequireActionAsync(alarm, RightActions.Acknowledge, caller, ct);
 
       var outcome = await _alarmStore.CloseAsync(
@@ -190,6 +201,11 @@ namespace VmsMap.Grpc
           continue;
         }
 
+        // A fault is the operator's separate task: "accept the zone" is about condition alarms,
+        // and a returned fault is reset, not acknowledged.
+        if (alarm.source == AlarmSource.Fault)
+          continue;
+
         // The store keeps the one gate that matters: a live condition on an armed node is refused.
         var outcome = await _alarmStore.AcknowledgeAsync(alarm.id, actor, comment, ct);
         switch (outcome.Move)
@@ -219,7 +235,9 @@ namespace VmsMap.Grpc
             response.Rejected.Add(new MapProto.AlarmRejection
             {
               AlarmId = alarm.id.ToString(),
-              Reason = fresh?.status == AlarmStatus.Closed ? "closed" : "comment_required",
+              Reason = fresh?.status == AlarmStatus.Closed ? "closed"
+                : fresh?.source == AlarmSource.Fault ? "reset_required"
+                : "comment_required",
             });
             break;
         }
@@ -336,14 +354,17 @@ namespace VmsMap.Grpc
           Utils.ConvertGuidToObjectId(alarm.object_id), RightActions.Acknowledge, caller, ct);
 
       // The row's own state decides availability; the arming no longer blocks it, it asks for a
-      // comment. Everything is mirrored here so the browser never guesses.
+      // comment. A fault has no arming gate and never asks for that comment.
       var armed = alarm.status == AlarmStatus.Active && alarm.condition_active
+        && alarm.source != AlarmSource.Fault
         && await _alarmStore.IsArmedAsync(alarm.object_id, ct);
 
       var canAck = permitted && alarm.status != AlarmStatus.Closed;
       var ackBlockedReason =
         alarm.status == AlarmStatus.Closed ? "closed"
         : !permitted ? "no_right"
+        : alarm.source == AlarmSource.Fault && alarm.status == AlarmStatus.Returned
+          ? "reset_required"
         : string.Empty;
 
       string? name = null;

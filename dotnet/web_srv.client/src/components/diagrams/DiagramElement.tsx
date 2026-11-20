@@ -59,7 +59,7 @@ export default function DiagramElement({
   // A replica's states and alarms are its owner's: the map answers them under the replica's id.
   const state = states[marker.id]
   const alarm = alarms[marker.id]
-  const style = nodeStyle({ visual }, state, alarm, descriptions)
+  const style = nodeStyle({ visual }, state, alarm, descriptions, marker.present)
   const highlighted = style.alarming || (state?.states?.length ?? 0) > 0
   const selected = marker.id === selectedId
   const ownValues = values[marker.id] ?? []
