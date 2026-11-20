@@ -1033,8 +1033,9 @@ message Alarm {
   // effective arming, empty while the device is not on guard. The browser groups by it instead of
   // guessing from the tree.
   string arming_source_object_id = 24;
-  // Why the acknowledge action is unavailable to this caller: "closed", "no_right", or empty when
-  // it is available. A single reason, so the button's tooltip has something to say.
+  // Why the acknowledge action is unavailable to this caller: "closed", "no_right",
+  // "reset_required" (a fault whose condition cleared is closed by a reset), or empty when it is
+  // available. A single reason, so the button's tooltip has something to say.
   string ack_blocked_reason = 25;
   // The condition is live and the node is effectively armed: acknowledging is allowed, but only
   // with a non-empty comment.

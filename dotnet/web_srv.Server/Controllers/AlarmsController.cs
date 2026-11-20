@@ -59,7 +59,7 @@ public class AlarmsController(MapProto.MapService.MapServiceClient map) : Contro
   }
 
   // Only an alarm whose condition is already gone may be closed by hand; `reason` says whether it
-  // was real.
+  // was real. A fault is reset with `reset` and a comment, and only after the part reports again.
   [HttpPost("{id}/close")]
   public async Task<IActionResult> Close(
     string id, [FromBody] AlarmCloseDto body, CancellationToken ct)
@@ -83,7 +83,7 @@ public sealed class AlarmActionDto
 
 public sealed class AlarmCloseDto
 {
-  /// <summary>"false_alarm" or "other".</summary>
+  /// <summary>"false_alarm", "other" or "reset" (a fault whose part reports again).</summary>
   public string? Reason { get; set; }
   public string? Comment { get; set; }
 }
