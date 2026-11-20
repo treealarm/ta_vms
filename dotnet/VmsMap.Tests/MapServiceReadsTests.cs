@@ -644,6 +644,81 @@ public class MapServiceReadsTests
     Assert.Equal(45, fig.Visual.RotationDeg);
   }
 
+  [Fact]
+  public async Task GetMarkersByIdsReportsAPartsPresenceThroughItsReplica()
+  {
+    var s = Create();
+    var root = await Node(s.Map, RootLabel);
+    var plain = await Node(s.Map, NoteLabel, root.id);
+    var camera = await Node(s.Map, CameraLabel, root.id);
+    var part = await Node(s.Map, DoorLabel, camera.id);
+    var replica = await Node(s.Map, "door picture", root.id, ownerId: part.id);
+
+    s.Db.DeviceNodes.Add(TestCameras.DeviceNode(TestCameras.One, Guid.Parse(camera.id!)));
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = Guid.Parse(part.id!),
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      part_token = "1",
+      present = false,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var answer = await s.Grpc.GetMarkersByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { plain.id!, part.id!, replica.id! },
+      Caller = Caller(AliceName, AdminRole),
+    }, new TestContext());
+
+    var byId = answer.Markers.ToDictionary(m => m.Id);
+    Assert.True(byId[part.id!].HasPresent);
+    Assert.False(byId[part.id!].Present);
+    // A picture answers with its owner's part, as it answers with its owner's camera and kind.
+    Assert.True(byId[replica.id!].HasPresent);
+    Assert.False(byId[replica.id!].Present);
+    // A node with no device behind it says nothing, rather than "absent".
+    Assert.False(byId[plain.id!].HasPresent);
+  }
+
+  [Fact]
+  public async Task GetByIdsReportsAPartsPresenceOnItsFigure()
+  {
+    var s = Create();
+    var root = await Node(s.Map, RootLabel);
+    var camera = await Node(s.Map, CameraLabel, root.id);
+    var part = await Node(s.Map, DoorLabel, camera.id);
+    var guid = Guid.Parse(part.id!);
+
+    s.Db.DeviceNodes.Add(TestCameras.DeviceNode(TestCameras.One, Guid.Parse(camera.id!)));
+    s.Db.DeviceNodes.Add(new DBDeviceNode
+    {
+      object_id = guid,
+      source_kind = DeviceObjectId.CameraSource,
+      source_id = TestCameras.One,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      part_token = "1",
+      present = false,
+    });
+    s.Db.GeoObjects.Add(new DBGeoObject
+    {
+      id = guid,
+      figure = new NetTopologySuite.Geometries.Point(0, 0),
+    });
+    await s.Db.SaveChangesAsync();
+
+    var figures = await s.Grpc.GetByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { part.id! },
+      Caller = Caller(AliceName, AdminRole),
+    }, new TestContext());
+
+    var fig = Assert.Single(figures.Figs);
+    Assert.True(fig.HasPresent);
+    Assert.False(fig.Present);
+  }
+
   // ── Alarms ──────────────────────────────────────────────────────────────────────────────────
 
   private static async Task<string> AlarmCameraAsync(Services s, params string[] actions)

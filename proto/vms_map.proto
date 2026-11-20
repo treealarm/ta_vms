@@ -282,6 +282,10 @@ message Marker {
   // a figure or a plain object. It is the node's side row, not a stored type; a replica answers
   // with its owner's kind.
   string node_kind = 8;
+  // A device part's presence as its device's last successful manifest stated it. Absent on every
+  // other node — a camera, a space, a plain figure. The field is the truth the tree and the panel
+  // render; it is not a state and does not depend on whether a fault alarm is open.
+  optional bool present = 9;
 }
 
 message MarkerList {
@@ -473,6 +477,8 @@ message Figure {
   string node_kind = 12;
   // How the node is drawn: colour, icon, rotation and caption.
   Visual visual = 13;
+  // A device part's presence, as Marker.present; absent on every other figure.
+  optional bool present = 14;
 }
 
 message Figures {
@@ -995,7 +1001,7 @@ message Alarm {
   // The VmsCfg event_subscriptions row a subscription-sourced alarm belongs to; empty for the
   // sensor and retention sources.
   string subscription_id = 4;
-  string source = 5;       // "sensor" | "retention" | "subscription"
+  string source = 5;       // "sensor" | "retention" | "subscription" | "fault"
   string dedup_key = 6;
   // Whether the physical condition still holds. Acknowledgement does not change it.
   bool condition_active = 7;
@@ -1010,7 +1016,7 @@ message Alarm {
   string ack_comment = 15;
   optional google.protobuf.Timestamp closed_at = 16;
   // "returned_to_normal", "acknowledged_after_normal", "auto_returned_to_normal", "device_gone",
-  // "false_alarm" or "other".
+  // "false_alarm", "other" or "reset" (a fault the operator reset after the part reported again).
   string close_reason = 17;
   string close_comment = 18;
   string closed_by = 19;   // the operator's name, or "system"
@@ -1096,12 +1102,14 @@ message AcknowledgeSubtreeAlarmsResponse {
 message AlarmRejection {
   string alarm_id = 1;
   // "armed" (the condition still holds on a guarded node), "already_acknowledged", "closed",
-  // "not_found".
+  // "reset_required" (a fault whose condition cleared is closed by a reset, not an
+  // acknowledgement), "not_found".
   string reason   = 2;
 }
 
-// `reason` is "false_alarm" or "other": a manual close is only ever of an alarm whose condition is
-// already gone, and it says whether the alarm was real.
+// `reason` is "false_alarm", "other" or "reset": a manual close is only ever of an alarm whose
+// condition is already gone, and it says whether the alarm was real. A fault is always "reset"
+// and requires a comment; it is refused while the part is still absent.
 message CloseAlarmRequest {
   string id = 1;
   Caller caller = 2;
@@ -1113,7 +1121,9 @@ message CloseAlarmRequest {
 // the store directly; this exists for the alarm entity to be testable from outside.
 message RaiseAlarmRequest {
   string object_id = 1;
-  string source = 2;        // "sensor" | "retention" | "subscription"
+  // "sensor" | "retention" | "subscription". A fault is raised by the device adapter itself,
+  // inside the snapshot transaction, and is not accepted here.
+  string source = 2;
   string dedup_key = 3;
   // Empty takes the severity of the definition, or "warning" when the definition is unknown.
   string severity = 4;
