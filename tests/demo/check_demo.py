@@ -122,21 +122,26 @@ def set_relay(vms, camera_id, token, active):
              {"active": active})
 
 
-def set_relay_until(vms, name, token, active, reached, part_id, attempts=2, timeout=30):
+def set_relay_until(vms, name, token, active, reached, part_id,
+                    input_name, input_token, attempts=2, timeout=30):
     """Switch a relay and wait for what it drives, flipping it back when the map missed the change.
 
     A camera's configuration change — and the map writes a camera's arming flag on every zone
-    change — rebuilds its device subscription. A transition that falls into that window can be
-    lost, and a repeat of the value the map already holds is not a transition, so the retry flips
-    the relay away and back: the next change is one the map can hear. `reached` is what proves the
-    action, `part_id` the node whose own state shows the contact for the flip.
+    change — drops its device subscription; VmsOnvif reopens it on the next read of the camera's
+    I/O lists, which is what the operator's panel does every few seconds. A check that reads only
+    the map would command a relay nobody is watching, so the list is read first. A transition can
+    still be lost, and a repeat of the value the map already holds is not a transition, so the
+    retry flips the relay away and back: the next change is one the map can hear. `reached` is what
+    proves the action, `part_id` the node whose own state shows the contact for the flip.
     """
     for attempt in range(attempts):
+        watch_input(vms, input_name, input_token)
         set_relay(vms, camera_id(name), token, active)
         if wait_until(reached, timeout):
             return True
         if attempt + 1 == attempts:
             return False
+        watch_input(vms, input_name, input_token)
         set_relay(vms, camera_id(name), token, not active)
         wait_until(lambda: (control_object(vms, part_id) or {}).get("state")
                    == ("open" if active else "closed"), 20)
@@ -160,6 +165,17 @@ def input_live(vms, name, token):
     rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs") or []
     row = next((candidate for candidate in rows if candidate.get("token") == token), None)
     return None if row is None else row.get("liveActive")
+
+
+def watch_input(vms, name, token):
+    """Read an input's list, which is what reopens the camera's device subscription.
+
+    A configuration change — the map writes a camera's arming flag on every zone change — drops
+    that subscription, and VmsOnvif opens it again on the next read of the camera's I/O lists,
+    which is what the operator's panel polls every few seconds. A step that judges a contact by
+    its events must read the list too, or it switches a relay nobody is watching.
+    """
+    return input_live(vms, name, token)
 
 
 def digital_input_row(vms, name, token):
@@ -1594,7 +1610,7 @@ def check_zone_bypass(vms):
         check(bool(set_relay_until(
                   vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, True,
                   lambda: (control_object(vms, part["id"]) or {}).get("state") == "closed",
-                  part["id"])),
+                  part["id"], ARMED_CAMERA, ARMED_TOKEN)),
               "the contact closes and the map knows it")
         time.sleep(4)
         check(active_alarm(vms, part["id"]) is None,
@@ -1617,7 +1633,7 @@ def check_zone_bypass(vms):
         check(bool(set_relay_until(
                   vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, False,
                   lambda: active_alarm(vms, part["id"]) is None,
-                  part["id"])),
+                  part["id"], ARMED_CAMERA, ARMED_TOKEN)),
               "opening the loop returns the contact to normal")
 
         set_node_arming(vms, site["id"], "armed")
@@ -1631,7 +1647,7 @@ def check_zone_bypass(vms):
         check(bool(set_relay_until(
                   vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, True,
                   lambda: (control_object(vms, part["id"]) or {}).get("state") == "closed",
-                  part["id"])),
+                  part["id"], ARMED_CAMERA, ARMED_TOKEN)),
               "the excluded room's contact still reaches the map")
         time.sleep(4)
         check(active_alarm(vms, part["id"]) is None,
@@ -1776,6 +1792,7 @@ def settle_sensor(vms, part_id):
 def check_sensor_alarm(vms, sensor):
     """The contact becomes the alarm, and ALARM bubbles up the canonical tree."""
     part = sensor["part"]
+    watch_input(vms, SENSOR_CAMERA, SENSOR_TOKEN)
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
     settle_sensor(vms, part["id"])
     # The journal keeps its rows when a camera is deleted and re-added, so an old `closed` event
@@ -1786,7 +1803,8 @@ def check_sensor_alarm(vms, sensor):
         return next((e for e in sensor_events(vms, part["id"], "closed")
                      if e["id"] not in before), None)
 
-    raised = set_relay_until(vms, LAMP_RELAY_CAMERA, "peer", True, new_closed, part["id"])
+    raised = set_relay_until(vms, LAMP_RELAY_CAMERA, "peer", True, new_closed, part["id"],
+                             SENSOR_CAMERA, SENSOR_TOKEN)
     check(bool(raised),
           "the peer relay closing writes one `sensor` event with contact=closed")
 
@@ -1851,6 +1869,7 @@ def check_ack_after_disarm(vms, sensor, alarm):
 def check_return_to_normal(vms, sensor, alarm):
     """The contact coming back ends the alarm and takes ALARM off the node and its ancestors."""
     part = sensor["part"]
+    watch_input(vms, SENSOR_CAMERA, SENSOR_TOKEN)
     before = {event["id"] for event in sensor_events(vms, part["id"], "open")}
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
 
@@ -1924,6 +1943,7 @@ def check_repeat_front(vms, sensor, group, since):
               for episode in (group or {}).get("episodes") or []}
 
     before_fronts = len(sensor_events(vms, part["id"], "closed"))
+    watch_input(vms, SENSOR_CAMERA, SENSOR_TOKEN)
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
     check(bool(wait_until(
         lambda: len(sensor_events(vms, part["id"], "closed")) > before_fronts, 45)),
@@ -1953,6 +1973,7 @@ def check_emit_loop(vms, sensor):
     # now, so the window in which it can fire does not have to cover two device round trips. The
     # wait is for the transition this command causes — an `open` event left over from an earlier
     # scenario would let the relay be set back before the release had reached the device.
+    watch_input(vms, SENSOR_CAMERA, SENSOR_TOKEN)
     before = {event["id"] for event in sensor_events(vms, part["id"], "open")}
     set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", False)
     wait_until(
@@ -1985,6 +2006,7 @@ def check_emit_loop(vms, sensor):
         # Only a transition that happens after the rule is saved can be routed by it. A `closed`
         # event left over from the scenarios above must not make this wait return at once: the
         # device's own delivery is the slow part here, and it is what the 75 s covers.
+        watch_input(vms, SENSOR_CAMERA, SENSOR_TOKEN)
         before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
         set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
         closed = wait_until(
