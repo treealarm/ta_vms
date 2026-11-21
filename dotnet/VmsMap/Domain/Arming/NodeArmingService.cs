@@ -143,13 +143,16 @@ namespace VmsMap.Domain.Arming
       Node node, string deviceKind, string mode, string actor, DateTime? until,
       CancellationToken ct)
     {
+      // The mode is the map's own row, so the read, the write and its journal are one transaction:
+      // a concurrent change to the deadline cannot be lost between reading the own mode and
+      // overwriting it.
+      await using var tx = await BeginTransactionAsync(ct);
+
       // The deadline is a modifier of the explicit disarm; the own mode to restore is read before
       // the write, because the write is what overwrites it.
       var current = await _objectSettings.GetAsync(node.CanonicalId, ct);
       var restoreMode = RestoreModeFor(current, mode, until);
 
-      // The mode is the map's own row, so the write and its journal are one transaction.
-      await using var tx = await BeginTransactionAsync(ct);
       await _objectSettings.SetArmingAsync(node.CanonicalId, mode, until, restoreMode, ct);
       await WriteJournalAsync(node.CanonicalId, actor, mode, until, expired: false, ct);
       if (tx is not null)
@@ -188,6 +191,8 @@ namespace VmsMap.Domain.Arming
       Node node, string mode, string actor, DateTime? until, CancellationToken ct)
     {
       var guid = Utils.ConvertObjectIdToGuid(node.CanonicalId)!.Value;
+      await using var tx = await BeginTransactionAsync(ct);
+
       var stored = await _db.ObjectArming.AsNoTracking()
         .Where(a => a.object_id == guid)
         .Select(a => new ContainerArmingRow(a.armed, a.bypass_until, a.restore_mode))
@@ -200,8 +205,6 @@ namespace VmsMap.Domain.Arming
       // answer: it needs the write and the journal, but not the alarm re-check the outbox triggers.
       var timerChanged = until != stored?.BypassUntil || restoreMode != stored?.RestoreMode;
       var rowChanged = effectiveChanged || timerChanged;
-
-      await using var tx = await BeginTransactionAsync(ct);
 
       if (rowChanged)
         await WriteArmingAsync(guid, value, until, restoreMode, ct);
