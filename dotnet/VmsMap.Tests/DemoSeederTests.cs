@@ -51,7 +51,9 @@ public class DemoSeederTests
       Task.CompletedTask;
   }
 
-  private sealed record Services(VmsMapDbContext Db, MapDb Map, DemoSeeder Seeder, TestCatalog Catalog);
+  private sealed record Services(
+    VmsMapDbContext Db, MapDb Map, DemoSeeder Seeder, TestCatalog Catalog,
+    TestCameraState CameraState, TestWiring.TestCfgArmingWriter Cfg);
 
   private static Services Create(params string[] cameras)
   {
@@ -67,7 +69,10 @@ public class DemoSeederTests
     var tracks = new TracksUpdateService(map, new TrackService(db, levels), geo);
     var updates = new MapUpdateService(db, map, tracks, states);
     var catalog = new TestCatalog(cameras);
-    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier(), TestWiring.CameraArming(db, map));
+    var cameraState = new TestCameraState();
+    var cfg = new TestWiring.TestCfgArmingWriter(cameraState);
+    var arming = TestWiring.CameraArming(db, map, cameraState, cfg);
+    var spatial = new SpatialDb(db, map, updates, geo, catalog, new TestNotifier(), arming);
 
     var seeder = new DemoSeeder(
       db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
@@ -75,7 +80,7 @@ public class DemoSeederTests
       TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
       TestWiring.DeviceDiagrams(db, map, updates, geo));
 
-    return new Services(db, map, seeder, catalog);
+    return new Services(db, map, seeder, catalog, cameraState, cfg);
   }
 
   // The fixtures these tests share.
@@ -259,6 +264,21 @@ public class DemoSeederTests
 
     Assert.Empty(placed.SkippedCameras);
     Assert.Single(await s.Db.CameraPlacements.ToListAsync());
+  }
+
+  [Fact]
+  public async Task TheInstallLeavesTheFlagMatchingTheCommittedZone()
+  {
+    var s = Create(MasterCamera);
+    var world = World(placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)]);
+
+    // Every install derives the flags of the cameras it drew: the room is off guard, so a camera
+    // an earlier world left armed comes off it without waiting for another trigger.
+    s.CameraState.Armed = true;
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    Assert.False(s.CameraState.Armed);
+    Assert.Contains((DemoIds.Camera(MasterCamera), false), s.Cfg.CameraFlags);
   }
 
   [Fact]
