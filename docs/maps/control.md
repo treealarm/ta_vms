@@ -62,7 +62,10 @@ replica moves or goes, when a node is moved in the tree, when the camera's own s
 change, and in a sweep at startup over the zones that are set. The map is the only writer and it
 writes for an explicit mode as well as an inherited one; the write happens only when the value
 differs (`UPDATE … WHERE armed IS DISTINCT FROM …`), so the event a write announces cannot feed
-itself.
+itself. Every write is read back and derived again before the call returns, and a writer that
+changes the tree inside a transaction derives the flags after its commit — so a placement move or
+a zone change that lands between the read and the write cannot leave a stale flag standing until
+the next trigger.
 
 **The settings live on the node.** `device_object_settings` (VmsMap) holds the arming mode of every
 camera and input node and, for a digital input, `trigger_on`/`alarm_enabled`. The old columns —

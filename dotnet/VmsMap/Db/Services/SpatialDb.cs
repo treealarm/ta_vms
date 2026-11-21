@@ -204,7 +204,7 @@ namespace VmsMap.Db
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      await AfterRemovalAsync(result, ct);
+      await AfterRemovalAsync(result, IsAmbientTransaction(tx), ct);
       return result.Removed;
     }
 
@@ -285,15 +285,28 @@ namespace VmsMap.Db
       return new RemovalResult(removed, requested, cameras);
     }
 
-    private async Task AfterRemovalAsync(RemovalResult result, CancellationToken ct)
+    private async Task AfterRemovalAsync(RemovalResult result, bool ambient, CancellationToken ct)
     {
       if (result.Removed == 0)
         return;
 
       // What the cameras stood in may be gone: the guard flag VmsCfg keeps has to say so now.
-      await _arming.ReconcileManyAsync(result.Cameras, ct);
+      // Inside another transaction the flag would be derived from an uncommitted tree, so its
+      // owner does it after the commit instead.
+      if (!ambient)
+        await _arming.ReconcileManyAsync(result.Cameras, ct);
       await NotifyAsync(result.ObjectIds, result.Cameras, ct);
     }
+
+    /// <summary>
+    /// True when this call joined a transaction it does not own, so deriving the flag here would
+    /// read an uncommitted tree. `BeginTransactionAsync` answers null both for an ambient
+    /// transaction and for the in-memory provider, and only the first means the derivation must
+    /// wait for the owner's commit. `CurrentTransaction` cannot tell them apart after a commit:
+    /// it keeps pointing at the committed transaction until it is disposed.
+    /// </summary>
+    private bool IsAmbientTransaction(IDbContextTransaction? tx) =>
+      tx is null && _db.Database.IsRelational();
 
     /// <summary>
     /// A node was moved in the tree, or its subtree changed hands: whatever stands under it may
@@ -308,6 +321,40 @@ namespace VmsMap.Db
         if (!string.IsNullOrEmpty(objectId))
           await _arming.ReconcileSubtreeAsync(objectId, ct);
       }
+    }
+
+    /// <summary>
+    /// These cameras' flags, derived now. A write made inside a caller's transaction does not
+    /// derive at the time — the tree it would read is not committed — so the owner calls this
+    /// after its commit.
+    /// </summary>
+    public Task ReconcileCamerasAsync(IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+      _arming.ReconcileManyAsync(cameraIds, ct);
+
+    /// <summary>
+    /// The cameras with any picture in these subtrees, not only a reference one: a replica taken
+    /// away here may be the reference of a camera whose other pictures remain. Read it before the
+    /// subtree is removed.
+    /// </summary>
+    public async Task<HashSet<string>> CamerasUnderAsync(
+      IReadOnlyCollection<string> objectIds, CancellationToken ct)
+    {
+      var subtree = await _mapService.GetSubtreeIdsAsync(objectIds);
+      if (subtree.Count == 0)
+        return new HashSet<string>(StringComparer.Ordinal);
+
+      var guids = subtree
+        .Select(Utils.ConvertObjectIdToGuid)
+        .Where(g => g.HasValue)
+        .Select(g => g!.Value)
+        .ToList();
+
+      var cameras = await _db.CameraPlacements.AsNoTracking()
+        .Where(p => guids.Contains(p.object_id))
+        .Select(p => p.camera_id)
+        .Distinct()
+        .ToListAsync(ct);
+      return cameras.ToHashSet(StringComparer.Ordinal);
     }
 
     // ── Plan images ───────────────────────────────────────────────────────────
@@ -546,8 +593,10 @@ namespace VmsMap.Db
       await _mapUpdateService.RefreshPlacementMirrorsAsync([placement.CameraId]);
 
       // And it is where the camera stands for arming: a camera that moved into a zone is on guard
-      // there, one that moved out of it is not — the flag VmsCfg keeps has to say so.
-      await _arming.ReconcileAsync(placement.CameraId, ct);
+      // there, one that moved out of it is not — the flag VmsCfg keeps has to say so. Inside
+      // another transaction the move is not committed yet, so its owner derives the flag instead.
+      if (!IsAmbientTransaction(tx))
+        await _arming.ReconcileAsync(placement.CameraId, ct);
 
       await NotifyAsync(changed, [placement.CameraId], ct);
     }
@@ -618,7 +667,7 @@ namespace VmsMap.Db
 
       // The picture that went may have been the camera's reference: the zone it stood in no longer
       // reaches it.
-      await AfterRemovalAsync(result, ct);
+      await AfterRemovalAsync(result, IsAmbientTransaction(tx), ct);
       return result.Removed > 0;
     }
 

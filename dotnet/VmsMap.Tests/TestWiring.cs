@@ -147,15 +147,30 @@ internal static class TestWiring
   {
     public List<(string CameraId, bool Armed)> CameraFlags { get; } = [];
 
-    public Task<bool> SetCamArmedAsync(string cameraId, bool armed, CancellationToken ct)
+    /// <summary>How many times the map asked for a write, changed or not.</summary>
+    public int Calls { get; private set; }
+
+    /// <summary>Runs before the write lands: how a test makes one camera's write fail.</summary>
+    public Func<string, bool, Task>? BeforeWrite { get; set; }
+
+    /// <summary>Runs once the write has landed: how a test plays the world changing under it.</summary>
+    public Func<string, bool, Task>? AfterWrite { get; set; }
+
+    public async Task<bool> SetCamArmedAsync(string cameraId, bool armed, CancellationToken ct)
     {
+      Calls += 1;
+      if (BeforeWrite is not null)
+        await BeforeWrite(cameraId, armed);
+
       if (cameraState is TestCameraState test && test.Armed == armed)
-        return Task.FromResult(false);
+        return false;
 
       CameraFlags.Add((cameraId, armed));
       if (cameraState is TestCameraState state)
         state.Armed = armed;
-      return Task.FromResult(true);
+      if (AfterWrite is not null)
+        await AfterWrite(cameraId, armed);
+      return true;
     }
   }
 

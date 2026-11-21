@@ -565,12 +565,25 @@ namespace VmsMap.Demo
       var stale = registered
         .Where(pair => !keep.Contains(pair.Key))
         .ToList();
+      // The cameras their pictures held are read before the pictures go: their flags are derived
+      // from the committed world, and by then these rows no longer exist.
+      var releasedCameras = await CamerasOfAsync(stale, ct);
       await DeleteAsync(stale, ct);
       report.Removed = stale.Count;
 
       await SaveRegistryAsync(world.Key, world.Version, ids.Where(pair => keep.Contains(pair.Key)), ct);
 
       if (tx is not null) await tx.CommitAsync(ct);
+
+      // The world is committed: every camera drawn under it, and every camera whose picture it
+      // released, is derived now. The placement writes inside the transaction did not derive —
+      // they read an uncommitted tree — so this is the pass that settles their flags.
+      var armingCameras = new HashSet<string>(releasedCameras, StringComparer.Ordinal);
+      var keptRoots = ids
+        .Where(pair => keep.Contains(pair.Key) && KindIsContainer(pair.Key))
+        .Select(pair => pair.Value.ToString())
+        .ToList();
+      armingCameras.UnionWith(await _spatial.CamerasUnderAsync(keptRoots, ct));
 
       // ── A device's behaviour: the map's own, so the world installs it here ───────────────────
       // The part's name is VmsCfg's; who decides its arming and what its contact means is the
@@ -581,25 +594,35 @@ namespace VmsMap.Demo
       // nodes a replica stands on were ensured before the transaction for the same reason.) The
       // world is complete without these rows — a part with none keeps the defaults — so a failure
       // here costs the demo's arming until the next install, not half a world.
-      foreach (var device in world.Devices)
+      try
       {
-        if (!placedCameras.Contains(device.CameraKey))
+        foreach (var device in world.Devices)
         {
-          Skip(device.CameraKey);
-          continue;
-        }
+          if (!placedCameras.Contains(device.CameraKey))
+          {
+            Skip(device.CameraKey);
+            continue;
+          }
 
-        var partId = await _deviceNodes.EnsureAsync(
-          DeviceObjectId.CameraSource, DemoIds.Camera(device.CameraKey),
-          device.PartKind, device.Token, ct);
-        if (partId is null)
-        {
-          Skip(device.CameraKey);
-          continue;
-        }
+          var partId = await _deviceNodes.EnsureAsync(
+            DeviceObjectId.CameraSource, DemoIds.Camera(device.CameraKey),
+            device.PartKind, device.Token, ct);
+          if (partId is null)
+          {
+            Skip(device.CameraKey);
+            continue;
+          }
 
-        await _deviceSettings.SetAsync(
-          partId, device.ArmMode, device.TriggerOn, device.AlarmEnabled, ct);
+          await _deviceSettings.SetAsync(
+            partId, device.ArmMode, device.TriggerOn, device.AlarmEnabled, ct);
+        }
+      }
+      finally
+      {
+        // After the settings, so a world that writes a camera's own mode is derived with it; in
+        // `finally`, so a failure there does not leave the committed world's flags underived.
+        // `ReconcileManyAsync` survives one camera's failure and logs it.
+        await _spatial.ReconcileCamerasAsync(armingCameras, ct);
       }
 
       return report;
@@ -616,7 +639,12 @@ namespace VmsMap.Demo
       var registered = await LoadRegistryAsync(key, ct);
       var report = new DemoReport { Key = key };
 
-      await DeleteAsync(registered.ToList(), ct);
+      // Read before the pictures go: a camera whose picture the removal takes away is off guard
+      // once the world is gone, and its flag is derived from the committed state after the commit.
+      var entries = registered.ToList();
+      var releasedCameras = await CamerasOfAsync(entries, ct);
+
+      await DeleteAsync(entries, ct);
       report.Removed = registered.Count;
 
       // The registry first, the config row after it: the two are related only by a database
@@ -632,6 +660,10 @@ namespace VmsMap.Demo
         await _db.SaveChangesAsync(ct);
       }
       if (tx is not null) await tx.CommitAsync(ct);
+
+      // The removal's placement writes did not derive inside the transaction; the flags of the
+      // cameras it took away are settled here, from the committed state.
+      await _spatial.ReconcileCamerasAsync(releasedCameras, ct);
       return report;
     }
 
@@ -718,6 +750,37 @@ namespace VmsMap.Demo
     {
       var slash = logicalKey.IndexOf('/');
       return slash < 0 ? logicalKey : logicalKey[..slash];
+    }
+
+    /// <summary>A space or a node: a registry entry whose subtree may hold camera pictures.</summary>
+    private static bool KindIsContainer(string logicalKey)
+    {
+      var kind = KindOf(logicalKey);
+      return string.Equals(kind, "space", StringComparison.Ordinal)
+          || string.Equals(kind, "object", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The cameras a set of registry entries stands for: a camera key names one, a space or an
+    /// object key names whatever is drawn under it. Called before those entries are deleted, so
+    /// the pictures are still there to read.
+    /// </summary>
+    private async Task<HashSet<string>> CamerasOfAsync(
+      IReadOnlyCollection<KeyValuePair<string, Guid>> entries, CancellationToken ct)
+    {
+      var cameras = entries
+        .Where(pair => string.Equals(KindOf(pair.Key), "camera", StringComparison.Ordinal))
+        .Select(pair => DemoIds.Camera(pair.Key["camera/".Length..]))
+        .ToHashSet(StringComparer.Ordinal);
+
+      var roots = entries
+        .Where(pair => KindIsContainer(pair.Key))
+        .Select(pair => pair.Value.ToString())
+        .ToList();
+      if (roots.Count > 0)
+        cameras.UnionWith(await _spatial.CamerasUnderAsync(roots, ct));
+
+      return cameras;
     }
 
     /// The camera's name at the head of its diagram's name, as `DeviceDiagramService.CreateAsync`
