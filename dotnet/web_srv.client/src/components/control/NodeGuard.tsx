@@ -1,10 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Alert, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
+import {
+  Alert,
+  Button,
+  Stack,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined'
 import { useTranslation } from 'react-i18next'
 
 import { getNodeArming, setNodeArming } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
-import { guardInheritedColor } from '../../theme/ntTheme'
+import BypassUntilDialog from './BypassUntilDialog'
+import { formatUntil } from './bypassTime'
+import { guardState } from './guardState'
 import type { ArmMode, NodeArmingDto } from '../../dto/dtos'
 
 type Props = {
@@ -35,11 +46,12 @@ const MODE_LABEL: Record<ArmMode, string> = {
  * zone's arming changes every device beneath it that still inherits.
  */
 export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [arming, setArming] = useState<NodeArmingDto | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bypassOpen, setBypassOpen] = useState(false)
   const alive = useRef(true)
 
   const load = useCallback(async () => {
@@ -58,6 +70,7 @@ export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Pro
     setArming(null)
     setLoaded(false)
     setError(null)
+    setBypassOpen(false)
     void load()
     return () => {
       alive.current = false
@@ -70,12 +83,12 @@ export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Pro
     return () => clearInterval(timer)
   }, [load, refreshMs])
 
-  const apply = async (mode: ArmMode) => {
+  const apply = async (mode: ArmMode, until?: string | null) => {
     if (pending || arming === null) return
     setPending(true)
     setError(null)
     try {
-      const updated = await setNodeArming(objectId, mode)
+      const updated = await setNodeArming(objectId, mode, until)
       setArming(updated)
       onChanged?.()
     } catch (e) {
@@ -97,14 +110,16 @@ export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Pro
       </Typography>
     )
 
-  const inherited = arming.source === 'inherited' || arming.source === 'space'
-  const stateLabel = arming.armed
-    ? inherited
-      ? t('control.guardOnInherited')
-      : t('control.guardOn')
-    : inherited
-      ? t('control.guardOffInherited')
-      : t('control.guardOff')
+  const state = guardState({
+    armed: arming.armed,
+    source: arming.source,
+    bypassed: arming.bypassed,
+    bypassUntil: arming.bypassUntil,
+    surface: 'container',
+  })
+  const label = state.timed && arming.bypassUntil
+    ? t(state.labelKey, { time: formatUntil(arming.bypassUntil, i18n.language) })
+    : t(state.labelKey)
 
   const blocked = !arming.configured
     ? t('control.notConfigured')
@@ -136,13 +151,33 @@ export default function NodeGuard({ objectId, onChanged, refreshMs = 5000 }: Pro
         {blocked ? <Tooltip title={blocked}><span>{group}</span></Tooltip> : group}
         <Typography
           variant="caption"
-          // Green when set here, purple when an ancestor settled it, grey when nothing is armed.
-          color={!arming.armed ? 'text.secondary' : inherited ? guardInheritedColor : 'success.main'}
+          // Green when set here, purple when an ancestor settled it, amber when an armed ancestor
+          // excludes this node, grey when nothing is armed.
+          color={state.color}
         >
-          {stateLabel}
+          {label}
         </Typography>
       </Stack>
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<TimerOutlinedIcon />}
+        disabled={pending || !arming.configured}
+        onClick={() => setBypassOpen(true)}
+        sx={{ alignSelf: 'flex-start' }}
+      >
+        {t('control.bypassUntil')}
+      </Button>
       {error && <Alert severity="error" sx={{ fontSize: '0.8rem' }}>{error}</Alert>}
+      <BypassUntilDialog
+        open={bypassOpen}
+        busy={pending}
+        onClose={() => setBypassOpen(false)}
+        onApply={(until) => {
+          setBypassOpen(false)
+          void apply('disarmed', until)
+        }}
+      />
     </Stack>
   )
 }

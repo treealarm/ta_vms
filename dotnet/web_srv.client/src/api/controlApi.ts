@@ -125,11 +125,15 @@ export async function getNodeArming(objectId: string): Promise<NodeArmingDto | n
  * All three modes are the operator's: an explicit on or off outranks the zone the node stands in,
  * and `inherit` hands it back.
  */
-export async function setNodeArming(objectId: string, mode: ArmMode): Promise<NodeArmingDto> {
+export async function setNodeArming(
+  objectId: string,
+  mode: ArmMode,
+  until?: string | null,
+): Promise<NodeArmingDto> {
   return apiFetch<NodeArmingDto>(`/api/control/objects/${encodeURIComponent(objectId)}/arming`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
+    body: JSON.stringify({ mode, until: until ?? null }),
   })
 }
 

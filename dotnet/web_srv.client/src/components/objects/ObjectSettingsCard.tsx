@@ -9,8 +9,9 @@ import {
   getDeviceSettings, getNodeSettings, setDeviceSettings, setNodeSettings,
 } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
+import { formatUntil } from '../control/bypassTime'
+import { guardState } from '../control/guardState'
 import type { CameraArmMode, ObjectSettingsBody, ObjectSettingsDto } from '../../dto/dtos'
-import { guardInheritedColor } from '../../theme/ntTheme'
 
 type Props =
   /** A node selected in the tree or on the map; a replica resolves to the device it shows. */
@@ -32,7 +33,7 @@ type Flags = {
  * stays a two-state command; this is the administrator's card.
  */
 export default function ObjectSettingsCard(props: Props & Flags) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [settings, setSettings] = useState<ObjectSettingsDto | null>(null)
   const [mode, setMode] = useState<CameraArmMode>('inherit')
   const [alarmEnabled, setAlarmEnabled] = useState(false)
@@ -103,6 +104,23 @@ export default function ObjectSettingsCard(props: Props & Flags) {
   const isInput = settings.partKind === 'digital_input'
   const viaZone = settings.armed && settings.armingSource === 'space'
   const stateLabel = settings.armed ? t('objectSettings.armed') : t('objectSettings.disarmed')
+  const state = guardState({
+    armed: settings.armed,
+    source: settings.armingSource,
+    bypassed: settings.bypassed,
+    bypassUntil: settings.bypassUntil,
+    surface: 'device',
+  })
+  const effective = state.bypassed
+    ? (state.timed && settings.bypassUntil
+        ? t('control.guardBypassedUntil', {
+            time: formatUntil(settings.bypassUntil, i18n.language),
+          })
+        : t('control.guardBypassed'))
+    : t('objectSettings.effective', {
+        state: stateLabel,
+        suffix: viaZone ? ` (${t('objectSettings.viaZone')})` : '',
+      })
 
   const showArming = props.showArming ?? true
 
@@ -160,14 +178,11 @@ export default function ObjectSettingsCard(props: Props & Flags) {
 
       <Typography
         variant="caption"
-        // Green when the object's own mode settled it, purple when its zone did, grey when it is
-        // not on guard — the same reading the guard of a container gives.
-        color={!settings.armed ? 'text.secondary' : viaZone ? guardInheritedColor : 'success.main'}
+        // Green when the object's own mode settled it, purple when its zone did, amber when an
+        // armed zone excludes it, grey when it is not on guard.
+        color={state.color}
       >
-        {t('objectSettings.effective', {
-          state: stateLabel,
-          suffix: viaZone ? ` (${t('objectSettings.viaZone')})` : '',
-        })}
+        {effective}
       </Typography>
 
       <Stack direction="row" spacing={1} alignItems="center">

@@ -241,17 +241,25 @@ export default function ControlPanel() {
                         label={row.state === 'active' ? t('control.stateActive') : t('control.stateInactive')}
                       />
                     ) : row.hasArming ? (
-                      row.armed
-                        // Purple when a zone settled it, the same reading the inspector's guard
-                        // gives: a camera on guard through its floor is not painted as one that
-                        // was put on guard itself.
-                        ? <ShieldIcon
+                      row.bypassed
+                        // Amber: the zone is armed but this object is excluded from it, which is
+                        // not the same as an object nobody guards.
+                        ? <ShieldOutlinedIcon
                             fontSize="small"
-                            color="success"
-                            sx={row.armingSource === 'space' ? { color: guardInheritedColor } : undefined}
-                            titleAccess={t('control.guard')}
+                            sx={{ color: 'warning.main' }}
+                            titleAccess={t('control.guardBypassed')}
                           />
-                        : <ShieldOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
+                        : row.armed
+                          // Purple when a zone settled it, the same reading the inspector's guard
+                          // gives: a camera on guard through its floor is not painted as one that
+                          // was put on guard itself.
+                          ? <ShieldIcon
+                              fontSize="small"
+                              color="success"
+                              sx={row.armingSource === 'space' ? { color: guardInheritedColor } : undefined}
+                              titleAccess={t('control.guard')}
+                            />
+                          : <ShieldOutlinedIcon fontSize="small" color="disabled" titleAccess={t('control.guard')} />
                     ) : null}
                   </ListItemButton>
                 ))}
