@@ -392,6 +392,215 @@ public class SpaceArmingTests
       ArmMode.Disarmed, Assert.Single(await f.Db.Events.ToListAsync()).param1);
   }
 
+  // ── A timed exclusion ───────────────────────────────────────────────────────────────────────
+
+  [Fact]
+  public async Task ATimedDisarmOfAnArmedContainerRestoresArmed()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, DanilName, default, until);
+
+    var row = await f.Db.ObjectArming.AsNoTracking()
+      .SingleAsync(a => a.object_id == Guid.Parse(space.id!));
+    Assert.False(row.armed);
+    Assert.Equal(until, row.bypass_until);
+    Assert.Equal(ArmMode.Armed, row.restore_mode);
+
+    var view = await f.Arming.GetAsync(space.id!, default);
+    Assert.Equal(until, view!.Arming!.BypassUntil);
+  }
+
+  [Fact]
+  public async Task ATimedDisarmOfAFloorFollowingAnArmedBuildingRestoresInherit()
+  {
+    var f = await CreateAsync();
+    var building = await NodeAsync(f.Map, BuildingName);
+    var floor = await SpaceAsync(f, FloorName, building.id);
+    await PlaceReferenceAsync(f, floor.id!);
+    await f.Arming.SetAsync(building.id!, ArmMode.Armed, DanilName, default);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    await f.Arming.SetAsync(floor.id!, ArmMode.Disarmed, DanilName, default, until);
+
+    var row = await f.Db.ObjectArming.AsNoTracking()
+      .SingleAsync(a => a.object_id == Guid.Parse(floor.id!));
+    Assert.Equal(ArmMode.Inherit, row.restore_mode);
+
+    var view = await f.Arming.GetAsync(floor.id!, default);
+    Assert.True(view!.Arming!.Bypassed);
+    Assert.Equal(building.id, view.Arming.SourceObjectId);
+    Assert.Equal(until, view.Arming.BypassUntil);
+  }
+
+  [Fact]
+  public async Task ExtendingATimedDisarmKeepsTheModeToRestore()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+    var first = DateTime.UtcNow.AddMinutes(30);
+    var second = DateTime.UtcNow.AddMinutes(60);
+
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, DanilName, default, first);
+    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, DanilName, default, second);
+
+    var row = await f.Db.ObjectArming.AsNoTracking()
+      .SingleAsync(a => a.object_id == Guid.Parse(space.id!));
+    Assert.Equal(second, row.bypass_until);
+    // The intent belongs to the first disarm: an armed room stays an armed room.
+    Assert.Equal(ArmMode.Armed, row.restore_mode);
+  }
+
+  [Fact]
+  public async Task AnExplicitModeCancelsTheDeadline()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+    await f.Arming.SetAsync(
+      space.id!, ArmMode.Disarmed, DanilName, default, DateTime.UtcNow.AddMinutes(30));
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+
+    var row = await f.Db.ObjectArming.AsNoTracking()
+      .SingleAsync(a => a.object_id == Guid.Parse(space.id!));
+    Assert.True(row.armed);
+    Assert.Null(row.bypass_until);
+    Assert.Null(row.restore_mode);
+  }
+
+  [Fact]
+  public async Task ADeadlineIsRefusedOnAnythingButADisarm()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    foreach (var mode in new[] { ArmMode.Armed, ArmMode.Inherit })
+    {
+      var refused = await Assert.ThrowsAsync<ArmingException>(() =>
+        f.Arming.SetAsync(space.id!, mode, DanilName, default, until));
+      Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
+    }
+
+    Assert.Null(await StoredArmingAsync(f, space.id!));
+  }
+
+  [Fact]
+  public async Task APastDeadlineIsRefused()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+
+    var refused = await Assert.ThrowsAsync<ArmingException>(() =>
+      f.Arming.SetAsync(
+        space.id!, ArmMode.Disarmed, DanilName, default, DateTime.UtcNow.AddMinutes(-1)));
+
+    Assert.Equal(ArmingRefusal.InvalidRequest, refused.Refusal);
+    Assert.Null(await StoredArmingAsync(f, space.id!));
+  }
+
+  [Fact]
+  public async Task ATimedDisarmJournalsTheDeadline()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    await f.Arming.SetAsync(space.id!, ArmMode.Disarmed, DanilName, default, until);
+
+    var entry = Assert.Single(await f.Db.Events.ToListAsync());
+    Assert.Equal(NodeArmingService.JournalEventName, entry.event_name);
+    Assert.Equal(ArmMode.Disarmed, entry.param1);
+    Assert.Contains(entry.extra_props, p => p.prop_name == "until");
+  }
+
+  [Fact]
+  public async Task ExtendingATimedDisarmDoesNotQueueARecheck()
+  {
+    var f = await CreateAsync();
+    var space = await SpaceAsync(f, FloorName);
+
+    await f.Arming.SetAsync(
+      space.id!, ArmMode.Disarmed, DanilName, default, DateTime.UtcNow.AddMinutes(30));
+    var queued = (await f.Db.MapOutbox.ToListAsync()).Count;
+
+    await f.Arming.SetAsync(
+      space.id!, ArmMode.Disarmed, DanilName, default, DateTime.UtcNow.AddMinutes(60));
+
+    Assert.Equal(queued, (await f.Db.MapOutbox.ToListAsync()).Count);
+    Assert.Equal(2, (await f.Db.Events.ToListAsync()).Count);
+  }
+
+  [Fact]
+  public async Task ATimedDisarmOfAnInputStoresTheDeadline()
+  {
+    var f = await CreateAsync(armMode: ArmMode.Inherit);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    await f.Arming.SetAsync(f.PartId, ArmMode.Disarmed, DanilName, default, until);
+
+    var stored = await f.ObjectSettings.GetAsync(f.PartId, default);
+    Assert.Equal(ArmMode.Disarmed, stored.Mode);
+    Assert.Equal(until, stored.BypassUntil);
+    Assert.Equal(ArmMode.Inherit, stored.RestoreMode);
+
+    var view = await f.Arming.GetAsync(f.PartId, default);
+    Assert.Equal(until, view!.Arming!.BypassUntil);
+    Assert.False(view.Arming.Bypassed); // no zone above it, so it is simply off
+  }
+
+  [Fact]
+  public async Task ATimedDisarmOfAnInputInAnArmedZoneIsBypassed()
+  {
+    var f = await CreateAsync(armMode: ArmMode.Inherit);
+    var space = await SpaceAsync(f, FloorName);
+    await PlaceReferenceAsync(f, space.id!);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+    var until = DateTime.UtcNow.AddMinutes(30);
+
+    await f.Arming.SetAsync(f.PartId, ArmMode.Disarmed, DanilName, default, until);
+
+    var view = await f.Arming.GetAsync(f.PartId, default);
+    Assert.True(view!.Arming!.Bypassed);
+    Assert.Equal(space.id, view.Arming.SourceObjectId);
+    Assert.Equal(until, view.Arming.BypassUntil);
+  }
+
+  [Fact]
+  public async Task ReturningAnInputToItsZoneClearsTheDeadline()
+  {
+    var f = await CreateAsync(armMode: ArmMode.Inherit);
+    await f.Arming.SetAsync(
+      f.PartId, ArmMode.Disarmed, DanilName, default, DateTime.UtcNow.AddMinutes(30));
+
+    await f.Arming.SetAsync(f.PartId, ArmMode.Inherit, DanilName, default);
+
+    var stored = await f.ObjectSettings.GetAsync(f.PartId, default);
+    Assert.Equal(ArmMode.Inherit, stored.Mode);
+    Assert.Null(stored.BypassUntil);
+    Assert.Null(stored.RestoreMode);
+  }
+
+  [Fact]
+  public async Task ReturningACameraToItsZoneUpdatesTheFlagInVmsCfg()
+  {
+    var f = await CreateAsync(cameraArmed: false, cameraMode: ArmMode.Disarmed);
+    var space = await SpaceAsync(f, FloorName);
+    await PlaceReferenceAsync(f, space.id!);
+    await f.Arming.SetAsync(space.id!, ArmMode.Armed, DanilName, default);
+
+    // `inherit` was the gap: the node path used to leave the flag alone, so the camera kept a
+    // stale "disarmed" while the zone said otherwise.
+    await f.Arming.SetAsync(CameraObjectId.For(CameraId), ArmMode.Inherit, DanilName, default);
+
+    Assert.Contains((CameraId, true), f.Cfg.CameraFlags);
+  }
+
   [Fact]
   public async Task AnUnknownNodeIsNotFound()
   {

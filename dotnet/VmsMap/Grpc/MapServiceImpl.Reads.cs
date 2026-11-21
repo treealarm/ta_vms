@@ -504,6 +504,7 @@ namespace VmsMap.Grpc
           Source = arming.Source,
           SourceObjectId = arming.SourceObjectId,
           Bypassed = arming.Bypassed,
+          BypassUntil = ToTimestamp(arming.BypassUntil),
         },
       };
     }

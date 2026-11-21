@@ -819,6 +819,9 @@ message NodeArming {
   // not simply off, it is excluded from a guarded zone. This does not change `armed` — the node's
   // own row settled that — and it is derived, never stored.
   bool bypassed = 5;
+  // When the exclusion ends and the sweep restores the node's previous own mode. Empty for an
+  // indefinite exclusion (and for every node that is not explicitly disarmed).
+  optional google.protobuf.Timestamp bypass_until = 6;
 }
 
 message GetNodeArmingRequest {
@@ -847,6 +850,9 @@ message SetNodeArmingRequest {
   string mode      = 2;  // "inherit" | "armed" | "disarmed"
   // The operator, for the journal: the command carries no identity of its own.
   Caller caller    = 3;
+  // An optional deadline on a `disarmed` decision: the node is excluded until then, and the sweep
+  // restores the mode it had before. A past timestamp, or one on another mode, is InvalidArgument.
+  optional google.protobuf.Timestamp until = 4;
 }
 
 message GetDevicePartArmingRequest {
@@ -913,6 +919,8 @@ message SetDeviceArmingRequest {
   // already writes "inherit".
   string mode = 2;
   Caller caller = 3;
+  // The same optional deadline as SetNodeArmingRequest: only with `disarmed`.
+  optional google.protobuf.Timestamp until = 4;
 }
 
 // ── The operator's control list ─────────────────────────────────────────────────────────────
@@ -974,6 +982,8 @@ message ControlObject {
   // An explicitly disarmed device whose zone is armed: excluded rather than simply off. Derived
   // from the device's mode and the zone, never stored.
   bool bypassed = 20;
+  // When the exclusion ends; empty for an indefinite one.
+  optional google.protobuf.Timestamp bypass_until = 21;
 }
 
 message ListControlObjectsResponse {

@@ -58,9 +58,9 @@ namespace VmsMap.Domain.Arming
     private readonly EffectiveArmingResolver _arming;
     private readonly IDeviceSettingsSource _settings;
     private readonly DeviceObjectSettingsStore _objectSettings;
-    private readonly ICfgArmingWriter _cfg;
-    private readonly IMapService _mapService;
+    private readonly DeviceArmingDerivation _derivation;
     private readonly EventsWriter _events;
+    private readonly TimeProvider _clock;
     private readonly ILogger<NodeArmingService> _logger;
 
     public NodeArmingService(
@@ -68,18 +68,18 @@ namespace VmsMap.Domain.Arming
       EffectiveArmingResolver arming,
       IDeviceSettingsSource settings,
       DeviceObjectSettingsStore objectSettings,
-      ICfgArmingWriter cfg,
-      IMapService mapService,
+      DeviceArmingDerivation derivation,
       EventsWriter events,
+      TimeProvider clock,
       ILogger<NodeArmingService> logger)
     {
       _db = db ?? throw new ArgumentNullException(nameof(db));
       _arming = arming ?? throw new ArgumentNullException(nameof(arming));
       _settings = settings ?? throw new ArgumentNullException(nameof(settings));
       _objectSettings = objectSettings ?? throw new ArgumentNullException(nameof(objectSettings));
-      _cfg = cfg ?? throw new ArgumentNullException(nameof(cfg));
-      _mapService = mapService ?? throw new ArgumentNullException(nameof(mapService));
+      _derivation = derivation ?? throw new ArgumentNullException(nameof(derivation));
       _events = events ?? throw new ArgumentNullException(nameof(events));
+      _clock = clock ?? throw new ArgumentNullException(nameof(clock));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -93,10 +93,23 @@ namespace VmsMap.Domain.Arming
     }
 
     public async Task<NodeArmingView?> SetAsync(
-      string objectId, string mode, string actor, CancellationToken ct)
+      string objectId, string mode, string actor, CancellationToken ct, DateTime? until = null)
     {
       if (!ArmMode.IsKnown(mode))
         throw new ArmingException($"'{mode}' is not an arming mode", ArmingRefusal.InvalidRequest);
+
+      if (until is { } deadline)
+      {
+        if (!string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
+          throw new ArmingException(
+            "Only a disarm can carry a bypass deadline", ArmingRefusal.InvalidRequest);
+        if (deadline.Kind != DateTimeKind.Utc)
+          deadline = deadline.ToUniversalTime();
+        if (deadline <= _clock.GetUtcNow().UtcDateTime)
+          throw new ArmingException(
+            "The bypass deadline must be in the future", ArmingRefusal.InvalidRequest);
+        until = deadline;
+      }
 
       var node = await ResolveAsync(objectId, ct);
       if (node is null)
@@ -116,64 +129,90 @@ namespace VmsMap.Domain.Arming
 
       if (node.DeviceKind is { } deviceKind)
       {
-        await SetDeviceAsync(node, deviceKind, mode, actorName, ct);
+        await SetDeviceAsync(node, deviceKind, mode, actorName, until, ct);
       }
       else
       {
-        await SetContainerAsync(node, mode, actorName, ct);
+        await SetContainerAsync(node, mode, actorName, until, ct);
       }
 
       return await GetAsync(objectId, ct);
     }
 
     private async Task SetDeviceAsync(
-      Node node, string deviceKind, string mode, string actor, CancellationToken ct)
+      Node node, string deviceKind, string mode, string actor, DateTime? until,
+      CancellationToken ct)
     {
-      var isCamera = string.Equals(deviceKind, DeviceObjectId.DevicePart, StringComparison.Ordinal);
+      // The deadline is a modifier of the explicit disarm; the own mode to restore is read before
+      // the write, because the write is what overwrites it.
+      var current = await _objectSettings.GetAsync(node.CanonicalId, ct);
+      var restoreMode = RestoreModeFor(current, mode, until);
 
-      // The mode is the map's own row, so the write and its journal are one transaction. A digital
-      // input has no other home; a camera's effective flag is written after it, because services
-      // near the hardware read that and cannot see the map.
+      // The mode is the map's own row, so the write and its journal are one transaction.
       await using var tx = await BeginTransactionAsync(ct);
-      await _objectSettings.SetModeAsync(node.CanonicalId, mode, ct);
-      await WriteJournalAsync(node.CanonicalId, actor, mode, ct);
+      await _objectSettings.SetArmingAsync(node.CanonicalId, mode, until, restoreMode, ct);
+      await WriteJournalAsync(node.CanonicalId, actor, mode, until, expired: false, ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      // An explicit mode is the flag itself: the services near the hardware read it and cannot see
-      // the map. `inherit` has no value of its own — the caller (the settings facade) re-derives
-      // the flag from the zone the camera stands in.
-      if (isCamera && !string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal))
+      // Every write path derives once: a camera's flag for VmsCfg and the sensors' alarm re-check.
+      // It is outside the transaction by design — the services near the hardware cannot see the
+      // map, and a failure here is repaired by the next snapshot, event or start.
+      await _derivation.DeriveAsync(deviceKind, node.SourceId, ct);
+    }
+
+    /// <summary>
+    /// The own mode to write back when the deadline passes. A node that already carried a timed
+    /// exclusion keeps the intent it was given; otherwise an explicit arm is restored as `armed`
+    /// and everything else returns to `inherit`. Extending a deadline must not silently change
+    /// an armed room into a zone-following one.
+    /// </summary>
+    private static string? RestoreModeFor(
+      DeviceObjectSettings current, string mode, DateTime? until)
+    {
+      if (until is null || !string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
+        return null;
+
+      if (string.Equals(current.Mode, ArmMode.Disarmed, StringComparison.Ordinal)
+          && current.BypassUntil is not null)
       {
-        await _cfg.SetCamArmedAsync(
-          node.SourceId, string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal), ct);
+        return current.RestoreMode ?? ArmMode.Inherit;
       }
+
+      return string.Equals(current.Mode, ArmMode.Armed, StringComparison.Ordinal)
+        ? ArmMode.Armed
+        : ArmMode.Inherit;
     }
 
     private async Task SetContainerAsync(
-      Node node, string mode, string actor, CancellationToken ct)
+      Node node, string mode, string actor, DateTime? until, CancellationToken ct)
     {
       var guid = Utils.ConvertObjectIdToGuid(node.CanonicalId)!.Value;
       var stored = await _db.ObjectArming.AsNoTracking()
         .Where(a => a.object_id == guid)
-        .Select(a => new { a.armed })
+        .Select(a => new ContainerArmingRow(a.armed, a.bypass_until, a.restore_mode))
         .FirstOrDefaultAsync(ct);
 
       var value = ArmMode.Value(mode);
-      var changed = value is null ? stored is not null : stored?.armed != value;
+      var effectiveChanged = value is null ? stored is not null : stored?.Armed != value;
+      var restoreMode = RestoreModeFor(stored, mode, until);
+      // A new deadline on an already disarmed node changes the row without changing the effective
+      // answer: it needs the write and the journal, but not the alarm re-check the outbox triggers.
+      var timerChanged = until != stored?.BypassUntil || restoreMode != stored?.RestoreMode;
+      var rowChanged = effectiveChanged || timerChanged;
 
       await using var tx = await BeginTransactionAsync(ct);
 
-      if (changed)
-        await WriteArmingAsync(guid, value, ct);
+      if (rowChanged)
+        await WriteArmingAsync(guid, value, until, restoreMode, ct);
 
       // The journal records the action, not the result: a repeated command that changed nothing is
       // still an operator's action and stays in the record (M2.4i).
-      await WriteJournalAsync(node.CanonicalId, actor, mode, ct);
+      await WriteJournalAsync(node.CanonicalId, actor, mode, until, expired: false, ct);
 
       // Only a real change can raise an alarm: disarming closes none, and a repeated command
       // changes nothing. The row is in the same transaction as the property it announces.
-      if (changed)
+      if (effectiveChanged)
       {
         _db.MapOutbox.Add(new DBMapOutbox
         {
@@ -187,14 +226,34 @@ namespace VmsMap.Domain.Arming
       if (tx is not null)
         await tx.CommitAsync(ct);
 
-      if (changed)
+      if (effectiveChanged)
       {
         _logger.LogInformation(
           "Node '{ObjectId}' set to '{Mode}' by '{Actor}'", node.CanonicalId, mode, actor);
       }
     }
 
-    private async Task WriteArmingAsync(Guid guid, bool? armed, CancellationToken ct)
+    private sealed record ContainerArmingRow(bool Armed, DateTime? BypassUntil, string? RestoreMode);
+
+    /// <summary>
+    /// The own mode to restore for a container. A node that already carried a timed exclusion
+    /// keeps the intent it was given; an explicitly armed room goes back to `armed`, and a node
+    /// that followed its parent returns to `inherit`.
+    /// </summary>
+    private static string? RestoreModeFor(
+      ContainerArmingRow? stored, string mode, DateTime? until)
+    {
+      if (until is null || !string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
+        return null;
+
+      if (stored is { Armed: false, BypassUntil: not null })
+        return stored.RestoreMode ?? ArmMode.Inherit;
+
+      return stored?.Armed == true ? ArmMode.Armed : ArmMode.Inherit;
+    }
+
+    private async Task WriteArmingAsync(
+      Guid guid, bool? armed, DateTime? until, string? restoreMode, CancellationToken ct)
     {
       var row = await _db.ObjectArming.FirstOrDefaultAsync(a => a.object_id == guid, ct);
 
@@ -206,18 +265,103 @@ namespace VmsMap.Domain.Arming
       }
       else if (row is null)
       {
-        _db.ObjectArming.Add(new DBObjectArming { object_id = guid, armed = armed.Value });
+        _db.ObjectArming.Add(new DBObjectArming
+        {
+          object_id = guid,
+          armed = armed.Value,
+          bypass_until = until,
+          restore_mode = restoreMode,
+        });
       }
       else
       {
         row.armed = armed.Value;
+        row.bypass_until = until;
+        row.restore_mode = restoreMode;
       }
 
       await _db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Restores a node whose bypass deadline has passed: writes the own mode it had before the
+    /// bypass, clears the deadline, journals the automatic action, and re-derives afterwards.
+    /// Returns false when nothing was due (another replica may have already done it).
+    /// </summary>
+    public async Task<bool> ExpireBypassAsync(string objectId, CancellationToken ct)
+    {
+      var node = await ResolveAsync(objectId, ct);
+      if (node is null)
+        return false;
+
+      var now = _clock.GetUtcNow().UtcDateTime;
+      if (node.DeviceKind is { } deviceKind)
+        return await ExpireDeviceAsync(node, deviceKind, now, ct);
+      return await ExpireContainerAsync(node, now, ct);
+    }
+
+    private async Task<bool> ExpireDeviceAsync(
+      Node node, string deviceKind, DateTime now, CancellationToken ct)
+    {
+      var current = await _objectSettings.GetAsync(node.CanonicalId, ct);
+      if (current.BypassUntil is not { } until || until > now)
+        return false;
+
+      var restoreMode = current.RestoreMode ?? ArmMode.Inherit;
+
+      await using var tx = await BeginTransactionAsync(ct);
+      await _objectSettings.SetArmingAsync(node.CanonicalId, restoreMode, null, null, ct);
+      await WriteJournalAsync(
+        node.CanonicalId, SystemActor, restoreMode, until, expired: true, ct);
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      await _derivation.DeriveAsync(deviceKind, node.SourceId, ct);
+      _logger.LogInformation(
+        "Bypass of '{ObjectId}' expired: restored '{Mode}'", node.CanonicalId, restoreMode);
+      return true;
+    }
+
+    private async Task<bool> ExpireContainerAsync(Node node, DateTime now, CancellationToken ct)
+    {
+      var guid = Utils.ConvertObjectIdToGuid(node.CanonicalId)!.Value;
+      var stored = await _db.ObjectArming.AsNoTracking()
+        .Where(a => a.object_id == guid)
+        .Select(a => new ContainerArmingRow(a.armed, a.bypass_until, a.restore_mode))
+        .FirstOrDefaultAsync(ct);
+
+      if (stored is null || stored.BypassUntil is not { } until || until > now)
+        return false;
+
+      var restoreMode = stored.RestoreMode ?? ArmMode.Inherit;
+      var value = ArmMode.Value(restoreMode);
+
+      await using var tx = await BeginTransactionAsync(ct);
+
+      // The row definitely leaves its bypassed state, so the subscribers must re-derive the
+      // devices under this node: an open contact has to alarm as soon as the exclusion ends.
+      await WriteArmingAsync(guid, value, null, null, ct);
+      await WriteJournalAsync(
+        node.CanonicalId, SystemActor, restoreMode, until, expired: true, ct);
+      _db.MapOutbox.Add(new DBMapOutbox
+      {
+        topic = MapTopics.ArmingChanged,
+        payload = JsonSerializer.Serialize(new { @object_id = node.CanonicalId }),
+        created_at = DateTime.UtcNow,
+      });
+      await _db.SaveChangesAsync(ct);
+
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      _logger.LogInformation(
+        "Bypass of '{ObjectId}' expired: restored '{Mode}'", node.CanonicalId, restoreMode);
+      return true;
+    }
+
     private Task WriteJournalAsync(
-      string canonicalId, string actor, string mode, CancellationToken ct) =>
+      string canonicalId, string actor, string mode, DateTime? until, bool expired,
+      CancellationToken ct) =>
       _events.WriteAsync([
         new EventDTO
         {
@@ -228,8 +372,32 @@ namespace VmsMap.Domain.Arming
           timestamp = DateTime.UtcNow,
           param0 = actor,
           param1 = mode,
+          extra_props = JournalFacts(until, expired),
         }
       ], ct);
+
+    /// <summary>The deadline and the automatic return are the stored facts the journal keeps; the
+    /// operator's actor and mode stay in `param0`/`param1`, as every arming entry has them.</summary>
+    private static List<ObjExtraPropertyDTO>? JournalFacts(DateTime? until, bool expired)
+    {
+      if (until is null && !expired)
+        return null;
+
+      var props = new List<ObjExtraPropertyDTO>();
+      if (until is { } deadline)
+      {
+        props.Add(new ObjExtraPropertyDTO
+        {
+          prop_name = "until",
+          str_val = deadline.ToUniversalTime().ToString("O"),
+        });
+      }
+
+      if (expired)
+        props.Add(new ObjExtraPropertyDTO { prop_name = "expired", str_val = "true" });
+
+      return props;
+    }
 
     private async Task<NodeArmingView> DescribeAsync(Node node, CancellationToken ct)
     {
@@ -349,10 +517,14 @@ namespace VmsMap.Domain.Arming
     private static string ArmKind(Node node) =>
       node.DeviceKind == DeviceObjectId.DigitalInputPart ? "sensor" : "container";
 
-    private Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken ct) =>
-      _db.Database.IsRelational()
-        ? _db.Database.BeginTransactionAsync(ct)!
-        : Task.FromResult<IDbContextTransaction?>(null);
+    private Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken ct)
+    {
+      // A caller that already holds one — the expiry sweep claims a batch under a transaction —
+      // keeps it: the claim, the write and the clearing of the deadline must commit together.
+      if (!_db.Database.IsRelational() || _db.Database.CurrentTransaction is not null)
+        return Task.FromResult<IDbContextTransaction?>(null);
+      return _db.Database.BeginTransactionAsync(ct)!;
+    }
 
     /// <summary>A node as this service sees it: the canonical one (a replica resolves through its
     /// owner), its kind, and the device registry row when it is a device or a part.</summary>

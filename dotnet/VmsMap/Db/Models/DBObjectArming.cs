@@ -12,5 +12,9 @@ namespace VmsMap.Db
   {
     public Guid object_id { get; set; }
     public bool armed { get; set; }
+    /// <summary>The exclusion ends here; only an explicit `armed = false` carries one.</summary>
+    public DateTime? bypass_until { get; set; }
+    /// <summary>The own mode to write back at the deadline: `inherit` or `armed`.</summary>
+    public string? restore_mode { get; set; }
   }
 }

@@ -14,7 +14,8 @@ namespace VmsMap.Domain.Arming
   /// and no alarm, so a caller never has to ask whether the object was configured.
   /// </summary>
   public sealed record DeviceObjectSettings(
-    string ObjectId, string Mode, string? TriggerOn, bool AlarmEnabled)
+    string ObjectId, string Mode, string? TriggerOn, bool AlarmEnabled,
+    DateTime? BypassUntil = null, string? RestoreMode = null)
   {
     public static DeviceObjectSettings Default(string objectId) =>
       new(objectId, ArmMode.Inherit, null, false);
@@ -101,6 +102,10 @@ namespace VmsMap.Domain.Arming
         row.arm_mode = mode;
         row.trigger_on = triggerOn;
         row.alarm_enabled = alarmEnabled;
+        // An administrator's save is an explicit decision: it cancels a pending bypass deadline
+        // rather than leaving a timer that would overwrite the new mode later.
+        row.bypass_until = null;
+        row.restore_mode = null;
       }
 
       await _db.SaveChangesAsync(ct);
@@ -144,12 +149,55 @@ namespace VmsMap.Domain.Arming
       if (row is null)
         _db.DeviceObjectSettings.Add(new DBDeviceObjectSettings { object_id = guid, arm_mode = mode });
       else
+      {
         row.arm_mode = mode;
+        row.bypass_until = null;
+        row.restore_mode = null;
+      }
+
+      await _db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The operator's write: the mode together with an optional deadline and the own mode to
+    /// restore at it. A deadline is allowed only with `disarmed`; `until = null` is an indefinite
+    /// decision. The caller has already validated the vocabulary; the schema repeats the checks.
+    /// </summary>
+    public async Task SetArmingAsync(
+      string objectId, string mode, DateTime? until, string? restoreMode, CancellationToken ct)
+    {
+      var guid = Utils.ConvertObjectIdToGuid(objectId)
+        ?? throw new ArgumentException($"'{objectId}' is not an object id", nameof(objectId));
+
+      var deadline = string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal)
+        ? until
+        : null;
+
+      var row = await _db.DeviceObjectSettings
+        .FirstOrDefaultAsync(r => r.object_id == guid, ct);
+
+      if (row is null)
+      {
+        _db.DeviceObjectSettings.Add(new DBDeviceObjectSettings
+        {
+          object_id = guid,
+          arm_mode = mode,
+          bypass_until = deadline,
+          restore_mode = deadline is null ? null : restoreMode,
+        });
+      }
+      else
+      {
+        row.arm_mode = mode;
+        row.bypass_until = deadline;
+        row.restore_mode = deadline is null ? null : restoreMode;
+      }
 
       await _db.SaveChangesAsync(ct);
     }
 
     private static DeviceObjectSettings ToInfo(string objectId, DBDeviceObjectSettings row) =>
-      new(objectId, row.arm_mode, row.trigger_on, row.alarm_enabled);
+      new(objectId, row.arm_mode, row.trigger_on, row.alarm_enabled,
+          row.bypass_until, row.restore_mode);
   }
 }

@@ -89,6 +89,30 @@ public class SensorAlarmTests
       alarm_enabled = true,
     };
 
+  /// <summary>VmsCfg's view of the configured input, which the node facade requires before a write.</summary>
+  private sealed class ConfiguredInput : IDeviceSettingsSource
+  {
+    private static DeviceSettingsInfo Info(string cameraId) =>
+      new(cameraId, DeviceObjectId.DigitalInputPart, Token, "door",
+          ArmMode.Inherit, TriggerClosed, true);
+
+    public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(
+      string cameraId, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyList<DeviceSettingsInfo>>([Info(cameraId)]);
+
+    public Task<DeviceSettingsInfo?> FindAsync(
+      string cameraId, string kind, string token, CancellationToken ct) =>
+      Task.FromResult<DeviceSettingsInfo?>(Info(cameraId));
+
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
+        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
+          id => id, id => (IReadOnlyList<DeviceSettingsInfo>)[Info(id)], StringComparer.Ordinal));
+
+    public void Invalidate(string cameraId) { }
+  }
+
   private static Task<DBAlarm?> Open(VmsMapDbContext db) =>
     db.Alarms.AsNoTracking().Where(a => a.status != AlarmStatus.Closed)
       .OrderByDescending(a => a.raised_at).FirstOrDefaultAsync();
@@ -150,6 +174,40 @@ public class SensorAlarmTests
     await s.Sensor.ReconcileAsync(input, s.CameraId, DeviceObjectId.DigitalInputPart, Token, TriggerClosed);
 
     Assert.Null(await Open(s.Db));
+  }
+
+  [Fact]
+  public async Task ReturningAnInputToItsZoneRechecksThroughTheNodePath()
+  {
+    var s = Create(AlarmOn(TestCameras.One), armed: true);
+    var input = await DeviceAsync(s);
+    var nodeArming = TestWiring.NodeArming(s.Db, s.Map, null, s.Arming, new ConfiguredInput());
+    var objectId = input.ToString();
+
+    // Explicitly off, then a live contact: no alarm while the input is excluded. The contact is
+    // the state a device event would have written; the node path re-reads it on the way back.
+    await nodeArming.SetAsync(objectId, ArmMode.Disarmed, "op", default);
+    s.Db.ObjectStates.Add(new DBObjectState
+    {
+      id = input,
+      timestamp = DateTime.UtcNow,
+      states = [new DBObjectStateValue { id = Guid.NewGuid(), object_id = input, state = "SENSOR_CLOSED" }],
+    });
+    await s.Db.SaveChangesAsync();
+    Assert.Null(await Open(s.Db));
+
+    // Hand it back to the zone. The node facade must derive once, or the live contact would wait
+    // for the next snapshot instead of raising now.
+    await nodeArming.SetAsync(objectId, ArmMode.Inherit, "op", default);
+
+    var settings = await TestWiring.ObjectSettings(s.Db).GetAsync(objectId, default);
+    Assert.Equal(ArmMode.Inherit, settings.Mode);
+    Assert.True(settings.AlarmEnabled);
+    var resolved = await TestWiring.Arming(s.Db, s.Arming).ResolveAsync(objectId, default);
+    Assert.True(resolved!.Armed);
+    Assert.NotEmpty(await s.Db.ObjectStates.AsNoTracking().ToListAsync());
+
+    Assert.NotNull(await Open(s.Db));
   }
 
   [Fact]

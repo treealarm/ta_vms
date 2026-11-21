@@ -162,6 +162,8 @@ builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 // The one write behind every guard switch: a device delegates to VmsCfg, a container keeps its
 // row in `object_arming`.
 builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
+// The side effects every device arming write owes, in one place so both facades produce them.
+builder.Services.AddScoped<VmsMap.Domain.Arming.DeviceArmingDerivation>();
 // The administrator's card for a logical device object: its arming mode and its contact rule.
 builder.Services.AddScoped<VmsMap.Domain.Arming.IDeviceSettingsService,
   VmsMap.Domain.Arming.DeviceSettingsService>();

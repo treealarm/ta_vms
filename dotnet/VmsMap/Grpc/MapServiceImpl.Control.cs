@@ -105,7 +105,7 @@ namespace VmsMap.Grpc
       {
         var view = await _nodeArming.SetAsync(
           request.ObjectId, request.Mode, caller.Username ?? string.Empty,
-          context.CancellationToken);
+          context.CancellationToken, request.Until?.ToDateTime());
 
         return ToArming(view!);
       }
@@ -140,6 +140,7 @@ namespace VmsMap.Grpc
           Source = arming.Source,
           SourceObjectId = arming.SourceObjectId,
           Bypassed = arming.Bypassed,
+          BypassUntil = ToTimestamp(arming.BypassUntil),
         };
       }
 
@@ -168,6 +169,7 @@ namespace VmsMap.Grpc
       ArmingSourceObjectId = row.ArmingSourceObjectId,
       CanControl = row.CanControl,
       Bypassed = row.Bypassed,
+      BypassUntil = ToTimestamp(row.BypassUntil),
     };
   }
 }

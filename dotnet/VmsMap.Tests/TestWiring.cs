@@ -117,13 +117,27 @@ internal static class TestWiring
 
   public static NodeArmingService NodeArming(
     VmsMapDbContext db, MapDb map, ICfgArmingWriter? writer = null,
-    ICameraStateSource? cameraState = null, IDeviceSettingsSource? settings = null)
+    ICameraStateSource? cameraState = null, IDeviceSettingsSource? settings = null,
+    TimeProvider? clock = null)
   {
     var camera = cameraState ?? new TestCameraState();
     var source = settings ?? new NoDeviceSettings();
-    return new(db, Arming(db, camera), source, ObjectSettings(db),
-      writer ?? new TestCfgArmingWriter(camera),
-      map, new EventsWriter(db, new EventsService(db, map)),
+    var own = ObjectSettings(db);
+    var arming = Arming(db, camera, own);
+    var cfg = writer ?? new TestCfgArmingWriter(camera);
+    var states = new StatesUpdateService(new StateService(db), map, db);
+    // Every device write derives once, whatever facade called it: the tests exercise the same
+    // helper the process uses.
+    var derivation = new DeviceArmingDerivation(
+      new CameraArmingReconciler(
+        db, arming, own, camera, cfg, map, NullLogger<CameraArmingReconciler>.Instance),
+      new SensorAlarmService(
+        db, own, arming, Alarms(db, map, states, camera), map,
+        NullLogger<SensorAlarmService>.Instance),
+      NullLogger<DeviceArmingDerivation>.Instance);
+    return new(db, arming, source, own, derivation,
+      new EventsWriter(db, new EventsService(db, map)),
+      clock ?? TimeProvider.System,
       NullLogger<NodeArmingService>.Instance);
   }
 

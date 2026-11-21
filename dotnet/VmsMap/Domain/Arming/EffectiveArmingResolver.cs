@@ -14,7 +14,7 @@ namespace VmsMap.Domain.Arming
   /// when the answer came from the part's own setting or the camera's flag.</summary>
   public sealed record NodeArmingInfo(
     string ObjectId, bool Armed, string Source, string SourceObjectId = "",
-    string Mode = ArmMode.Inherit, bool Bypassed = false);
+    string Mode = ArmMode.Inherit, bool Bypassed = false, DateTime? BypassUntil = null);
 
   /// <summary>
   /// One device part whose arming is asked for: its node, and the source it belongs to. A list of
@@ -171,7 +171,8 @@ namespace VmsMap.Domain.Arming
         result[subject.ObjectId] = new NodeArmingInfo(
           subject.ObjectId, false, Explicit,
           bypassed ? Utils.ConvertGuidToObjectId(zone!.ObjectId) : string.Empty,
-          ArmMode.Disarmed, bypassed);
+          ArmMode.Disarmed, bypassed,
+          settings.GetValueOrDefault(subject.ObjectId)?.BypassUntil);
       }
 
       return result;
@@ -299,17 +300,18 @@ namespace VmsMap.Domain.Arming
       var here = true;
       while (current is { } node && visited.Add(node))
       {
-        if (await ArmingRowAsync(node, ct) is { } armed)
+        if (await ArmingRowAsync(node, ct) is { } row)
         {
           if (!here)
           {
             // The node itself carries nothing; the first row above it settles the answer. There
-            // is no own exclusion, so this can never be a bypass.
+            // is no own exclusion, so this can never be a bypass — and its deadline, if any,
+            // belongs to the ancestor that carries it.
             return new NodeArmingInfo(
-              objectId, armed, Inherited, Utils.ConvertGuidToObjectId(node));
+              objectId, row.Armed, Inherited, Utils.ConvertGuidToObjectId(node));
           }
 
-          if (armed)
+          if (row.Armed)
             return new NodeArmingInfo(
               objectId, true, Explicit, Utils.ConvertGuidToObjectId(node));
 
@@ -320,21 +322,23 @@ namespace VmsMap.Domain.Arming
           var above = await ParentAsync(node, ct);
           while (above is { } ancestor && visited.Add(ancestor))
           {
-            if (await ArmingRowAsync(ancestor, ct) is { } ancestorArmed)
+            if (await ArmingRowAsync(ancestor, ct) is { } ancestorRow)
             {
-              return ancestorArmed
+              return ancestorRow.Armed
                 ? new NodeArmingInfo(
                     objectId, false, Explicit, Utils.ConvertGuidToObjectId(ancestor),
-                    Bypassed: true)
+                    Bypassed: true, BypassUntil: row.BypassUntil)
                 : new NodeArmingInfo(
-                    objectId, false, Explicit, Utils.ConvertGuidToObjectId(own));
+                    objectId, false, Explicit, Utils.ConvertGuidToObjectId(own),
+                    BypassUntil: row.BypassUntil);
             }
 
             above = await ParentAsync(ancestor, ct);
           }
 
           return new NodeArmingInfo(
-            objectId, false, Explicit, Utils.ConvertGuidToObjectId(own));
+            objectId, false, Explicit, Utils.ConvertGuidToObjectId(own),
+            BypassUntil: row.BypassUntil);
         }
 
         current = await ParentAsync(node, ct);
@@ -344,14 +348,16 @@ namespace VmsMap.Domain.Arming
       return new NodeArmingInfo(objectId, false, None);
     }
 
+    private sealed record ArmingRow(bool Armed, DateTime? BypassUntil);
+
     /// <summary>The node's own explicit arming row, or null when it follows its parent.</summary>
-    private async Task<bool?> ArmingRowAsync(Guid node, CancellationToken ct)
+    private async Task<ArmingRow?> ArmingRowAsync(Guid node, CancellationToken ct)
     {
       var row = await _db.ObjectArming.AsNoTracking()
         .Where(a => a.object_id == node)
-        .Select(a => new { a.armed })
+        .Select(a => new { a.armed, a.bypass_until })
         .FirstOrDefaultAsync(ct);
-      return row?.armed;
+      return row is null ? null : new ArmingRow(row.armed, row.bypass_until);
     }
 
     private async Task<Guid?> ParentAsync(Guid node, CancellationToken ct) =>

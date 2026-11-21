@@ -447,6 +447,9 @@ namespace VmsMap.Db
         entity.ToTable("object_arming");
         entity.HasKey(e => e.object_id);
         entity.Property(e => e.armed).IsRequired();
+        entity.Property(e => e.bypass_until).HasColumnName("bypass_until")
+          .HasColumnType("timestamptz");
+        entity.Property(e => e.restore_mode).HasColumnName("restore_mode");
       });
     }
 
@@ -458,6 +461,9 @@ namespace VmsMap.Db
         entity.HasKey(e => e.object_id);
         entity.Property(e => e.arm_mode).IsRequired();
         entity.Property(e => e.alarm_enabled).IsRequired();
+        entity.Property(e => e.bypass_until).HasColumnName("bypass_until")
+          .HasColumnType("timestamptz");
+        entity.Property(e => e.restore_mode).HasColumnName("restore_mode");
       });
     }
 

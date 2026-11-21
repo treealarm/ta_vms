@@ -28,7 +28,7 @@ namespace VmsMap.Adapter
   /// never closes an alarm — only the condition leaving does.
   /// </para>
   /// </remarks>
-  internal sealed class SensorAlarmService
+  public sealed class SensorAlarmService
   {
     /// <summary>What the raise records as its trigger when arming found the condition already true.</summary>
     public const string ArmedWithActiveCondition = "armed_with_active_condition";
