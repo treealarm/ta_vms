@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,9 +25,26 @@ namespace VmsMap.Domain.Arming
   /// changed a row, so the round "the map writes, the event arrives, the map looks again" ends
   /// after one extra hop instead of running forever.
   /// </para>
+  /// <para>
+  /// Every write is read back and derived again before the call returns: the answer is computed
+  /// from data that another writer — a placement move, a zone change, the demo world's install —
+  /// may change between the read and the write, and the last writer would otherwise leave a stale
+  /// flag until the next trigger. A write that lands after another writer's is therefore corrected
+  /// by the pass that follows it, and each writer's own post-commit pass closes the same window
+  /// from the other side. The map reads that settle the answer are taken as one snapshot, so a
+  /// verification cannot mistake a half-old tree for a settled one; the snapshot ends before the
+  /// flag is written, because a transaction is never held across the gRPC call.
+  /// </para>
   /// </remarks>
   public sealed class CameraArmingReconciler
   {
+    /// <summary>
+    /// How many times a flag may be written in one call. Each write is followed by a read, so the
+    /// last possible write is verified too; a pass limit of writes, not of reads, is what keeps
+    /// that true.
+    /// </summary>
+    internal const int MaxWrites = 3;
+
     private readonly VmsMapDbContext _db;
     private readonly EffectiveArmingResolver _arming;
     private readonly DeviceObjectSettingsStore _settings;
@@ -58,26 +76,72 @@ namespace VmsMap.Domain.Arming
     /// to write. An explicit mode is the camera's decision and wins over the zone; only `inherit`
     /// asks the zone.
     /// </summary>
+    /// <remarks>
+    /// The answer is derived again after every write, up to <see cref="MaxWrites"/> writes, so a
+    /// value that another writer has already replaced is corrected rather than left standing. The
+    /// usual case still costs one read and no write: the loop ends as soon as the flag and the
+    /// map agree.
+    /// </remarks>
     public async Task<bool> ReconcileAsync(string cameraId, CancellationToken ct)
     {
-      var state = await _cameraState.GetStateAsync(cameraId, ct);
-      var mode = (await _settings.GetAsync(CameraObjectId.For(cameraId), ct)).Mode;
+      var wrote = false;
+      for (var pass = 0; ; pass += 1)
+      {
+        var state = await _cameraState.GetStateAsync(cameraId, ct);
+        var (mode, want) = await DeriveAsync(cameraId, ct);
+        if (state?.Armed == want)
+          return wrote;
 
+        if (pass == MaxWrites)
+        {
+          _logger.LogWarning(
+            "Camera '{CameraId}' arming did not settle after {Writes} write(s)", cameraId, MaxWrites);
+          return wrote;
+        }
+
+        var changed = await _cfg.SetCamArmedAsync(cameraId, want, ct);
+        if (!changed)
+          return wrote;
+
+        wrote = true;
+        _logger.LogInformation(
+          "Camera '{CameraId}' armed={Armed} by {Source}", cameraId, want,
+          string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal) ? "the zone it stands in" : "its own mode");
+      }
+    }
+
+    /// <summary>
+    /// The camera's own mode and the flag it implies, from the map alone. The reads make one
+    /// snapshot: the resolver walks several tables, and a placement committed between two of its
+    /// queries must not be half-seen. The snapshot is a read-only transaction that ends here,
+    /// before the caller writes the flag — no transaction is held across the gRPC call. It is
+    /// skipped where the provider has no transactions (the in-memory tests) or when the caller
+    /// already opened one.
+    /// </summary>
+    private async Task<(string Mode, bool Armed)> DeriveAsync(
+      string cameraId, CancellationToken ct)
+    {
+      if (!_db.Database.IsRelational() || _db.Database.CurrentTransaction is not null)
+        return await DeriveFromMapAsync(cameraId, ct);
+
+      await using var snapshot = await _db.Database.BeginTransactionAsync(
+        IsolationLevel.RepeatableRead, ct);
+      var answer = await DeriveFromMapAsync(cameraId, ct);
+      await snapshot.CommitAsync(ct);
+      return answer;
+    }
+
+    private async Task<(string Mode, bool Armed)> DeriveFromMapAsync(
+      string cameraId, CancellationToken ct)
+    {
+      var mode = (await _settings.GetAsync(CameraObjectId.For(cameraId), ct)).Mode;
       var want = mode switch
       {
         ArmMode.Armed => true,
         ArmMode.Disarmed => false,
         _ => await _arming.ZoneArmedAsync(cameraId, ct),
       };
-      if (state?.Armed == want)
-        return false;
-
-      var changed = await _cfg.SetCamArmedAsync(cameraId, want, ct);
-      if (changed)
-        _logger.LogInformation(
-          "Camera '{CameraId}' armed={Armed} by {Source}", cameraId, want,
-          string.Equals(mode, ArmMode.Inherit, StringComparison.Ordinal) ? "the zone it stands in" : "its own mode");
-      return changed;
+      return (mode, want);
     }
 
     /// <summary>The same for a page of cameras, one at a time: VmsCfg takes one write apiece.</summary>
