@@ -251,6 +251,23 @@ InMemory, `CameraArmingTests`:
    Повторить 2–3 раза. Ничего не оставлять запущенным (`scripts/dev-down.sh`).
 4. `MapLockTests` (grep-инвариант) остаётся зелёным — новых `pg_advisory_xact_lock` нет.
 
+## Живая проверка (2026-11-21)
+
+Dev-стек (`scripts/dev-up.sh --build`), демо-мир `umd-datacenter` (5 камер, 3 на `map1` и 2 на
+`plan1`), инфраструктура в compose (`postgres`, `rabbitmq`, `mediamtx`); `ta_map_test` для
+Postgres-тестов создан и после прогона удалён.
+
+- Пространству `plan1` выставлена строка `object_arming(armed=true)`; опорная реплика камеры
+  `94681efe…` перенесена с `plan1` на `map1` (`objects.parent_id` и `geo_objects.canvas_id` —
+  так же, как это делает перенос расположения), VmsMap перезапущен.
+- Установка мира вернула опорную реплику в `plan1`; после коммита флаг записан от зоны:
+  в логе `Camera '94681efe…' armed=True by the zone it stands in`, в `ta_cfg.camera_states` —
+  `armed=true`. Перенесённая реплика осталась неопорной.
+- `object_arming` снят с охраны, VmsMap перезапущен — обе камеры `plan1` получили
+  `armed=False by the zone it stands in`; направление в обе стороны сходится.
+- Стенд остановлен (`scripts/dev-down.sh`, `docker compose down`), тестовая реплика и строка
+  охраны из dev-базы удалены, ничего не оставлено запущенным.
+
 ## Порядок работ (по коммитам)
 
 1. `docs: plan the arming sweep race` — этот файл в `docs/plans/arming-sweep-race.md`.
