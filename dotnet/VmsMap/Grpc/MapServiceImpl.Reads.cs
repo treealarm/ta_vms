@@ -502,6 +502,8 @@ namespace VmsMap.Grpc
           ObjectId = arming.ObjectId,
           Armed = arming.Armed,
           Source = arming.Source,
+          SourceObjectId = arming.SourceObjectId,
+          Bypassed = arming.Bypassed,
         },
       };
     }

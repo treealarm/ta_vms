@@ -810,9 +810,15 @@ message NodeArming {
   // replica; "inherited" for one found above a container's own node; "camera" for the camera's
   // flag standing in for a part with no answer of its own; "none" when nothing above is set.
   string source    = 3;
-  // The node whose property settled the answer — the zone a browser groups alarms by. Set when
-  // the answer came from a container's `armed` property, empty otherwise.
+  // The zone this arming answer belongs to — the node a browser groups alarms by. Set when the
+  // answer came from a container's `armed` property, and also when an explicit `disarmed` excludes
+  // the node from an armed zone (`bypassed`): then it names the zone it is excluded from. Empty
+  // when no container is involved.
   string source_object_id = 4;
+  // The node is explicitly disarmed while the nearest explicit container above it is armed: it is
+  // not simply off, it is excluded from a guarded zone. This does not change `armed` — the node's
+  // own row settled that — and it is derived, never stored.
+  bool bypassed = 5;
 }
 
 message GetNodeArmingRequest {
@@ -902,7 +908,10 @@ message SetDeviceSettingsRequest {
 
 message SetDeviceArmingRequest {
   DeviceSettingsKey key = 1;
-  string mode = 2;  // "armed" | "disarmed"; "inherit" is the administrator's setting
+  // "inherit" | "armed" | "disarmed" — the facade accepts all three, exactly as SetNodeArming
+  // does: an override has to be removable by whoever set it, and the device card's I/O row
+  // already writes "inherit".
+  string mode = 2;
   Caller caller = 3;
 }
 
@@ -959,8 +968,12 @@ message ControlObject {
   bool   armed         = 16;
   string arming_source = 17;
   bool   can_control   = 18;
-  // The node whose row settled it, when the answer came from a zone; the panel groups by it.
+  // The zone this object's arming answer belongs to: the node whose row settled it, or the armed
+  // zone an explicitly disarmed device is excluded from (`bypassed`). The panel groups by it.
   string arming_source_object_id = 19;
+  // An explicitly disarmed device whose zone is armed: excluded rather than simply off. Derived
+  // from the device's mode and the zone, never stored.
+  bool bypassed = 20;
 }
 
 message ListControlObjectsResponse {
@@ -1030,8 +1043,8 @@ message Alarm {
   string object_name = 22;
   string camera_id = 23;
   // The zone the alarm is accepted by: the node whose armed property settles this device's
-  // effective arming, empty while the device is not on guard. The browser groups by it instead of
-  // guessing from the tree.
+  // effective arming, or the armed zone an explicitly disarmed device is excluded from. Empty
+  // when no container is involved. The browser groups by it instead of guessing from the tree.
   string arming_source_object_id = 24;
   // Why the acknowledge action is unavailable to this caller: "closed", "no_right",
   // "reset_required" (a fault whose condition cleared is closed by a reset), or empty when it is

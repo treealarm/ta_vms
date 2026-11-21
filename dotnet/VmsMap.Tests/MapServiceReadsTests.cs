@@ -907,6 +907,38 @@ public class MapServiceReadsTests
     Assert.Empty(withComment.Rejected);
   }
 
+  [Fact]
+  public async Task ABypassedDevicesAlarmIsGroupedUnderItsZone()
+  {
+    var s = Create();
+    var (space, _, part) = await ZoneWithSensorAsync(s);
+    s.Db.ObjectArming.Add(new DBObjectArming { object_id = space, armed = true });
+    await TestWiring.ObjectSettings(s.Db).SetModeAsync(
+      part.ToString(), ArmMode.Disarmed, default);
+    await s.Db.SaveChangesAsync();
+    await s.Alarms.RaiseAsync(new RaiseAlarmSpec(part, AlarmSource.Sensor, SensorId), default);
+
+    var alarm = Assert.Single((await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext())).Open.Alarms);
+
+    Assert.Equal(space.ToString(), alarm.ArmingSourceObjectId);
+
+    // The zone goes off guard: the device is no longer excluded from a guarded zone, so its
+    // answer falls back to the unguarded bucket. The alarm itself is untouched.
+    var arming = await s.Db.ObjectArming.SingleAsync(a => a.object_id == space);
+    arming.armed = false;
+    await s.Db.SaveChangesAsync();
+
+    var off = Assert.Single((await s.Grpc.GetAlarms(new MapProto.GetAlarmsRequest
+    {
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext())).Open.Alarms);
+
+    Assert.Equal(string.Empty, off.ArmingSourceObjectId);
+  }
+
   /// <summary>A space with a camera's reference replica in it and a digital input under the camera.</summary>
   private static async Task<(Guid Space, Guid Camera, Guid Part)> ZoneWithSensorAsync(Services s)
   {

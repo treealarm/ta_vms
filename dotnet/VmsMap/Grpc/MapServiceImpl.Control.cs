@@ -139,6 +139,7 @@ namespace VmsMap.Grpc
           Armed = arming.Armed,
           Source = arming.Source,
           SourceObjectId = arming.SourceObjectId,
+          Bypassed = arming.Bypassed,
         };
       }
 
@@ -166,6 +167,7 @@ namespace VmsMap.Grpc
       ArmingSource = row.ArmingSource,
       ArmingSourceObjectId = row.ArmingSourceObjectId,
       CanControl = row.CanControl,
+      Bypassed = row.Bypassed,
     };
   }
 }

@@ -14,7 +14,7 @@ namespace VmsMap.Domain.Arming
   /// when the answer came from the part's own setting or the camera's flag.</summary>
   public sealed record NodeArmingInfo(
     string ObjectId, bool Armed, string Source, string SourceObjectId = "",
-    string Mode = ArmMode.Inherit);
+    string Mode = ArmMode.Inherit, bool Bypassed = false);
 
   /// <summary>
   /// One device part whose arming is asked for: its node, and the source it belongs to. A list of
@@ -47,6 +47,12 @@ namespace VmsMap.Domain.Arming
     public const string Inherited = "inherited";
     /// <summary>Nothing above the container is set: it follows whoever is above it, and nobody is.</summary>
     public const string None = "none";
+
+    /// <summary>A device part whose own row can exclude it from an armed zone. A relay is driven,
+    /// not watched, and has no arming at all.</summary>
+    private static bool CanBeBypassed(string partKind) =>
+      string.Equals(partKind, DeviceObjectId.DevicePart, StringComparison.Ordinal)
+      || string.Equals(partKind, DeviceObjectId.DigitalInputPart, StringComparison.Ordinal);
 
 
     private readonly VmsMapDbContext _db;
@@ -103,6 +109,10 @@ namespace VmsMap.Domain.Arming
       var states = await _cameraState.GetStatesAsync(cameraIds, ct);
 
       var inheriting = new List<ArmingSubject>();
+      // An explicit "disarmed" still says nothing about whether the device is excluded from an
+      // armed zone. Those subjects need the same zone walk, so the answer can say "bypassed"
+      // without changing `Armed` — the device's own row already settled that.
+      var disarmed = new List<ArmingSubject>();
       foreach (var subject in subjects)
       {
         var mode = settings.GetValueOrDefault(subject.ObjectId)?.Mode ?? ArmMode.Inherit;
@@ -110,15 +120,22 @@ namespace VmsMap.Domain.Arming
         if (string.Equals(mode, ArmMode.Armed, StringComparison.Ordinal))
           result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, true, Explicit, string.Empty, mode);
         else if (string.Equals(mode, ArmMode.Disarmed, StringComparison.Ordinal))
-          result[subject.ObjectId] = new NodeArmingInfo(subject.ObjectId, false, Explicit, string.Empty, mode);
+        {
+          if (CanBeBypassed(subject.PartKind))
+            disarmed.Add(subject);
+          else
+            result[subject.ObjectId] =
+              new NodeArmingInfo(subject.ObjectId, false, Explicit, string.Empty, mode);
+        }
         else
           inheriting.Add(subject);
       }
 
-      if (inheriting.Count == 0)
+      if (inheriting.Count == 0 && disarmed.Count == 0)
         return result;
 
       var inheritCameraIds = inheriting
+        .Concat(disarmed)
         .Select(s => s.SourceId)
         .Distinct(StringComparer.Ordinal)
         .ToList();
@@ -142,6 +159,19 @@ namespace VmsMap.Domain.Arming
             ? new NodeArmingInfo(subject.ObjectId, false, None)
             : new NodeArmingInfo(
                 subject.ObjectId, states.GetValueOrDefault(subject.SourceId)?.Armed ?? false, Camera);
+      }
+
+      foreach (var subject in disarmed)
+      {
+        // The zone above the reference replica is the context: armed there means the device is
+        // excluded from a guarded zone, disarmed (or absent) means it is simply off. The answer
+        // from the device's own row does not change either way.
+        var zone = spaceArmed.GetValueOrDefault(subject.SourceId);
+        var bypassed = zone is { Armed: true };
+        result[subject.ObjectId] = new NodeArmingInfo(
+          subject.ObjectId, false, Explicit,
+          bypassed ? Utils.ConvertGuidToObjectId(zone!.ObjectId) : string.Empty,
+          ArmMode.Disarmed, bypassed);
       }
 
       return result;
@@ -269,24 +299,65 @@ namespace VmsMap.Domain.Arming
       var here = true;
       while (current is { } node && visited.Add(node))
       {
-        var row = await _db.ObjectArming.AsNoTracking()
-          .Where(a => a.object_id == node)
-          .Select(a => new { a.armed })
-          .FirstOrDefaultAsync(ct);
-        if (row is not null)
+        if (await ArmingRowAsync(node, ct) is { } armed)
         {
+          if (!here)
+          {
+            // The node itself carries nothing; the first row above it settles the answer. There
+            // is no own exclusion, so this can never be a bypass.
+            return new NodeArmingInfo(
+              objectId, armed, Inherited, Utils.ConvertGuidToObjectId(node));
+          }
+
+          if (armed)
+            return new NodeArmingInfo(
+              objectId, true, Explicit, Utils.ConvertGuidToObjectId(node));
+
+          // The node itself is disarmed. It is bypassed only when the nearest explicit row above
+          // it is armed: that is a hole in a guarded zone, not a zone that is simply off. A
+          // disarmed row between the two settles it as a plain disarm.
+          var own = node;
+          var above = await ParentAsync(node, ct);
+          while (above is { } ancestor && visited.Add(ancestor))
+          {
+            if (await ArmingRowAsync(ancestor, ct) is { } ancestorArmed)
+            {
+              return ancestorArmed
+                ? new NodeArmingInfo(
+                    objectId, false, Explicit, Utils.ConvertGuidToObjectId(ancestor),
+                    Bypassed: true)
+                : new NodeArmingInfo(
+                    objectId, false, Explicit, Utils.ConvertGuidToObjectId(own));
+            }
+
+            above = await ParentAsync(ancestor, ct);
+          }
+
           return new NodeArmingInfo(
-            objectId, row.armed, here ? Explicit : Inherited, Utils.ConvertGuidToObjectId(node));
+            objectId, false, Explicit, Utils.ConvertGuidToObjectId(own));
         }
 
-        current = (await _db.Markers.AsNoTracking()
-          .Where(m => m.id == node)
-          .Select(m => m.parent_id)
-          .FirstOrDefaultAsync(ct));
+        current = await ParentAsync(node, ct);
         here = false;
       }
 
       return new NodeArmingInfo(objectId, false, None);
     }
+
+    /// <summary>The node's own explicit arming row, or null when it follows its parent.</summary>
+    private async Task<bool?> ArmingRowAsync(Guid node, CancellationToken ct)
+    {
+      var row = await _db.ObjectArming.AsNoTracking()
+        .Where(a => a.object_id == node)
+        .Select(a => new { a.armed })
+        .FirstOrDefaultAsync(ct);
+      return row?.armed;
+    }
+
+    private async Task<Guid?> ParentAsync(Guid node, CancellationToken ct) =>
+      await _db.Markers.AsNoTracking()
+        .Where(m => m.id == node)
+        .Select(m => m.parent_id)
+        .FirstOrDefaultAsync(ct);
   }
 }
