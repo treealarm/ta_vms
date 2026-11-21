@@ -41,7 +41,9 @@ if ($Rolling -and $exists) {
     $status = gh api "repos/$Repo/compare/$published...$Commit" -q .status
     if ($LASTEXITCODE -ne 0) { throw "cannot compare $published with $Commit" }
     if ($status -ne 'ahead') {
-      "::notice::$Release holds $published; $Commit is $status of it, so it is not replaced."
+      # A warning, not a notice: this skips the publish on a green run, and a grey line in the
+      # annotations is easy to miss -- windows-build went unreplaced for a week that way.
+      "::warning::$Release holds $published; $Commit is $status of it, so it is not replaced."
       return
     }
   }
