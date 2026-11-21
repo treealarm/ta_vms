@@ -91,6 +91,26 @@ jobs:
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
           if ($LASTEXITCODE -ne 0) { throw "vcpkg bootstrap failed" }
 
+      # The x264 port at the pinned commit writes GITLAB_URL with a trailing slash, and
+      # vcpkg_from_gitlab joins it with another -- so it asks for
+      # https://code.videolan.org//videolan/... and VideoLAN's GitLab now resets the TLS
+      # connection on that path (curl error 56, the port never downloads). Upstream fixed the
+      # port by dropping the trailing slash; do the same to the pinned tree, and nothing once
+      # the pin includes the fix. The archive itself is unchanged, so the port's SHA512 still
+      # matches.
+      - name: Fix the pinned x264 port's URL
+        run: |
+          $portfile = Join-Path $env:VCPKG_ROOT 'ports\x264\portfile.cmake'
+          if (-not (Test-Path -LiteralPath $portfile)) { throw "no x264 portfile at $portfile" }
+          $text = Get-Content -Raw -LiteralPath $portfile
+          $fixed = $text.Replace('GITLAB_URL https://code.videolan.org/', 'GITLAB_URL https://code.videolan.org')
+          if ($fixed -ne $text) {
+            [IO.File]::WriteAllText($portfile, $fixed)
+            "patched the x264 port's GitLab URL"
+          } else {
+            "the pinned x264 port already drops the trailing slash"
+          }
+
       - name: Restore vcpkg binary cache
         run: |
           "VCPKG_BINARY_SOURCES=clear;files,$env:VCPKG_BINARY_CACHE,readwrite" >> $env:GITHUB_ENV
