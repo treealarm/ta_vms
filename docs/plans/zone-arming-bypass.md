@@ -330,6 +330,16 @@ CREATE INDEX idx_device_settings_bypass_due
 остановить Vite, стенд и симулятор, демо-мир восстановить. Незакоммиченные `.vscode/launch.json`
 и `.claude/env-profiles` не трогать.
 
+**Найдено на стенде (2026-11-21).** Прогон `check_demo.py` падал не на обходе, а на устройстве:
+постановка зоны пишет флаг каждой камеры в VmsCfg, `server-config-changed` заставляет VmsOnvif
+снять подписку на I/O **вместе с манифестом частей**, и до ближайшего чтения списка или прохода
+раз в 5 минут события входа приходят без полярности (`polarity_known=false`) — карта их
+отбрасывает. Переход контакта в этом окне терялся, тревога не снималась. Исправлено в VmsOnvif:
+смена конфигурации снимает подписку, но оставляет манифест, а перезвон новой подписки теперь
+объявляется карте (раньше он молча складывался в `_reported`). В `check_demo.py` команда реле,
+от которой ждут перехода, повторяется через обратное переключение — на случай, если переход
+всё же попал в окно переподписки.
+
 ## Документация
 
 - `docs/maps/control.md` — обход датчика и зоны, срок и `restore_mode`, «снять комнату целиком»,
@@ -352,6 +362,8 @@ CREATE INDEX idx_device_settings_bypass_due
 4. `VmsMap: return a bypassed node to its previous mode` — sweep, `TimeProvider`, Postgres-тесты.
 5. `web_srv: pass the bypass deadline through` — DTO, валидация, тесты.
 6. `Frontend: show a bypass and let it expire` — помощник, диалог, компоненты, i18n, тесты.
+6a. `VmsOnvif: keep a camera's parts when its configuration changes` — переподписка не стирает
+   манифест, перезвон подписки объявляется карте (найдено на стенде, блокировало проверку).
 7. `Demo: check the bypass and its deadline end to end` — `check_demo.py`, живая проверка.
 8. `Docs: close the bypassed item of the future plan` — docs и сокращение future plan 20.
 
@@ -375,11 +387,18 @@ Push и merge в `master` — только по просьбе пользова�
 
 ## Состояние
 
-- [ ] 1. План в репозитории.
-- [ ] 2. VmsMap: вычисляемый `bypassed` для устройства и зоны, прото, группировка тревог.
-- [ ] 3. VmsMap: хранение срока и `restore_mode`, журнал.
-- [ ] 4. VmsMap: sweep истечения, `TimeProvider`, Postgres-тесты.
-- [ ] 5. web_srv: DTO, `until`, валидация.
-- [ ] 6. Фронтенд: помощник, диалог, подписи, i18n.
-- [ ] 7. `check_demo.py` и живая проверка.
-- [ ] 8. Документация и сокращение future plan 20.
+- [x] 1. План в репозитории.
+- [x] 2. VmsMap: вычисляемый `bypassed` для устройства и зоны, прото, группировка тревог
+  (`0e03db23`; `VmsMap.Tests` 431).
+- [x] 3. VmsMap: хранение срока и `restore_mode`, журнал, единый путь записи устройства
+  (`ffbdcf8d`; `VmsMap.Tests` 444).
+- [x] 4. VmsMap: sweep истечения, `TimeProvider`, Postgres-тест claim/rollback
+  (`b377aa1a`; `VmsMap.Tests` 451).
+- [x] 5. web_srv: DTO, `until`, валидация (`98a9f4f8`; `web_srv.Tests` 25).
+- [x] 6. Фронтенд: помощник, диалог, подписи, i18n (`98eb6ab4`; vitest 117, build и lint чистые).
+- [x] 7. `check_demo.py`: обход датчика со сроком, возврат `system`/`expired`, обход помещения
+  целиком и временный обход камеры. На стенде шаги `Zone bypass` и `Camera zone arming` прошли;
+  полный прогон до конца не дошёл — стенд потерял маршрут Dapr до VmsCfg
+  (`dial tcp 10.8.1.1:19012`, интерфейс VPN `amn0`), это окружение, а не код. Зелёный прогон
+  целиком повторить при следующем поднятии стенда.
+- [x] 8. Документация и сокращение future plan 20.
