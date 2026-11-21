@@ -1,7 +1,11 @@
 import { useState } from 'react'
-import { Alert, Box, CircularProgress, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, MenuItem, Select, Stack, Switch, Tooltip, Typography } from '@mui/material'
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined'
 import { useTranslation } from 'react-i18next'
 import { setDigitalInputArmMode } from '../api/deviceIoApi'
+import BypassUntilDialog from './control/BypassUntilDialog'
+import { formatUntil } from './control/bypassTime'
+import { guardState } from './control/guardState'
 import type { DeviceArmMode, DigitalInputDto, RelayOutputDto } from '../dto/dtos'
 import type { DeviceIoLiveState } from '../hooks/useDeviceIoLive'
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
@@ -74,19 +78,20 @@ function RelayRow({ cameraId, relay, onChanged }: { cameraId: string; relay: Rel
 function DigitalInputRow({
   cameraId, input, onChanged,
 }: { cameraId: string; input: DigitalInputDto; onChanged: () => void }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bypassOpen, setBypassOpen] = useState(false)
 
   const armed = input.armed
   const showGuard = input.alarmEnabled === true
   const mode = input.armMode ?? 'inherit'
 
-  const apply = async (next: DeviceArmMode) => {
+  const apply = async (next: DeviceArmMode, until?: string | null) => {
     setPending(true)
     setError(null)
     try {
-      await setDigitalInputArmMode(cameraId, input.token, next)
+      await setDigitalInputArmMode(cameraId, input.token, next, until)
       onChanged()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -96,13 +101,19 @@ function DigitalInputRow({
     }
   }
 
+  const state = guardState({
+    armed: armed === true,
+    source: input.armingSource,
+    bypassed: input.bypassed,
+    bypassUntil: input.bypassUntil,
+    surface: 'device',
+  })
+
   const guardLabel = armed === null
     ? t('onvifSettings.deviceIoGuardUnknown')
-    : input.armingSource === 'space'
-      ? (armed ? t('onvifSettings.deviceIoGuardOnZone') : t('onvifSettings.deviceIoGuardOffZone'))
-      : input.armingSource === 'camera'
-        ? (armed ? t('onvifSettings.deviceIoGuardOnCamera') : t('onvifSettings.deviceIoGuardOffCamera'))
-        : (armed ? t('onvifSettings.deviceIoGuardOn') : t('onvifSettings.deviceIoGuardOff'))
+    : state.timed && input.bypassUntil
+      ? t(state.labelKey, { time: formatUntil(input.bypassUntil, i18n.language) })
+      : t(state.labelKey)
 
   const guardSelect = (
     <Select
@@ -137,16 +148,25 @@ function DigitalInputRow({
         </Typography>
       </Stack>
       {showGuard && (
-        <Stack direction="row" alignItems="center" spacing={1}>
+        <Stack direction="row" alignItems="center" spacing={1} useFlexGap flexWrap="wrap">
           <Typography variant="caption" color="text.secondary">
             {t('onvifSettings.deviceIoGuardLabel')}
           </Typography>
           {input.canControl ? guardSelect : (
             <Tooltip title={t('onvifSettings.deviceIoNoControl')}><span>{guardSelect}</span></Tooltip>
           )}
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<TimerOutlinedIcon />}
+            disabled={pending || !input.canControl}
+            onClick={() => setBypassOpen(true)}
+          >
+            {t('control.bypassUntil')}
+          </Button>
           <Typography
             variant="caption"
-            color={armed === true ? 'success.main' : 'text.secondary'}
+            color={armed === null ? 'text.secondary' : state.color}
             title={t('onvifSettings.deviceIoGuardHint')}
           >
             {guardLabel}
@@ -154,6 +174,15 @@ function DigitalInputRow({
         </Stack>
       )}
       {error && <Typography variant="caption" color="error.main">{error}</Typography>}
+      <BypassUntilDialog
+        open={bypassOpen}
+        busy={pending}
+        onClose={() => setBypassOpen(false)}
+        onApply={(until) => {
+          setBypassOpen(false)
+          void apply('disarmed', until)
+        }}
+      />
     </Stack>
   )
 }

@@ -14,5 +14,9 @@ namespace VmsMap.Db
     public string arm_mode { get; set; } = "inherit";
     public string? trigger_on { get; set; }
     public bool alarm_enabled { get; set; }
+    /// <summary>The exclusion ends here; only `arm_mode = 'disarmed'` carries one.</summary>
+    public DateTime? bypass_until { get; set; }
+    /// <summary>The own mode to write back at the deadline: `inherit` or `armed`.</summary>
+    public string? restore_mode { get; set; }
   }
 }

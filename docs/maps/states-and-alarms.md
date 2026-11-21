@@ -41,10 +41,24 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   its **reference replica** — the picture on the floor plan — and the spaces above it recount; a
   picture's row is never counted as a second alarm, and only the reference replica gets one. When a
   placement moves the reference, the old picture's row goes and the new one's appears.
+- **A bypassed node's alarm belongs to the zone it is excluded from.** An explicit `disarmed`
+  under an armed zone keeps its open alarms; they are grouped under that zone (the node
+  `arming_source_object_id` names) and the zone's "Acknowledge all" reaches them, because the
+  device is still found through its reference replica. When the deadline passes, the sweep restores
+  the mode and the sensors are re-checked through the outbox: a contact still closed raises
+  immediately.
 - **Device events are monotonic.** The publisher's `(epoch, seq)` decides what is accepted; a clock
   is only the fallback across processes. A repeat of the value already stored is not a transition
   and writes no journal row, but it still advances the cursor — that is how a lost message or a
   restart is repaired.
+- **A configuration change rebuilds the subscription, not what the camera has.**
+  `server-config-changed` makes VmsOnvif drop a camera's device subscription — an address or a
+  credential may have moved, and the old pull point would poll the old one — but the parts it
+  knows and their idle states stay, and the new subscription's replay is announced to the map.
+  Both matter: with the manifest dropped, every event about an input would carry no contact and
+  the map would discard it, and a change that falls into the rebuild window would otherwise leave
+  the map's contact stale until the part next moved. Arming a zone writes each camera's flag, so
+  without this the act of arming would blind the alarms of the sensors under it.
 - **A part that vanishes from its device's manifest is a fault, not a closure.** `device_node.present`
   is the single truth: a successful snapshot that no longer lists the part (or lists it
   `present=false`) clears its live contact state and marks the part absent; a part listed

@@ -1150,6 +1150,10 @@ export type DigitalInputDto = {
   /** What the mode actually resolves to. null means unknown, never "off guard". */
   armed: boolean | null
   armingSource: ArmSource | null
+  /** Excluded from an armed zone rather than simply off. */
+  bypassed: boolean
+  /** When the exclusion ends; null for an indefinite one. */
+  bypassUntil: string | null
   /** False when the caller has no control right on this camera: the switch is shown, not usable. */
   canControl: boolean
 }
@@ -1185,9 +1189,13 @@ export type ControlObjectDto = {
   /** What it resolves to right now: a camera and a sensor answer the same scheme. */
   armed: boolean
   armingSource: ArmSource | ''
-  /** The node whose arming row settled it, when a zone did; empty otherwise. */
+  /** The zone this arming answer belongs to, including one a bypass excludes it from. */
   armingSourceObjectId: string
   canControl: boolean
+  /** Excluded from an armed zone rather than simply off. */
+  bypassed: boolean
+  /** When the exclusion ends; null for an indefinite one. */
+  bypassUntil: string | null
 }
 
 export type ControlObjectCursorDto = {
@@ -1214,6 +1222,10 @@ export type NodeArmingDto = {
   armed: boolean
   source: ArmSource | ''
   sourceObjectId: string
+  /** Excluded from an armed zone rather than simply off. */
+  bypassed: boolean
+  /** When the exclusion ends; null for an indefinite one. */
+  bypassUntil: string | null
   modes: ArmMode[]
 }
 
@@ -1275,6 +1287,8 @@ export type ObjectSettingsDto = {
   armed: boolean
   armingSource: ArmSource | ''
   armingSourceObjectId: string
+  bypassed: boolean
+  bypassUntil: string | null
 }
 
 export type ObjectSettingsBody = {

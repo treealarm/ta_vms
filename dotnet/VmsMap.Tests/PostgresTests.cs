@@ -219,6 +219,53 @@ public class PostgresTests
   }
 
   [Fact]
+  public async Task ADueBypassRowIsClaimedByOneReplicaAndSurvivesARollback()
+  {
+    await using var s = await OpenAsync();
+    if (s is null) return;
+
+    var (_, _, floor) = await SeedTreeAsync(s.Db);
+    var due = DateTime.UtcNow.AddMinutes(-1);
+    s.Db.ObjectArming.Add(new DBObjectArming
+    {
+      object_id = floor,
+      armed = false,
+      bypass_until = due,
+      restore_mode = "inherit",
+    });
+    await s.Db.SaveChangesAsync();
+
+    // A second context on the same data source: another VmsMap replica.
+    var options = new DbContextOptionsBuilder<VmsMapDbContext>()
+      .UseNpgsql(s.DataSource, o => o.UseNetTopologySuite())
+      .Options;
+    await using var replica = new VmsMapDbContext(options);
+
+    await using (var first = await s.Db.Database.BeginTransactionAsync())
+    {
+      var claimed = await s.Db.ObjectArming
+        .FromSqlInterpolated($"SELECT * FROM object_arming WHERE bypass_until IS NOT NULL AND bypass_until <= {DateTime.UtcNow} FOR UPDATE SKIP LOCKED")
+        .ToListAsync();
+      Assert.Single(claimed);
+
+      // The other replica skips the locked row instead of waiting for it.
+      await using var second = await replica.Database.BeginTransactionAsync();
+      var skipped = await replica.ObjectArming
+        .FromSqlInterpolated($"SELECT * FROM object_arming WHERE bypass_until IS NOT NULL AND bypass_until <= {DateTime.UtcNow} FOR UPDATE SKIP LOCKED")
+        .ToListAsync();
+      Assert.Empty(skipped);
+
+      // A rollback releases the claim: the deadline is still there for the next tick.
+      await first.RollbackAsync();
+      var retried = await replica.ObjectArming
+        .FromSqlInterpolated($"SELECT * FROM object_arming WHERE bypass_until IS NOT NULL AND bypass_until <= {DateTime.UtcNow} FOR UPDATE SKIP LOCKED")
+        .ToListAsync();
+      Assert.Single(retried);
+      await second.RollbackAsync();
+    }
+  }
+
+  [Fact]
   public async Task DeletingANodeRemovesEverythingKeyedToIt()
   {
     await using var s = await OpenAsync();

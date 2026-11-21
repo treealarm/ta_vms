@@ -35,6 +35,26 @@ an outbox row in one transaction; the outbox row is what makes `SensorAlarmServi
 sensors already in their trigger position, so a crash between the commit and the re-check loses
 nothing. Disarming closes no alarm — only the condition leaving does.
 
+**An explicit off inside an armed zone is a bypass.** A device or container whose own row is
+`disarmed` while the nearest explicit row above it is `armed` is reported as `bypassed`: it is not
+simply off, it is excluded from a zone that still guards the rest. The answer does not change
+`armed` — the node's own row settled that — and `source_object_id` names the zone it is excluded
+from, so its open alarms stay in that zone's group and the zone's "Acknowledge all" keeps reaching
+it. The flag is derived on every read; a zone going on or off guard changes it with no write to the
+node.
+
+A bypass may carry a deadline (`bypass_until`, with the own mode to restore at it). The sweep in
+VmsMap restores that mode when the deadline passes and journals the automatic action as `system`;
+a contact still closed raises an alarm at that moment, which is the safety net against a forgotten
+exclusion. Extending a deadline keeps the original intent: an armed room goes back to `armed`, a
+node that followed its zone to `inherit`. The deadline lives on the same row as the decision, so an
+explicit mode change cancels it. The action is ordinary `control`; there is no separate right, and
+the journal is the existing `arming` entry with the deadline and `expired` in its extra properties.
+
+The exclusion is set on the node the operator works with. Setting a floor or a zone excludes every
+device under it that still inherits; a device with an explicit mode keeps it. Nothing is written
+onto the sensors.
+
 **The effective flag is written back to VmsCfg.** `camera_states.armed` is read by services that
 cannot see the map — VmsOnvif's ONVIF retention gate and web_srv's live state — so the map writes
 the value the camera's mode or its zone implies: on a zone's change, when the camera's reference

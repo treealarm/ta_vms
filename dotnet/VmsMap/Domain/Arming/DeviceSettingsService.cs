@@ -60,7 +60,8 @@ namespace VmsMap.Domain.Arming
       CancellationToken ct);
 
     Task<NodeArmingView?> SetArmingAsync(
-      DeviceSettingsKey key, string mode, string actor, CancellationToken ct);
+      DeviceSettingsKey key, string mode, string actor, CancellationToken ct,
+      DateTime? until = null);
   }
 
   internal sealed class DeviceSettingsService(
@@ -147,7 +148,8 @@ namespace VmsMap.Domain.Arming
     /// decision to reverse.
     /// </summary>
     public async Task<NodeArmingView?> SetArmingAsync(
-      DeviceSettingsKey key, string mode, string actor, CancellationToken ct)
+      DeviceSettingsKey key, string mode, string actor, CancellationToken ct,
+      DateTime? until = null)
     {
       var node = await FindNodeAsync(key, ct);
       if (node is null)
@@ -155,9 +157,9 @@ namespace VmsMap.Domain.Arming
           "The part has no node in the tree yet: it appears with its first snapshot or event",
           ArmingRefusal.NotFound);
 
-      var view = await _nodeArming.SetAsync(node, mode, actor, ct);
-      await ReDeriveAsync(key, ct);
-      return view;
+      // The node facade's device path derives once for both surfaces — the card and the node —
+      // so this must not repeat it.
+      return await _nodeArming.SetAsync(node, mode, actor, ct, until);
     }
 
     /// <summary>

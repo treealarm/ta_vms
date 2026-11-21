@@ -11,13 +11,14 @@ export async function setDigitalInputArmMode(
   cameraId: string,
   token: string,
   armMode: DeviceArmMode,
+  until?: string | null,
 ): Promise<void> {
   await apiFetch(
     `/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/${encodeURIComponent(token)}/arm-mode`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ armMode }),
+      body: JSON.stringify({ armMode, until: until ?? null }),
     },
   )
 }

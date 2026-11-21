@@ -343,6 +343,29 @@ public class ControlObjectTests
   }
 
   [Fact]
+  public async Task ABypassedRowNamesTheZoneItIsExcludedFrom()
+  {
+    var f = await CreateAsync();
+    // The floor is armed; the input's own mode is disarmed, so it is excluded rather than off.
+    f.Db.ObjectArming.Add(new DBObjectArming
+    {
+      object_id = Guid.Parse(f.FloorId),
+      armed = true,
+    });
+    var settings = await f.Db.DeviceObjectSettings.SingleAsync(
+      s => s.object_id == Guid.Parse(f.PartA));
+    settings.arm_mode = ArmMode.Disarmed;
+    await f.Db.SaveChangesAsync();
+
+    var row = await Find(f, f.PartA);
+
+    Assert.False(row!.Armed);
+    Assert.True(row.Bypassed);
+    Assert.Equal(EffectiveArmingResolver.Explicit, row.ArmingSource);
+    Assert.Equal(f.FloorId, row.ArmingSourceObjectId);
+  }
+
+  [Fact]
   public async Task ARowTheCallerMayNotViewNeverLeavesTheService()
   {
     var f = await CreateAsync();

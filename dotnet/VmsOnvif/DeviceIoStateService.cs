@@ -400,18 +400,29 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   }
 
   /// <summary>
-  /// Drops the camera's subscription and everything remembered about it. Called when its I/O is
-  /// gone, and when its configuration changed: the connection the watcher holds may no longer be
-  /// the right one, and the next settings read opens a new subscription on the current one.
+  /// Drops the camera's subscription and everything remembered about it: its I/O is gone.
   /// <para>
   /// The parts are not announced as absent: a dropped subscription is not a device fact. The next
   /// discovery sweep publishes the manifest, and that is the only statement allowed to say a part
   /// is gone.
   /// </para>
   /// </summary>
-  public async Task ForgetAsync(string cameraId)
+  public Task ForgetAsync(string cameraId) => ForgetCoreAsync(cameraId, keepParts: false);
+
+  /// <summary>
+  /// The camera's configuration changed: the subscription may hold an old address or credential,
+  /// so it goes, while the parts and their idle states stay. Those are configuration too, and
+  /// dropping them would leave every input event without a polarity — the map drops such an event
+  /// — until a settings read or the discovery sweep restated the manifest, minutes later. A changed
+  /// idle state is applied by the next settings read, which reports the new one.
+  /// </summary>
+  public Task ForgetSubscriptionAsync(string cameraId) =>
+    ForgetCoreAsync(cameraId, keepParts: true);
+
+  private async Task ForgetCoreAsync(string cameraId, bool keepParts)
   {
-    _presence.TryRemove(cameraId, out _);
+    if (!keepParts)
+      _presence.TryRemove(cameraId, out _);
 
     if (!_watchers.TryRemove(cameraId, out var lazy) || !lazy.IsValueCreated)
       return;
@@ -498,9 +509,15 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
       _cameraId = cameraId;
       _watcher = watcher;
       _watcher.StateChanged += OnStateChanged;
-      // The Initialized replay can arrive before the handler above is attached.
+      // The Initialized replay can arrive before the handler above is attached; those states are
+      // still the camera's current word, so they are announced like any other. A transition that
+      // happened while the subscription was being rebuilt would otherwise never reach the map,
+      // which would keep the old contact until the part next changed.
       foreach (var state in _watcher.States)
+      {
         _reported[(state.Kind, state.Token)] = state;
+        Publish(state.Kind, state.Token, initialized: true);
+      }
     }
 
     /// <summary>

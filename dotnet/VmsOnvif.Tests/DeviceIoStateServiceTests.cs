@@ -136,6 +136,22 @@ public class DeviceIoStateServiceTests
     Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.DigitalInput, "input1"));
   }
 
+  // ...and it is what the camera says now, so the map hears it too: a contact that changed while
+  // the subscription was being rebuilt would otherwise stay stale until the part next moved.
+  [Fact]
+  public async Task AStateAdoptedBeforeTheSubscriptionIsWatchedIsAnnouncedToTheMap()
+  {
+    var factory = new FakeFactory { Preloaded = State(DeviceIoKind.DigitalInput, "input1", true) };
+    await using var service = Service(factory);
+    var events = Capture(service);
+
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+
+    var announced = Assert.Single(events);
+    Assert.True(announced.Initialized);
+    Assert.Equal("closed", announced.Contact);
+  }
+
   [Fact]
   public async Task Snapshots_CarryEveryKnownPartAndItsContact()
   {
@@ -175,11 +191,38 @@ public class DeviceIoStateServiceTests
     await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
     var first = factory.Created[0];
 
-    await service.ForgetAsync(CameraId);
+    await service.ForgetSubscriptionAsync(CameraId);
     await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
 
     Assert.True(first.Disposed);
     Assert.Equal(2, factory.Created.Count);
+  }
+
+  // A configuration change — and the map writes a camera's arming flag on every zone change — may
+  // move the camera or change its credentials, but the parts it holds keep their tokens and idle
+  // states. Dropping them would make the next input event unpolarised, and the map discards an
+  // event whose contact it cannot name until a settings read or the discovery sweep restated the
+  // manifest: the contact would be blind for minutes.
+  [Fact]
+  public async Task AConfigurationChangeKeepsThePartsSoTheirEventsStillCarryAContact()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+
+    await service.ForgetSubscriptionAsync(CameraId);
+
+    // A relay command reports the relay list and reopens the subscription; the input's own list is
+    // not read, so only the kept manifest can give its events a contact.
+    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    factory.Created[^1].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Changed"));
+    await WaitForDebounceAsync();
+
+    var report = events.Last(raised => raised.Kind == DeviceIoKind.DigitalInput);
+    Assert.True(report.PolarityKnown);
+    Assert.Equal("open", report.Contact);
   }
 
   [Fact]
@@ -329,10 +372,10 @@ public class DeviceIoStateServiceTests
     Assert.False(polarity.Initialized);
   }
 
-  // A dropped subscription is not a device fact. Forgetting a camera's I/O — because its
-  // configuration changed, or both lists turned out empty — forgets the presence and publishes
-  // nothing: the next discovery sweep restates the manifest, and that is the only statement
-  // allowed to say a part is absent.
+  // A dropped subscription is not a device fact. Forgetting a camera's I/O — because both its
+  // lists turned out empty, or a node-wide change may have moved it — forgets the presence and
+  // publishes nothing: the next discovery sweep restates the manifest, and that is the only
+  // statement allowed to say a part is absent.
   [Fact]
   public async Task ForgettingACameraDropsItsPartsWithoutAnnouncingThem()
   {

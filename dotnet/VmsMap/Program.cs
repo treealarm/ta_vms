@@ -162,6 +162,8 @@ builder.Services.AddScoped<VmsMap.Domain.Arming.EffectiveArmingResolver>();
 // The one write behind every guard switch: a device delegates to VmsCfg, a container keeps its
 // row in `object_arming`.
 builder.Services.AddScoped<VmsMap.Domain.Arming.NodeArmingService>();
+// The side effects every device arming write owes, in one place so both facades produce them.
+builder.Services.AddScoped<VmsMap.Domain.Arming.DeviceArmingDerivation>();
 // The administrator's card for a logical device object: its arming mode and its contact rule.
 builder.Services.AddScoped<VmsMap.Domain.Arming.IDeviceSettingsService,
   VmsMap.Domain.Arming.DeviceSettingsService>();
@@ -205,6 +207,8 @@ builder.Services.AddHostedService(sp => new OutboxPublisher(
   pubSubName,
   sp.GetRequiredService<ILogger<OutboxPublisher>>()));
 builder.Services.AddHostedService<AlarmSweepService>();
+// Restores a node whose arming bypass deadline has passed.
+builder.Services.AddHostedService<ArmingBypassSweep>();
 builder.Services.AddHostedService<ConnectionStatePoller>();
 // Cameras flagged geo_from_device follow their own ONVIF position; the rest are never asked.
 builder.Services.AddHostedService<CameraGeoFollower>();

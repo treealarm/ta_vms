@@ -446,7 +446,11 @@ namespace VmsMap.Grpc
 
       foreach (var arming in resolved.Values)
       {
-        if (arming.Source == EffectiveArmingResolver.Space
+        // An inherited answer names the zone that settled it; a bypassed device names the armed
+        // zone it is excluded from. Both belong to the zone the operator accepts alarms by —
+        // `AcknowledgeSubtreeAlarms` already reaches a bypassed device through its reference
+        // replica, so leaving it in the unguarded bucket would disagree with the bulk action.
+        if ((arming.Source == EffectiveArmingResolver.Space || arming.Bypassed)
             && !string.IsNullOrEmpty(arming.SourceObjectId))
         {
           result[arming.ObjectId] = arming.SourceObjectId;

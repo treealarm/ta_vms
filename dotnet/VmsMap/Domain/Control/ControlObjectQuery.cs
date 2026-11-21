@@ -38,7 +38,9 @@ namespace VmsMap.Domain.Control
     bool Armed,
     string ArmingSource,
     string ArmingSourceObjectId,
-    bool CanControl)
+    bool CanControl,
+    bool Bypassed = false,
+    DateTime? BypassUntil = null)
   {
     public const string CameraPart = "device";
     public const string CameraKind = "camera";
@@ -345,6 +347,8 @@ namespace VmsMap.Domain.Control
             ArmingSource = camera?.Source ?? EffectiveArmingResolver.None,
             ArmingSourceObjectId = camera?.SourceObjectId ?? string.Empty,
             CanControl = control.Contains(row.ObjectId),
+            Bypassed = camera?.Bypassed ?? false,
+            BypassUntil = camera?.BypassUntil,
           });
           continue;
         }
@@ -360,6 +364,8 @@ namespace VmsMap.Domain.Control
           ArmingSource = resolved?.Source ?? string.Empty,
           ArmingSourceObjectId = resolved?.SourceObjectId ?? string.Empty,
           CanControl = control.Contains(row.ObjectId),
+          Bypassed = resolved?.Bypassed ?? false,
+          BypassUntil = resolved?.BypassUntil,
         });
       }
 

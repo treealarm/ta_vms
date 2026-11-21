@@ -50,7 +50,7 @@ namespace VmsMap.Grpc
       {
         var view = await _deviceSettings.SetArmingAsync(
           ToKey(request.Key), request.Mode, caller.Username ?? string.Empty,
-          context.CancellationToken);
+          context.CancellationToken, request.Until?.ToDateTime());
 
         return view is null
           ? new MapProto.GetNodeArmingResponse { Found = false }
@@ -94,6 +94,8 @@ namespace VmsMap.Grpc
           Armed = arming.Armed,
           Source = arming.Source,
           SourceObjectId = arming.SourceObjectId,
+          Bypassed = arming.Bypassed,
+          BypassUntil = ToTimestamp(arming.BypassUntil),
         };
       }
 

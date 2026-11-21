@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Chip, Stack, Switch, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, Chip, Stack, Switch, Tooltip, Typography } from '@mui/material'
+import TimerOutlinedIcon from '@mui/icons-material/TimerOutlined'
 import { useTranslation } from 'react-i18next'
 
 import { setNodeArming } from '../../api/controlApi'
 import { errorText } from '../../api/requestJson'
-import { guardInheritedColor } from '../../theme/ntTheme'
+import BypassUntilDialog from './BypassUntilDialog'
+import { formatUntil } from './bypassTime'
+import { guardState } from './guardState'
 import RelaySwitch from './RelaySwitch'
 import type { ControlObjectDto, NodeArmingDto } from '../../dto/dtos'
 
@@ -30,28 +33,37 @@ type Props = {
  * only the server's answer says what happened. The row is re-read after the answer lands.
  */
 export default function ObjectControl({ row, onChanged, heading = false }: Props) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [applied, setApplied] = useState<NodeArmingDto | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [bypassOpen, setBypassOpen] = useState(false)
 
   // What the effective arming resolves to; a relay's state has a switch of its own (RelaySwitch).
   const value = applied?.armed ?? row.armed
   const source = applied?.source ?? row.armingSource
+  const bypassed = applied?.bypassed ?? row.bypassed
+  const bypassUntil = applied?.bypassUntil ?? row.bypassUntil
+  const state = guardState({
+    armed: value,
+    source,
+    bypassed,
+    bypassUntil,
+    surface: 'device',
+  })
 
   // A different object must not inherit the previous one's answer or error.
   useEffect(() => {
     setApplied(null)
     setError(null)
+    setBypassOpen(false)
   }, [row.objectId])
 
-  const toggle = async () => {
-    const next = !value
+  const run = async (action: () => Promise<NodeArmingDto>) => {
     setPending(true)
     setError(null)
     try {
-      const updated = await setNodeArming(row.objectId, next ? 'armed' : 'disarmed')
-      setApplied(updated)
+      setApplied(await action())
       onChanged()
     } catch (e) {
       setError(errorText(e))
@@ -62,12 +74,17 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
     }
   }
 
-  const armedLabel =
-    source === 'space'
-      ? (value ? t('onvifSettings.deviceIoGuardOnZone') : t('onvifSettings.deviceIoGuardOffZone'))
-      : source === 'camera'
-        ? (value ? t('onvifSettings.deviceIoGuardOnCamera') : t('onvifSettings.deviceIoGuardOffCamera'))
-        : (value ? t('onvifSettings.deviceIoGuardOn') : t('onvifSettings.deviceIoGuardOff'))
+  const toggle = () =>
+    void run(() => setNodeArming(row.objectId, value ? 'disarmed' : 'armed'))
+
+  const applyBypass = (until: string | null) => {
+    setBypassOpen(false)
+    void run(() => setNodeArming(row.objectId, 'disarmed', until))
+  }
+
+  const label = state.timed && bypassUntil
+    ? t(state.labelKey, { time: formatUntil(bypassUntil, i18n.language) })
+    : t(state.labelKey)
 
   // Nothing to write the mode to, or no right to write it: the switch is shown, not usable, with
   // the reason in the tooltip instead of a click that fails.
@@ -124,22 +141,44 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
       )}
 
       {row.hasArming && (
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Typography variant="body2" color="text.secondary" sx={{ minWidth: 110 }}>
-            {t('control.guard')}
-          </Typography>
-          {blockedReason ? (
-            <Tooltip title={blockedReason}><span>{controlSwitch}</span></Tooltip>
-          ) : controlSwitch}
-          <Typography
-            variant="caption"
-            // Green when the object was put on guard here, purple when a zone settled it, grey when
-            // it is not on guard — the same reading the guard of a container gives.
-            color={!value ? 'text.secondary' : source === 'space' ? guardInheritedColor : 'success.main'}
-            title={t('onvifSettings.deviceIoGuardHint')}
-          >
-            {armedLabel}
-          </Typography>
+        <Stack spacing={0.75}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body2" color="text.secondary" sx={{ minWidth: 110 }}>
+              {t('control.guard')}
+            </Typography>
+            {blockedReason ? (
+              <Tooltip title={blockedReason}><span>{controlSwitch}</span></Tooltip>
+            ) : controlSwitch}
+            <Typography
+              variant="caption"
+              // Grey when it is not on guard, amber when an armed zone excludes it, purple when a
+              // zone settled the guard, green when it was set here.
+              color={state.color}
+              title={t('onvifSettings.deviceIoGuardHint')}
+            >
+              {label}
+            </Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<TimerOutlinedIcon />}
+              disabled={pending || blockedReason !== null}
+              onClick={() => setBypassOpen(true)}
+            >
+              {t('control.bypassUntil')}
+            </Button>
+            {state.canReturnToZone && (
+              <Button
+                size="small"
+                disabled={pending}
+                onClick={() => void run(() => setNodeArming(row.objectId, 'inherit'))}
+              >
+                {t('control.returnToZone')}
+              </Button>
+            )}
+          </Stack>
         </Stack>
       )}
 
@@ -157,6 +196,13 @@ export default function ObjectControl({ row, onChanged, heading = false }: Props
       )}
 
       {error && <Alert severity="error" sx={{ fontSize: '0.8rem' }}>{error}</Alert>}
+
+      <BypassUntilDialog
+        open={bypassOpen}
+        busy={pending}
+        onClose={() => setBypassOpen(false)}
+        onApply={applyBypass}
+      />
     </Stack>
   )
 }

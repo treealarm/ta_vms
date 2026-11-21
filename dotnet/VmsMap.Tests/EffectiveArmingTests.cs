@@ -112,8 +112,159 @@ public class EffectiveArmingTests
 
     var arming = await f.Resolver.ResolveAsync(f.PartId, default);
 
+    // The answer does not change: the input's own row still wins. What changes is the reading —
+    // the zone above is armed, so the input is excluded rather than simply off.
     Assert.False(arming!.Armed);
     Assert.Equal(EffectiveArmingResolver.Explicit, arming.Source);
+    Assert.True(arming.Bypassed);
+    Assert.Equal(space.id, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task ADisarmedInputUnderAnOffZoneIsNotBypassed()
+  {
+    var f = await CreateAsync(cameraArmed: true);
+    var space = await Node(f.Map, FloorName);
+    await PlaceReferenceAsync(f, space.id!, space.id!, false);
+    await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
+
+    var arming = await f.Resolver.ResolveAsync(f.PartId, default);
+
+    Assert.False(arming!.Armed);
+    Assert.False(arming.Bypassed);
+    Assert.Equal(string.Empty, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task TheNearestExplicitRowAboveTheZoneSettlesTheBypass()
+  {
+    var f = await CreateAsync(cameraArmed: true);
+    var building = await Node(f.Map, "building");
+    var floor = await Node(f.Map, FloorName, parentId: building.id);
+
+    // The floor carries no row; the building is armed, so the floor inherits guard. An input
+    // disarmed on that floor is excluded from the building.
+    await PlaceReferenceAsync(f, floor.id!, building.id!, true);
+    await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
+
+    var arming = await f.Resolver.ResolveAsync(f.PartId, default);
+
+    Assert.False(arming!.Armed);
+    Assert.True(arming.Bypassed);
+    Assert.Equal(building.id, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task ADisarmedInputWithNoReferenceReplicaIsNotBypassed()
+  {
+    var f = await CreateAsync(cameraArmed: true);
+    await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
+
+    var arming = await f.Resolver.ResolveAsync(f.PartId, default);
+
+    Assert.False(arming!.Armed);
+    Assert.False(arming.Bypassed);
+    Assert.Equal(string.Empty, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task ADisarmedCameraInAnArmedZoneIsBypassed()
+  {
+    var f = await CreateAsync(cameraArmed: false);
+    var space = await Node(f.Map, FloorName);
+    await PlaceReferenceAsync(f, space.id!, space.id!, true);
+    await f.Store.SetAsync(CameraObjectId.For(CameraId), ArmMode.Disarmed, null, false, default);
+
+    var arming = await f.Resolver.ResolveAsync(CameraObjectId.For(CameraId), default);
+
+    Assert.False(arming!.Armed);
+    Assert.True(arming.Bypassed);
+    Assert.Equal(space.id, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task ADisarmedSpaceUnderAnArmedAncestorIsBypassed()
+  {
+    var f = await CreateAsync();
+    var building = await Node(f.Map, "building");
+    var floor = await Node(f.Map, FloorName, parentId: building.id);
+    f.Db.ObjectArming.Add(new DBObjectArming { object_id = Guid.Parse(building.id!), armed = true });
+    f.Db.ObjectArming.Add(new DBObjectArming { object_id = Guid.Parse(floor.id!), armed = false });
+    await f.Db.SaveChangesAsync();
+
+    var arming = await f.Resolver.ResolveSpaceAsync(floor.id!, default);
+
+    Assert.False(arming!.Armed);
+    Assert.True(arming.Bypassed);
+    Assert.Equal(building.id, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task ADisarmedSpaceUnderADisarmedAncestorIsNotBypassed()
+  {
+    var f = await CreateAsync();
+    var building = await Node(f.Map, "building");
+    var floor = await Node(f.Map, FloorName, parentId: building.id);
+    f.Db.ObjectArming.Add(new DBObjectArming { object_id = Guid.Parse(building.id!), armed = false });
+    f.Db.ObjectArming.Add(new DBObjectArming { object_id = Guid.Parse(floor.id!), armed = false });
+    await f.Db.SaveChangesAsync();
+
+    var arming = await f.Resolver.ResolveSpaceAsync(floor.id!, default);
+
+    Assert.False(arming!.Armed);
+    Assert.False(arming.Bypassed);
+    Assert.Equal(floor.id, arming.SourceObjectId);
+  }
+
+  [Fact]
+  public async Task AnInheritingSpaceIsNotBypassed()
+  {
+    var f = await CreateAsync();
+    var building = await Node(f.Map, "building");
+    var floor = await Node(f.Map, FloorName, parentId: building.id);
+    f.Db.ObjectArming.Add(new DBObjectArming { object_id = Guid.Parse(building.id!), armed = true });
+    await f.Db.SaveChangesAsync();
+
+    var arming = await f.Resolver.ResolveSpaceAsync(floor.id!, default);
+
+    Assert.True(arming!.Armed);
+    Assert.Equal(EffectiveArmingResolver.Inherited, arming.Source);
+    Assert.False(arming.Bypassed);
+  }
+
+  [Fact]
+  public async Task MovingTheReferenceReplicaRecomputesTheBypass()
+  {
+    var f = await CreateAsync(cameraArmed: false);
+    var armed = await Node(f.Map, "armed floor");
+    var off = await Node(f.Map, "off floor");
+    await PlaceReferenceAsync(f, armed.id!, armed.id!, true);
+    await f.Store.SetAsync(f.PartId, ArmMode.Disarmed, null, false, default);
+
+    var before = await f.Resolver.ResolveAsync(f.PartId, default);
+    Assert.True(before!.Bypassed);
+
+    var placement = await f.Db.CameraPlacements.SingleAsync(
+      p => p.camera_id == CameraId && p.is_reference);
+    // `object_id` is the placement's key: the reference moves by replacing the row, not by
+    // editing the key in place.
+    f.Db.CameraPlacements.Remove(placement);
+    await f.Db.SaveChangesAsync();
+
+    var moved = await Node(
+      f.Map, "camera elsewhere", parentId: off.id, ownerId: CameraObjectId.For(CameraId));
+    f.Db.CameraPlacements.Add(new DBCameraPlacement
+    {
+      object_id = Guid.Parse(moved.id!),
+      camera_id = CameraId,
+      is_reference = true,
+    });
+    await f.Db.SaveChangesAsync();
+
+    var after = await f.Resolver.ResolveAsync(f.PartId, default);
+
+    Assert.False(after!.Bypassed);
+    Assert.Equal(string.Empty, after.SourceObjectId);
   }
 
   [Fact]
