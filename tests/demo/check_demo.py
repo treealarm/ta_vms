@@ -122,6 +122,27 @@ def set_relay(vms, camera_id, token, active):
              {"active": active})
 
 
+def set_relay_until(vms, name, token, active, reached, part_id, attempts=2, timeout=30):
+    """Switch a relay and wait for what it drives, flipping it back when the map missed the change.
+
+    A camera's configuration change — and the map writes a camera's arming flag on every zone
+    change — rebuilds its device subscription. A transition that falls into that window can be
+    lost, and a repeat of the value the map already holds is not a transition, so the retry flips
+    the relay away and back: the next change is one the map can hear. `reached` is what proves the
+    action, `part_id` the node whose own state shows the contact for the flip.
+    """
+    for attempt in range(attempts):
+        set_relay(vms, camera_id(name), token, active)
+        if wait_until(reached, timeout):
+            return True
+        if attempt + 1 == attempts:
+            return False
+        set_relay(vms, camera_id(name), token, not active)
+        wait_until(lambda: (control_object(vms, part_id) or {}).get("state")
+                   == ("open" if active else "closed"), 20)
+    return False
+
+
 def relay_state(vms, name, token):
     """One relay's row as the card sees it: the live value and whether it is still a wish."""
     rows = vms.call("GET", f"/api/DeviceIo/cameras/{camera_id(name)}/relay-outputs") or []
@@ -147,11 +168,14 @@ def digital_input_row(vms, name, token):
     return next((candidate for candidate in rows if candidate.get("token") == token), None)
 
 
-def set_arm_mode(vms, name, token, mode):
-    """The operator's guard switch, as the browser sends it: the mode and nothing else."""
+def set_arm_mode(vms, name, token, mode, until=None):
+    """The operator's guard switch, as the browser sends it: the mode, and an optional deadline."""
+    body = {"armMode": mode}
+    if until:
+        body["until"] = until
     vms.call("PUT",
              f"/api/DeviceIo/cameras/{camera_id(name)}/digital-inputs/{token}/arm-mode",
-             {"armMode": mode})
+             body)
 
 
 # ── The logical tree, the journal, alarms and the device settings ────────────────
@@ -1415,9 +1439,12 @@ def node_arming(vms, object_id):
         raise
 
 
-def set_node_arming(vms, object_id, mode):
+def set_node_arming(vms, object_id, mode, until=None):
     """The one write behind every guard switch; answers what the node resolves to afterwards."""
-    return vms.call("PUT", f"/api/control/objects/{object_id}/arming", {"mode": mode})
+    body = {"mode": mode}
+    if until:
+        body["until"] = until
+    return vms.call("PUT", f"/api/control/objects/{object_id}/arming", body)
 
 
 def acknowledge_zone(vms, object_id):
@@ -1492,9 +1519,10 @@ def check_zone_arming(vms):
         if alarm is not None:
             check(alarm.get("armingSourceObjectId") == floor["id"],
                   "the alarm names the zone its device is guarded by")
-            # False is omitted from the proto JSON, so an absent field is the refusal.
-            check(not alarm.get("canAck"),
-                  "it cannot be acknowledged while the floor is armed")
+            # The arming no longer refuses the acknowledgement: it asks for a comment
+            # (M2.4j), which is the refusal `check_ack_refused` meets below.
+            check(alarm.get("canAck") is True and alarm.get("ackRequiresComment") is True,
+                  "acknowledging under an armed floor asks for a comment")
 
             disarmed = set_node_arming(vms, floor["id"], "disarmed")
             check(disarmed.get("armed") is False,
@@ -1518,6 +1546,105 @@ def check_zone_arming(vms):
               "a new `sensor` front closed the contact")
     finally:
         set_node_arming(vms, floor["id"], "inherit")
+        set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+        wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)
+        wait_until(lambda: active_alarm(vms, part["id"]) is None, 40)
+
+
+def check_zone_bypass(vms):
+    """A timed exclusion: the node stays off until its deadline, then returns by itself.
+
+    The sweep runs in the stack, so the step waits for the deadline instead of moving a clock. It
+    also proves the zone-level case: one write on the floor excludes every sensor that follows it,
+    without touching each sensor's row.
+    """
+    print("Zone bypass")
+
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    site = next((space for space in spaces(vms) if space.get("name") == MAP_NAME), None)
+    if not check(floor is not None and site is not None, "the demo has the floor and the site"):
+        return
+
+    _, parts = device_nodes(vms, ARMED_CAMERA)
+    part = next((candidate for candidate in parts if candidate.get("name") == "sensor1"), None)
+    if not check(part is not None, "the master sensor is a node under the camera"):
+        return
+
+    def row():
+        return digital_input_row(vms, ARMED_CAMERA, ARMED_TOKEN)
+
+    set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
+    settle_sensor(vms, part["id"])
+
+    try:
+        set_node_arming(vms, floor["id"], "armed")
+        check(bool(wait_until(lambda: (row() or {}).get("armed") is True, 30)),
+              "the floor guards the sensor before the bypass")
+
+        until = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
+        timed = set_node_arming(vms, part["id"], "disarmed", until)
+        check(timed.get("bypassed") is True,
+              f"a timed disarm under an armed floor is a bypass (got {timed!r})")
+        check(timed.get("sourceObjectId") == floor["id"],
+              "the bypass names the zone it is excluded from")
+        check(bool(timed.get("bypassUntil")), "the answer carries the deadline")
+        check((row() or {}).get("bypassed") is True,
+              "the control list shows the same bypass")
+
+        check(bool(set_relay_until(
+                  vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, True,
+                  lambda: (control_object(vms, part["id"]) or {}).get("state") == "closed",
+                  part["id"])),
+              "the contact closes and the map knows it")
+        time.sleep(4)
+        check(active_alarm(vms, part["id"]) is None,
+              "a contact closing while bypassed raises no alarm")
+
+        check(bool(wait_until(
+                  lambda: (node_arming(vms, part["id"]) or {}).get("bypassed") is False, 90)),
+              "the deadline returns the sensor to its zone by itself")
+        check(bool(wait_until(lambda: active_alarm(vms, part["id"]) is not None, 40)),
+              "the contact still closed raises the moment the bypass ends")
+
+        expiry = next((event for event in events_of(vms, part["id"], "arming")
+                       if event.get("param0") == "system"), None)
+        check(expiry is not None, "the journal records the automatic return by `system`")
+        check(any((p.get("propName") or "") == "expired"
+                  for p in (expiry or {}).get("extraProps") or []),
+              "the journal entry says it expired")
+
+        # Clear the contact, then exclude the whole room with one write on the floor.
+        check(bool(set_relay_until(
+                  vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, False,
+                  lambda: active_alarm(vms, part["id"]) is None,
+                  part["id"])),
+              "opening the loop returns the contact to normal")
+
+        set_node_arming(vms, site["id"], "armed")
+        until = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
+        floor_bypass = set_node_arming(vms, floor["id"], "disarmed", until)
+        check(floor_bypass.get("bypassed") is True,
+              "the floor itself is bypassed inside the armed site")
+        check(bool(wait_until(lambda: (row() or {}).get("armed") is False, 30)),
+              "the inheriting sensor follows the bypassed floor")
+
+        check(bool(set_relay_until(
+                  vms, ARMED_CAMERA, ARMED_RELAY_TOKEN, True,
+                  lambda: (control_object(vms, part["id"]) or {}).get("state") == "closed",
+                  part["id"])),
+              "the excluded room's contact still reaches the map")
+        time.sleep(4)
+        check(active_alarm(vms, part["id"]) is None,
+              "the whole room is excluded, so its sensor raises nothing")
+
+        check(bool(wait_until(lambda: (row() or {}).get("armed") is True, 90)),
+              "the floor comes back by itself")
+        check(bool(wait_until(lambda: active_alarm(vms, part["id"]) is not None, 40)),
+              "the still-closed contact raises when the room comes back")
+    finally:
+        set_node_arming(vms, part["id"], "inherit")
+        set_node_arming(vms, floor["id"], "inherit")
+        set_node_arming(vms, site["id"], "inherit")
         set_relay(vms, camera_id(ARMED_CAMERA), ARMED_RELAY_TOKEN, False)
         wait_until(lambda: input_live(vms, ARMED_CAMERA, ARMED_TOKEN) is False, 40)
         wait_until(lambda: active_alarm(vms, part["id"]) is None, 40)
@@ -1654,12 +1781,14 @@ def check_sensor_alarm(vms, sensor):
     # The journal keeps its rows when a camera is deleted and re-added, so an old `closed` event
     # must not stand in for this front: only an event the command below caused can prove anything.
     before = {event["id"] for event in sensor_events(vms, part["id"], "closed")}
-    set_relay(vms, camera_id(LAMP_RELAY_CAMERA), "peer", True)
 
-    event = wait_until(
-        lambda: next((e for e in sensor_events(vms, part["id"], "closed")
-                      if e["id"] not in before), None), 45)
-    check(event is not None, "the peer relay closing writes one `sensor` event with contact=closed")
+    def new_closed():
+        return next((e for e in sensor_events(vms, part["id"], "closed")
+                     if e["id"] not in before), None)
+
+    raised = set_relay_until(vms, LAMP_RELAY_CAMERA, "peer", True, new_closed, part["id"])
+    check(bool(raised),
+          "the peer relay closing writes one `sensor` event with contact=closed")
 
     # An earlier front (the wired-relay check above) may have left the same alarm open and
     # returned; the rule reactivates that row, and ALARM follows it in its own transaction.
@@ -1953,6 +2082,20 @@ def check_camera_zone_arming(vms):
         state = camera_arm_state(vms, camera)
         check(state.get("armMode") == "disarmed",
               f"and the command is explicit (has {state.get('armMode')!r})")
+
+        # A deadline on the camera's own command: it is a bypass of the armed space while it
+        # lasts, and the sweep hands the camera back to the space, not to the off it replaced.
+        until = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
+        timed = set_node_arming(vms, node["id"], "disarmed", until)
+        check(timed.get("bypassed") is True,
+              "a timed off on the camera is a bypass of the space")
+        check(timed.get("sourceObjectId") == floor["id"],
+              "the camera's bypass names the space it is excluded from")
+        check(bool(wait_until(lambda: row().get("bypassed") is False, 90)),
+              "the camera's deadline hands it back to the space")
+        check(bool(wait_until(
+                  lambda: camera_arm_state(vms, camera).get("armMode") == "inherit", 30)),
+              "and the sweep restored `inherit`, not the off it replaced")
     finally:
         set_camera_arm_mode(vms, camera, before.get("armMode") or "inherit")
         set_node_arming(vms, floor["id"], "inherit")
@@ -2158,6 +2301,7 @@ def main():
         check_control_panel(vms)
         check_map_relay(vms)
         check_zone_arming(vms)
+        check_zone_bypass(vms)
         check_camera_zone_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
