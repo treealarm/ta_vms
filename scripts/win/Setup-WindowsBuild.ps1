@@ -357,6 +357,30 @@ function Get-MissingPorts {
     return $missing
 }
 
+function Repair-X264DownloadUrl {
+    <#
+        The x264 port asks VideoLAN's GitLab for its archive under a path with a doubled
+        slash: the port writes GITLAB_URL with a trailing slash, vcpkg_from_gitlab joins it
+        with another, and the server now resets the TLS connection on the result (curl error
+        56) instead of serving the file. Upstream fixed the port by dropping the trailing
+        slash; a tree older than that fix still has it. Patch the portfile in place, and do
+        nothing to a tree that is already fixed or has no x264 port at all.
+
+        The archive is the same file under the same SHA512, so the patch changes nothing about
+        what is downloaded -- only the URL it comes from.
+    #>
+    param([Parameter(Mandatory)][string]$Root)
+
+    $portfile = Join-Path $Root "ports\x264\portfile.cmake"
+    if (-not (Test-Path -LiteralPath $portfile)) { return }
+    $text = Get-Content -Raw -LiteralPath $portfile
+    $fixed = $text.Replace("GITLAB_URL https://code.videolan.org/", "GITLAB_URL https://code.videolan.org")
+    if ($fixed -eq $text) { return }
+    # Without a BOM, so the slash is the only change to the file.
+    [IO.File]::WriteAllText($portfile, $fixed, [Text.UTF8Encoding]::new($false))
+    Write-Note "patched the x264 port's GitLab URL: the doubled slash is refused by VideoLAN"
+}
+
 # ================================================================================= checks
 
 Write-Host "ta_vms — Windows build prerequisites" -ForegroundColor White
@@ -579,6 +603,7 @@ if ($resolvedVcpkg) {
     if ($missingPorts.Count -gt 0) {
         Write-Note "Building these from source takes a long time — ffmpeg and grpc dominate."
         if (Confirm-Action "Install $($missingPorts.Count) missing port(s)?") {
+            Repair-X264DownloadUrl -Root $resolvedVcpkg
             # @() because one missing port makes the pipeline return a bare string, and
             # splatting a string passes vcpkg its characters one argument each.
             $spec = @($missingPorts | ForEach-Object { "$_`:$Triplet" })
