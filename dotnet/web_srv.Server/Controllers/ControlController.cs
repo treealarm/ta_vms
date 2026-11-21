@@ -1,3 +1,4 @@
+using Google.Protobuf.WellKnownTypes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using web_srv.Authentication;
@@ -105,6 +106,7 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
       {
         ObjectId = objectId,
         Mode = body.Mode ?? string.Empty,
+        Until = ToTimestamp(body.Until),
         Caller = User.ToMapCaller(),
       },
       MapApi.Options(ct));
@@ -207,7 +209,9 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
     settings.Configured,
     settings.Arming?.Armed ?? false,
     settings.Arming?.Source ?? string.Empty,
-    settings.Arming?.SourceObjectId ?? string.Empty);
+    settings.Arming?.SourceObjectId ?? string.Empty,
+    settings.Arming?.Bypassed ?? false,
+    ToOffset(settings.Arming?.BypassUntil));
 
   private static NodeArmingDto ToArmingDto(MapProto.GetNodeArmingResponse response) => new(
     response.Arming?.ObjectId ?? string.Empty,
@@ -217,6 +221,8 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
     response.Arming?.Armed ?? false,
     response.Arming?.Source ?? string.Empty,
     response.Arming?.SourceObjectId ?? string.Empty,
+    response.Arming?.Bypassed ?? false,
+    ToOffset(response.Arming?.BypassUntil),
     response.Modes.ToList());
 
   private static ControlObjectDto ToDto(MapProto.ControlObject row) => new(
@@ -238,7 +244,15 @@ public class ControlController(MapProto.MapService.MapServiceClient map) : Contr
     row.Armed,
     row.ArmingSource,
     row.ArmingSourceObjectId,
-    row.CanControl);
+    row.CanControl,
+    row.Bypassed,
+    ToOffset(row.BypassUntil));
+
+  private static DateTimeOffset? ToOffset(Timestamp? value) =>
+    value is null ? null : new DateTimeOffset(value.ToDateTime(), TimeSpan.Zero);
+
+  private static Timestamp? ToTimestamp(DateTimeOffset? value) =>
+    value is null ? null : Timestamp.FromDateTimeOffset(value.Value);
 }
 
 public record ControlObjectDto(
@@ -259,9 +273,11 @@ public record ControlObjectDto(
   bool HasArming,
   bool Armed,
   string ArmingSource,
-  /// <summary>The node whose arming row settled it, when a zone did; empty otherwise.</summary>
+  /// <summary>The zone this arming answer belongs to, including the one a bypass excludes it from.</summary>
   string ArmingSourceObjectId,
-  bool CanControl);
+  bool CanControl,
+  bool Bypassed,
+  DateTimeOffset? BypassUntil);
 
 public record ControlObjectPageDto(
   IReadOnlyList<ControlObjectDto> Objects,
@@ -283,7 +299,9 @@ public record ObjectSettingsDto(
   bool Configured,
   bool Armed,
   string ArmingSource,
-  string ArmingSourceObjectId);
+  string ArmingSourceObjectId,
+  bool Bypassed,
+  DateTimeOffset? BypassUntil);
 
 public record ObjectSettingsBody(string? ArmMode, string? TriggerOn, bool AlarmEnabled);
 
@@ -300,9 +318,12 @@ public record NodeArmingDto(
   bool Armed,
   string Source,
   string SourceObjectId,
+  bool Bypassed,
+  DateTimeOffset? BypassUntil,
   IReadOnlyList<string> Modes);
 
-public record SetArmingDto(string? Mode);
+// `until` is the optional deadline of a `disarmed` decision; the client sends an absolute instant.
+public record SetArmingDto(string? Mode, DateTimeOffset? Until);
 
 public record AcknowledgeZoneDto(string? Comment);
 

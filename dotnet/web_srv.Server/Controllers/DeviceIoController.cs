@@ -1,3 +1,4 @@
+using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Microsoft.AspNetCore.Mvc;
 using Vms.Cfg;
@@ -125,7 +126,8 @@ public class DeviceIoController(
     foreach (var input in response.Inputs)
     {
       var settingsRow = await TryMapSettingsAsync(cameraId, DigitalInputKind, input.Token, ct);
-      var (armed, armingSource) = await TryArmingAsync(cameraId, input.Token, ct);
+      var (armed, armingSource, bypassed, bypassUntil) =
+        await TryArmingAsync(cameraId, input.Token, ct);
 
       rows.Add(new
       {
@@ -141,6 +143,8 @@ public class DeviceIoController(
         alarmEnabled = settingsRow?.AlarmEnabled,
         armed,
         armingSource,
+        bypassed,
+        bypassUntil,
         canControl,
       });
     }
@@ -181,6 +185,7 @@ public class DeviceIoController(
     {
       Key = PartKey(cameraId, DigitalInputKind, token),
       Mode = body.ArmMode ?? string.Empty,
+      Until = ToTimestamp(body.Until),
       Caller = User.ToMapCaller(),
     }, Options(ct));
 
@@ -274,7 +279,9 @@ public class DeviceIoController(
     settings.Configured,
     settings.Arming?.Armed ?? false,
     settings.Arming?.Source ?? string.Empty,
-    settings.Arming?.SourceObjectId ?? string.Empty);
+    settings.Arming?.SourceObjectId ?? string.Empty,
+    settings.Arming?.Bypassed ?? false,
+    ToOffset(settings.Arming?.BypassUntil));
 
   // ── Per-part settings ─────────────────────────────────────────────────────
 
@@ -374,8 +381,8 @@ public class DeviceIoController(
   // The effective arming of one part, as VmsMap resolves it. Addressed by source and token because
   // the card holds the camera, not the part's node id. An unanswered call is two nulls: the panel
   // says the state is unknown rather than that the sensor is off guard.
-  private async Task<(bool? Armed, string? Source)> TryArmingAsync(
-    string cameraId, string token, CancellationToken ct)
+  private async Task<(bool? Armed, string? Source, bool Bypassed, DateTimeOffset? BypassUntil)>
+    TryArmingAsync(string cameraId, string token, CancellationToken ct)
   {
     try
     {
@@ -387,13 +394,22 @@ public class DeviceIoController(
         PartToken = token,
       }, Options(ct));
 
-      return response.Found ? (response.Arming.Armed, response.Arming.Source) : (null, null);
+      return response.Found
+        ? (response.Arming.Armed, response.Arming.Source, response.Arming.Bypassed,
+           ToOffset(response.Arming.BypassUntil))
+        : (null, null, false, null);
     }
     catch (RpcException)
     {
-      return (null, null);
+      return (null, null, false, null);
     }
   }
+
+  private static DateTimeOffset? ToOffset(Timestamp? value) =>
+    value is null ? null : new DateTimeOffset(value.ToDateTime(), TimeSpan.Zero);
+
+  private static Timestamp? ToTimestamp(DateTimeOffset? value) =>
+    value is null ? null : Timestamp.FromDateTimeOffset(value.Value);
 
   private static string FormatMode(RelayMode mode) => mode == RelayMode.Bistable ? "bistable" : "monostable";
   private static RelayMode ParseMode(string mode) =>
@@ -424,5 +440,5 @@ public record DeviceSettingsBody(
 public record SetRelayStateBody(bool Active);
 public record SetRelaySettingsBody(string Mode, string IdleState, int DelayMs);
 public record SetIdleStateBody(string IdleState);
-public record SetArmModeBody(string? ArmMode);
+public record SetArmModeBody(string? ArmMode, DateTimeOffset? Until);
 public record DeviceSettingsRuleBody(string? ArmMode, string? TriggerOn, bool AlarmEnabled);
