@@ -207,6 +207,8 @@ builder.Services.AddHostedService(sp => new OutboxPublisher(
   pubSubName,
   sp.GetRequiredService<ILogger<OutboxPublisher>>()));
 builder.Services.AddHostedService<AlarmSweepService>();
+// Restores a node whose arming bypass deadline has passed.
+builder.Services.AddHostedService<ArmingBypassSweep>();
 builder.Services.AddHostedService<ConnectionStatePoller>();
 // Cameras flagged geo_from_device follow their own ONVIF position; the rest are never asked.
 builder.Services.AddHostedService<CameraGeoFollower>();
