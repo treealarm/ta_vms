@@ -218,7 +218,7 @@ export default function EventSubscriptionsPanel() {
       listWidth={260}
       listActions={(
         <Tooltip title={t('common.refresh')}>
-          <IconButton size="small" onClick={() => void load()}>
+          <IconButton size="small" aria-label={t('common.refresh')} onClick={() => void load()}>
             <RefreshIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -327,18 +327,17 @@ export default function EventSubscriptionsPanel() {
                 />
               </Stack>
 
-              <Box>
-                <Typography variant="subtitle2">{t('eventRouting.sourceFilter')}</Typography>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-                  {t('eventRouting.sourceFilterHint')}
-                </Typography>
-                <TextField
-                  fullWidth multiline minRows={3} maxRows={10}
-                  value={form.sourceFilter}
-                  onChange={(e) => setForm({ ...form, sourceFilter: e.target.value })}
-                  slotProps={{ input: { sx: { fontFamily: 'monospace', fontSize: 13 } } }}
-                />
-              </Box>
+              <TextField
+                fullWidth multiline minRows={3} maxRows={10}
+                label={t('eventRouting.sourceFilter')}
+                helperText={t('eventRouting.sourceFilterHint')}
+                value={form.sourceFilter}
+                onChange={(e) => setForm({ ...form, sourceFilter: e.target.value })}
+                slotProps={{
+                  input: { sx: { fontFamily: 'monospace', fontSize: 13 } },
+                  formHelperText: { component: 'div' },
+                }}
+              />
 
               <Divider />
 
