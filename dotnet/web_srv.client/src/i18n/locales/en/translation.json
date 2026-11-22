@@ -1432,6 +1432,8 @@
     "planWidth": "Plan width, m",
     "planTooLarge": "A plan image may not exceed {{mb}} MB",
     "planUnreadable": "This file is not an image the browser can read",
+    "planUnsupportedUnit": "The picture's size uses a unit this browser cannot convert; save it as PNG or JPEG and try again",
+    "planPictureFormats": "PNG, JPEG, WebP or SVG (an SVG is converted to a picture)",
     "placeHint": "Click the map to place {{name}}",
     "placePartHint": "Click the map to place {{name}} (a part of the device)",
     "landmarkModeHint": "Click the map to add a landmark",

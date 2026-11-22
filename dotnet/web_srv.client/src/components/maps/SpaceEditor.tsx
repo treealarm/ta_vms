@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, FormControlLabel, IconButton, Stack, Switch, Tab, Tabs,
-  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, CircularProgress, Divider, FormControlLabel, IconButton, Stack, Switch, Tab,
+  Tabs, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import AccountTreeIcon from '@mui/icons-material/AccountTree'
 import PanToolIcon from '@mui/icons-material/PanToolAlt'
@@ -39,6 +39,7 @@ import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import { cornersAround, distance, figureAtPlacement, pointsCentre, rescaleCorners } from '../../map/geo'
+import { PlanImageError, preparePlanImage } from '../../map/planImage'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -117,6 +118,7 @@ export default function SpaceEditor({
   const [draftFigure, setDraftFigure] = useState<MapFigure | null>(null)
   const [alignOnMap, setAlignOnMap] = useState(false)
   const [calibrating, setCalibrating] = useState<string | null>(null)
+  const [preparingPlan, setPreparingPlan] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -502,22 +504,23 @@ export default function SpaceEditor({
   }
 
   const handlePlanFile = async (file: File) => {
-    if (file.size > MAX_PLAN_BYTES) {
-      setError(t('maps.planTooLarge', { mb: MAX_PLAN_BYTES / (1024 * 1024) }))
-      return
-    }
-    let widthPx: number
-    let heightPx: number
+    setPreparingPlan(true)
+    let prepared: Awaited<ReturnType<typeof preparePlanImage>>
     try {
-      const bitmap = await createImageBitmap(file)
-      widthPx = bitmap.width
-      heightPx = bitmap.height
-      bitmap.close()
-    } catch {
-      setError(t('maps.planUnreadable'))
+      prepared = await preparePlanImage(file, MAX_PLAN_BYTES)
+    } catch (e) {
+      if (e instanceof PlanImageError && e.problem === 'tooLarge')
+        setError(t('maps.planTooLarge', { mb: MAX_PLAN_BYTES / (1024 * 1024) }))
+      else if (e instanceof PlanImageError && e.problem === 'unsupportedUnit')
+        setError(t('maps.planUnsupportedUnit'))
+      else
+        setError(t('maps.planUnreadable'))
       return
+    } finally {
+      setPreparingPlan(false)
     }
 
+    const { file: upload, widthPx, heightPx } = prepared
     // A replacement drawing of the same plan keeps where the old one was laid; anything else
     // starts flat in the middle of the view, a little narrower than it, ready to be dragged.
     const old = space.plan
@@ -535,7 +538,7 @@ export default function SpaceEditor({
     }
 
     await run(async () => {
-      await dispatch(uploadSpacePlan({ spaceId, file, widthPx, heightPx, corners })).unwrap()
+      await dispatch(uploadSpacePlan({ spaceId, file: upload, widthPx, heightPx, corners })).unwrap()
       setMode('plan')
     })
   }
@@ -727,13 +730,18 @@ export default function SpaceEditor({
       <Divider sx={{ mb: 1.5 }} />
       <Typography variant="subtitle2" gutterBottom>{t('maps.planPicture')}</Typography>
       <Stack spacing={1} alignItems="flex-start">
-        <Button size="small" startIcon={<ImageIcon />} onClick={() => fileRef.current?.click()}>
+        <Button
+          size="small"
+          startIcon={preparingPlan ? <CircularProgress size={16} /> : <ImageIcon />}
+          disabled={preparingPlan}
+          onClick={() => fileRef.current?.click()}
+        >
           {plan ? t('maps.replacePlan') : t('maps.uploadPlan')}
         </Button>
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0]
@@ -741,6 +749,9 @@ export default function SpaceEditor({
             if (file) void handlePlanFile(file)
           }}
         />
+        <Typography variant="caption" color="text.secondary">
+          {t('maps.planPictureFormats')}
+        </Typography>
         {plan && planCorners && (
           <NumberField
             label={t('maps.planWidth')}

@@ -1431,6 +1431,8 @@
     "planWidth": "Ancho del plano, m",
     "planTooLarge": "La imagen del plano no puede superar {{mb}} MB",
     "planUnreadable": "El navegador no puede leer este archivo como imagen",
+    "planUnsupportedUnit": "El tamaño de la imagen usa una unidad que este navegador no puede convertir; guárdala como PNG o JPEG e inténtalo de nuevo",
+    "planPictureFormats": "PNG, JPEG, WebP o SVG (el SVG se convierte en una imagen)",
     "placeHint": "Haga clic en el mapa para colocar {{name}}",
     "placePartHint": "Haga clic en el mapa para colocar {{name}} (a part of the device)",
     "landmarkModeHint": "Haga clic en el mapa para añadir un punto de referencia",
