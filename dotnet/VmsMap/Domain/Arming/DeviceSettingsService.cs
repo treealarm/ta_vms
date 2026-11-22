@@ -116,6 +116,11 @@ namespace VmsMap.Domain.Arming
       if (error is not null)
         throw new ArmingException(error, ArmingRefusal.InvalidRequest);
 
+      // The gateway writes VmsCfg and calls this immediately, while the settings cache may still
+      // hold the empty entry it read before the name was saved. The pub/sub signal is not fast
+      // enough to make this call see the committed row, so the write's own call drops the entry.
+      _configured.Invalidate(key.SourceId);
+
       var node = await FindNodeAsync(key, ct) ?? await EnsureNodeAsync(key, ct);
       if (node is null)
         return null;

@@ -5,6 +5,7 @@ using Vms.Cfg;
 using Vms.Onvif;
 using web_srv.Authentication;
 using web_srv.Authorization;
+using static web_srv.DeviceIoRequests;
 using MapProto = Vms.Map;
 
 namespace web_srv;
@@ -18,11 +19,6 @@ public class DeviceIoController(
   IRightsService access) : ControllerBase
 {
   private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
-
-  // The kind a camera's parts are registered under in VmsMap's device_node registry. A fire panel
-  // or another device hub is a kind of its own there, never a second spelling of this one.
-  private const string CameraSource = "camera";
-  private const string DigitalInputKind = "digital_input";
 
   private static CallOptions Options(CancellationToken ct) =>
     new(deadline: DateTime.UtcNow.Add(Timeout), cancellationToken: ct);
@@ -292,15 +288,17 @@ public class DeviceIoController(
     return Ok(rows);
   }
 
-  // Writing a part's arming or alarm is control: it changes what the site does, not what is shown.
-  [HttpPut("cameras/{cameraId}/settings")]
+  // A part's name is its identity, and only its identity: it lives in VmsCfg and must not carry a
+  // copy of the map's arming or alarm rule. Renaming is therefore a write of its own, so a stale
+  // form cannot undo a behaviour change made by someone else.
+  [HttpPut("cameras/{cameraId}/settings/name")]
   [RequiresRight(RightActions.Control)]
-  public async Task<IActionResult> SetSettings(
-    string cameraId, [FromBody] DeviceSettingsBody body, CancellationToken ct)
+  public async Task<IActionResult> SetPartName(
+    string cameraId, [FromBody] PartNameBody body, CancellationToken ct)
   {
-    // The name is VmsCfg's row, and only the name: its arming and its rule are the map's, and
-    // VmsCfg refuses a request that still carries them. Writing it first is also what makes the
-    // part "configured", which the map's settings require.
+    if (string.IsNullOrWhiteSpace(body.Name))
+      return BadRequest("A part name must not be empty");
+
     var response = await cfgClient.SetDeviceSettingsAsync(new SetDeviceSettingsRequest
     {
       Settings = new DeviceSettings
@@ -308,22 +306,32 @@ public class DeviceIoController(
         CameraId = cameraId,
         Kind = body.Kind,
         Token = body.Token,
-        Name = body.Name ?? string.Empty,
+        Name = body.Name,
       },
     }, Options(ct));
-    if (!response.Success)
-      return BadRequest(response.Message);
 
-    if (body.Kind == DigitalInputKind)
+    return response.Success ? Ok() : BadRequest(response.Message);
+  }
+
+  // Writing a part's arming or alarm is control: it changes what the site does, not what is shown.
+  [HttpPut("cameras/{cameraId}/settings")]
+  [RequiresRight(RightActions.Control)]
+  public async Task<IActionResult> SetSettings(
+    string cameraId, [FromBody] DeviceSettingsBody body, CancellationToken ct)
+  {
+    // A request that carries no name leaves VmsCfg's row alone: the behaviour card names the part
+    // elsewhere, and a null here must not blank the name it saved.
+    if (NameRequest(cameraId, body) is { } name)
     {
-      await map.SetDeviceSettingsAsync(new MapProto.SetDeviceSettingsRequest
-      {
-        Key = PartKey(cameraId, DigitalInputKind, body.Token),
-        ArmMode = body.ArmMode,
-        TriggerOn = body.TriggerOn ?? string.Empty,
-        AlarmEnabled = body.AlarmEnabled,
-        Caller = User.ToMapCaller(),
-      }, Options(ct));
+      var response = await cfgClient.SetDeviceSettingsAsync(name, Options(ct));
+      if (!response.Success)
+        return BadRequest(response.Message);
+    }
+
+    if (BehaviourRequest(cameraId, body) is { } behaviour)
+    {
+      behaviour.Caller = User.ToMapCaller();
+      await map.SetDeviceSettingsAsync(behaviour, Options(ct));
     }
 
     return Ok();
@@ -346,15 +354,6 @@ public class DeviceIoController(
       return null;
     }
   }
-
-  private static MapProto.DeviceSettingsKey PartKey(string cameraId, string kind, string token) => new()
-  {
-    SourceKind = CameraSource,
-    SourceId = cameraId,
-    PartKind = kind,
-    PartToken = token,
-  };
-
 
   // The effective arming of one part, as VmsMap resolves it. Addressed by source and token because
   // the card holds the camera, not the part's node id. An unanswered call is two nulls: the panel
@@ -412,6 +411,8 @@ public record DeviceSettingsBody(
   string ArmMode,
   string? TriggerOn,
   bool AlarmEnabled);
+
+public record PartNameBody(string Kind, string Token, string? Name);
 
 public record SetRelayStateBody(bool Active);
 public record SetRelaySettingsBody(string Mode, string IdleState, int DelayMs);

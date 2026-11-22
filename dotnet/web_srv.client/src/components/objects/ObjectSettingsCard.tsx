@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert, Button, CircularProgress, FormControlLabel, MenuItem, Stack, Switch, TextField,
   Typography,
@@ -25,6 +25,10 @@ type Flags = {
    * decides the arming is a setting of the object and is edited where the object is selected.
    */
   showArming?: boolean
+  /** Bumped by the caller after a write elsewhere; a reload while the card is dirty would lose edits. */
+  refreshKey?: number
+  /** Tells the caller whether this card holds unsaved changes. */
+  onDirtyChange?: (dirty: boolean) => void
 }
 
 /**
@@ -41,6 +45,7 @@ export default function ObjectSettingsCard(props: Props & Flags) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pendingReload, setPendingReload] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -72,13 +77,43 @@ export default function ObjectSettingsCard(props: Props & Flags) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key])
 
+  // Unsaved edits are what a reload would throw away. The caller bumps refreshKey after a write
+  // elsewhere (a part's name); while this card is dirty the reload waits for its own save.
+  const showArming = props.showArming ?? true
+  const dirty = settings !== null && (
+    (showArming && mode !== (settings.armMode ?? 'inherit'))
+    || (settings.partKind === 'digital_input'
+        && (alarmEnabled !== settings.alarmEnabled
+            || triggerOn !== (settings.triggerOn ?? 'closed')))
+  )
+  const dirtyRef = useRef(false)
+  dirtyRef.current = dirty
+
+  useEffect(() => {
+    props.onDirtyChange?.(dirty)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty])
+
+  useEffect(() => {
+    if (!props.refreshKey) return
+    if (dirtyRef.current) {
+      setPendingReload(true)
+      return
+    }
+    void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.refreshKey])
+
+  useEffect(() => {
+    if (!dirty) setPendingReload(false)
+  }, [dirty])
+
   const save = async () => {
     setBusy(true)
     setError(null)
     try {
       // An empty mode is "leave it alone": a card that shows only the rule says nothing about it,
       // and the map must not read it as an instruction to write back what this card loaded.
-      const showArming = props.showArming ?? true
       const body: ObjectSettingsBody = {
         armMode: showArming ? mode : '',
         triggerOn: settings?.partKind === 'digital_input' ? triggerOn : '',
@@ -122,10 +157,13 @@ export default function ObjectSettingsCard(props: Props & Flags) {
         suffix: viaZone ? ` (${t('objectSettings.viaZone')})` : '',
       })
 
-  const showArming = props.showArming ?? true
-
   return (
     <Stack spacing={1.5}>
+      {pendingReload && (
+        <Typography variant="caption" color="warning.main">
+          {t('objectSettings.reloadPending')}
+        </Typography>
+      )}
       {showArming && (
         <TextField
           select

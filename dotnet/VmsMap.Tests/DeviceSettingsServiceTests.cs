@@ -59,6 +59,35 @@ public class DeviceSettingsServiceTests
     public void Invalidate(string cameraId) { }
   }
 
+  /// The cache's view after the gateway has written the name in VmsCfg but before pub/sub lands:
+  /// it says "not configured" until its write path invalidates it.
+  private sealed class ConfiguredAfterInvalidate : IDeviceSettingsSource
+  {
+    private bool _configured;
+
+    private DeviceSettingsInfo? Row => _configured
+      ? new DeviceSettingsInfo(
+          CameraId, DeviceObjectId.DigitalInputPart, Token, "door", ArmMode.Inherit,
+          ClosedContact, true)
+      : null;
+
+    public Task<IReadOnlyList<DeviceSettingsInfo>> ListAsync(string cameraId, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyList<DeviceSettingsInfo>>(Row is null ? [] : [Row!]);
+
+    public Task<DeviceSettingsInfo?> FindAsync(
+      string cameraId, string kind, string token, CancellationToken ct) =>
+      Task.FromResult(Row);
+
+    public Task<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>> ListManyAsync(
+      IReadOnlyCollection<string> cameraIds, CancellationToken ct) =>
+      Task.FromResult<IReadOnlyDictionary<string, IReadOnlyList<DeviceSettingsInfo>>>(
+        cameraIds.Distinct(StringComparer.Ordinal).ToDictionary(
+          id => id, _ => (IReadOnlyList<DeviceSettingsInfo>)(Row is null ? [] : [Row!]),
+          StringComparer.Ordinal));
+
+    public void Invalidate(string cameraId) => _configured = true;
+  }
+
   private sealed record Fixture(
     VmsMapDbContext Db,
     MapDb Map,
@@ -67,7 +96,8 @@ public class DeviceSettingsServiceTests
     TestCameraState CameraState,
     TestWiring.TestCfgArmingWriter Cfg);
 
-  private static async Task<Fixture> CreateAsync(bool configured = true)
+  private static async Task<Fixture> CreateAsync(
+    bool configured = true, IDeviceSettingsSource? sourceOverride = null)
   {
     var options = new DbContextOptionsBuilder<VmsMapDbContext>()
       .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -82,7 +112,7 @@ public class DeviceSettingsServiceTests
     var updates = new MapUpdateService(db, map, tracks, states);
 
     var catalog = new Catalog();
-    var source = new Configured(configured);
+    var source = sourceOverride ?? new Configured(configured);
     var nodes = TestWiring.DeviceNodes(db, map, updates, catalog);
     var store = TestWiring.ObjectSettings(db);
     var cameraState = new TestCameraState();
@@ -167,6 +197,21 @@ public class DeviceSettingsServiceTests
       () => f.Service.SetAsync(Input(), ArmMode.Armed, ClosedContact, true, DanilName, default));
 
     Assert.Equal(ArmingRefusal.NotConfigured, refused.Refusal);
+  }
+
+  [Fact]
+  public async Task AWriteInvalidatesTheConfiguredCheckSoAFreshNameIsVisible()
+  {
+    // The gateway writes the name in VmsCfg and calls the map before pub/sub has invalidated its
+    // cache: the write must not be refused on a stale "nothing configured" answer.
+    var source = new ConfiguredAfterInvalidate();
+    var f = await CreateAsync(configured: false, sourceOverride: source);
+
+    var view = await f.Service.SetAsync(
+      Input(), ArmMode.Inherit, ClosedContact, true, DanilName, default);
+
+    Assert.NotNull(view);
+    Assert.True(view!.Configured);
   }
 
   [Fact]
