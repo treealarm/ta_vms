@@ -36,9 +36,18 @@ public interface IDeviceIoWatcherFactory
 /// <summary>
 /// One part the camera says it has, as its configuration calls it. <paramref name="IdleState"/> is
 /// the normal state of the input's contact ("open" or "closed"); null when the camera does not say,
-/// and then the contact cannot be computed at all.
+/// and then the contact cannot be computed at all. <paramref name="Mode"/> and
+/// <paramref name="DelayMs"/> are a relay's settings and stay empty for a digital input.
 /// </summary>
-public readonly record struct DeviceDescriptor(string Token, string? IdleState);
+public readonly record struct DeviceDescriptor(
+  string Token, string? IdleState, string? Mode = null, int DelayMs = 0)
+{
+  public static DeviceDescriptor From(OnvifRelayOutput relay) =>
+    new(relay.Token, relay.IdleState, relay.Mode, relay.DelayMs);
+
+  public static DeviceDescriptor From(OnvifDigitalInput input) =>
+    new(input.Token, input.IdleState);
+}
 
 /// <summary>
 /// What one part just did, in the terms the rest of the system speaks: a contact for an input, an
@@ -67,15 +76,55 @@ public readonly record struct DeviceIoSnapshot(
   bool Pending);
 
 /// <summary>
-/// What discovery needs from the state service: report what the camera's configuration says it has,
-/// and read the last state it announced. Kept apart from the events so discovery can be tested
-/// without a watcher.
+/// What the rest of the process may do with the presence cache: report what the camera's
+/// configuration says it has, read a list or one part's live state back, and forget a camera the
+/// configuration no longer names. Kept apart from the events so discovery, the list catalogue and
+/// the capability flags can be exercised without a watcher.
 /// </summary>
-public interface IDeviceIoStateSink
+public interface IDeviceIoPresence
 {
-  Task ReportDevicesAsync(string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices);
+  /// <summary>
+  /// The version of one of the camera's lists. Read it before asking the camera and hand it back
+  /// with the report: a settings write that lands while the read is in flight moves the version,
+  /// and the report of the older read is then dropped instead of overwriting what the write
+  /// installed.
+  /// </summary>
+  long ListVersion(string cameraId, DeviceIoKind kind);
+
+  /// <summary>
+  /// What one of the camera's I/O lists just looked like, as of <paramref name="readVersion"/>. A
+  /// report whose version has moved on is dropped: the camera's configuration has been written
+  /// since that read started.
+  /// </summary>
+  Task ReportDevicesAsync(
+    string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices, long readVersion);
 
   DeviceIoSnapshot? TryGetSnapshot(string cameraId, DeviceIoKind kind, string token);
+
+  /// <summary>
+  /// The list as last reported, or null when that list has not been read at all — which is not an
+  /// empty list, and must not be shown as one.
+  /// </summary>
+  IReadOnlyList<DeviceDescriptor>? TryGetDevices(string cameraId, DeviceIoKind kind);
+
+  /// <summary>
+  /// Brings the camera's subscription in line with the manifest already known, without reading the
+  /// camera. A camera with no devices is left unwatched.
+  /// </summary>
+  Task EnsureWatchingAsync(string cameraId);
+
+  /// <summary>
+  /// The camera accepted a settings write: its list, if it was read, now holds this descriptor and
+  /// moves its version, so a read started earlier cannot undo the write. A changed idle state
+  /// republishes the part's contact at once.
+  /// </summary>
+  Task RecordSettingsAsync(string cameraId, DeviceIoKind kind, DeviceDescriptor device);
+
+  /// <summary>
+  /// Forgets every camera outside the configuration — its presence, subscription and pending
+  /// commands. A camera that is still configured but happens to be unreadable is not forgotten.
+  /// </summary>
+  Task ForgetCamerasNotIn(IReadOnlySet<string> cameras);
 }
 
 /// <summary>
@@ -108,7 +157,7 @@ public interface IRelayCommander
 /// event says so (<c>polarity_known=false</c>) and carries no contact, rather than guessing one.
 /// </para>
 /// </remarks>
-public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
+public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoPresence
 {
   /// <summary>Rapid flapping of one contact is one event, not a burst.</summary>
   public static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(200);
@@ -285,14 +334,84 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
           yield return (cameraId, snapshot);
   }
 
+  public long ListVersion(string cameraId, DeviceIoKind kind) =>
+    _presence.TryGetValue(cameraId, out var presence) ? presence.VersionOf(kind) : 0;
+
+  public IReadOnlyList<DeviceDescriptor>? TryGetDevices(string cameraId, DeviceIoKind kind) =>
+    _presence.TryGetValue(cameraId, out var presence) ? presence.Get(kind) : null;
+
   /// <summary>
-  /// Records what one of the camera's I/O lists just looked like and brings its subscription in
-  /// line: opened when the camera has any device, closed once both lists are empty. A changed idle
-  /// state recomputes the contact at once, without waiting for the next heartbeat. Never throws —
-  /// its callers are settings reads and discovery, of which live values are an extra.
+  /// Brings a camera's subscription in line with what the presence already says it has, without
+  /// reading the camera and without restating the manifest. Serving the list from the cache is
+  /// what used to open the subscription as a side effect of a settings read; this is that job now.
+  /// </summary>
+  public async Task EnsureWatchingAsync(string cameraId)
+  {
+    if (_presence.TryGetValue(cameraId, out var presence) && presence.HasDevices)
+      await EnsureWatchingCoreAsync(cameraId);
+  }
+
+  /// <summary>
+  /// Records settings the camera accepted, without a camera read: the list, if it was read, now
+  /// holds this descriptor and its version moves in the same atomic step, so a read that started
+  /// before the write cannot come back and install the configuration the camera no longer has. A
+  /// changed idle state republishes the part's contact through the ordinary path, because the
+  /// meaning of the logical state the camera already reported has changed.
+  /// </summary>
+  public async Task RecordSettingsAsync(string cameraId, DeviceIoKind kind, DeviceDescriptor device)
+  {
+    try
+    {
+      DevicePresence? before = null;
+      var presence = _presence.AddOrUpdate(
+        cameraId,
+        _ => DevicePresence.First(kind, devices: null, version: 1),
+        (_, known) =>
+        {
+          before = known;
+          return known.WithDevice(kind, device);
+        });
+
+      if (presence.HasDevices)
+        await EnsureWatchingCoreAsync(cameraId);
+
+      if (before is not null)
+        await RaisePolarityChangesAsync(cameraId, kind, [device], before.For(kind));
+    }
+    catch (Exception ex)
+    {
+      // The camera has already accepted the write; a cache that cannot take it must not turn that
+      // into a failed command.
+      _logger.LogWarning(ex, "Recording camera {CameraId}'s device settings failed", cameraId);
+    }
+  }
+
+  /// <summary>
+  /// Forgets every camera the configuration no longer names. The sweep runs this on the cameras it
+  /// lists, so a removed camera does not leave its presence and subscription behind for the life of
+  /// the process.
+  /// </summary>
+  public async Task ForgetCamerasNotIn(IReadOnlySet<string> cameras)
+  {
+    var known = _presence.Keys.Concat(_watchers.Keys)
+      .Distinct(StringComparer.Ordinal)
+      .Where(id => !cameras.Contains(id))
+      .ToArray();
+
+    foreach (var cameraId in known)
+      await ForgetAsync(cameraId);
+  }
+
+  /// <summary>
+  /// Records what one of the camera's I/O lists just looked like as of <paramref name="readVersion"/>
+  /// and brings its subscription in line: opened when the camera has any device, closed once both
+  /// lists have been read and are empty. A report started before a settings write is dropped — the
+  /// write has already installed the configuration the camera has now. A changed idle state
+  /// recomputes the contact at once, without waiting for the next heartbeat. Never throws — its
+  /// callers are settings reads and discovery, of which live values are an extra.
   /// </summary>
   public async Task ReportDevicesAsync(
-    string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices)
+    string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices, long readVersion)
   {
     try
     {
@@ -303,22 +422,32 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
       DevicePresence? before = null;
       var presence = _presence.AddOrUpdate(
         cameraId,
-        _ => DevicePresence.First(kind, devices),
+        _ => DevicePresence.First(kind, devices, readVersion),
         (_, known) =>
         {
           before = known;
-          return known.With(kind, devices);
+          // The version and the list move together: checking beforehand would leave a window in
+          // which a settings write lands between the check and the store.
+          return known.VersionOf(kind) == readVersion
+            ? known.With(kind, devices, readVersion)
+            : known;
         });
 
+      // The update delegate returning what it was given means the report lost to a settings write.
+      var accepted = before is null || !ReferenceEquals(presence, before);
+
       if (presence.HasDevices)
-        await EnsureWatchingAsync(cameraId);
+        await EnsureWatchingCoreAsync(cameraId);
       else if (presence.IsEmpty)
       {
-        await ForgetAsync(cameraId);
+        // Both lists were read and are empty: the camera has no I/O. The subscription goes, the
+        // manifest stays — the empty answer is a device fact, and forgetting it would make every
+        // later open read the camera again to learn the same nothing.
+        await DropSubscriptionAsync(cameraId);
         return;
       }
 
-      if (hadWatcher && before is not null)
+      if (accepted && hadWatcher && before is not null)
         await RaisePolarityChangesAsync(cameraId, kind, devices, before.For(kind));
     }
     catch (Exception ex)
@@ -354,7 +483,7 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
     }
   }
 
-  private async Task EnsureWatchingAsync(string cameraId)
+  private async Task EnsureWatchingCoreAsync(string cameraId)
   {
     var lazy = _watchers.GetOrAdd(cameraId, id => new Lazy<Task<Watch?>>(() => StartAsync(id)));
 
@@ -416,8 +545,10 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   /// — until a settings read or the discovery sweep restated the manifest, minutes later. A changed
   /// idle state is applied by the next settings read, which reports the new one.
   /// </summary>
-  public Task ForgetSubscriptionAsync(string cameraId) =>
-    ForgetCoreAsync(cameraId, keepParts: true);
+  public Task ForgetSubscriptionAsync(string cameraId) => DropSubscriptionAsync(cameraId);
+
+  /// <summary>Drops the subscription and keeps everything remembered about the camera's I/O.</summary>
+  private Task DropSubscriptionAsync(string cameraId) => ForgetCoreAsync(cameraId, keepParts: true);
 
   private async Task ForgetCoreAsync(string cameraId, bool keepParts)
   {
@@ -746,22 +877,58 @@ public sealed class DeviceIoStateService : IAsyncDisposable, IDeviceIoStateSink
   }
 
   /// <summary>
-  /// What each of a camera's two I/O lists last reported. A null list means "not read yet": the
-  /// calls that read them are independent, and only when both have read zero is the camera's I/O
-  /// really gone.
+  /// What each of a camera's two I/O lists last reported, and the version it was reported under. A
+  /// null list means "not read yet": the calls that read them are independent, and only when both
+  /// have been read and are empty does the camera really have no I/O.
   /// </summary>
   private sealed record DevicePresence(
     IReadOnlyList<DeviceDescriptor>? Relays,
-    IReadOnlyList<DeviceDescriptor>? Inputs)
+    long RelayVersion,
+    IReadOnlyList<DeviceDescriptor>? Inputs,
+    long InputVersion)
   {
-    public static DevicePresence First(DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices) =>
-      kind == DeviceIoKind.Relay ? new(devices, null) : new(null, devices);
+    /// <summary>A first entry — possibly with one list still unread, when a settings write is the
+    /// first thing this process learns about the camera.</summary>
+    public static DevicePresence First(
+      DeviceIoKind kind, IReadOnlyList<DeviceDescriptor>? devices, long version) =>
+      kind == DeviceIoKind.Relay
+        ? new(devices, version, null, 0)
+        : new(null, 0, devices, version);
 
-    public DevicePresence With(DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices) =>
-      kind == DeviceIoKind.Relay ? this with { Relays = devices } : this with { Inputs = devices };
+    public DevicePresence With(DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices, long version) =>
+      kind == DeviceIoKind.Relay
+        ? this with { Relays = devices, RelayVersion = version }
+        : this with { Inputs = devices, InputVersion = version };
+
+    /// <summary>
+    /// The camera accepted a settings write for one part: its list, if it was read, holds this
+    /// descriptor from now on, and the list's version moves so an older read cannot undo it.
+    /// </summary>
+    public DevicePresence WithDevice(DeviceIoKind kind, DeviceDescriptor device)
+    {
+      var version = VersionOf(kind) + 1;
+      var devices = Get(kind);
+      if (devices is null)
+      {
+        return kind == DeviceIoKind.Relay
+          ? this with { RelayVersion = version }
+          : this with { InputVersion = version };
+      }
+
+      var updated = devices
+        .Select(d => string.Equals(d.Token, device.Token, StringComparison.Ordinal) ? device : d)
+        .ToList();
+      return With(kind, updated, version);
+    }
+
+    public IReadOnlyList<DeviceDescriptor>? Get(DeviceIoKind kind) =>
+      kind == DeviceIoKind.Relay ? Relays : Inputs;
+
+    public long VersionOf(DeviceIoKind kind) =>
+      kind == DeviceIoKind.Relay ? RelayVersion : InputVersion;
 
     public IReadOnlyList<DeviceDescriptor> For(DeviceIoKind kind) =>
-      kind == DeviceIoKind.Relay ? Relays ?? [] : Inputs ?? [];
+      Get(kind) ?? [];
 
     public DeviceDescriptor? Find(DeviceIoKind kind, string token)
     {

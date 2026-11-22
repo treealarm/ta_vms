@@ -84,8 +84,26 @@ public sealed partial class OnvifSettingsService(
 
   // ── Device I/O: digital inputs ────────────────────────────────────────────────
 
-  public Task<List<OnvifDigitalInput>> GetDigitalInputsAsync(string cameraId, CancellationToken ct)
-    => WithDeviceIO(cameraId, "GetDigitalInputs", ct, d => d.GetDigitalInputsAsync(), []);
+  public async Task<List<OnvifDigitalInput>> GetDigitalInputsAsync(string cameraId, CancellationToken ct)
+  {
+    var data = await connCache.GetAsync(cameraId, ct);
+    // A camera that could not be resolved is not a camera without inputs: a transient VmsCfg
+    // failure must not be recorded as "it has none" and served to every later reader.
+    if (data is null)
+      throw new InvalidOperationException($"Camera '{cameraId}' could not be resolved");
+    if (data.Conn is null)
+      return [];
+
+    var deviceIO = await GetDeviceIOOrNull(data.Conn);
+    if (deviceIO == null) return [];
+    try { return await deviceIO.GetDigitalInputsAsync(); }
+    catch (Exception ex)
+    {
+      logger.LogWarning(ex, "GetDigitalInputs failed for camera {CameraId}", cameraId);
+      Evict(data.Conn);
+      throw;
+    }
+  }
 
   public async Task<List<OnvifDigitalInputOptions>> GetDigitalInputOptionsAsync(string cameraId, CancellationToken ct)
   {
@@ -133,7 +151,13 @@ public sealed partial class OnvifSettingsService(
   public async Task<List<OnvifRelayOutput>> GetRelayOutputsAsync(string cameraId, CancellationToken ct)
   {
     var data = await connCache.GetAsync(cameraId, ct);
-    if (data?.Conn == null) return [];
+    // A camera that could not be resolved is not a camera without relays: a transient VmsCfg
+    // failure must not be recorded as "it has none" and served to every later reader — nor, on the
+    // sweep, publish a snapshot that says the parts disappeared.
+    if (data is null)
+      throw new InvalidOperationException($"Camera '{cameraId}' could not be resolved");
+    if (data.Conn is null)
+      return [];
     try { return await GetOrCreate(data.Conn).GetRelayOutputsAsync(); }
     catch (Exception ex)
     {

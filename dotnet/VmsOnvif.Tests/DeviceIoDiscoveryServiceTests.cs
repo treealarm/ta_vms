@@ -54,6 +54,26 @@ public class DeviceIoDiscoveryServiceTests
       new DeviceInfoPayload("OnvifSim", "Simulated fixed camera", "0.1.0"), snapshot.Device);
   }
 
+  // The sweep is the only place a relay's mode and delay enter the presence, and the list
+  // endpoint serves them from there: losing them would show every relay as monostable with no
+  // delay, on a screen that looks perfectly healthy.
+  [Fact]
+  public async Task ADiscoveredRelayKeepsItsModeAndDelay()
+  {
+    var reader = new FakeReader
+    {
+      Relays = [new OnvifRelayOutput("relay1", "monostable", "open", 1500)],
+    };
+    var sink = new FakeSink();
+
+    await Service(reader, sink, new FakePublisher()).SweepCameraAsync(CameraId, default);
+
+    var report = Assert.Single(sink.Reports, r => r.Kind == DeviceIoKind.Relay);
+    Assert.Equal(
+      new DeviceDescriptor("relay1", "open", "monostable", 1500),
+      Assert.Single(report.Devices));
+  }
+
   [Fact]
   public async Task AnUnansweredDeviceInformationStillPublishesTheParts()
   {
@@ -154,13 +174,15 @@ public class DeviceIoDiscoveryServiceTests
       DeviceThrow ? throw new TimeoutException("no answer") : Task.FromResult<OnvifDeviceInfo?>(Device);
   }
 
-  private sealed class FakeSink : IDeviceIoStateSink
+  private sealed class FakeSink : IDeviceIoPresence
   {
     public List<(DeviceIoKind Kind, IReadOnlyList<DeviceDescriptor> Devices)> Reports { get; } = [];
     public Dictionary<(string, DeviceIoKind, string), DeviceIoSnapshot> Snapshots { get; } = [];
 
+    public long ListVersion(string cameraId, DeviceIoKind kind) => 0;
+
     public Task ReportDevicesAsync(
-      string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices)
+      string cameraId, DeviceIoKind kind, IReadOnlyList<DeviceDescriptor> devices, long readVersion)
     {
       Reports.Add((kind, devices));
       return Task.CompletedTask;
@@ -168,6 +190,15 @@ public class DeviceIoDiscoveryServiceTests
 
     public DeviceIoSnapshot? TryGetSnapshot(string cameraId, DeviceIoKind kind, string token) =>
       Snapshots.GetValueOrDefault((cameraId, kind, token));
+
+    public IReadOnlyList<DeviceDescriptor>? TryGetDevices(string cameraId, DeviceIoKind kind) => null;
+
+    public Task EnsureWatchingAsync(string cameraId) => Task.CompletedTask;
+
+    public Task RecordSettingsAsync(string cameraId, DeviceIoKind kind, DeviceDescriptor device) =>
+      Task.CompletedTask;
+
+    public Task ForgetCamerasNotIn(IReadOnlySet<string> cameras) => Task.CompletedTask;
   }
 
   private sealed class FakePublisher : IDeviceSnapshotPublisher

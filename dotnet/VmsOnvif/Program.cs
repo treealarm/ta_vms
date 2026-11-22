@@ -38,6 +38,7 @@ builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<OnvifSettingsService>(),
   sp.GetRequiredService<MetadataStateCache>(),
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifMetadataIngestor>(),
+  sp.GetRequiredService<IDeviceIoPresence>(),
   cameraActorType,
   sp.GetRequiredService<IOnvifLogger>(),
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
@@ -82,7 +83,10 @@ builder.Services.AddSingleton<IDeviceIoReader>(sp => sp.GetRequiredService<Onvif
 builder.Services.AddSingleton<IRelayCommander>(sp => sp.GetRequiredService<OnvifSettingsService>());
 builder.Services.AddSingleton<IDeviceIoWatcherFactory, OnvifDeviceIoWatcherFactory>();
 builder.Services.AddSingleton<DeviceIoStateService>();
-builder.Services.AddSingleton<IDeviceIoStateSink>(sp => sp.GetRequiredService<DeviceIoStateService>());
+builder.Services.AddSingleton<IDeviceIoPresence>(sp => sp.GetRequiredService<DeviceIoStateService>());
+// Reads the camera's I/O list on a miss and serves it from the presence afterwards; the sweep and
+// this class are the only two things that put a manifest in the cache.
+builder.Services.AddSingleton<DeviceIoCatalog>();
 // The publisher owns the epoch and the per-part sequence; discovery only builds the content of a
 // snapshot, so the process that produced every message is one and the same.
 builder.Services.AddSingleton(sp => new DeviceEventPublisher(
@@ -101,7 +105,7 @@ builder.Services.AddHostedService(sp => new RelayRetryService(
 builder.Services.AddHostedService(sp => new DeviceIoDiscoveryService(
   sp.GetRequiredService<CfgService.CfgServiceClient>(),
   sp.GetRequiredService<IDeviceIoReader>(),
-  sp.GetRequiredService<IDeviceIoStateSink>(),
+  sp.GetRequiredService<IDeviceIoPresence>(),
   sp.GetRequiredService<IDeviceSnapshotPublisher>(),
   ownServerId,
   DeviceIoDiscoveryService.ConfiguredInterval(),

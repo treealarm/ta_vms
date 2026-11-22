@@ -39,7 +39,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
 
   private readonly CfgService.CfgServiceClient _cfg;
   private readonly IDeviceIoReader _reader;
-  private readonly IDeviceIoStateSink _state;
+  private readonly IDeviceIoPresence _presence;
   private readonly IDeviceSnapshotPublisher _snapshots;
   private readonly string _ownServerId;
   private readonly TimeSpan _interval;
@@ -51,7 +51,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
   public DeviceIoDiscoveryService(
     CfgService.CfgServiceClient cfg,
     IDeviceIoReader reader,
-    IDeviceIoStateSink state,
+    IDeviceIoPresence presence,
     IDeviceSnapshotPublisher snapshots,
     string ownServerId,
     TimeSpan interval,
@@ -59,7 +59,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
   {
     _cfg = cfg;
     _reader = reader;
-    _state = state;
+    _presence = presence;
     _snapshots = snapshots;
     _ownServerId = ownServerId;
     _interval = interval;
@@ -95,6 +95,10 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
 
   private async Task SweepAsync(CancellationToken ct)
   {
+    // Every camera the configuration names, and the subset this node can reach over ONVIF. The
+    // subset is what gets swept; the full set is what may keep a presence entry, so a camera whose
+    // ONVIF connection was temporarily cleared is not forgotten.
+    List<string> configured;
     List<string> cameras;
     try
     {
@@ -103,6 +107,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
       var response = await _cfg.ListCamerasAsync(
         new ListCamerasRequest { ServerId = _ownServerId }, options);
 
+      configured = response.Cameras.Select(c => c.CameraId).ToList();
       cameras = response.Cameras
         .Where(c => c.OnvifConn is { Ip: not null, Port: > 0 } && !string.IsNullOrWhiteSpace(c.OnvifConn.Ip))
         .Select(c => c.CameraId)
@@ -119,7 +124,11 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
     }
 
     // A camera VmsCfg no longer lists costs nothing to forget; without this its entry would stay
-    // for the life of the process.
+    // for the life of the process. This covers the presence too, which keeps a camera with no I/O
+    // as an empty entry so that opening its tile does not read it again.
+    var configuredIds = configured.ToHashSet(StringComparer.Ordinal);
+    await _presence.ForgetCamerasNotIn(configuredIds);
+
     var current = cameras.ToHashSet(StringComparer.Ordinal);
     foreach (var gone in _failures.Keys.Where(id => !current.Contains(id)).ToList())
       _failures.TryRemove(gone, out _);
@@ -155,6 +164,12 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
   /// </summary>
   public async Task SweepCameraAsync(string cameraId, CancellationToken ct)
   {
+    // The version of each list before the camera is asked: a settings write that lands while this
+    // sweep is reading moves it, and the sweep's older answer is then dropped rather than
+    // overwriting the new configuration.
+    var relayVersion = _presence.ListVersion(cameraId, DeviceIoKind.Relay);
+    var inputVersion = _presence.ListVersion(cameraId, DeviceIoKind.DigitalInput);
+
     var relayRead = ReadAsync(t => _reader.GetRelayOutputsAsync(cameraId, t), ct);
     var inputRead = ReadAsync(t => _reader.GetDigitalInputsAsync(cameraId, t), ct);
     var deviceRead = ReadAsync(t => _reader.GetDeviceInfoAsync(cameraId, t), ct);
@@ -171,9 +186,11 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
       : null;
 
     if (relaysOk)
-      await _state.ReportDevicesAsync(cameraId, DeviceIoKind.Relay, Descriptors(relays));
+      await _presence.ReportDevicesAsync(
+        cameraId, DeviceIoKind.Relay, relays.Select(DeviceDescriptor.From).ToList(), relayVersion);
     if (inputsOk)
-      await _state.ReportDevicesAsync(cameraId, DeviceIoKind.DigitalInput, Descriptors(inputs));
+      await _presence.ReportDevicesAsync(
+        cameraId, DeviceIoKind.DigitalInput, inputs.Select(DeviceDescriptor.From).ToList(), inputVersion);
 
     // A partial read is a failed sweep. A snapshot built from it would say the other list's parts
     // are gone, and they are not — the camera merely did not answer.
@@ -204,7 +221,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
 
     foreach (var relay in relays)
     {
-      var snapshot = _state.TryGetSnapshot(cameraId, DeviceIoKind.Relay, relay.Token);
+      var snapshot = _presence.TryGetSnapshot(cameraId, DeviceIoKind.Relay, relay.Token);
       parts.Add(new DeviceSnapshotPart(
         Kind: "relay",
         Token: relay.Token,
@@ -216,7 +233,7 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
 
     foreach (var input in inputs)
     {
-      var snapshot = _state.TryGetSnapshot(cameraId, DeviceIoKind.DigitalInput, input.Token);
+      var snapshot = _presence.TryGetSnapshot(cameraId, DeviceIoKind.DigitalInput, input.Token);
       parts.Add(new DeviceSnapshotPart(
         Kind: "digital_input",
         Token: input.Token,
@@ -241,12 +258,6 @@ public sealed class DeviceIoDiscoveryService : BackgroundService
     return _snapshots.PublishAsync(new DeviceSnapshotPayload(
       "camera", cameraId, Reachable: false, DateTimeOffset.UtcNow, Device: null, []));
   }
-
-  private static List<DeviceDescriptor> Descriptors(IReadOnlyList<OnvifRelayOutput> relays) =>
-    relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList();
-
-  private static List<DeviceDescriptor> Descriptors(IReadOnlyList<OnvifDigitalInput> inputs) =>
-    inputs.Select(i => new DeviceDescriptor(i.Token, i.IdleState)).ToList();
 
   private static async Task<(bool Ok, T Value)> ReadAsync<T>(
     Func<CancellationToken, Task<T>> read, CancellationToken ct)
