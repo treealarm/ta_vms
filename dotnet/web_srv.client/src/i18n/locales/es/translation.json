@@ -1383,7 +1383,8 @@
       "previousPage": "Página anterior",
       "nextPage": "Página siguiente",
       "statesHint": "Cómo se llama y se pinta un estado, y si cuenta como alarma.",
-      "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada."
+      "levelsHint": "Un nodo aparece entre los dos límites de zoom; una capa que nadie usa no oculta nada.",
+      "duplicateLevel": "Ya existe una capa de escala llamada \"{{level}}\""
     },
     "node": {
       "kind": {

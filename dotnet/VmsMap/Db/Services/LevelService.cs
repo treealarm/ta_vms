@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -32,7 +33,11 @@ namespace VmsMap.Db
     {
       var levels = await _db.Levels.AsNoTracking().ToListAsync();
 
-      return levels.ToDictionary(c => c.zoom_level, ToDto);
+      // Save refuses a duplicate name, but rows written before that check may hold one. The whole
+      // dictionary is read by name, so a duplicate must not take every scale layer down with it.
+      return levels
+        .GroupBy(level => level.zoom_level)
+        .ToDictionary(group => group.Key, group => ToDto(group.First()));
     }
 
     public async Task<List<string>> GetLevelsByZoom(double? zoom)
@@ -48,6 +53,15 @@ namespace VmsMap.Db
 
     public async Task<List<LevelDTO>> UpdateAsync(List<LevelDTO> levels)
     {
+      // The dictionary is keyed by name, so two rows with one name cannot both be read back: refuse
+      // the save instead of writing a pair that breaks the list.
+      var duplicate = levels
+        .Where(level => !string.IsNullOrWhiteSpace(level.zoom_level))
+        .GroupBy(level => level.zoom_level)
+        .FirstOrDefault(group => group.Count() > 1);
+      if (duplicate is not null)
+        throw new InvalidOperationException($"The scale layer '{duplicate.Key}' is defined twice");
+
       var ids = levels
         .Select(level => Utils.ConvertObjectIdToGuid(level.id))
         .Where(id => id.HasValue)

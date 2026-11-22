@@ -65,4 +65,36 @@ public class LevelServiceTests
     Assert.Single(left);
     Assert.Equal(kept.id, Utils.ConvertGuidToObjectId(left.Single().id));
   }
+
+  // The dictionary is read by name, so two rows sharing one would make it unreadable: the save
+  // says which name is duplicated instead of writing the pair.
+  [Fact]
+  public async Task TwoLevelsWithOneNameAreRefused()
+  {
+    await using var db = Create();
+    var levels = new LevelService(db);
+
+    await levels.UpdateAsync([new LevelDTO { zoom_level = BuildingLevel, zoom_min = 14, zoom_max = 16 }]);
+
+    await Assert.ThrowsAsync<InvalidOperationException>(() => levels.UpdateAsync([
+      new LevelDTO { zoom_level = BuildingLevel, zoom_min = 14, zoom_max = 16 },
+      new LevelDTO { zoom_level = BuildingLevel, zoom_min = 17, zoom_max = 18 },
+    ]));
+    Assert.Single(await db.Levels.ToListAsync());
+  }
+
+  // A row written before that check existed must not take the whole list down with it.
+  [Fact]
+  public async Task ReadingTheDictionarySurvivesADuplicate()
+  {
+    await using var db = Create();
+    db.Levels.Add(new DBLevel { id = Guid.NewGuid(), zoom_level = BuildingLevel, zoom_min = 14, zoom_max = 16 });
+    db.Levels.Add(new DBLevel { id = Guid.NewGuid(), zoom_level = BuildingLevel, zoom_min = 17, zoom_max = 18 });
+    await db.SaveChangesAsync();
+
+    var dictionary = await new LevelService(db).GetAllZooms();
+
+    Assert.Single(dictionary);
+    Assert.Equal(BuildingLevel, dictionary.Single().Key);
+  }
 }
