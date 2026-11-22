@@ -106,6 +106,17 @@ export async function setDeviceSettings(
     })
 }
 
+/** A part's name is its identity; it is saved on its own so a stale form cannot rewrite its rule. */
+export async function renameCameraPart(
+  cameraId: string, body: { kind: 'digital_input' | 'relay'; token: string; name: string },
+): Promise<void> {
+  await apiFetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/settings/name`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
 /**
  * The guard state of any node — a sensor, a camera, a space or a zone. A container's answer names
  * the zone that settled it, so the browser paints "on guard through a parent" differently from

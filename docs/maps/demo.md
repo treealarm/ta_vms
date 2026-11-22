@@ -87,8 +87,16 @@ the video wall, at startup) or the button at the foot of Administration → Depl
 api/map/admin/demo/install` and
 `.../remove`, `GET api/map/admin/demo`, administrators only), which calls both services and merges
 their reports. Both paths use the same seeder, so they are interchangeable; installing twice is
-idempotent. The whole install is one transaction under `pg_advisory_xact_lock`, so two replicas
-starting with the flag cannot each write half a world.
+idempotent. With `DEMO_CONFIG` unset — the dev bench started by `scripts/dev-up.sh --no-demo` — the
+button is the only path, which is what the GUI parity run needs: the world it builds must not share
+a database with the seeded one. The whole install is one transaction under `pg_advisory_xact_lock`,
+so two replicas starting with the flag cannot each write half a world.
+
+**Built by hand.** The demo is also the statement that every configuration primitive it seeds can be
+assembled by an administrator: `tests/demo/gui/build_world.cjs` builds one instance of each through
+the browser, and the result is compared with the demo's own inventory, read back through the API and
+exercised on the simulator. How to run it, what it covers and the traps it documents:
+[`tests/demo/gui/README.md`](../../tests/demo/gui/README.md).
 
 **The demo ships calibrated.** An install also writes what the bench used to prepare: the five
 OnvifSim cameras (VmsCfg, at `DEMO_ONVIFSIM_HOST`, pinned to `OWN_SERVER_ID`), the ten landmarks of
@@ -101,9 +109,15 @@ still installs. The bench (`tests/onvifsim`) is therefore a check rather than a 
 compares what is installed with the world's projection.
 
 A diagram that stands on a plan is an ordinary point figure, not geometry of its own: in Admin →
-Maps, selecting it shows a draggable handle, and "+ diagram" in the node list places a new one at the
-centre of the current view. The floor's diagram is such a node; its icon on the floor is its
-`visual.image`.
+Maps, selecting it shows a draggable handle, and "+ diagram" in the node list arms the map so the
+next click places a new one where the administrator clicks rather than at the centre of the view.
+The floor's diagram is such a node; its icon on the floor is its `visual.image`.
+
+**Plan pictures and free figures.** A plan's picture is uploaded in Admin → Maps and stored as PNG,
+JPEG or WebP; an SVG is accepted too and rasterized in the browser before it is sent, so the server
+never serves markup. The plan editor also draws free text labels and pictures of their own beside
+the point, line and polygon tools — a picture is a `visual.image` on a point figure, a label is its
+`visual.text`.
 
 **The video wall** belongs to VmsCfg: a wall named `UMD DC`, layout `3x3`, showing the five demo
 cameras the deployment has — a row per master/slave pair, the hall's first and the yard's second, and

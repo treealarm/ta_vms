@@ -72,6 +72,13 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
       if (tab === 'states') {
         await mapApi.updateStateDescriptions(descriptions)
       } else {
+        // A layer name is the key the map reads the dictionary by, so two rows with one name would
+        // make the list unreadable; say which one before the server has to refuse it.
+        const names = levels.map((row) => (row.zoomLevel ?? '').trim()).filter(Boolean)
+        const duplicate = names.find((name, index) => names.indexOf(name) !== index)
+        if (duplicate)
+          throw new Error(t('maps.dictionaries.duplicateLevel', { level: duplicate }))
+
         const saved = await mapApi.updateLevels(levels)
         if (removedLevels.length > 0) await mapApi.deleteLevels(removedLevels)
         // The rows that had no id come back with the ones the map assigned.
@@ -193,6 +200,7 @@ export default function MapDictionariesDialog({ open, onClose }: { open: boolean
                         <TableCell padding="none">
                           <IconButton
                             size="small"
+                            aria-label={`${t('common.delete')} ${row.zoomLevel ?? ''}`.trim()}
                             onClick={() => {
                               if (row.id) setRemovedLevels((ids) => [...ids, row.id!])
                               setLevels((rows) => rows.filter((_, i) => i !== index))

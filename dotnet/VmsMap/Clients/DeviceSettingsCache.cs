@@ -59,6 +59,9 @@ namespace VmsMap.Clients
     private readonly SemaphoreSlim _versionGate = new(1, 1);
     private string? _lastVersion;
     private DateTime _lastVersionCheck = DateTime.MinValue;
+    // A read that started before an invalidation must not put its stale answer back afterwards.
+    // The generation is bumped by both the explicit invalidation and the version-driven clear.
+    private long _generation;
 
     public DeviceSettingsCache(
       CfgService.CfgServiceClient cfg,
@@ -76,6 +79,7 @@ namespace VmsMap.Clients
       string cameraId, CancellationToken ct)
     {
       await EnsureFreshAsync(ct);
+      var generation = Volatile.Read(ref _generation);
 
       if (_cache.TryGetValue(cameraId, out var cached)
           && DateTime.UtcNow - cached.LoadedAt < EntryTtl)
@@ -101,7 +105,10 @@ namespace VmsMap.Clients
             s.AlarmEnabled))
           .ToList();
 
-        _cache[cameraId] = new Entry(DateTime.UtcNow, settings);
+        // A read that outlived an invalidation or a version change is stale by definition: it is
+        // returned to this caller, but the next one has to ask again.
+        if (Volatile.Read(ref _generation) == generation)
+          _cache[cameraId] = new Entry(DateTime.UtcNow, settings);
         return settings;
       }
       catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -136,6 +143,7 @@ namespace VmsMap.Clients
         return result;
 
       await EnsureFreshAsync(ct);
+      var generation = Volatile.Read(ref _generation);
 
       var now = DateTime.UtcNow;
       var missing = new List<string>();
@@ -173,10 +181,12 @@ namespace VmsMap.Clients
 
         // A camera the answer does not name has nothing configured; caching that also keeps the
         // next page from asking for it again.
+        var cacheable = Volatile.Read(ref _generation) == generation;
         foreach (var cameraId in missing)
         {
           var settings = loaded.GetValueOrDefault(cameraId) ?? [];
-          _cache[cameraId] = new Entry(DateTime.UtcNow, settings);
+          if (cacheable)
+            _cache[cameraId] = new Entry(DateTime.UtcNow, settings);
           result[cameraId] = settings;
         }
       }
@@ -196,7 +206,13 @@ namespace VmsMap.Clients
       return result;
     }
 
-    public void Invalidate(string cameraId) => _cache.TryRemove(cameraId, out _);
+    public void Invalidate(string cameraId)
+    {
+      // Bump first: a read already in flight past its generation check must not repopulate the
+      // entry between the removal and the next ask.
+      Interlocked.Increment(ref _generation);
+      _cache.TryRemove(cameraId, out _);
+    }
 
     private async Task EnsureFreshAsync(CancellationToken ct)
     {
@@ -217,7 +233,10 @@ namespace VmsMap.Clients
           // The first observation establishes the baseline; a change since then is what makes the
           // cache stale. A write of the same value is not a change, and GUIDs make that unlikely.
           if (_lastVersion is not null && !string.Equals(version, _lastVersion, StringComparison.Ordinal))
+          {
+            Interlocked.Increment(ref _generation);
             _cache.Clear();
+          }
 
           _lastVersion = version;
         }

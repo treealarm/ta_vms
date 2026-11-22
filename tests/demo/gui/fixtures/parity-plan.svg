@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
+  <rect width="800" height="600" fill="#eceff1"/>
+  <rect x="60" y="60" width="680" height="480" fill="#ffffff" stroke="#37474f" stroke-width="6"/>
+  <rect x="80" y="80" width="200" height="160" fill="#e3f2fd" stroke="#1565c0" stroke-width="2"/>
+  <rect x="300" y="80" width="200" height="160" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+  <rect x="520" y="80" width="200" height="160" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+  <text x="400" y="330" font-family="sans-serif" font-size="36" fill="#37474f" text-anchor="middle">Parity Plan</text>
+</svg>

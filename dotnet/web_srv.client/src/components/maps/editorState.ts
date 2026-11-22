@@ -2,8 +2,9 @@ import { createContext, useContext } from 'react'
 import type { GeoPointDto } from '../../dto/dtos'
 import type { MapFocus } from '../../map/SpaceCanvas'
 
-/** What the next click on the map does. */
-export type Mode = 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon' | 'footprint'
+/** What the next click on the map does. `text` and `picture` are single-click tools of their own. */
+export type Mode =
+  | 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon' | 'footprint' | 'text' | 'picture'
 
 /**
  * What is selected beside the map: a camera's placement, a landmark or a nested space's footprint
@@ -56,6 +57,12 @@ export type EditorState = {
    */
   pendingPart: PendingPart | null
   setPendingPart: (part: PendingPart | null) => void
+  /**
+   * A new diagram asked for from the node list: the next click on the map puts it there, the way a
+   * click places a camera. One at a time with the three placements above.
+   */
+  pendingNewDiagram: boolean
+  setPendingNewDiagram: (pending: boolean) => void
   focus: MapFocus | null
   /** Pans the map to the point; the same point again pans again. */
   focusOn: (at: GeoPointDto) => void
@@ -84,6 +91,7 @@ export type Snapshot = {
   pendingCameraId: string | null
   pendingDiagramId: string | null
   pendingPart: PendingPart | null
+  pendingNewDiagram: boolean
   focus: MapFocus | null
   sideTab: SideTab
   openDiagramId: string | null
@@ -92,7 +100,7 @@ export type Snapshot = {
 
 export const FRESH: Snapshot = {
   mode: 'select', selection: null, pendingCameraId: null, pendingDiagramId: null,
-  pendingPart: null, focus: null,
+  pendingPart: null, pendingNewDiagram: false, focus: null,
   sideTab: 'space', openDiagramId: null, revealed: null,
 }
 

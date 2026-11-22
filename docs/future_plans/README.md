@@ -16,7 +16,6 @@
 
 | Файл | Тема | Объём |
 |---|---|---|
-| [05-demo-gui-parity.md](05-demo-gui-parity.md) | Каждый примитив конфигурации собирается в GUI; осталось: Playwright-прогон, текст и картинки на планах | средний |
 | [06-onvif-live-parameters.md](06-onvif-live-parameters.md) | Хвосты M2.3: совпадение демо и `Maryland`, первая запись follower'а | средний |
 | [07-camera-connection-state.md](07-camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` опрашивается у VmsFs; нужно событие от video_srv и разбор `recording_expected` | средний |
 | [08-ground-map-provider.md](08-ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна | средний, внешняя зависимость |

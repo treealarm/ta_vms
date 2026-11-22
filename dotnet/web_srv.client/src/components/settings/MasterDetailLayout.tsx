@@ -51,7 +51,12 @@ export default function MasterDetailLayout({
             {onAdd && (
               <Tooltip title={addTooltip ?? t('common.add')}>
                 <span>
-                  <IconButton size="small" onClick={onAdd} disabled={addDisabled}>
+                  <IconButton
+                    size="small"
+                    aria-label={addTooltip ?? t('common.add')}
+                    onClick={onAdd}
+                    disabled={addDisabled}
+                  >
                     <AddIcon fontSize="small" />
                   </IconButton>
                 </span>

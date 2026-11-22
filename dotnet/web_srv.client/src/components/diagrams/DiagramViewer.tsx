@@ -506,6 +506,13 @@ export default function DiagramViewer({
             {tool ? (
               <Button size="small" onClick={cancelTool}>{t('common.cancel')}</Button>
             ) : null}
+            {tool ? (
+              <Typography variant="caption" color="info.main" noWrap role="status" aria-live="polite">
+                {t(tool === 'text'
+                  ? 'diagramEditor.textHint'
+                  : tool === 'line' ? 'diagramEditor.lineHint' : 'diagramEditor.polygonHint')}
+              </Typography>
+            ) : null}
             <Button size="small" variant="outlined" onClick={() => void createChild()}>
               {t('diagramEditor.newDiagram')}
             </Button>

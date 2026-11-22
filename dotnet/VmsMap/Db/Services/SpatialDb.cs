@@ -159,7 +159,8 @@ namespace VmsMap.Db
       await _db.SaveChangesAsync(ct);
 
       if (footprint is not null)
-        await _geoService.CreateGeo([PolygonFigure(objectId, footprint)]);
+        await _geoService.CreateGeo([
+          PolygonFigure(objectId, footprint, await ShapeOfAsync(objectId, ct))]);
       else
         await _geoService.RemoveAsync([objectId.ToString()]);
       await _db.SaveChangesAsync(ct);
@@ -582,7 +583,8 @@ namespace VmsMap.Db
       target.is_reference = isReference;
       ApplyValues(target, placement);
       // The figure belongs to the replica: the canonical node carries meaning, not a picture.
-      await _geoService.CreateGeo([PointFigure(replicaId, placement.Lat, placement.Lon)]);
+      await _geoService.CreateGeo([
+        PointFigure(replicaId, placement.Lat, placement.Lon, await ShapeOfAsync(replicaId, ct))]);
       await _db.SaveChangesAsync(ct);
 
       if (tx is not null)
@@ -627,7 +629,8 @@ namespace VmsMap.Db
         return false;
 
       await using var tx = await BeginTransactionAsync(ct);
-      await _geoService.CreateGeo([PointFigure(reference.object_id, lat, lon)]);
+      await _geoService.CreateGeo([
+        PointFigure(reference.object_id, lat, lon, await ShapeOfAsync(reference.object_id, ct))]);
       if (headingDeg is { } heading)
       {
         // Tracked, not no-tracking: the same row the figure belongs to, turned to the bearing the
@@ -734,7 +737,8 @@ namespace VmsMap.Db
         row.height_m = landmark.HeightM;
       }
 
-      await _geoService.CreateGeo([PointFigure(row.object_id, landmark.Lat, landmark.Lon)]);
+      await _geoService.CreateGeo([
+        PointFigure(row.object_id, landmark.Lat, landmark.Lon, await ShapeOfAsync(row.object_id, ct))]);
       await _db.SaveChangesAsync(ct);
 
       if (tx is not null)
@@ -1216,20 +1220,35 @@ namespace VmsMap.Db
       return result;
     }
 
-    private static FigureGeoDTO PointFigure(Guid objectId, double lat, double lon) => new()
+    private static FigureGeoDTO PointFigure(
+      Guid objectId, double lat, double lon, FigureGeoDTO? keep = null) => new()
     {
       id = objectId.ToString(),
       geometry = new GeometryCircleDTO(new Geo2DCoordDTO { Lat = lat, Lon = lon }),
+      // A move says where the shape is, not everything else it is: the zoom layer and the radius
+      // are the administrator's and stay as they were.
+      zoom_level = keep?.zoom_level,
+      radius = keep?.radius,
     };
 
-    private static FigureGeoDTO PolygonFigure(Guid objectId, List<(double Lat, double Lon)> points) => new()
+    private static FigureGeoDTO PolygonFigure(
+      Guid objectId, List<(double Lat, double Lon)> points, FigureGeoDTO? keep = null) => new()
     {
       id = objectId.ToString(),
       geometry = new GeometryPolygonDTO
       {
         coord = points.Select(p => new Geo2DCoordDTO { Lat = p.Lat, Lon = p.Lon }).ToList(),
       },
+      zoom_level = keep?.zoom_level,
+      radius = keep?.radius,
     };
+
+    /// <summary>The shape fields a move has to carry over: a position is not the whole figure.</summary>
+    private async Task<FigureGeoDTO?> ShapeOfAsync(Guid objectId, CancellationToken ct) =>
+      await _db.GeoObjects.AsNoTracking()
+        .Where(row => row.id == objectId)
+        .Select(row => new FigureGeoDTO { id = row.id.ToString(), zoom_level = row.zoom_level, radius = row.radius })
+        .FirstOrDefaultAsync(ct);
 
     // ── Mapping and validation ────────────────────────────────────────────────
 

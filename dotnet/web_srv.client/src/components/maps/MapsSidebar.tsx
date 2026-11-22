@@ -13,7 +13,6 @@ import type { ControlObjectDto, SpaceDto } from '../../dto/dtos'
 import type { MapMarker } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { childrenOf, loadChildren, revealNodePath } from '../../store/objectsSlice'
-import { createDiagramNode } from '../../store/mapEditsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import KindIcon from '../../map/KindIcon'
@@ -381,11 +380,11 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   const dispatch = useAppDispatch()
   const {
     selection, setSelection, openDiagram, openDiagramId, setMode, setPendingDiagramId,
+    pendingNewDiagram, setPendingNewDiagram,
   } = useEditorState()
   const known = useAppSelector((s) => s.objects.markers)
   const childrenByParent = useAppSelector((s) => s.objects.childrenByParent)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [busy, setBusy] = useState(false)
 
   // The space's own page is what the tree grows from; a row's page is read when it is opened.
   useEffect(() => {
@@ -447,33 +446,21 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
   }
 
   /**
-   * A new diagram stands on this canvas, in the middle of the view, whatever is selected: the
-   * button belongs to the canvas, and a diagram nested in another is made from inside it, with
-   * that diagram's own "New diagram". The point stays in sight, so it can be dragged into place
-   * before the diagram is opened.
+   * A new diagram is asked for here and placed by the next click on the canvas: the button belongs
+   * to the node list, and the administrator says where the diagram stands. Clicking it again, or
+   * Escape, puts the tool away. A diagram nested in another is made from inside it, with that
+   * diagram's own "New diagram".
    */
-  const addDiagram = async () => {
+  const addDiagram = () => {
     if (!space.id) return
-
-    setBusy(true)
-    try {
-      const created = await dispatch(createDiagramNode({
-        parentId: space.id,
-        name: `${t('diagramEditor.diagram')} ${markers.length + 1}`,
-        geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
-        at: {
-          lat: (space.view.southWest.lat + space.view.northEast.lat) / 2,
-          lon: (space.view.southWest.lon + space.view.northEast.lon) / 2,
-        },
-      })).unwrap()
-      setSelection({ kind: 'node', id: created.id })
-      // The point is on the canvas, not on whatever diagram was open over it.
-      openDiagram(null)
-    } catch {
-      // The store carries the message.
-    } finally {
-      setBusy(false)
+    if (pendingNewDiagram) {
+      setPendingNewDiagram(false)
+      return
     }
+    setMode('select')
+    // The point is on the canvas, not on whatever diagram was open over it.
+    openDiagram(null)
+    setPendingNewDiagram(true)
   }
 
   /**
@@ -495,14 +482,20 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
           {t('maps.editor.nodesHint')}
         </Typography>
-        <Tooltip title={t('diagramEditor.addDiagram')}>
+        <Tooltip title={pendingNewDiagram
+          ? t('diagramEditor.placeNewDiagramHint')
+          : t('diagramEditor.addDiagram')}>
           <span>
             <IconButton
               size="small"
-              title={t('diagramEditor.addDiagram')}
+              title={pendingNewDiagram
+                ? t('diagramEditor.placeNewDiagramHint')
+                : t('diagramEditor.addDiagram')}
               aria-label={t('diagramEditor.addDiagram')}
-              disabled={busy || !space.id}
-              onClick={() => void addDiagram()}
+              aria-pressed={pendingNewDiagram}
+              color={pendingNewDiagram ? 'primary' : 'default'}
+              disabled={!space.id}
+              onClick={addDiagram}
             >
               <AddIcon fontSize="small" />
             </IconButton>
@@ -573,7 +566,6 @@ function NodesTree({ markers, space, onOpenSpace, revealed }: {
                   <IconButton
                     size="small"
                     aria-label={t('diagramEditor.placeDeviceDiagram')}
-                    disabled={busy}
                     onClick={(event) => { event.stopPropagation(); askDeviceDiagram(marker) }}
                   >
                     <DashboardCustomizeIcon fontSize="small" />

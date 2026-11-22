@@ -1,3 +1,23 @@
+/** The bytes and natural size of a picture the administrator picked, ready for `visual`. */
+export type VisualImage = { data: string; width: number; height: number }
+
+/** Reads a picked file as base64 plus its natural size; the caller stores it on a node. */
+export async function readVisualImage(file: File): Promise<VisualImage> {
+  const bitmap = await createImageBitmap(file)
+  const { width, height } = bitmap
+  bitmap.close()
+
+  const url = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.onerror = () => reject(reader.error ?? new Error('the image could not be read'))
+    reader.readAsDataURL(file)
+  })
+  const comma = url.indexOf(',')
+  if (comma <= 0) throw new Error('the image could not be read')
+  return { data: url.slice(comma + 1), width, height }
+}
+
 /**
  * The picture of a node: `visual.image` is bytes and nothing says what they are. Everything the map
  * handed out used to be a PNG, and an SVG icon — a diagram's background used as an icon, say — was

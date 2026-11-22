@@ -168,12 +168,16 @@ export default function CameraControlPanel({ ref }: { ref?: React.Ref<ApplyIfDir
       listActions={
         <>
           <Tooltip title={t('common.refresh')}>
-            <IconButton size="small" onClick={refresh}>
+            <IconButton size="small" aria-label={t('common.refresh')} onClick={refresh}>
               <RefreshIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <Tooltip title={t('cameraControl.discoverDevices')}>
-            <IconButton size="small" onClick={() => setDiscoveryOpen(true)}>
+            <IconButton
+              size="small"
+              aria-label={t('cameraControl.discoverDevices')}
+              onClick={() => setDiscoveryOpen(true)}
+            >
               <RadarIcon fontSize="small" />
             </IconButton>
           </Tooltip>
