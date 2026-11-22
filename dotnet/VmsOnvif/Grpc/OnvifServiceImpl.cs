@@ -16,6 +16,7 @@ public partial class OnvifServiceImpl(
   OnvifSettingsService settingsService,
   MetadataStateCache metadataStateCache,
   VmsOnvif.Onvif.OnvifMetadataIngestor metadataIngestor,
+  IDeviceIoPresence deviceIoPresence,
   string cameraActorType,
   IOnvifLogger onvifLogger,
   ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
@@ -410,9 +411,18 @@ public partial class OnvifServiceImpl(
   public override async Task<GetDeviceCapabilitiesResponse> GetDeviceCapabilities(
     CameraRequest request, ServerCallContext context)
   {
+    // The monitor tile asks this on every mount, and both I/O flags are answered by a camera read
+    // that the discovery sweep has already done: when the list is known, it is the answer. The
+    // relay probe is kept as the fallback because it deliberately does not evict the connection on
+    // a fault, which a camera without relay hardware answers with.
+    var cachedRelays = deviceIoPresence.TryGetDevices(request.SourceId, DeviceIoKind.Relay);
+    var cachedInputs = deviceIoPresence.TryGetDevices(request.SourceId, DeviceIoKind.DigitalInput);
+
     var capsTask = settingsService.GetCapabilitiesAsync(request.SourceId, context.CancellationToken);
     var audioConfigsTask = settingsService.GetAudioConfigsAsync(request.SourceId, context.CancellationToken);
-    var hasRelayOutputsTask = settingsService.HasRelayOutputsAsync(request.SourceId, context.CancellationToken);
+    var hasRelayOutputsTask = cachedRelays is { } relays
+      ? Task.FromResult(relays.Count > 0)
+      : settingsService.HasRelayOutputsAsync(request.SourceId, context.CancellationToken);
     await Task.WhenAll(capsTask, audioConfigsTask, hasRelayOutputsTask);
     var caps = capsTask.Result;
     var audioConfigs = audioConfigsTask.Result;
@@ -424,7 +434,7 @@ public partial class OnvifServiceImpl(
       HasEvents        = caps?.HasEvents ?? false,
       HasAudio         = audioConfigs.Count > 0,
       HasRelayOutputs  = hasRelayOutputsTask.Result,
-      HasDigitalInputs = caps?.HasDigitalInputs ?? false,
+      HasDigitalInputs = cachedInputs is { } inputs ? inputs.Count > 0 : caps?.HasDigitalInputs ?? false,
       HasEdgeRecording = caps?.HasEdgeRecording ?? false,
       HasAnalyticsService = caps?.HasAnalyticsService ?? false,
     };

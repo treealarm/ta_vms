@@ -8,14 +8,18 @@ namespace VmsOnvif;
 
 public class DeviceIoServiceImpl(
   OnvifSettingsService settingsService,
-  DeviceIoStateService stateService) : DeviceIoService.DeviceIoServiceBase
+  DeviceIoStateService stateService,
+  DeviceIoCatalog catalog) : DeviceIoService.DeviceIoServiceBase
 {
   public override async Task<GetRelayOutputsResponse> GetRelayOutputs(CameraRequest request, ServerCallContext context)
   {
     var response = new GetRelayOutputsResponse();
     try
     {
-      var relays = await settingsService.GetRelayOutputsAsync(request.SourceId, context.CancellationToken);
+      // The list is configuration, and it is served from the presence cache the discovery sweep
+      // keeps: opening a wall of tiles must not read the camera once per tile. Only a camera whose
+      // list has never been read is asked, and that one answer fills the cache.
+      var relays = await catalog.RelaysAsync(request.SourceId, context.CancellationToken);
       response.Relays.AddRange(relays.Select(r =>
       {
         var relay = new RelayOutput
@@ -32,14 +36,6 @@ public class DeviceIoServiceImpl(
         }
         return relay;
       }));
-
-      // Opening the subscription is a network round trip of its own; the live values reach the
-      // caller's next poll. Its first report also starts or stops the watcher as I/O appears or
-      // goes away, and a changed idle state recomputes the contact without waiting for a heartbeat.
-      _ = stateService.ReportDevicesAsync(
-        request.SourceId,
-        DeviceIoKind.Relay,
-        relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList());
     }
     catch (Exception ex)
     {
@@ -80,18 +76,16 @@ public class DeviceIoServiceImpl(
     try
     {
       // The relay's configuration says how long a wish for it lives: a monostable relay drops on
-      // the camera's own clock, so a wish for one outlives that drop. Reading the list also opens
-      // the device subscription the camera's confirmation arrives on — a command sent before the
-      // subscription exists would be applied by the camera and never heard by anyone.
-      var relays = await settingsService.GetRelayOutputsAsync(request.SourceId, context.CancellationToken);
-      await stateService.ReportDevicesAsync(
-        request.SourceId,
-        DeviceIoKind.Relay,
-        relays.Select(r => new DeviceDescriptor(r.Token, r.IdleState)).ToList());
+      // the camera's own clock, so a wish for one outlives that drop. This path reads the camera
+      // rather than trusting the cache — a command must not be refused, or given the wrong
+      // lifetime, because the cache is behind — and that read also opens the device subscription
+      // the camera's confirmation arrives on: a command sent before the subscription exists would
+      // be applied by the camera and never heard by anyone.
+      var relays = await catalog.FreshRelaysAsync(request.SourceId, context.CancellationToken);
 
       var relay = relays.FirstOrDefault(
         r => string.Equals(r.Token, request.Token, StringComparison.Ordinal));
-      if (relay is null)
+      if (string.IsNullOrEmpty(relay.Token))
         return Fail($"Camera '{request.SourceId}' has no relay output '{request.Token}'");
 
       var lifetime = relay is { DelayMs: > 0 }
@@ -118,8 +112,15 @@ public class DeviceIoServiceImpl(
   {
     try
     {
+      var mode = FormatMode(request.Mode);
+      var idleState = FormatIdleState(request.IdleState);
       await settingsService.SetRelayOutputSettingsAsync(
-        request.SourceId, request.Token, FormatMode(request.Mode), FormatIdleState(request.IdleState), request.DelayMs,
+        request.SourceId, request.Token, mode, idleState, request.DelayMs,
+        context.CancellationToken);
+      // The camera accepted it: the list carries the new settings at once, and the read inside
+      // reconciles them with whatever the camera really stored. Neither can undo the write.
+      await catalog.RecordRelaySettingsAsync(
+        request.SourceId, request.Token, mode, idleState, request.DelayMs,
         context.CancellationToken);
       return Ok();
     }
@@ -134,24 +135,21 @@ public class DeviceIoServiceImpl(
     var response = new GetDigitalInputsResponse();
     try
     {
-      var inputs = await settingsService.GetDigitalInputsAsync(request.SourceId, context.CancellationToken);
+      // Served from the same presence cache as the relays: one camera read for the first caller,
+      // nothing for the rest of the wall.
+      var inputs = await catalog.InputsAsync(request.SourceId, context.CancellationToken);
       response.Inputs.AddRange(inputs.Select(i =>
       {
         var input = new DigitalInput
         {
           Token        = i.Token,
-          IdleState    = ParseIdleState(i.IdleState ?? "closed"),
+          IdleState    = ParseIdleState(i.IdleState),
           HasIdleState = i.IdleState != null,
         };
         if (stateService.TryGetLogicalState(request.SourceId, DeviceIoKind.DigitalInput, i.Token) is { } active)
           input.LiveActive = active;
         return input;
       }));
-
-      _ = stateService.ReportDevicesAsync(
-        request.SourceId,
-        DeviceIoKind.DigitalInput,
-        inputs.Select(i => new DeviceDescriptor(i.Token, i.IdleState)).ToList());
     }
     catch (Exception ex)
     {
@@ -183,8 +181,13 @@ public class DeviceIoServiceImpl(
   {
     try
     {
+      var idleState = FormatIdleState(request.IdleState);
       await settingsService.SetDigitalInputIdleStateAsync(
-        request.SourceId, request.Token, FormatIdleState(request.IdleState), context.CancellationToken);
+        request.SourceId, request.Token, idleState, context.CancellationToken);
+      // The polarity is part of what the screens show: recording it republishes the contact at
+      // once, instead of waiting for the camera's next event.
+      await catalog.RecordInputIdleStateAsync(
+        request.SourceId, request.Token, idleState, context.CancellationToken);
       return Ok();
     }
     catch (Exception ex)
@@ -286,14 +289,14 @@ public class DeviceIoServiceImpl(
     return update;
   }
 
-  private static RelayMode ParseMode(string mode) =>
-    mode.Equals("bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable;
+  private static RelayMode ParseMode(string? mode) =>
+    string.Equals(mode, "bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable;
 
   private static string FormatMode(RelayMode mode) =>
     mode == RelayMode.Bistable ? "bistable" : "monostable";
 
-  private static IdleState ParseIdleState(string idleState) =>
-    idleState.Equals("open", StringComparison.OrdinalIgnoreCase) ? IdleState.Open : IdleState.Closed;
+  private static IdleState ParseIdleState(string? idleState) =>
+    string.Equals(idleState, "open", StringComparison.OrdinalIgnoreCase) ? IdleState.Open : IdleState.Closed;
 
   private static string FormatIdleState(IdleState idleState) =>
     idleState == IdleState.Open ? "open" : "closed";

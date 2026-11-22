@@ -17,12 +17,17 @@ there is no `GetRelayState` at all.
   state per `(camera, kind, token)`, and closes the subscription once both lists are empty again.
   It is separate from the optional alarm/analytics subscription (`onvif_events_enabled`): I/O state
   is part of the integration, not an opt-in.
-- **`live_active`.** `GetRelayOutputs`/`GetDigitalInputs` fill it from that cache, and the field is
-  absent until the camera has reported the device — "unknown" is not "inactive". The web shows it
-  as each relay's reported state beside the command switch, and as the sensor's own `1`/`0`.
-- **Polling is ours, not the camera's.** The camera pushes; the pages read VmsOnvif's cache every
-  five seconds while they are visible (`DeviceIoSection`, the wall tile's indicator, the demo
-  feeder). A settings read never waits on the camera for a live value.
+- **The list is a cache too.** `GetRelayOutputs`/`GetDigitalInputs` return the configuration from
+  the same presence the sweep keeps: token, mode, delay and idle state. A camera whose list has
+  never been read is read once and the answer fills the cache, so opening a wall of tiles costs no
+  ONVIF request at all; the capability flags (`hasRelayOutputs`, `hasDigitalInputs`) are answered
+  from it too. A settings write records the accepted values at once and then reconciles them with
+  the camera, so a panel that reloads after saving never shows the old configuration.
+- **`live_active`.** Filled from the event cache, and the field is absent until the camera has
+  reported the device — "unknown" is not "inactive". The web shows it as each relay's reported
+  state beside the command switch, and as the sensor's own `1`/`0`.
+- **Polling is ours, not the camera's.** The camera pushes; the browser holds one SSE stream
+  (`api/DeviceIo/live`) and reads the list once when a panel or a tile mounts.
 - **`geo_from_device`.** A camera can be told that its place on the map is its own ONVIF position.
   Off by default, because a hand-placed camera is calibrated and aimed by survey and must not drift
   with a coordinate the device happens to report. While on, `CameraGeoFollower` reads

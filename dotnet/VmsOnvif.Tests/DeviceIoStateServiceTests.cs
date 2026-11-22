@@ -30,6 +30,12 @@ public class DeviceIoStateServiceTests
   private static DeviceDescriptor Input(string token, string? idleState = null) =>
     new(token, idleState);
 
+  /// <summary>A report of the list as it stands now: the version is the one a reader would have
+  /// captured just before asking the camera.</summary>
+  private static Task Report(
+    DeviceIoStateService service, DeviceIoKind kind, params DeviceDescriptor[] devices) =>
+    service.ReportDevicesAsync(CameraId, kind, devices, service.ListVersion(CameraId, kind));
+
   private static async Task WaitForDebounceAsync() =>
     await Task.Delay(DeviceIoStateService.Debounce + TimeSpan.FromMilliseconds(250));
 
@@ -39,7 +45,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     Assert.Single(factory.Created);
   }
@@ -50,8 +56,8 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, []);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, []);
+    await Report(service, DeviceIoKind.Relay, []);
+    await Report(service, DeviceIoKind.DigitalInput, []);
 
     Assert.Empty(factory.Created);
   }
@@ -62,9 +68,9 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1"), Relay("relay2")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1"), Relay("relay2")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1"), Relay("relay2")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1"), Relay("relay2")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1")]);
 
     Assert.Single(factory.Created);
   }
@@ -74,10 +80,10 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1"), Input("input2")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1"), Input("input2")]);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, []);
+    await Report(service, DeviceIoKind.Relay, []);
 
     Assert.False(factory.Created[0].Disposed);
   }
@@ -87,12 +93,12 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1")]);
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, []);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, []);
+    await Report(service, DeviceIoKind.Relay, []);
+    await Report(service, DeviceIoKind.DigitalInput, []);
 
     Assert.True(factory.Created[0].Disposed);
     Assert.Null(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay1"));
@@ -103,7 +109,7 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true, "Initialized"));
 
@@ -115,7 +121,7 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true, "Initialized"));
 
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", false, "Changed"));
@@ -131,7 +137,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.DigitalInput, "input1", true) };
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1")]);
 
     Assert.True(service.TryGetLogicalState(CameraId, DeviceIoKind.DigitalInput, "input1"));
   }
@@ -145,7 +151,7 @@ public class DeviceIoStateServiceTests
     await using var service = Service(factory);
     var events = Capture(service);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
 
     var announced = Assert.Single(events);
     Assert.True(announced.Initialized);
@@ -157,8 +163,8 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true, "Initialized"));
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Initialized"));
 
@@ -176,7 +182,7 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
 
     Assert.Null(service.TryGetLogicalState(CameraId, DeviceIoKind.Relay, "relay2"));
@@ -188,11 +194,11 @@ public class DeviceIoStateServiceTests
   {
     var factory = new FakeFactory();
     await using var service = Service(factory);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     var first = factory.Created[0];
 
     await service.ForgetSubscriptionAsync(CameraId);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     Assert.True(first.Disposed);
     Assert.Equal(2, factory.Created.Count);
@@ -209,14 +215,14 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     await service.ForgetSubscriptionAsync(CameraId);
 
     // A relay command reports the relay list and reopens the subscription; the input's own list is
     // not read, so only the kept manifest can give its events a contact.
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     factory.Created[^1].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Changed"));
     await WaitForDebounceAsync();
 
@@ -231,11 +237,11 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { ReturnNull = true };
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     Assert.Empty(factory.Created);
 
     factory.ReturnNull = false;
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     Assert.Single(factory.Created);
   }
@@ -246,9 +252,121 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory, new FakeConnections(configured: false));
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     Assert.Empty(factory.Created);
+  }
+
+  // ── What the presence remembers ────────────────────────────────────────────────────────────
+
+  [Fact]
+  public async Task TryGetDevicesIsNullUntilThatListIsReported()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+
+    Assert.Equal(new[] { Relay("relay1") }, service.TryGetDevices(CameraId, DeviceIoKind.Relay));
+    // Not read is not the same as "has none": a list nobody asked the camera for must not be
+    // served as empty.
+    Assert.Null(service.TryGetDevices(CameraId, DeviceIoKind.DigitalInput));
+  }
+
+  // An empty list is the camera's answer. Keeping it means the next tile to open does not read the
+  // camera again to learn the same nothing; the subscription has nothing to watch and goes.
+  [Fact]
+  public async Task ACameraWithBothListsEmptyKeepsItsEmptyPresence()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+    factory.Created[0].Report(State(DeviceIoKind.Relay, "relay1", true));
+
+    await Report(service, DeviceIoKind.Relay, []);
+    await Report(service, DeviceIoKind.DigitalInput, []);
+
+    Assert.Empty(service.TryGetDevices(CameraId, DeviceIoKind.Relay)!);
+    Assert.Empty(service.TryGetDevices(CameraId, DeviceIoKind.DigitalInput)!);
+    Assert.True(factory.Created[0].Disposed);
+  }
+
+  [Fact]
+  public async Task AnInFlightReadCannotOverwriteANewerSettingsWrite()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+
+    // A read captures the version before asking the camera...
+    var readVersion = service.ListVersion(CameraId, DeviceIoKind.Relay);
+    await service.RecordSettingsAsync(
+      CameraId, DeviceIoKind.Relay, new DeviceDescriptor("relay1", "closed", "monostable", 1500));
+
+    // ...the operator saves new settings meanwhile, and the camera answers with the old ones.
+    await service.ReportDevicesAsync(
+      CameraId, DeviceIoKind.Relay,
+      [new DeviceDescriptor("relay1", "closed", "bistable", 0)], readVersion);
+
+    // The write is what the camera has now; the older read does not undo it.
+    Assert.Equal(
+      new DeviceDescriptor("relay1", "closed", "monostable", 1500),
+      Assert.Single(service.TryGetDevices(CameraId, DeviceIoKind.Relay)!));
+  }
+
+  // The logical state did not change, its meaning did: the map must hear the new contact now, not
+  // on the camera's next event.
+  [Fact]
+  public async Task ChangingAnInputIdleStateRecalculatesItsCurrentContact()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    var events = Capture(service);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Initialized"));
+    Assert.Equal("open", events.Last().Contact);
+
+    await service.RecordSettingsAsync(
+      CameraId, DeviceIoKind.DigitalInput, new DeviceDescriptor("input1", "open"));
+
+    var polarity = events.Last();
+    Assert.Equal("closed", polarity.Contact);
+    Assert.Equal("open", polarity.Previous);
+    Assert.False(polarity.Initialized);
+  }
+
+  [Fact]
+  public async Task EnsuringAWatcherForACameraWithNoIoOpensNothing()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    await Report(service, DeviceIoKind.Relay, []);
+    await Report(service, DeviceIoKind.DigitalInput, []);
+
+    await service.EnsureWatchingAsync(CameraId);
+
+    // The cached empty list is served on every open; it must not turn each of them into a
+    // subscription to a camera with nothing to report.
+    Assert.Empty(factory.Created);
+  }
+
+  [Fact]
+  public async Task RemovingACameraDisposesItsWatcherAndItsPresence()
+  {
+    var factory = new FakeFactory();
+    await using var service = Service(factory);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
+    await service.ReportDevicesAsync(
+      "cam2", DeviceIoKind.Relay, [Relay("relay1")], service.ListVersion("cam2", DeviceIoKind.Relay));
+    var watcher = factory.Created[0];
+
+    await service.ForgetCamerasNotIn(new HashSet<string>(StringComparer.Ordinal) { "cam2" });
+
+    Assert.True(watcher.Disposed);
+    Assert.Null(service.TryGetDevices(CameraId, DeviceIoKind.Relay));
+    Assert.Null(service.TryGetSnapshot(CameraId, DeviceIoKind.Relay, "relay1"));
+    // A camera still in the configuration keeps its list.
+    Assert.Single(service.TryGetDevices("cam2", DeviceIoKind.Relay)!);
   }
 
   // ── What the map is told ───────────────────────────────────────────────────────────────────
@@ -259,7 +377,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Initialized"));
 
@@ -275,7 +393,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Initialized"));
 
@@ -289,7 +407,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", null)]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", null)]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Initialized"));
 
@@ -304,7 +422,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Initialized"));
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Changed"));
@@ -319,7 +437,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Initialized"));
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Changed"));
@@ -340,7 +458,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
 
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", false, "Initialized"));
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Changed"));
@@ -358,13 +476,13 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
     factory.Created[0].Report(State(DeviceIoKind.DigitalInput, "input1", true, "Initialized"));
     Assert.Equal("open", events.Single().Contact);
 
     // The operator flips the polarity; the camera has not sent a new state, but the meaning of the
     // state it already sent changed.
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "open")]);
 
     var polarity = events.Last();
     Assert.Equal("closed", polarity.Contact);
@@ -382,8 +500,8 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
 
     await service.ForgetAsync(CameraId);
 
@@ -398,7 +516,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
 
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
+    await Report(service, DeviceIoKind.DigitalInput, [Input("input1", "closed")]);
     await service.ForgetAllAsync();
 
     Assert.Null(service.TryGetSnapshot(CameraId, DeviceIoKind.DigitalInput, "input1"));
@@ -414,7 +532,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear(); // the subscription's Initialized replay
 
     await Command(service, true);
@@ -437,7 +555,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     await Command(service, true);
@@ -459,7 +577,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", true) };
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     await Command(service, false);
@@ -480,7 +598,7 @@ public class DeviceIoStateServiceTests
     var time = new FakeTime();
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
     await using var service = Service(factory, commander: commander, time: time);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     await Command(service, true);
     Assert.Empty(commander.Sent);
 
@@ -505,7 +623,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
     await using var service = Service(factory, commander: commander, time: time);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     await Command(service, true);
@@ -533,7 +651,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory, commander: commander, time: time);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     await Command(service, true);
@@ -567,7 +685,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory { Preloaded = State(DeviceIoKind.Relay, "relay1", false) };
     await using var service = Service(factory, time: time);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     var lifetime = TimeSpan.FromSeconds(5) + DeviceIoStateService.MonostableGrace;
@@ -597,7 +715,7 @@ public class DeviceIoStateServiceTests
     var factory = new FakeFactory();
     await using var service = Service(factory);
     var events = Capture(service);
-    await service.ReportDevicesAsync(CameraId, DeviceIoKind.Relay, [Relay("relay1")]);
+    await Report(service, DeviceIoKind.Relay, [Relay("relay1")]);
     events.Clear();
 
     await service.SetDesiredStateAsync(
