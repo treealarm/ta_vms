@@ -29,14 +29,24 @@ export function EditorStateProvider({ spaceId, children }: { spaceId: string | n
       ...snapshot,
       setMode: (mode) => patch({ mode }),
       setSelection,
-      // Three placements wait for the same click; asking for one drops the others.
-      setPendingCameraId: (pendingCameraId) => patch({ pendingCameraId, pendingDiagramId: null, pendingPart: null }),
-      setPendingDiagramId: (pendingDiagramId) => patch({ pendingDiagramId, pendingCameraId: null, pendingPart: null }),
-      setPendingPart: (pendingPart) => patch({ pendingPart, pendingCameraId: null, pendingDiagramId: null }),
+      // Four placements wait for the same click; asking for one drops the others.
+      setPendingCameraId: (pendingCameraId) => patch({
+        pendingCameraId, pendingDiagramId: null, pendingPart: null, pendingNewDiagram: false,
+      }),
+      setPendingDiagramId: (pendingDiagramId) => patch({
+        pendingDiagramId, pendingCameraId: null, pendingPart: null, pendingNewDiagram: false,
+      }),
+      setPendingPart: (pendingPart) => patch({
+        pendingPart, pendingCameraId: null, pendingDiagramId: null, pendingNewDiagram: false,
+      }),
+      setPendingNewDiagram: (pendingNewDiagram) => patch({
+        pendingNewDiagram, pendingCameraId: null, pendingDiagramId: null, pendingPart: null,
+      }),
       focusOn,
       select: (kind, id, at) => {
         setSnapshot((s) => ({
           ...s, mode: 'select', pendingCameraId: null, pendingDiagramId: null, pendingPart: null,
+          pendingNewDiagram: false,
           selection: { kind, id }, sideTab: 'selection',
           // A list acts on the space's own map: a diagram open over it hides the object picked.
           openDiagramId: null,

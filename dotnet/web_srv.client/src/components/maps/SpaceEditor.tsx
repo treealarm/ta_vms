@@ -28,7 +28,7 @@ import {
 import { loadCanvas, loadNodes, loadObjProps, revealNodePath } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { isUnder } from '../../map/tree'
-import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure, saveNodeDetails } from '../../store/mapEditsSlice'
+import { createDiagramNode, createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure, saveNodeDetails } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
@@ -110,7 +110,8 @@ export default function SpaceEditor({
 
   const {
     mode, setMode, selection, setSelection, pendingCameraId, setPendingCameraId,
-    pendingDiagramId, setPendingDiagramId, pendingPart, setPendingPart, focus, select,
+    pendingDiagramId, setPendingDiagramId, pendingPart, setPendingPart, pendingNewDiagram,
+    setPendingNewDiagram, focus, select,
     sideTab, setSideTab, openDiagramId, openDiagram, showInTree, focusOn,
   } = useEditorState()
   const [draft, setDraft] = useState<CameraPlacementDto | null>(null)
@@ -134,7 +135,7 @@ export default function SpaceEditor({
   // The map is taking a click rather than selecting what is under it: a part, a camera or a
   // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
   // on — the crosshair says so, and nothing under it is interactive while it is aimed.
-  const picking = !!pendingPart || !!pendingCameraId || !!pendingDiagramId
+  const picking = !!pendingPart || !!pendingCameraId || !!pendingDiagramId || pendingNewDiagram
     || mode === 'landmark' || mode === 'text' || mode === 'picture' || DRAW_MODES.includes(mode)
   // The modes whose clicks build a run of points rather than one shape at one click.
   const drawingPath = mode === 'line' || mode === 'polygon' || mode === 'footprint'
@@ -433,16 +434,17 @@ export default function SpaceEditor({
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape'
-          && (DRAW_MODES.includes(mode) || mode === 'text' || mode === 'picture')) {
+          && (DRAW_MODES.includes(mode) || mode === 'text' || mode === 'picture' || pendingNewDiagram)) {
         setDraftPoints(null)
         setPendingPicture(null)
+        setPendingNewDiagram(false)
         setMode('select')
       }
       if (event.key === 'Enter' && draftPoints) finishRef.current()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [mode, draftPoints, setMode])
+  }, [mode, draftPoints, pendingNewDiagram, setMode, setPendingNewDiagram])
 
   /** A vertex was dragged: the shape follows it live and is saved when it is let go. */
   const handleGeometryChange = (figure: MapFigure, geometry: MapGeometry, commit: boolean) => {
@@ -457,6 +459,21 @@ export default function SpaceEditor({
   }
 
   const handleMapClick = (at: GeoPointDto) => {
+    if (pendingNewDiagram && spaceId) {
+      // The node list asked for a diagram; this click is where it stands. The store owns the
+      // error, and the tool is spent either way.
+      setPendingNewDiagram(false)
+      void run(async () => {
+        const created = await dispatch(createDiagramNode({
+          parentId: spaceId,
+          name: `${t('diagramEditor.diagram')} ${mapData.markers.length + 1}`,
+          geometry: { top: 0, left: 0, width: 800, height: 600, rotation: 0 },
+          at,
+        })).unwrap()
+        setSelection({ kind: 'node', id: created.id })
+      })
+      return
+    }
     if (mode === 'text' && spaceId) {
       createFreeFigure('text', at)
       return
@@ -592,7 +609,9 @@ export default function SpaceEditor({
   const planCorners = draftCorners ?? plan?.corners
   const planWidthM = plan && planCorners ? distance(planCorners.topLeft, planCorners.topRight) : 0
 
-  const hint = pendingPart
+  const hint = pendingNewDiagram
+    ? t('diagramEditor.placeNewDiagramHint')
+    : pendingPart
     ? t('maps.placePartHint', { name: pendingPart.name })
     : pendingDiagramId
     ? t('diagramEditor.placeDiagramHint', { name: camerasById[pendingDiagramId]?.name || pendingDiagramId })
@@ -860,6 +879,7 @@ export default function SpaceEditor({
                   setPendingDiagramId(null)
                   setPendingPart(null)
                   setPendingPicture(null)
+                  setPendingNewDiagram(false)
                   setDraftPoints(null)
                   // The pen draws a footprint from scratch: an unsaved draft from before would be
                   // drawn under the clicks and confuse which ring is being replaced.
@@ -900,6 +920,7 @@ export default function SpaceEditor({
                   setPendingCameraId(null)
                   setPendingDiagramId(null)
                   setPendingPart(null)
+                  setPendingNewDiagram(false)
                   setDraftPoints(null)
                 })
                 .catch(() => setError(t('maps.editor.pictureUnreadable')))
@@ -922,13 +943,14 @@ export default function SpaceEditor({
               {hint}
             </Typography>
           )}
-          {(pendingCameraId || pendingDiagramId || pendingPart || pendingPicture
+          {(pendingCameraId || pendingDiagramId || pendingPart || pendingPicture || pendingNewDiagram
             || mode === 'text' || mode === 'picture') && (
             <Button size="small" onClick={() => {
               setPendingCameraId(null)
               setPendingDiagramId(null)
               setPendingPart(null)
               setPendingPicture(null)
+              setPendingNewDiagram(false)
               if (mode === 'text' || mode === 'picture') setMode('select')
             }}>
               {t('common.cancel')}
