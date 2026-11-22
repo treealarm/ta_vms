@@ -21,9 +21,9 @@ compose and is expected to be up already — including `db-init`, which creates 
 databases and which a bare `docker compose up` runs on its own.
 
 Usage:
-    dev_stack.py up [--build] [service ...]
+    dev_stack.py up [--build] [--no-demo] [service ...]
     dev_stack.py down [service ...]
-    dev_stack.py restart [--build] service [service ...]
+    dev_stack.py restart [--build] [--no-demo] service [service ...]
     dev_stack.py status
     dev_stack.py wait-sidecars [seconds]
     dev_stack.py stop-strays
@@ -270,7 +270,7 @@ def _stop_pair(service: dict) -> bool:
     return stopped
 
 
-def start(service: dict, wait: float = 90.0) -> None:
+def start(service: dict, wait: float = 90.0, overrides: dict | None = None) -> None:
     key = service["key"]
     PID_DIR.mkdir(parents=True, exist_ok=True)
     app_pid_file = PID_DIR / f"{key}.app.pid"
@@ -303,7 +303,7 @@ def start(service: dict, wait: float = 90.0) -> None:
                 start_new_session=True)
         dapr_pid_file.write_text(str(proc.pid))
 
-    env = {**os.environ, **service["env"]}
+    env = {**os.environ, **service["env"], **(overrides or {})}
     with (PID_DIR / f"{key}.app.log").open("wb") as log:
         proc = subprocess.Popen(
             service["command"], cwd=service["cwd"], env=env, stdout=log,
@@ -637,6 +637,10 @@ def main() -> None:
         return
 
     do_build = "--build" in argv
+    no_demo = "--no-demo" in argv
+    # F5's launch.json names the demo; the flag wins over it without editing the file. An empty
+    # value is what both demo installers read as "off".
+    overrides = {"DEMO_CONFIG": ""} if no_demo else None
     names = [a for a in argv if not a.startswith("-")]
 
     services = _services()
@@ -653,9 +657,11 @@ def main() -> None:
     elif action == "up":
         if do_build:
             build(chosen)
+        if overrides:
+            print("demo configuration off (--no-demo)")
         print("starting:")
         for service in chosen:
-            start(service)
+            start(service, overrides=overrides)
     elif action == "down":
         print("stopping:")
         for service in reversed(chosen):
@@ -668,9 +674,11 @@ def main() -> None:
             stop(service)
         if do_build:
             build(chosen)
+        if overrides:
+            print("demo configuration off (--no-demo)")
         print("starting:")
         for service in chosen:
-            start(service)
+            start(service, overrides=overrides)
     else:
         sys.exit(__doc__)
 
