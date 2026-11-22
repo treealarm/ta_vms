@@ -29,6 +29,7 @@ public class SpatialDbTests
   private const string MapName = "main";
   private const string DistrictLabel = "district";
   private const string PngMime = "image/png";
+  private const string BuildingLevel = "building";
 
   private sealed class FakeCatalog : ICameraCatalog
   {
@@ -234,6 +235,34 @@ public class SpatialDbTests
     var reference = await test.Spatial.GetReferencePlacementAsync(TestCameras.One, CancellationToken.None);
     Assert.NotNull(reference);
     Assert.Equal(0.5, reference!.Value.Placement.Lat);
+  }
+
+  // A position is not the whole figure: the zoom layer the administrator put the picture on, and
+  // the radius a point may be drawn with, are set elsewhere and must survive a move -- including
+  // the one the camera reports about itself.
+  [Fact]
+  public async Task AMoveKeepsTheZoomLayerAndTheRadius()
+  {
+    var test = Create();
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+
+    var row = await test.Db.CameraPlacements.SingleAsync(p => p.camera_id == TestCameras.One);
+    var figure = await test.Db.GeoObjects.SingleAsync(g => g.id == row.object_id);
+    figure.zoom_level = BuildingLevel;
+    figure.radius = 4;
+    await test.Db.SaveChangesAsync();
+
+    await test.Spatial.UpsertPlacementAsync(
+      Placement(TestCameras.One, map.Id, reference: true, lat: 0.7, lon: 0.7), CancellationToken.None);
+    Assert.True(await test.Spatial.MoveReferencePointAsync(
+      TestCameras.One, 0.8, 0.8, null, CancellationToken.None));
+
+    var moved = await test.Db.GeoObjects.AsNoTracking().SingleAsync(g => g.id == row.object_id);
+    Assert.Equal(BuildingLevel, moved.zoom_level);
+    Assert.Equal(4, moved.radius);
+    Assert.Equal(0.8, moved.figure.Coordinate.Y);
   }
 
   [Fact]
