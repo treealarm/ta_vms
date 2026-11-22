@@ -15,7 +15,7 @@ import DetailToolbar from '../settings/DetailToolbar'
 import NodeIdentity from '../objects/NodeIdentity'
 import NodeSettingsCard from '../objects/NodeSettingsCard'
 import PropertyValueField from './PropertyValueField'
-import { visualImageUrl } from '../../map/visualImage'
+import { readVisualImage, visualImageUrl } from '../../map/visualImage'
 import {
   PROPERTY_TYPES, PROPERTY_TYPE_LABELS, normalizeType, normalizeValue,
 } from './propertyTypes'
@@ -129,17 +129,9 @@ export default function ObjectPropsEditor({ node, figure, loaded, levels, showLa
   }
 
   const pickImage = async (file: File) => {
-    const bitmap = await createImageBitmap(file)
-    const { width, height } = bitmap
-    bitmap.close()
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      const url = String(reader.result ?? '')
-      const comma = url.indexOf(',')
-      if (comma > 0) set('image', { data: url.slice(comma + 1), width, height })
-    }
-    reader.readAsDataURL(file)
+    // The same reader lays a free picture on a plan and an icon on a node: one size, one encoding.
+    const image = await readVisualImage(file)
+    set('image', image)
   }
 
   const dirty = !same(draft, initial)

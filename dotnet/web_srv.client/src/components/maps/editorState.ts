@@ -2,8 +2,9 @@ import { createContext, useContext } from 'react'
 import type { GeoPointDto } from '../../dto/dtos'
 import type { MapFocus } from '../../map/SpaceCanvas'
 
-/** What the next click on the map does. */
-export type Mode = 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon' | 'footprint'
+/** What the next click on the map does. `text` and `picture` are single-click tools of their own. */
+export type Mode =
+  | 'select' | 'landmark' | 'plan' | 'point' | 'line' | 'polygon' | 'footprint' | 'text' | 'picture'
 
 /**
  * What is selected beside the map: a camera's placement, a landmark or a nested space's footprint

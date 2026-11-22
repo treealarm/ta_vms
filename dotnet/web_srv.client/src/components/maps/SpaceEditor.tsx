@@ -14,6 +14,7 @@ import AdjustIcon from '@mui/icons-material/Adjust'
 import TimelineIcon from '@mui/icons-material/Timeline'
 import DrawIcon from '@mui/icons-material/Draw'
 import PentagonOutlinedIcon from '@mui/icons-material/PentagonOutlined'
+import TextFieldsIcon from '@mui/icons-material/TextFields'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useTranslation } from 'react-i18next'
@@ -27,7 +28,7 @@ import {
 import { loadCanvas, loadNodes, loadObjProps, revealNodePath } from '../../store/objectsSlice'
 import { loadLevels } from '../../store/levelsSlice'
 import { isUnder } from '../../map/tree'
-import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure } from '../../store/mapEditsSlice'
+import { createReplicaAt, deleteNode, moveNode, movePlacedCamera, saveFigure, saveNodeDetails } from '../../store/mapEditsSlice'
 import { loadDiagramContent } from '../../store/diagramsSlice'
 import { useMapChildren } from '../../hooks/useMapChildren'
 import SpaceCanvas from '../../map/SpaceCanvas'
@@ -39,7 +40,9 @@ import { CameraMarker, LandmarkMarker } from '../../map/markers'
 import { FootprintEditor, Footprints } from '../../map/footprints'
 import { cameraMapStatus, STATUS_COLOR } from '../../map/cameraStatus'
 import { cornersAround, distance, figureAtPlacement, pointsCentre, rescaleCorners } from '../../map/geo'
+import { freeFigureAt } from '../../map/freeFigures'
 import { PlanImageError, preparePlanImage } from '../../map/planImage'
+import { readVisualImage, type VisualImage } from '../../map/visualImage'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
@@ -119,9 +122,12 @@ export default function SpaceEditor({
   const [alignOnMap, setAlignOnMap] = useState(false)
   const [calibrating, setCalibrating] = useState<string | null>(null)
   const [preparingPlan, setPreparingPlan] = useState(false)
+  /** A picture chosen for the plan tool, waiting for the click that lays it down. */
+  const [pendingPicture, setPendingPicture] = useState<(VisualImage & { name: string }) | null>(null)
   const [error, setError] = useState<string | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const pictureRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
   const { openDeviceDiagram, placeDeviceDiagram } = useDeviceDiagram(spaceId)
@@ -129,7 +135,7 @@ export default function SpaceEditor({
   // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
   // on — the crosshair says so, and nothing under it is interactive while it is aimed.
   const picking = !!pendingPart || !!pendingCameraId || !!pendingDiagramId
-    || mode === 'landmark' || DRAW_MODES.includes(mode)
+    || mode === 'landmark' || mode === 'text' || mode === 'picture' || DRAW_MODES.includes(mode)
   // The modes whose clicks build a run of points rather than one shape at one click.
   const drawingPath = mode === 'line' || mode === 'polygon' || mode === 'footprint'
   // A footprint and a polygon are rings; a line is not.
@@ -372,6 +378,29 @@ export default function SpaceEditor({
     })
   }
 
+  /** A caption or a picture laid on the space: a point node carrying the visual, no geometry. */
+  const createFreeFigure = (kind: 'text' | 'picture', at: GeoPointDto) => {
+    if (!spaceId) return
+    const picture = kind === 'picture' ? pendingPicture : null
+    if (kind === 'picture' && !picture) return
+
+    const id = crypto.randomUUID()
+    const name = `${t(kind === 'text' ? 'maps.editor.textObject' : 'maps.editor.pictureObject')} ${
+      mapData.markers.length + 1}`
+    const details = freeFigureAt(
+      kind, at, id, containerId ?? spaceId, name,
+      kind === 'text' ? t('maps.editor.textSample') : '', picture ?? undefined)
+
+    void run(async () => {
+      await dispatch(saveNodeDetails(details)).unwrap()
+      await dispatch(loadCanvas(spaceId)).unwrap()
+      setMode('select')
+      setPendingPicture(null)
+      setSelection({ kind: 'node', id })
+      setSideTab('object')
+    })
+  }
+
   /** Ends the shape being drawn; a double click repeats its last point, so that one is dropped. */
   const finishDrawing = () => {
     const points = draftPoints ?? []
@@ -403,8 +432,10 @@ export default function SpaceEditor({
   })
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && DRAW_MODES.includes(mode)) {
+      if (event.key === 'Escape'
+          && (DRAW_MODES.includes(mode) || mode === 'text' || mode === 'picture')) {
         setDraftPoints(null)
+        setPendingPicture(null)
         setMode('select')
       }
       if (event.key === 'Enter' && draftPoints) finishRef.current()
@@ -426,6 +457,14 @@ export default function SpaceEditor({
   }
 
   const handleMapClick = (at: GeoPointDto) => {
+    if (mode === 'text' && spaceId) {
+      createFreeFigure('text', at)
+      return
+    }
+    if (mode === 'picture' && spaceId) {
+      createFreeFigure('picture', at)
+      return
+    }
     if (mode === 'point' && spaceId) {
       createFigure([at], 'point')
       return
@@ -561,6 +600,11 @@ export default function SpaceEditor({
     ? t('maps.placeHint', { name: camerasById[pendingCameraId]?.name || pendingCameraId })
     : mode === 'landmark' ? t('maps.landmarkModeHint')
     : mode === 'plan' ? t('maps.planModeHint')
+    : mode === 'text' ? t('maps.editor.textHint')
+    : mode === 'picture'
+      ? (pendingPicture
+          ? t('maps.editor.pictureHint', { name: pendingPicture.name })
+          : t('maps.editor.pictureChooseHint'))
     : mode === 'point' ? t('maps.editor.pointHint')
     : mode === 'line' ? t('maps.editor.lineHint', { count: draftPoints?.length ?? 0 })
     : mode === 'polygon' ? t('maps.editor.polygonHint', { count: draftPoints?.length ?? 0 })
@@ -796,51 +840,96 @@ export default function SpaceEditor({
             diagram in the map's place has its own header, so they step aside. */}
         {!openDiagramId && (
         <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1, py: 0.5, flexShrink: 0, minHeight: 44 }}>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={mode}
-            onChange={(_, v: Mode | null) => {
-              if (!v) return
-              setMode(v)
-              setPendingCameraId(null)
-              setPendingDiagramId(null)
-              setPendingPart(null)
-              setDraftPoints(null)
-              // The pen draws a footprint from scratch: an unsaved draft from before would be
-              // drawn under the clicks and confuse which ring is being replaced.
-              if (v === 'footprint') setDraftFootprint(null)
+          <Tooltip title={draftPoints && drawingPath ? t('maps.editor.finishFirst') : ''}>
+            <span>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={mode}
+                onChange={(_, v: Mode | null) => {
+                  if (!v) return
+                  // A shape being drawn owns the clicks until it is finished or cancelled.
+                  if (draftPoints) return
+                  // The picture tool asks for its file first: a click on the plan is the second step.
+                  if (v === 'picture') {
+                    pictureRef.current?.click()
+                    return
+                  }
+                  setMode(v)
+                  setPendingCameraId(null)
+                  setPendingDiagramId(null)
+                  setPendingPart(null)
+                  setPendingPicture(null)
+                  setDraftPoints(null)
+                  // The pen draws a footprint from scratch: an unsaved draft from before would be
+                  // drawn under the clicks and confuse which ring is being replaced.
+                  if (v === 'footprint') setDraftFootprint(null)
+                }}
+              >
+                <ToggleButton value="select" aria-label={t('maps.modeSelect')}><Tooltip title={t('maps.modeSelect')}><PanToolIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="landmark" aria-label={t('maps.modeLandmark')}><Tooltip title={t('maps.modeLandmark')}><PlaceIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="point" aria-label={t('maps.editor.modePoint')}><Tooltip title={t('maps.editor.modePoint')}><AdjustIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="line" aria-label={t('maps.editor.modeLine')}><Tooltip title={t('maps.editor.modeLine')}><TimelineIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="polygon" aria-label={t('maps.editor.modePolygon')}><Tooltip title={t('maps.editor.modePolygon')}><PentagonOutlinedIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="text" aria-label={t('maps.editor.modeText')}><Tooltip title={t('maps.editor.modeText')}><TextFieldsIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="picture" aria-label={t('maps.editor.modePicture')}><Tooltip title={t('maps.editor.modePicture')}><ImageIcon fontSize="small" /></Tooltip></ToggleButton>
+                <ToggleButton value="footprint" disabled={!selectedNested} aria-label={t('maps.editor.modeFootprint')}>
+                  <Tooltip title={selectedNested
+                    ? t('maps.editor.modeFootprint')
+                    : t('maps.editor.modeFootprintNeedsSelection')}>
+                    <DrawIcon fontSize="small" />
+                  </Tooltip>
+                </ToggleButton>
+                <ToggleButton value="plan" disabled={!plan} aria-label={t('maps.modePlan')}><Tooltip title={t('maps.modePlan')}><CropRotateIcon fontSize="small" /></Tooltip></ToggleButton>
+              </ToggleButtonGroup>
+            </span>
+          </Tooltip>
+          <input
+            ref={pictureRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              e.target.value = ''
+              if (!file) return
+              void readVisualImage(file)
+                .then((image) => {
+                  setPendingPicture({ ...image, name: file.name })
+                  setMode('picture')
+                  setPendingCameraId(null)
+                  setPendingDiagramId(null)
+                  setPendingPart(null)
+                  setDraftPoints(null)
+                })
+                .catch(() => setError(t('maps.editor.pictureUnreadable')))
             }}
-          >
-            <ToggleButton value="select"><Tooltip title={t('maps.modeSelect')}><PanToolIcon fontSize="small" /></Tooltip></ToggleButton>
-            <ToggleButton value="landmark"><Tooltip title={t('maps.modeLandmark')}><PlaceIcon fontSize="small" /></Tooltip></ToggleButton>
-            <ToggleButton value="point"><Tooltip title={t('maps.editor.modePoint')}><AdjustIcon fontSize="small" /></Tooltip></ToggleButton>
-            <ToggleButton value="line"><Tooltip title={t('maps.editor.modeLine')}><TimelineIcon fontSize="small" /></Tooltip></ToggleButton>
-            <ToggleButton value="polygon"><Tooltip title={t('maps.editor.modePolygon')}><PentagonOutlinedIcon fontSize="small" /></Tooltip></ToggleButton>
-            <ToggleButton value="footprint" disabled={!selectedNested}>
-              <Tooltip title={selectedNested
-                ? t('maps.editor.modeFootprint')
-                : t('maps.editor.modeFootprintNeedsSelection')}>
-                <DrawIcon fontSize="small" />
-              </Tooltip>
-            </ToggleButton>
-            <ToggleButton value="plan" disabled={!plan}><Tooltip title={t('maps.modePlan')}><CropRotateIcon fontSize="small" /></Tooltip></ToggleButton>
-          </ToggleButtonGroup>
+          />
           <Tooltip title={t('maps.saveView')}>
             <Button size="small" color="inherit" onClick={() => void saveView()}>
               <CenterFocusStrongIcon fontSize="small" />
             </Button>
           </Tooltip>
           {hint && (
-            <Typography variant="caption" color="info.main" sx={{ ml: 1 }} noWrap>
+            <Typography
+              variant="caption"
+              color="info.main"
+              sx={{ ml: 1 }}
+              noWrap
+              role="status"
+              aria-live="polite"
+            >
               {hint}
             </Typography>
           )}
-          {(pendingCameraId || pendingDiagramId || pendingPart) && (
+          {(pendingCameraId || pendingDiagramId || pendingPart || pendingPicture
+            || mode === 'text' || mode === 'picture') && (
             <Button size="small" onClick={() => {
               setPendingCameraId(null)
               setPendingDiagramId(null)
               setPendingPart(null)
+              setPendingPicture(null)
+              if (mode === 'text' || mode === 'picture') setMode('select')
             }}>
               {t('common.cancel')}
             </Button>
