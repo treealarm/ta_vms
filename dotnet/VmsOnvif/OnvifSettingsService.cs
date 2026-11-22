@@ -94,8 +94,25 @@ public sealed partial class OnvifSettingsService(
     if (data.Conn is null)
       return [];
 
-    var deviceIO = await GetDeviceIOOrNull(data.Conn);
-    if (deviceIO == null) return [];
+    var camera = GetOrCreate(data.Conn);
+    // A null service map means the camera did not answer discovery at all — unreachable, not a
+    // camera without a Device I/O service, and OnvifLib cannot tell the two apart by its return
+    // value. Recording this as "no inputs" would stick until the next discovery sweep.
+    if (await camera.GetServicesAsync() is null)
+    {
+      logger.LogWarning("GetDigitalInputs: camera {CameraId} did not answer ONVIF service discovery", cameraId);
+      Evict(data.Conn);
+      throw new InvalidOperationException($"Camera '{cameraId}' did not answer ONVIF service discovery");
+    }
+
+    // A map that names no Device I/O service is a camera with none: an empty list is the answer.
+    var deviceIO = await camera.GetDeviceIOService();
+    if (deviceIO == null)
+    {
+      Evict(data.Conn);
+      return [];
+    }
+
     try { return await deviceIO.GetDigitalInputsAsync(); }
     catch (Exception ex)
     {

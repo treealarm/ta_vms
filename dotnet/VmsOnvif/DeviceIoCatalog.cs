@@ -111,9 +111,14 @@ public sealed class DeviceIoCatalog(
     timeout.CancelAfter(ReadTimeout);
 
     var version = presence.ListVersion(cameraId, kind);
-    logger.LogInformation(
-      "Camera {CameraId}: the {Kind} list has not been read yet — reading it from the camera",
-      cameraId, kind);
+    // The line is for the cold path: a read that reconciles an already known list is routine and
+    // must not look like a cache miss in the log.
+    if (presence.TryGetDevices(cameraId, kind) is null)
+    {
+      logger.LogInformation(
+        "Camera {CameraId}: the {Kind} list has not been read yet — reading it from the camera",
+        cameraId, kind);
+    }
 
     var devices = kind == DeviceIoKind.Relay
       ? (await reader.GetRelayOutputsAsync(cameraId, timeout.Token))
