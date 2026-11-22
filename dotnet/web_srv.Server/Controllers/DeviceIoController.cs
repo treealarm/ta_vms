@@ -40,19 +40,7 @@ public class DeviceIoController(
     // Shown so the panel can say why a switch does not move, instead of failing on the click.
     var canControl = await access.IsAllowedAsync(User, cameraId, RightActions.Control, ct);
 
-    return Ok(response.Relays.Select(r => new
-    {
-      token   = r.Token,
-      mode    = FormatMode(r.Mode),
-      idleState = FormatIdleState(r.IdleState),
-      delayMs = r.DelayMs,
-      // null until the camera has said anything: "no event yet" is not "inactive". While a
-      // command waits for the camera's confirmation this is the state that was asked for.
-      liveActive = r.HasLiveActive ? r.LiveActive : (bool?)null,
-      // The value above is the operator's wish, not the camera's report yet.
-      livePending = r.Pending,
-      canControl,
-    }));
+    return Ok(response.Relays.Select(r => DeviceIoRows.Relay(r, canControl)));
   }
 
   [HttpGet("cameras/{cameraId}/relay-outputs/options")]
@@ -68,7 +56,7 @@ public class DeviceIoController(
     return Ok(response.Options.Select(o => new
     {
       token             = o.Token,
-      supportedModes    = o.SupportedModes.Select(FormatMode),
+      supportedModes    = o.SupportedModes.Select(DeviceIoRows.FormatMode),
       discrete          = o.Discrete,
       minDelayMs        = o.MinDelayMs,
       maxDelayMs        = o.MaxDelayMs,
@@ -129,24 +117,14 @@ public class DeviceIoController(
       var (armed, armingSource, bypassed, bypassUntil) =
         await TryArmingAsync(cameraId, input.Token, ct);
 
-      rows.Add(new
-      {
-        token = input.Token,
-        idleState = input.HasIdleState ? FormatIdleState(input.IdleState) : (string?)null,
-        // Logical state from the camera's property events; a digital input reports true/false where
-        // a relay reports active/inactive. null means the camera has not reported one yet.
-        liveActive = input.HasLiveActive ? input.LiveActive : (bool?)null,
-        // The configured mode, and what it actually resolves to: 'inherit' is not "disarmed" — the
-        // camera, or the zone the camera stands in, may have the sensor on guard. null when the
-        // part has no row, or no node in the map yet.
-        armMode = settingsRow?.ArmMode,
-        alarmEnabled = settingsRow?.AlarmEnabled,
+      rows.Add(DeviceIoRows.Input(input, new DeviceIoRows.InputSettings(
+        settingsRow?.ArmMode,
+        settingsRow?.AlarmEnabled,
         armed,
         armingSource,
         bypassed,
         bypassUntil,
-        canControl,
-      });
+        canControl)));
     }
 
     return Ok(rows);
@@ -411,11 +389,9 @@ public class DeviceIoController(
   private static Timestamp? ToTimestamp(DateTimeOffset? value) =>
     value is null ? null : Timestamp.FromDateTimeOffset(value.Value);
 
-  private static string FormatMode(RelayMode mode) => mode == RelayMode.Bistable ? "bistable" : "monostable";
   private static RelayMode ParseMode(string mode) =>
     mode.Equals("bistable", StringComparison.OrdinalIgnoreCase) ? RelayMode.Bistable : RelayMode.Monostable;
 
-  private static string FormatIdleState(IdleState idleState) => idleState == IdleState.Open ? "open" : "closed";
   private static IdleState ParseIdleState(string idleState) =>
     idleState.Equals("open", StringComparison.OrdinalIgnoreCase) ? IdleState.Open : IdleState.Closed;
 }
