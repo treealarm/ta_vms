@@ -282,6 +282,15 @@ to work out what each one applies to, and "Refresh" under a split view could pla
 pane. Distance from the target is what makes it ambiguous, so the fix is always to move the control,
 never to rename it.
 
+## A configuration capability ships with its GUI path
+
+Every configuration primitive the services can write must be reachable by an administrator in the
+GUI. A new kind of map node, placement, region, rule, right or setting is not finished until it can
+be created from the browser — the demo is the proof by construction, because its seeder writes
+through the ordinary services, and `tests/demo/gui` checks a GUI-built world against it
+([tests/demo/gui/README.md](tests/demo/gui/README.md)). A review asks for the GUI path; one that is
+deliberately absent is recorded as such in `docs/future_plans/`, not left unstated.
+
 ## Database columns — no speculative additions
 
 Only add columns that are actively used. Do not add `created_at`, `updated_at`, audit fields, or any other column "just in case" — if it is not read or queried by existing code, it does not belong in the schema. Add it when there is a concrete requirement.

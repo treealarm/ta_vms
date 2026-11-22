@@ -111,10 +111,15 @@ cameras every way real ones are hung (upside down, leaning, axes counted backwar
 where the head really points against the simulator's ground truth.
 
 The same cameras stand in the optional demo world: with `DEMO_CONFIG=umd-datacenter`, or with
-**Install demo** at the foot of Admin → Maps, a fresh installation is filled with a fictional data
-centre — a map, a building, two rooms, racks, switches and ports — that closes the loop between
+**Install demo** at the foot of Admin → Deployment, a fresh installation is filled with a fictional
+data centre — a campus map, the first floor as a plan, the racks and switches drawn as a diagram
+family, two master/slave camera pairs and a camera on a car — that closes the loop between
 configuration, the map and an alarm. Without the simulator the world installs without cameras and
 says which ones it is missing. See [docs/maps/demo.md](docs/maps/demo.md).
+
+Whatever the demo seeds, an administrator can build from the GUI: `tests/demo/gui` assembles an
+equivalent world through the browser, compares its configuration with the demo's own and exercises
+it on the simulator ([tests/demo/gui/README.md](tests/demo/gui/README.md)).
 
 ## Related repositories
 
