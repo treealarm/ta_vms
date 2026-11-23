@@ -50,6 +50,8 @@ builder.Services.AddSingleton<ExportFileStore>();
 builder.Services.AddSingleton<SourceOutageStore>();
 builder.Services.AddSingleton<EdgeImportJobStore>();
 builder.Services.AddSingleton<SourceLivenessTracker>();
+builder.Services.AddSingleton<SourceVideoTracker>();
+builder.Services.AddSingleton<ISourceVideoNotifier, DaprSourceVideoNotifier>();
 builder.Services.AddSingleton<LivenessSweeper>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<LivenessSweeper>());
 builder.Services.AddSingleton<EdgeImportScheduler>();
