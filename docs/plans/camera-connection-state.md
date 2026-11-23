@@ -491,6 +491,10 @@ Push и merge в `master` — только по просьбе.
   `VmsFs.Tests` — 18 зелёных.
 - ☑ Шаг 4: video_srv — карта последнего отчёта и немедленный `send_liveness()` при смене
   `source_alive` или набора потоков; сборка `vms` 0/0.
+- ☑ Шаг 5: VmsOnvif — `CameraReachabilityProbe`: ONVIF-ответ, затем TCP-connect (401/SOAP Fault
+  доказывают присутствие), кеш 10 с и single-flight; `NO_ONVIF` отдельно от `UNREACHABLE`.
+  Enum в proto назван `Reachability`, чтобы сгенерированные имена были `Unknown`/`Reachable`/…
+  `VmsOnvif.Tests` — 60 зелёных.
 
 ## Не входит
 

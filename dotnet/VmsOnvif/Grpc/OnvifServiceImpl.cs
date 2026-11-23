@@ -17,6 +17,7 @@ public partial class OnvifServiceImpl(
   MetadataStateCache metadataStateCache,
   VmsOnvif.Onvif.OnvifMetadataIngestor metadataIngestor,
   IDeviceIoPresence deviceIoPresence,
+  CameraReachabilityProbe reachability,
   string cameraActorType,
   IOnvifLogger onvifLogger,
   ILogger<OnvifServiceImpl> logger) : OnvifService.OnvifServiceBase
@@ -350,6 +351,22 @@ public partial class OnvifServiceImpl(
   }
 
   // ── System ───────────────────────────────────────────────────────────────
+
+  public override async Task<ProbeReachabilityResponse> ProbeReachability(
+    CameraRequest request, ServerCallContext context)
+  {
+    var result = await reachability.ProbeAsync(request.SourceId, context.CancellationToken);
+    return new ProbeReachabilityResponse
+    {
+      Outcome = result switch
+      {
+        ReachabilityResult.Reachable => Reachability.Reachable,
+        ReachabilityResult.Unreachable => Reachability.Unreachable,
+        ReachabilityResult.NoOnvif => Reachability.NoOnvif,
+        _ => Reachability.Unknown,
+      },
+    };
+  }
 
   public override async Task<GetDeviceTimeResponse> GetDeviceTime(
     CameraRequest request, ServerCallContext context)

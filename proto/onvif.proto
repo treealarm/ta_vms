@@ -182,7 +182,7 @@ message GetDeviceCapabilitiesResponse {
 }
 
 // Whether the camera is present on the network, not whether an ONVIF operation succeeded.
-enum ReachabilityOutcome {
+enum Reachability {
   REACHABILITY_UNKNOWN     = 0; // could not be asked (VmsCfg or routing failure)
   REACHABILITY_REACHABLE   = 1; // answered, or at least accepted a TCP connection
   REACHABILITY_UNREACHABLE = 2; // neither answered nor accepted a connection
@@ -190,7 +190,7 @@ enum ReachabilityOutcome {
 }
 
 message ProbeReachabilityResponse {
-  ReachabilityOutcome outcome = 1;
+  Reachability outcome = 1;
   string              error   = 2; // diagnostics only, never the outcome
 }
 
