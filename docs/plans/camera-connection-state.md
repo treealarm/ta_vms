@@ -495,6 +495,9 @@ Push и merge в `master` — только по просьбе.
   доказывают присутствие), кеш 10 с и single-flight; `NO_ONVIF` отдельно от `UNREACHABLE`.
   Enum в proto назван `Reachability`, чтобы сгенерированные имена были `Unknown`/`Reachable`/…
   `VmsOnvif.Tests` — 60 зелёных.
+- ☑ Шаг 6: VmsMap, клиенты — `CameraInfo` с потоками/`Disabled`/`HasOnvif`,
+  `IMediaServerRegistry.ServerIdsAsync`/`TryOnvifForServerAsync`, `VmsFsCameraVideoStateSource`
+  (пачки по 1000), `VmsOnvifReachabilityProbe`; `CameraCatalogTests` — 6.
 
 ## Не входит
 

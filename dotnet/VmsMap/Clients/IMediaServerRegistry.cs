@@ -19,6 +19,15 @@ namespace VmsMap.Clients
     /// call for a camera must go to its own node's instance — a central one has no route to it.
     /// </summary>
     Task<string> OnvifForServerAsync(string serverId, CancellationToken ct);
+
+    /// <summary>
+    /// The VmsOnvif of a node, or null when the deployment has none for it. Throws only when the
+    /// registry itself could not be read — "no such channel" and "could not ask" are not the same.
+    /// </summary>
+    Task<string?> TryOnvifForServerAsync(string serverId, CancellationToken ct);
+
+    /// <summary>Every server the registry knows, so a full pass can walk the nodes.</summary>
+    Task<IReadOnlyList<string>> ServerIdsAsync(CancellationToken ct);
   }
 
   internal sealed class VmsCfgMediaServerRegistry : IMediaServerRegistry
@@ -29,6 +38,7 @@ namespace VmsMap.Clients
     private readonly SemaphoreSlim _gate = new(1, 1);
     private Dictionary<string, string> _fsByServer = new(StringComparer.Ordinal);
     private Dictionary<string, string> _onvifByServer = new(StringComparer.Ordinal);
+    private IReadOnlyList<string> _serverIds = [];
     private DateTime _fetchedAtUtc = DateTime.MinValue;
 
     public VmsCfgMediaServerRegistry(CfgService.CfgServiceClient cfg)
@@ -58,6 +68,22 @@ namespace VmsMap.Clients
       return onvifId;
     }
 
+    public async Task<string?> TryOnvifForServerAsync(string serverId, CancellationToken ct)
+    {
+      await RefreshAsync(ct);
+
+      return _onvifByServer.TryGetValue(serverId, out var onvifId)
+             && !string.IsNullOrWhiteSpace(onvifId)
+        ? onvifId
+        : null;
+    }
+
+    public async Task<IReadOnlyList<string>> ServerIdsAsync(CancellationToken ct)
+    {
+      await RefreshAsync(ct);
+      return _serverIds;
+    }
+
     // One fetch feeds both questions: they come from the same registry rows and change together.
     private async Task RefreshAsync(CancellationToken ct)
     {
@@ -72,6 +98,7 @@ namespace VmsMap.Clients
         var rows = servers.Servers
           .Where(s => !string.IsNullOrWhiteSpace(s.ServerId))
           .ToList();
+        _serverIds = rows.Select(s => s.ServerId).Distinct(StringComparer.Ordinal).ToList();
         _fsByServer = rows
           .Where(s => !string.IsNullOrWhiteSpace(s.FsId))
           .ToDictionary(s => s.ServerId, s => s.FsId, StringComparer.Ordinal);
