@@ -498,6 +498,13 @@ Push и merge в `master` — только по просьбе.
 - ☑ Шаг 6: VmsMap, клиенты — `CameraInfo` с потоками/`Disabled`/`HasOnvif`,
   `IMediaServerRegistry.ServerIdsAsync`/`TryOnvifForServerAsync`, `VmsFsCameraVideoStateSource`
   (пачки по 1000), `VmsOnvifReachabilityProbe`; `CameraCatalogTests` — 6.
+- ☑ Шаг 7: VmsMap, присутствие — `0006_no_video.sql`; `CameraPresenceRules` (чистая таблица),
+  `CameraPresenceService`/`Store`/`Queue`/`Subscriber`/`Sweep`; `ApplyPresenceAsync`;
+  положительный хук `device-event`/`snapshot.reachable`; очередь из `CameraChangeSubscriber`;
+  удалены `ConnectionStatePoller`/`ConnectionStateService`/`ICameraConnectionSource`/
+  `VmsFsCameraConnectionSource`. `ConnectionStateServiceTests` удалён (обе Reconcile-проверки уже
+  покрыты `DeviceNodeServiceTests`). Найдено тестом и исправлено: выключенная камера больше не
+  опрашивает ONVIF. `VmsMap.Tests` — 495, решение — 0/0.
 
 ## Не входит
 

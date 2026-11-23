@@ -33,6 +33,7 @@ namespace VmsMap.Adapter
     private readonly DaprPublishSubscribeClient _pubSub;
     private readonly IServiceScopeFactory _scopes;
     private readonly ICameraCatalog _catalog;
+    private readonly CameraPresenceQueue _presence;
     private readonly ILogger<CameraChangeSubscriber> _logger;
     private readonly CancellationTokenSource _cts = new();
 
@@ -46,11 +47,13 @@ namespace VmsMap.Adapter
       DaprPublishSubscribeClient pubSub,
       IServiceScopeFactory scopes,
       ICameraCatalog catalog,
+      CameraPresenceQueue presence,
       ILogger<CameraChangeSubscriber> logger)
     {
       _pubSub = pubSub ?? throw new ArgumentNullException(nameof(pubSub));
       _scopes = scopes ?? throw new ArgumentNullException(nameof(scopes));
       _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+      _presence = presence ?? throw new ArgumentNullException(nameof(presence));
       _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -134,6 +137,11 @@ namespace VmsMap.Adapter
           else
           {
             await nodes.EnsureCameraAsync(camera, ct);
+
+            // A stream was added, removed or disabled, or the camera was switched off: the
+            // presence picture may have changed. Queued rather than evaluated here — a probe can
+            // take seconds, and the config reconcile must not wait for it.
+            _presence.Enqueue(cameraId);
 
             // A camera the event names may be new to a template that already exists. The node-wide
             // branch below does not do this: it runs on every MediaMTX or pairing change, and a

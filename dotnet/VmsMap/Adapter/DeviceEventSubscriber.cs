@@ -27,6 +27,7 @@ namespace VmsMap.Adapter
     private readonly DaprPublishSubscribeClient _pubSub;
     private readonly IServiceScopeFactory _scopes;
     private readonly IDeviceSettingsSource _settings;
+    private readonly CameraPresenceQueue _presence;
     private readonly ILogger<DeviceEventSubscriber> _logger;
     private readonly CancellationTokenSource _cts = new();
 
@@ -34,11 +35,13 @@ namespace VmsMap.Adapter
       DaprPublishSubscribeClient pubSub,
       IServiceScopeFactory scopes,
       IDeviceSettingsSource settings,
+      CameraPresenceQueue presence,
       ILogger<DeviceEventSubscriber> logger)
     {
       _pubSub = pubSub;
       _scopes = scopes;
       _settings = settings;
+      _presence = presence;
       _logger = logger;
     }
 
@@ -63,6 +66,10 @@ namespace VmsMap.Adapter
       var evt = ReadPayload<DeviceEventMessage>(message);
       if (evt is null || string.IsNullOrWhiteSpace(evt.SourceId) || string.IsNullOrWhiteSpace(evt.Token))
         return TopicResponseAction.Drop;
+
+      // A device that emitted an event is on the network: positive evidence for presence, never a
+      // negative one. The evaluation re-reads the video state and asks ONVIF where it matters.
+      _presence.Enqueue(evt.SourceId);
 
       try
       {
@@ -103,6 +110,11 @@ namespace VmsMap.Adapter
       var snapshot = ReadPayload<DeviceSnapshotMessage>(message);
       if (snapshot is null || string.IsNullOrWhiteSpace(snapshot.SourceId))
         return TopicResponseAction.Drop;
+
+      // A camera that answered the sweep is present. An unanswered one says nothing: unreachable is
+      // not absent, and it is not a reason to re-evaluate presence either.
+      if (snapshot.Reachable)
+        _presence.Enqueue(snapshot.SourceId);
 
       try
       {
