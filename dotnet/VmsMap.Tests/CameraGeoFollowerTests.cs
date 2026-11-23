@@ -55,8 +55,20 @@ public class CameraGeoFollowerTests
 
     public int Attempts { get; private set; }
 
+    /// <summary>The point the map already holds for a camera — what the last run left there.</summary>
+    public Dictionary<string, CameraGeoPoint> Stored { get; } = new(StringComparer.Ordinal);
+
+    public int Reads { get; private set; }
+
     /// <summary>Cameras with no reference placement: the write is refused, and nothing is learned.</summary>
     public HashSet<string> WithoutPlacement { get; } = new(StringComparer.Ordinal);
+
+    public Task<CameraGeoPoint?> GetReferencePointAsync(string cameraId, CancellationToken ct)
+    {
+      Reads++;
+      return Task.FromResult(
+        Stored.TryGetValue(cameraId, out var point) ? point : (CameraGeoPoint?)null);
+    }
 
     public Task<bool> MoveReferencePointAsync(
       string cameraId, double lat, double lon, double? headingDeg, CancellationToken ct)
@@ -118,6 +130,65 @@ public class CameraGeoFollowerTests
     Assert.Single(writer.Moves);
     // Asked every tick regardless: a camera can start moving between any two of them.
     Assert.Equal(PollCount, source.Asked.Count);
+  }
+
+  // After a restart the follower remembers nothing, so its first answer would go to the map even
+  // when the row already says exactly that. Reading the row first is what turns the first write
+  // into the same comparison every later tick makes — paid for once per camera per restart.
+  [Fact]
+  public async Task AFirstAnswerThatAgreesWithTheStoredPointIsNotWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    writer.Stored[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+
+    for (var tick = 0; tick < PollCount; tick++)
+      await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Empty(writer.Moves);
+    // The read is the restart's price, the first tick's alone: what it learnt answers the rest.
+    Assert.Equal(1, writer.Reads);
+  }
+
+  // The property the unconditional first write was there for: a downtime that really moved the
+  // camera is still corrected on the first answer.
+  [Fact]
+  public async Task AFirstAnswerThatDisagreesWithTheStoredPointIsWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    writer.Stored[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+    source.Points[CameraId] = new CameraGeoPoint(38.9923 + OneMetreInLatitude, -76.9378, 270);
+
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Equal(38.9923 + OneMetreInLatitude, Assert.Single(writer.Moves).Lat, 9);
+  }
+
+  [Fact]
+  public async Task AFirstAnswerWithinTheThresholdOfTheStoredPointIsNotWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    writer.Stored[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+
+    // A third of a metre north: the stored comparison uses the same threshold as the remembered one.
+    source.Points[CameraId] = new CameraGeoPoint(38.9923 + OneMetreInLatitude / 3, -76.9378, 270);
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Empty(writer.Moves);
+  }
+
+  // A camera on a vehicle turns where it stands, so the bearing alone is news after a restart too:
+  // the map would otherwise keep a sector pointing where the car was when the service stopped.
+  [Fact]
+  public async Task AFirstAnswerThatTurnsFromTheStoredPointIsWritten()
+  {
+    var (follower, source, writer) = Build(Flagged());
+    writer.Stored[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 270);
+    source.Points[CameraId] = new CameraGeoPoint(38.9923, -76.9378, 275);
+
+    await follower.PollOnceAsync(CancellationToken.None);
+
+    Assert.Equal(275, Assert.Single(writer.Moves).HeadingDeg);
   }
 
   [Fact]

@@ -459,6 +459,28 @@ public class SpatialPostgresTests
       return;
 
     Assert.False(await test.Spatial.MoveReferencePointAsync(TestCameras.One, 0.61, 0.71, null, CancellationToken.None));
+    // Nor has it a point to compare against: the follower reads before it writes.
+    Assert.Null(await test.Spatial.GetReferencePointAsync(TestCameras.One, CancellationToken.None));
+  }
+
+  // What the follower compares the first answer of a run against: the row the last run left on the
+  // map, bearing included — a camera on a vehicle turns where it stands.
+  [Fact]
+  public async Task TheStoredReferencePointIsWhereTheCameraStandsAndWhereItLooks()
+  {
+    await using var test = await OpenAsync();
+    if (test is null)
+      return;
+
+    var map = await test.Spatial.UpsertSpaceAsync(MapSpace(), CancellationToken.None);
+    await test.Spatial.UpsertPlacementAsync(Placement(TestCameras.One, map.Id, reference: true), CancellationToken.None);
+
+    var stored = await test.Spatial.GetReferencePointAsync(TestCameras.One, CancellationToken.None);
+
+    Assert.NotNull(stored);
+    Assert.Equal(0.5, stored.Value.Lat, 6);
+    Assert.Equal(0.5, stored.Value.Lon, 6);
+    Assert.Equal(90, stored.Value.HeadingDeg);
   }
 
   [Fact]

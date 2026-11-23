@@ -34,7 +34,9 @@ there is no `GetRelayState` at all.
   `GetCameraGeoLocation` every five seconds and moves **only the point** of the reference replica —
   never the canonical node, the parent, height, heading or field of view — and only when it moved more than
   half a metre, publishing `map-config-changed` with both the node and the camera id so the
-  browser reloads placements instead of waiting for its 30-second poll. Geographic calibration
+  browser reloads placements instead of waiting for its 30-second poll. The follower remembers what
+  it last wrote, and after a restart compares the first answer with the point the map already holds,
+  so a camera that did not move outlives a downtime without a write. Geographic calibration
   (ground marks, PTZ landmark observations) and aiming (a point on the map, a GEO master/slave
   pair) refuse such a camera: a fit describes the point it has left. Self-guidance is unaffected —
   it works on the camera's own picture and uses no place.

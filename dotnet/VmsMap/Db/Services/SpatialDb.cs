@@ -604,6 +604,24 @@ namespace VmsMap.Db
     }
 
     /// <summary>
+    /// Where the camera's reference placement says it stands, with the bearing that row carries.
+    /// </summary>
+    /// <returns>Null when the camera has no reference placement or no point on a canvas.</returns>
+    public async Task<CameraGeoPoint?> GetReferencePointAsync(string cameraId, CancellationToken ct)
+    {
+      var reference = await _db.CameraPlacements.AsNoTracking()
+        .FirstOrDefaultAsync(p => p.camera_id == cameraId && p.is_reference, ct);
+      if (reference is null)
+        return null;
+
+      var points = await LoadPointsAsync([reference.object_id], ct);
+      if (!points.TryGetValue(reference.object_id, out var point))
+        return null;
+
+      return new CameraGeoPoint(point.Lat, point.Lon, reference.heading_deg);
+    }
+
+    /// <summary>
     /// Moves a camera's canonical node to a place the device itself reported.
     /// </summary>
     /// <remarks>
