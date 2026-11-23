@@ -228,8 +228,14 @@ int main(int argc, char** argv)
   const std::string instance_id = std::format("{}-{}", own_server_id,
     std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::system_clock::now().time_since_epoch()).count());
-  auto send_liveness = [&manager, own_server_id, instance_id]() {
+  // What the last report told VmsFs, so a source coming or going is reported at once instead of
+  // waiting out the heartbeat period: the map has to show a camera that just dropped without the
+  // extra fifteen seconds, and VmsFs already waits its own grace before believing a dead report.
+  // Touched only from the liveness thread, which owns both the report and this map.
+  std::map<std::string, bool> published_alive;
+  auto send_liveness = [&manager, own_server_id, instance_id, &published_alive]() {
     std::vector<fs_client::liveness_entry> batch;
+    std::map<std::string, bool> alive;
     for (const auto& s : manager.list_stream_states())
     {
       batch.push_back(fs_client::liveness_entry{
@@ -240,8 +246,10 @@ int main(int argc, char** argv)
         .recovered_frame_ts = s.recovered_frame_ts,
         .recording_expected = s.is_recording,
       });
+      alive[s.camera_id + "/" + s.stream_name] = s.source_alive;
     }
     fs_client::instance().report_source_liveness(own_server_id, instance_id, batch);
+    published_alive = std::move(alive);
   };
 
   // Observed stream parameters for the monitor's adaptive quality choice. Published from the
@@ -277,6 +285,10 @@ int main(int argc, char** argv)
         const auto states = manager.list_stream_states();
 
         std::vector<camera_manager::stream_state> changed;
+        // A stream whose source came or went, or whose liveness flipped, is reported immediately.
+        // The reader's watchdog already waited five seconds; a whole heartbeat on top of that
+        // would leave the map claiming video for a camera that is gone.
+        bool liveness_changed = states.size() != published_alive.size();
         for (const auto& st : states)
         {
           const auto key = st.camera_id + "/" + st.stream_name;
@@ -287,6 +299,10 @@ int main(int argc, char** argv)
             published_size[key] = size;
             changed.push_back(st);
           }
+
+          auto alive = published_alive.find(key);
+          if (alive == published_alive.end() || alive->second != st.source_alive)
+            liveness_changed = true;
         }
 
         if (++seconds_since_full_stats >= stats_period)
@@ -298,6 +314,9 @@ int main(int argc, char** argv)
         {
           publish_stream_stats(changed);
         }
+
+        if (liveness_changed)
+          send_liveness();
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }

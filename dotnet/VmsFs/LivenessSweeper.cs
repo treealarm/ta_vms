@@ -18,6 +18,8 @@ namespace VmsFs;
 /// </remarks>
 public sealed class LivenessSweeper(
   SourceLivenessTracker tracker,
+  SourceVideoTracker videoTracker,
+  ISourceVideoNotifier videoNotifier,
   SourceOutageStore outages,
   CfgService.CfgServiceClient cfg,
   ILogger<LivenessSweeper> logger) : IHostedService, IDisposable
@@ -138,6 +140,16 @@ public sealed class LivenessSweeper(
     var wholeNodeSilent = expected.Count > 0 && silent.Count == expected.Count;
     var cause = wholeNodeSilent ? "server_down" : "link_lost";
 
+    // Video presence follows silence too, and only the sweeper knows whether it was one stream or
+    // the whole node. A whole-node silence becomes Unknown: it says nothing about the cameras.
+    var decayed = videoTracker.Decay(silent.ToHashSet(), wholeNodeSilent, now);
+    foreach (var cameraId in decayed
+               .Select(s => s.CameraId)
+               .Distinct(StringComparer.Ordinal))
+    {
+      videoNotifier.Notify(cameraId);
+    }
+
     foreach (var key in silent)
     {
       // A silent stream with recording off is not a gap: nothing was going to be written, so there
@@ -150,6 +162,7 @@ public sealed class LivenessSweeper(
     // A stream that left the configuration was taken out deliberately — that is not an outage.
     var expectedSet = expected.ToHashSet();
     tracker.PruneTo(expectedSet);
+    videoTracker.PruneTo(expectedSet);
     var ownCameras = cameras.Select(c => c.CameraId).ToHashSet();
     foreach (var (camera, stream) in await outages.ListOpenAsync(ct))
     {

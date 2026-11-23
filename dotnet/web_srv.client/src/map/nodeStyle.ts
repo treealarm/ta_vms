@@ -7,6 +7,8 @@ export { ALARM_COLOR, FAULT_COLOR } from './cameraStatus'
 export const DEFAULT_NODE_COLOR = '#90a4ae'
 /** The state name the alarm adapter writes; the panel shows one alarm chip, not two. */
 export const ALARM_STATE = 'ALARM'
+/** Reachable but showing nothing: a state beside the connection one, not instead of it. */
+export const NO_VIDEO_STATE = 'NO_VIDEO'
 
 export type NodeStyle = {
   color: string
@@ -34,6 +36,13 @@ export function nodeStyle(
   if (alarming) return { color: ALARM_COLOR, alarming: true, text }
 
   if (present === false) return { color: FAULT_COLOR, alarming: false, text }
+
+  // NO_VIDEO travels beside CONNECTED/DISCONNECTED, and the stored order of the set is not
+  // guaranteed: the amber is picked by name, never as `states[0]`.
+  if (state?.states?.includes(NO_VIDEO_STATE)) {
+    const color = descriptions[NO_VIDEO_STATE]?.stateColor || FAULT_COLOR
+    return { color, alarming: false, text }
+  }
 
   const first = state?.states?.[0]
   const stateColor = first ? descriptions[first]?.stateColor : undefined

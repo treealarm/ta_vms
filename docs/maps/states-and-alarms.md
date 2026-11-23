@@ -30,12 +30,17 @@ VmsFs, VmsOnvif or VmsCfg is written for the map's sake.
   becomes the reference); the map's **Nodes** tab is only what is drawn on that canvas.
 - **States come from their owners, not from the map.** `retention-event-created` becomes `ALARM`
   plus one `alarm` event (the event id is the episode's `event_uuid`, so a redelivery is a no-op);
-  a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` come from VmsFs's
-  open source outages — not from a MediaMTX path, which `video_srv` tears down when nobody watches.
-  `camera-state-changed` re-derives a camera's arming and re-checks its sensors — it does not write
-  a property on the camera's node: the camera's mode is the map's row and its flag is VmsCfg's,
-  which the map writes. The alarm counters bubble up `alarm_states` in the same transaction as the
-  state write.
+  a sweep re-checks VmsFs before it puts `NORM` back. `CONNECTED`/`DISCONNECTED` are the camera's
+  **presence on the network**, evidenced by any channel: a live video stream (VmsFs derives each
+  stream's state from the heartbeats), an answer to the ONVIF probe, or a device event.
+  `DISCONNECTED` is written only when no channel reports life; it is the alarming state.
+  `NO_VIDEO` — every configured stream known dead — travels beside it and is **not** an alarm. The
+  sources are deliberately not an archive outage (written only where recording was expected) and
+  not a MediaMTX path (torn down by `video_srv` when nobody watches); a `video_srv` that stops
+  reporting makes the video unknown, not the cameras absent. `camera-state-changed` re-derives a
+  camera's arming and re-checks its sensors — it does not write a property on the camera's node:
+  the camera's mode is the map's row and its flag is VmsCfg's, which the map writes. The alarm
+  counters bubble up `alarm_states` in the same transaction as the state write.
 - **An alarm reaches the room the camera stands in.** The canonical tree ends at the server, so the
   counters alone would stop above the camera. A camera whose row changes has that row mirrored onto
   its **reference replica** — the picture on the floor plan — and the spaces above it recount; a

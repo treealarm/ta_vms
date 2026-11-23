@@ -10,7 +10,7 @@ namespace VmsOnvif;
 public sealed partial class OnvifSettingsService(
   CameraConnCache connCache,
   MetadataStateCache metadataStateCache,
-  ILogger<OnvifSettingsService> logger) : IDeviceIoReader, IRelayCommander
+  ILogger<OnvifSettingsService> logger) : IDeviceIoReader, IRelayCommander, IReachabilityReader
 {
   private readonly ConcurrentDictionary<string, (Camera Cam, DateTime Created)> _cache = new();
   private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(5);
@@ -263,6 +263,26 @@ public sealed partial class OnvifSettingsService(
   }
 
   // ── System ────────────────────────────────────────────────────────────────────
+
+  /// <summary>
+  /// A cheap ONVIF call as proof that the device answers at all. GetSystemDateAndTime is the least
+  /// demanding operation; a rejection here says the device is present but unhappy, which the probe
+  /// completes with a TCP connect.
+  /// </summary>
+  public async Task<bool> AnswersAsync(CameraConnInfo conn, CancellationToken ct)
+  {
+    try
+    {
+      // The library's call takes no token: WaitAsync bounds the caller, not the socket. The
+      // caller's bounded parallelism keeps abandoned calls from piling up.
+      await GetOrCreate(conn).GetDeviceTimeAsync().WaitAsync(ct);
+      return true;
+    }
+    catch
+    {
+      return false;
+    }
+  }
 
   public async Task<DateTime?> GetDeviceTimeAsync(string cameraId, CancellationToken ct)
   {

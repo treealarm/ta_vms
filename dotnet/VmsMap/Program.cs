@@ -36,7 +36,9 @@ builder.Services.AddSingleton<ICameraCatalog, VmsCfgCameraCatalog>();
 builder.Services.AddSingleton<ICameraStateSource, VmsCfgCameraStateSource>();
 builder.Services.AddSingleton<IMediaServerRegistry, VmsCfgMediaServerRegistry>();
 builder.Services.AddSingleton<IRetentionEventSource, VmsFsRetentionEventSource>();
-builder.Services.AddSingleton<ICameraConnectionSource, VmsFsCameraConnectionSource>();
+builder.Services.AddSingleton<ICameraVideoStateSource, VmsFsCameraVideoStateSource>();
+builder.Services.AddSingleton<ICameraReachabilityProbe, VmsOnvifReachabilityProbe>();
+builder.Services.AddSingleton<CameraPresenceQueue>();
 builder.Services.AddSingleton<IMapConfigNotifier>(sp => new DaprMapConfigNotifier(
   sp.GetRequiredService<DaprClient>(),
   sp.GetRequiredService<ILogger<DaprMapConfigNotifier>>(),
@@ -183,7 +185,8 @@ builder.Services.AddScoped<CameraStateWriter>();
 // The alarm entity: transitions, the ALARM state and the lifecycle events in one transaction.
 builder.Services.AddScoped<AlarmStore>();
 builder.Services.AddScoped<AlarmService>();
-builder.Services.AddScoped<ConnectionStateService>();
+builder.Services.AddScoped<CameraPresenceStore>();
+builder.Services.AddScoped<CameraPresenceService>();
 builder.Services.AddScoped<WatchSnapshotService>();
 builder.Services.AddSingleton<MapWatchPoller>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MapWatchPoller>());
@@ -209,7 +212,10 @@ builder.Services.AddHostedService(sp => new OutboxPublisher(
 builder.Services.AddHostedService<AlarmSweepService>();
 // Restores a node whose arming bypass deadline has passed.
 builder.Services.AddHostedService<ArmingBypassSweep>();
-builder.Services.AddHostedService<ConnectionStatePoller>();
+// Presence: the video event and a device event queue a camera, the drain evaluates it, and the
+// sweep is the safety net that converges without any message at all.
+builder.Services.AddHostedService<CameraPresenceSubscriber>();
+builder.Services.AddHostedService<CameraPresenceSweep>();
 // Cameras flagged geo_from_device follow their own ONVIF position; the rest are never asked.
 builder.Services.AddHostedService<CameraGeoFollower>();
 

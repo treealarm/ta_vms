@@ -17,6 +17,8 @@ public sealed partial class FsServiceImpl(
   FragIndexWarmer fragWarmer,
   ExportFileStore exportStore,
   SourceLivenessTracker livenessTracker,
+  SourceVideoTracker videoTracker,
+  ISourceVideoNotifier videoNotifier,
   SourceOutageStore outageStore,
   MetadataSampleStore metadataStore,
   DaprClient daprClient) : FsService.FsServiceBase

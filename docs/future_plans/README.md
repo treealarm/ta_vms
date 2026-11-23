@@ -16,7 +16,6 @@
 
 | Файл | Тема | Объём |
 |---|---|---|
-| [07-camera-connection-state.md](07-camera-connection-state.md) | `CONNECTED`/`DISCONNECTED` опрашивается у VmsFs; нужно событие от video_srv и разбор `recording_expected` | средний |
 | [08-ground-map-provider.md](08-ground-map-provider.md) | Карта под миром: свой или коммерческий поставщик тайлов вместо сервиса OSM — для поставки и офлайна | средний, внешняя зависимость |
 | [09-shared-device-diagrams.md](09-shared-device-diagrams.md) | Общий холст «Cam Diagrams»: несколько устройств с контактами на одной диаграмме | средне-крупный |
 | [10-windows-hardware-encoders.md](10-windows-hardware-encoders.md) | Аппаратный кодировщик на Windows без NVIDIA: QSV проверен, остались AMF, Media Foundation и проверки на железе | средне-крупный, нужен стенд |

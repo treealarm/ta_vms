@@ -42,6 +42,18 @@ namespace VmsMap.Clients
     }
 
     internal static CameraInfo ToInfo(CameraSetup setup) =>
-      new(setup.CameraId, setup.Name ?? string.Empty, setup.ServerId ?? string.Empty, setup.GeoFromDevice);
+      new(
+        setup.CameraId,
+        setup.Name ?? string.Empty,
+        setup.ServerId ?? string.Empty,
+        setup.GeoFromDevice,
+        Disabled: setup.HasDisabled && setup.Disabled,
+        VideoStreams: setup.Streams
+          .Where(s => !(s.HasDisabled && s.Disabled))
+          .Select(s => s.StreamName)
+          .ToList(),
+        HasOnvif: setup.OnvifConn is { } onvif
+          && !string.IsNullOrWhiteSpace(onvif.Ip)
+          && onvif.Port > 0);
   }
 }

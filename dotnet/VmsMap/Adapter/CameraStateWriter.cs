@@ -17,6 +17,8 @@ namespace VmsMap.Adapter
     public const string Norm = "NORM";
     public const string Connected = "CONNECTED";
     public const string Disconnected = "DISCONNECTED";
+    /// <summary>Reachable, but no configured stream is delivering frames. Not an alarm.</summary>
+    public const string NoVideo = "NO_VIDEO";
 
     private readonly ObjectStateWriter _writer;
 
@@ -31,14 +33,39 @@ namespace VmsMap.Adapter
     public Task ClearAlarmAsync(string cameraId, CancellationToken ct) =>
       ChangeAsync(cameraId, add: [Norm], remove: [Alarm], ct);
 
-    public Task SetConnectedAsync(string cameraId, bool connected, CancellationToken ct) =>
-      ChangeAsync(
-        cameraId,
-        add: [connected ? Connected : Disconnected],
-        remove: [connected ? Disconnected : Connected],
-        ct);
+    /// <summary>
+    /// Writes the presence states in one operation: <c>connected == null</c> leaves the connection
+    /// as it is, <c>noVideo == null</c> leaves the video state as it is. Both null changes nothing.
+    /// </summary>
+    public Task<bool> ApplyPresenceAsync(
+      string cameraId, bool? connected, bool? noVideo, CancellationToken ct)
+    {
+      var add = new List<string>(2);
+      var remove = new List<string>(2);
 
-    private Task ChangeAsync(
+      if (connected == true)
+      {
+        add.Add(Connected);
+        remove.Add(Disconnected);
+      }
+      else if (connected == false)
+      {
+        add.Add(Disconnected);
+        remove.Add(Connected);
+      }
+
+      if (noVideo == true)
+        add.Add(NoVideo);
+      else if (noVideo == false)
+        remove.Add(NoVideo);
+
+      if (add.Count == 0 && remove.Count == 0)
+        return Task.FromResult(false);
+
+      return ChangeAsync(cameraId, add, remove, ct);
+    }
+
+    private Task<bool> ChangeAsync(
       string cameraId,
       IReadOnlyCollection<string> add,
       IReadOnlyCollection<string> remove,

@@ -23,6 +23,10 @@ service FsService {
   rpc ReportSourceLiveness(ReportSourceLivenessRequest) returns (OperationStatus);
   rpc ListSourceOutages(ListSourceOutagesRequest) returns (ListSourceOutagesResponse);
   rpc UpdateSourceOutage(UpdateSourceOutageRequest) returns (OperationStatus);
+  // The current video state of the camera's streams, derived from the same reports. Deliberately
+  // not ListSourceOutages: an outage row exists only where recording was expected, while a consumer
+  // asking "is there video" needs every stream. See SourceVideoState.
+  rpc ListSourceStates(ListSourceStatesRequest) returns (ListSourceStatesResponse);
 
   rpc StatArchiveTs(StatArchiveTsRequest) returns (StatArchiveTsResponse);
   rpc ReadArchiveTs(ReadArchiveTsRequest) returns (stream ReadArchiveTsChunk);
@@ -511,6 +515,33 @@ message ReportSourceLivenessRequest {
   // archive certainly has a hole for as long as the process was gone. A value different from the
   // previous report is that hole, bounded by the last frame before it and the first frame after.
   string instance_id = 3;
+}
+
+// Whether a stream is delivering frames right now, derived from the heartbeats and from silence.
+// A dead report after a live run means NO_VIDEO at once; a stream that has never been heard stays
+// absent, and a whole node falling silent says nothing about its cameras.
+enum SourceVideoState {
+  SOURCE_VIDEO_STATE_UNKNOWN  = 0;
+  SOURCE_VIDEO_STATE_ALIVE    = 1;
+  SOURCE_VIDEO_STATE_NO_VIDEO = 2;
+}
+
+message ListSourceStatesRequest {
+  // Only these cameras. The caller batches its own list: one call is not meant to carry a whole
+  // node of a hundred thousand cameras.
+  repeated string camera_ids = 1;
+}
+
+message SourceStreamState {
+  string camera_id   = 1;
+  string stream_name = 2;
+  SourceVideoState state = 3;
+}
+
+// Only streams whose state is known are listed. An absent stream has not been heard from — which is
+// not the same as dead, and must not be read as one.
+message ListSourceStatesResponse {
+  repeated SourceStreamState streams = 1;
 }
 
 // One recorded interval of source unavailability. ended_ts unset = happening right now.

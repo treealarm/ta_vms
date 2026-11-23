@@ -34,6 +34,11 @@ service OnvifService {
   rpc GetSnapshot(CameraRequest) returns (GetSnapshotResponse);
   rpc GetDeviceInformation(CameraRequest) returns (GetDeviceInformationResponse);
   rpc GetDeviceCapabilities(CameraRequest) returns (GetDeviceCapabilitiesResponse);
+  // Answers whether the camera is present on the network at all. A response to a cheap ONVIF call
+  // proves it; a failed call is backed by a plain TCP connect, so a camera that is up but rejects
+  // the operation (401, SOAP fault, unsupported) still counts as present. NO_ONVIF means the camera
+  // has no ONVIF endpoint configured — a missing channel, not a refusal.
+  rpc ProbeReachability(CameraRequest) returns (ProbeReachabilityResponse);
   rpc GetImagingSettings(ImagingSettingsRequest) returns (ImagingSettingsResponse);
   rpc GetImagingOptions(ImagingSettingsRequest) returns (ImagingOptionsResponse);
   rpc SetImagingSettings(SetImagingSettingsRequest) returns (SetImagingSettingsResponse);
@@ -174,6 +179,19 @@ message GetDeviceCapabilitiesResponse {
   // Named for the service, not just "analytics": whether a camera has an enabled CV watch on our
   // side is a different question with a different answer, and the two used to share a name.
   bool   has_analytics_service = 9;
+}
+
+// Whether the camera is present on the network, not whether an ONVIF operation succeeded.
+enum Reachability {
+  REACHABILITY_UNKNOWN     = 0; // could not be asked (VmsCfg or routing failure)
+  REACHABILITY_REACHABLE   = 1; // answered, or at least accepted a TCP connection
+  REACHABILITY_UNREACHABLE = 2; // neither answered nor accepted a connection
+  REACHABILITY_NO_ONVIF    = 3; // no ONVIF endpoint configured — a missing channel
+}
+
+message ProbeReachabilityResponse {
+  Reachability outcome = 1;
+  string              error   = 2; // diagnostics only, never the outcome
 }
 
 message ImagingSettingsRequest {

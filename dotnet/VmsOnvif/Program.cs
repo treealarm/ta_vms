@@ -39,6 +39,7 @@ builder.Services.AddSingleton(sp => new OnvifServiceImpl(
   sp.GetRequiredService<MetadataStateCache>(),
   sp.GetRequiredService<VmsOnvif.Onvif.OnvifMetadataIngestor>(),
   sp.GetRequiredService<IDeviceIoPresence>(),
+  sp.GetRequiredService<CameraReachabilityProbe>(),
   cameraActorType,
   sp.GetRequiredService<IOnvifLogger>(),
   sp.GetRequiredService<ILogger<OnvifServiceImpl>>()));
@@ -81,6 +82,10 @@ builder.Services.AddHostedService(sp =>
 builder.Services.AddSingleton<OnvifSettingsService>();
 builder.Services.AddSingleton<IDeviceIoReader>(sp => sp.GetRequiredService<OnvifSettingsService>());
 builder.Services.AddSingleton<IRelayCommander>(sp => sp.GetRequiredService<OnvifSettingsService>());
+builder.Services.AddSingleton<IReachabilityReader>(sp => sp.GetRequiredService<OnvifSettingsService>());
+builder.Services.AddSingleton<INetworkProbe, TcpNetworkProbe>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<CameraReachabilityProbe>();
 builder.Services.AddSingleton<IDeviceIoWatcherFactory, OnvifDeviceIoWatcherFactory>();
 builder.Services.AddSingleton<DeviceIoStateService>();
 builder.Services.AddSingleton<IDeviceIoPresence>(sp => sp.GetRequiredService<DeviceIoStateService>());

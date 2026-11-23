@@ -238,13 +238,13 @@ public class AlarmServiceTests
     await Camera(s.Db, s.Map);
 
     await s.States.SetAlarmAsync(TestCameras.One, default);
-    await s.States.SetConnectedAsync(TestCameras.One, true, default);
+    await s.States.ApplyPresenceAsync(TestCameras.One, connected: true, noVideo: null, ct: default);
 
     var states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);
     Assert.Contains(CameraStateWriter.Connected, states);
 
-    await s.States.SetConnectedAsync(TestCameras.One, false, default);
+    await s.States.ApplyPresenceAsync(TestCameras.One, connected: false, noVideo: null, ct: default);
 
     states = await State(s.Db, TestCameras.One);
     Assert.Contains(CameraStateWriter.Alarm, states);

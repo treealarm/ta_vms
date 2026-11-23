@@ -12,6 +12,21 @@ public sealed partial class FsServiceImpl
   public override async Task<OperationStatus> ReportSourceLiveness(
     ReportSourceLivenessRequest request, ServerCallContext context)
   {
+    var now = DateTime.UtcNow;
+
+    // Video presence is recorded before the outage path, which writes to the database: a failed
+    // write must not lose what is known about the camera's video. One notification per camera,
+    // however many of its streams moved.
+    var changed = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var s in request.Streams)
+    {
+      if (videoTracker.Observe(
+            s.CameraId, s.StreamName ?? string.Empty, s.Alive, request.InstanceId, now))
+      {
+        changed.Add(s.CameraId);
+      }
+    }
+
     foreach (var s in request.Streams)
     {
       await livenessTracker.ApplyAsync(
@@ -25,7 +40,31 @@ public sealed partial class FsServiceImpl
         context.CancellationToken);
     }
 
+    foreach (var cameraId in changed)
+      videoNotifier.Notify(cameraId);
+
     return new OperationStatus { Status = OperationStatus.Types.Status.Success };
+  }
+
+  public override Task<ListSourceStatesResponse> ListSourceStates(
+    ListSourceStatesRequest request, ServerCallContext context)
+  {
+    var response = new ListSourceStatesResponse();
+    var cameraIds = request.CameraIds.Count == 0 ? null : request.CameraIds.ToList();
+
+    foreach (var stream in videoTracker.Snapshot(cameraIds, DateTime.UtcNow))
+    {
+      response.Streams.Add(new SourceStreamState
+      {
+        CameraId = stream.CameraId,
+        StreamName = stream.StreamName,
+        State = stream.State == SourceVideoTracker.VideoState.Alive
+          ? SourceVideoState.Alive
+          : SourceVideoState.NoVideo,
+      });
+    }
+
+    return Task.FromResult(response);
   }
 
   public override async Task<ListSourceOutagesResponse> ListSourceOutages(
