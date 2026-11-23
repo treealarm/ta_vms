@@ -505,6 +505,8 @@ Push и merge в `master` — только по просьбе.
   `VmsFsCameraConnectionSource`. `ConnectionStateServiceTests` удалён (обе Reconcile-проверки уже
   покрыты `DeviceNodeServiceTests`). Найдено тестом и исправлено: выключенная камера больше не
   опрашивает ONVIF. `VmsMap.Tests` — 495, решение — 0/0.
+- ☑ Шаг 8: фронтенд — `nodeStyle` выбирает `NO_VIDEO` по имени (порядок набора не гарантирован),
+  тревога и неисправность остаются важнее; `npm test` — 130, `npm run build`/`lint` — чисто.
 
 ## Не входит
 
