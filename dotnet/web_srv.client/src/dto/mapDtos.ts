@@ -393,6 +393,14 @@ export type MapRightActionTable = { entries?: MapRightActionEntry[] }
 
 export type MapOperationStatus = { success?: boolean; message?: string }
 
+/** What a diagram is bound to; `bound` false is an ordinary mnemoscheme. */
+export type MapDeviceDiagramBinding = {
+  bound?: boolean
+  sourceKind?: string
+  sourceId?: string
+  slot?: string
+}
+
 /** Whether the demo world is installed, and how many rows it owns. */
 export type MapDemoStatus = { installed?: boolean; version?: number; entities?: number }
 

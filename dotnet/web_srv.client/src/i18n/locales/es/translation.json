@@ -1242,6 +1242,14 @@
     "placeDiagramHint": "Haga clic en el mapa para colocar el diagrama de {{name}}",
     "placeOnCanvasHint": "Haga clic en una región o en un lugar libre de la hoja para mostrar aquí el panel de {{name}}",
     "missingRegion": "{{region}} (no es una región del tipo del padre)",
+    "device": "Dispositivo",
+    "deviceCamera": "Cámara",
+    "deviceBound": "Vinculado a {{name}}",
+    "deviceTemplate": "Plantilla",
+    "noTemplate": "Ninguna — según el modelo del dispositivo",
+    "deviceHint": "El mapa mantiene el diagrama al día con el dispositivo: la plantilla que corresponde a su modelo y una réplica por cada parte configurada. Su lugar y lo que usted dibuje siguen siendo suyos.",
+    "bindDevice": "Vincular al dispositivo",
+    "unbindDevice": "Desvincular",
     "placeNewDiagramHint": "Haga clic en el mapa para colocar el diagrama"
   },
   "rights": {

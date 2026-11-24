@@ -1242,7 +1242,15 @@
     "placeDiagramHint": "Click the map to place the diagram of {{name}}",
     "placeOnCanvasHint": "Click a region, or an empty spot of the sheet, to show the panel of {{name}} here",
     "missingRegion": "{{region}} (not a region of the parent's type)",
-    "placeNewDiagramHint": "Click the map to place the diagram"
+    "placeNewDiagramHint": "Click the map to place the diagram",
+    "device": "Device",
+    "deviceCamera": "Camera",
+    "deviceBound": "Bound to {{name}}",
+    "deviceTemplate": "Template",
+    "noTemplate": "None — by the device's model",
+    "deviceHint": "The map keeps the diagram in step with the device: the template that matches its model and a replica for every configured part. Its place and what you draw stay yours.",
+    "bindDevice": "Bind to the device",
+    "unbindDevice": "Unbind"
   },
   "rights": {
     "tab": "Rights",

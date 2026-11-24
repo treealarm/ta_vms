@@ -202,6 +202,33 @@ public class MapAdminController(
     return MapApi.Json(await map.AttachDeviceDiagramAsync(request, MapApi.Options(ct)));
   }
 
+  /// Binds a diagram the administrator drew to a device: the map maintains it from then on, and
+  /// the diagram keeps its place and what was drawn in it by hand.
+  [HttpPost("device-diagram/bind")]
+  public async Task<IActionResult> BindDeviceDiagram(
+    [FromBody] JsonElement body, CancellationToken ct)
+  {
+    var request = MapApi.Parse<MapProto.BindDeviceDiagramRequest>(body);
+    return MapApi.Json(await map.BindDeviceDiagramAsync(request, MapApi.Options(ct)));
+  }
+
+  [HttpDelete("device-diagram/bind")]
+  public async Task<IActionResult> UnbindDeviceDiagram(
+    [FromBody] JsonElement body, CancellationToken ct)
+  {
+    var request = MapApi.Parse<MapProto.UnbindDeviceDiagramRequest>(body);
+    return MapApi.Json(await map.UnbindDeviceDiagramAsync(request, MapApi.Options(ct)));
+  }
+
+  /// What the diagram node is bound to; an unbound node answers with `bound = false`.
+  [HttpGet("device-diagram/binding")]
+  public async Task<IActionResult> GetDeviceDiagramBinding(
+    [FromQuery] string nodeId, CancellationToken ct)
+  {
+    var request = new MapProto.GetDeviceDiagramBindingRequest { NodeId = nodeId ?? string.Empty };
+    return MapApi.Json(await map.GetDeviceDiagramBindingAsync(request, MapApi.Options(ct)));
+  }
+
   // ── Demo world ──────────────────────────────────────────────────────────────────────────────
 
   [HttpGet("demo")]

@@ -7,6 +7,7 @@ import type {
   MapCreateReplicaRequest,
   MapDemoReport,
   MapDemoStatus,
+  MapDeviceDiagramBinding,
   MapDiagram,
   MapDiagramContent,
   MapDiagramCoordinate,
@@ -180,6 +181,30 @@ export const mapApi = {
     /** Where it stands on that space; unset puts it beside the camera's own placement. */
     at?: { lat: number; lon: number }
   }) => post<MapMarker>(`${ADMIN}/device-diagram`, body),
+
+  /**
+   * Binds a diagram an administrator drew to a device: the map maintains it from then on — the
+   * template that describes the device, a replica per configured part — and the diagram keeps its
+   * place and what was drawn in it by hand. An empty template keeps the diagram's own type and
+   * lets the one that matches the device's model take over.
+   */
+  bindDeviceDiagram: (body: {
+    nodeId: string
+    sourceKind: string
+    sourceId: string
+    diagramTypeId?: string
+    slot?: string
+  }) => post<MapMarker>(`${ADMIN}/device-diagram/bind`, body),
+
+  /** Takes a diagram away from its device; the diagram itself stays as an ordinary mnemoscheme. */
+  unbindDeviceDiagram: (nodeId: string) =>
+    requestJson<MapOperationStatus>(
+      `${ADMIN}/device-diagram/bind`, jsonRequest('DELETE', { nodeId })),
+
+  /** What the diagram node is bound to; an unbound node answers with `bound = false`. */
+  getDeviceDiagramBinding: (nodeId: string) =>
+    requestJson<MapDeviceDiagramBinding>(
+      `${ADMIN}/device-diagram/binding?${query({ nodeId })}`),
 
   // ── Levels ─────────────────────────────────────────────────────────────────────────────────
   getLevels: () => requestJson<MapLevelList>(`${BASE}/levels`),
