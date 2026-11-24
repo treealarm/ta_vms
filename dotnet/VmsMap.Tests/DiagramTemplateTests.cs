@@ -162,6 +162,40 @@ public class DiagramTemplateTests
   }
 
   [Fact]
+  public async Task ARegionWithANodeInItCannotBeTakenAway()
+  {
+    var db = NewDb();
+    var service = new DiagramTypeService(db);
+
+    var type = Type(Region(CaptionRegion), Region(InputToken));
+    await service.UpdateListAsync([type]);
+
+    // A panel drawn from the template, with a caption standing in one of its regions.
+    var panel = Guid.NewGuid();
+    var caption = Guid.NewGuid();
+    db.Markers.Add(new DBMarker { id = panel, name = "rear panel" });
+    db.Markers.Add(new DBMarker { id = caption, name = "caption", parent_id = panel });
+    db.Diagrams.Add(new DBDiagram
+    {
+      id = panel, dgr_type = Utils.ConvertObjectIdToGuid(type.id),
+    });
+    db.Diagrams.Add(new DBDiagram { id = caption, region_id = CaptionRegion });
+    await db.SaveChangesAsync();
+
+    // Leaving the region out of an update is a deletion; renaming it is the same edit from the
+    // type's side, and either would leave the caption in the tree with nowhere to stand.
+    var rewritten = Type(Region(InputToken));
+    rewritten.id = type.id;
+
+    var error = await Assert.ThrowsAsync<DiagramTypeConfigException>(
+      () => service.UpdateListAsync([rewritten]));
+
+    Assert.Contains(CaptionRegion, error.Message);
+    var kept = await service.GetListByTypeIdsAsync([type.id!]);
+    Assert.Contains(kept[type.id!].regions!, region => region.region_key == CaptionRegion);
+  }
+
+  [Fact]
   public async Task DroppingTheBindingLeavesTheRegionAlone()
   {
     var db = NewDb();

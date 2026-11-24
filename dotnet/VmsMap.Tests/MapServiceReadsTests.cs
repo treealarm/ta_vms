@@ -121,6 +121,9 @@ public class MapServiceReadsTests
     var alarms = TestWiring.Alarms(db, map, states, arming);
 
     var events = new EventsService(db, map);
+    // One instance for both readers: the device diagram service is what the attach RPC places with,
+    // and the demo seeder installs the demo's own diagrams through it.
+    var deviceDiagrams = TestWiring.DeviceDiagrams(db, map, updates, geo);
     var grpc = new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
       events, new EventsWriter(db, events), new ValuesService(db), tracks,
@@ -133,12 +136,11 @@ public class MapServiceReadsTests
         db, updates, new DiagramService(db), new DiagramTypeService(db), levels, states,
         new RightService(db), geo, new FileService(db), new VisualService(db), spatial, new TestCatalog(),
         TestWiring.DeviceNodes(db, map, updates), TestWiring.ObjectSettings(db),
-        TestWiring.DeviceDiagrams(db, map, updates, geo)),
+        deviceDiagrams),
       TestWiring.Arming(db, arming), TestWiring.NodeArming(db, map, cameraState: arming),
       null!, // the settings RPCs have their own tests
       TestWiring.ControlObjects(db, map, rights), alarms,
-      // The attach RPC is not exercised here; the diagram service has its own tests.
-      null!);
+      deviceDiagrams);
 
     return new Services(db, map, states, updates, grpc, notifier, alarms, arming);
   }
@@ -165,6 +167,14 @@ public class MapServiceReadsTests
       }
     ]);
 
+  /// <summary>A region of a template: the key a child names, and the share of the paper it takes.</summary>
+  private static DBDiagramTypeRegion RegionRow(Guid typeId, string key) => new()
+  {
+    diagram_type_id = typeId,
+    region_key = key,
+    geometry = new DBDiagramCoord { left = 0, top = 0, width = 0.5, height = 0.5 },
+  };
+
   /// <summary>
   /// The diagram itself — its paper and one part drawn in a region of it — and an empty canvas
   /// the diagram can be shown on. Returns the ids the tests name.
@@ -172,7 +182,11 @@ public class MapServiceReadsTests
   private static async Task<(BaseMarkerDTO Panel, BaseMarkerDTO Part, BaseMarkerDTO Canvas, string TypeId)>
     SeedPanelAsync(Services s)
   {
+    // The template's two regions are where its children stand: a row naming a region the type does
+    // not have is refused, so the seed has to offer the keys the tests use.
     var type = new DBDiagramType { id = Guid.NewGuid(), name = PanelLabel };
+    type.regions.Add(RegionRow(type.id, FirstRegionKey));
+    type.regions.Add(RegionRow(type.id, SecondRegionKey));
     s.Db.DiagramTypes.Add(type);
     await s.Db.SaveChangesAsync();
     var typeId = type.id.ToString();
@@ -186,7 +200,8 @@ public class MapServiceReadsTests
     await SeedDiagramAsync(s.Db, part.id!, regionId: FirstRegionKey);
 
     var canvas = await Node(s.Map, CanvasLabel);
-    await SeedDiagramAsync(s.Db, canvas.id!, Guid.NewGuid().ToString());
+    // The canvas is drawn from the same template: its regions are the keys its children name.
+    await SeedDiagramAsync(s.Db, canvas.id!, typeId);
 
     return (panel, part, canvas, typeId);
   }
@@ -240,7 +255,15 @@ public class MapServiceReadsTests
   public async Task UpdateDiagramsKeepsTheGeometryOfADiagramPlacedInARegion()
   {
     var s = Create();
+    // A rack's own template: the regions a switch is placed in are its keys.
+    var rackType = new DBDiagramType { id = Guid.NewGuid(), name = RackLabel };
+    rackType.regions.Add(RegionRow(rackType.id, FirstRegionKey));
+    rackType.regions.Add(RegionRow(rackType.id, SecondRegionKey));
+    s.Db.DiagramTypes.Add(rackType);
+    await s.Db.SaveChangesAsync();
+
     var rack = await Node(s.Map, RackLabel);
+    await SeedDiagramAsync(s.Db, rack.id!, rackType.id.ToString());
     var computer = await Node(s.Map, "switch", rack.id);
 
     await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
@@ -283,7 +306,8 @@ public class MapServiceReadsTests
       },
     }, new TestContext());
 
-    var rewritten = Assert.Single(await s.Db.Diagrams.ToListAsync());
+    var rewritten = Assert.Single(
+      await s.Db.Diagrams.Where(d => d.id == Guid.Parse(computer.id!)).ToListAsync());
     Assert.Equal(SecondRegionKey, rewritten.region_id);
     Assert.Equal(400, rewritten.geometry?.width);
     Assert.Equal(300, rewritten.geometry?.height);
@@ -381,6 +405,8 @@ public class MapServiceReadsTests
     // A device part and its picture on the canvas: a replica, but not one of a diagram.
     var owner = await Node(s.Map, PartOwnerLabel);
     var canvas = await Node(s.Map, CanvasLabel);
+    // Any type at all: the canvas is a diagram because it has a row, and the copy below names no
+    // region, so the template does not matter.
     await SeedDiagramAsync(s.Db, canvas.id!, Guid.NewGuid().ToString());
     var copy = await Node(s.Map, PartLabel, canvas.id, owner.id);
 
@@ -1418,5 +1444,87 @@ public class MapServiceReadsTests
     var row = await s.Db.Alarms.AsNoTracking()
       .SingleAsync(a => a.source == AlarmSource.Fault);
     Assert.Equal(AlarmStatus.Active, row.status);
+  }
+
+  [Fact]
+  public async Task UpdateDiagramsWritesTheFirstRowOfANewDiagram()
+  {
+    var s = Create();
+    var note = await Node(s.Map, NoteLabel);
+
+    // A node with no diagram row yet — the editor's "make this a diagram" — is not a
+    // representation of anything, and the request is the one that gives it its row.
+    var written = await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams =
+      {
+        new MapProto.Diagram
+        {
+          Id = note.id!,
+          DgrType = Guid.NewGuid().ToString(),
+          Geometry = new MapProto.DiagramCoordinate { Width = PaperWidth, Height = PaperHeight },
+        },
+      },
+    }, new TestContext());
+
+    var row = Assert.Single(written.Diagrams);
+    Assert.Equal(note.id, row.Id);
+    Assert.False(string.IsNullOrEmpty(row.DgrType));
+    Assert.Equal(1, await s.Db.Diagrams.CountAsync());
+  }
+
+  [Fact]
+  public async Task UpdateDiagramsRefusesARegionItsParentsTypeDoesNotOffer()
+  {
+    var s = Create();
+    var rack = await Node(s.Map, RackLabel);
+    var computer = await Node(s.Map, "switch", rack.id);
+
+    // The rack has no template, so it offers no regions: the key would be a place nothing draws.
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagrams(
+      new MapProto.DiagramList
+      {
+        Diagrams = { new MapProto.Diagram { Id = computer.id!, RegionId = FirstRegionKey } },
+      }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+    Assert.Empty(await s.Db.Diagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task AttachDeviceDiagramRefusesARequestThatNamesTwoPlaces()
+  {
+    var s = Create();
+    const string CameraId = "camera-1";
+    var geometry = new MapProto.DiagramCoordinate { Width = 10, Height = 10 };
+    var at = new MapProto.Coordinate { Lat = 1, Lon = 2 };
+
+    static async Task Refused(Services s, MapProto.AttachDeviceDiagramRequest request)
+    {
+      var error = await Assert.ThrowsAsync<RpcException>(
+        () => s.Grpc.AttachDeviceDiagram(request, new TestContext()));
+      Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+    }
+
+    // A space and a diagram's canvas are two different places, and so are a region, a rectangle
+    // and a point: the server refuses the combination instead of picking one.
+    await Refused(s, new MapProto.AttachDeviceDiagramRequest
+    {
+      SourceId = CameraId, SpaceId = "space-1", CanvasId = "canvas-1",
+    });
+    await Refused(s, new MapProto.AttachDeviceDiagramRequest
+    {
+      SourceId = CameraId, CanvasId = "canvas-1", RegionId = FirstRegionKey, Geometry = geometry,
+    });
+    await Refused(s, new MapProto.AttachDeviceDiagramRequest
+    {
+      SourceId = CameraId, RegionId = FirstRegionKey,
+    });
+    await Refused(s, new MapProto.AttachDeviceDiagramRequest
+    {
+      SourceId = CameraId, CanvasId = "canvas-1", At = at,
+    });
+
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
   }
 }

@@ -30,6 +30,11 @@ public class DeviceDiagramServiceTests
   private const string FrontPanelName = "Front panel";
   private const string SecondPlanName = "second plan";
   private const string ShownPanelName = "shown panel";
+  private const string CanvasName = "cam diagrams";
+  private const string LeftRegion = "left";
+  private const string RightRegion = "right";
+  private const string SituationName = "already here";
+  private const string InnerDiagramName = "nested diagram";
   private const double PlacementWidth = 70;
   private const double PlacementHeight = 80;
 
@@ -99,7 +104,7 @@ public class DeviceDiagramServiceTests
     var diagramRows = new DiagramService(db);
     var reconciler = new DeviceDiagramReconciler(
       db, map, updates, diagramRows, settings, NullLogger<DeviceDiagramReconciler>.Instance);
-    var diagrams = new DeviceDiagramService(db, map, diagramRows, catalog, geo, reconciler);
+    var diagrams = new DeviceDiagramService(db, map, updates, diagramRows, catalog, geo, reconciler);
 
     // The canvas the diagrams stand on: a diagram is a map object, and one of these tests needs
     // only the space to exist.
@@ -213,12 +218,22 @@ public class DeviceDiagramServiceTests
     s.Diagrams.ReconcileDeviceAsync(
       DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot, default);
 
-  /// Draws the device on the tests' canvas; without a type the one its model names is taken.
+  /// The space this file's diagrams are drawn on by default, at the point its tests click.
+  private static readonly DiagramTarget OnTheSpace =
+    new(Utils.ConvertGuidToObjectId(Space), Lat: 38.99, Lon: -76.94);
+
+  /// Draws the device on the tests' space; without a type the one its model names is taken.
   private static Task<string?> AttachAsync(
-    Services s, string? typeId = null, string cameraId = CameraId, DiagramSite? site = null) =>
-    s.Diagrams.AttachAsync(
+    Services s, string? typeId = null, string cameraId = CameraId, DiagramTarget? target = null) =>
+    s.Diagrams.PlaceDeviceDiagramAsync(
       DeviceObjectId.CameraSource, cameraId, typeId, IDeviceDiagramService.DefaultSlot,
-      site ?? new DiagramSite(Utils.ConvertGuidToObjectId(Space), 38.99, -76.94), default);
+      target ?? OnTheSpace, default);
+
+  /// What the camera's own link does: keeps the diagram with the camera, without naming a canvas.
+  private static Task<string?> OpenWithTheCameraAsync(Services s, string? typeId = null) =>
+    s.Diagrams.PlaceDeviceDiagramAsync(
+      DeviceObjectId.CameraSource, CameraId, typeId, IDeviceDiagramService.DefaultSlot,
+      null, default);
 
   [Fact]
   public async Task ATemplateDrawsTheConfiguredPartsOnItsCanvas()
@@ -332,7 +347,7 @@ public class DeviceDiagramServiceTests
     space.view_west = -77.0; space.view_east = -76.9;
     await s.Db.SaveChangesAsync();
 
-    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(Space)));
+    await AttachAsync(s, target: new DiagramTarget(Utils.ConvertGuidToObjectId(Space)));
 
     var row = await s.Db.DeviceDiagrams.SingleAsync();
     var figure = await s.Db.GeoObjects.SingleAsync(g => g.id == row.object_id);
@@ -513,7 +528,8 @@ public class DeviceDiagramServiceTests
   /// </summary>
   private static async Task<Guid> SeedPictureAsync(Services s) => await SeedPictureAsync(s, Space, true);
 
-  private static async Task<Guid> SeedPictureAsync(Services s, Guid spaceId, bool reference)
+  private static async Task<Guid> SeedPictureAsync(
+    Services s, Guid spaceId, bool reference, string cameraId = CameraId)
   {
     var picture = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
@@ -521,14 +537,14 @@ public class DeviceDiagramServiceTests
       {
         id = Utils.ConvertGuidToObjectId(picture),
         parent_id = Utils.ConvertGuidToObjectId(spaceId),
-        owner_id = CameraObjectId.For(CameraId),
-        name = CameraNamePrefix + CameraId,
+        owner_id = CameraObjectId.For(cameraId),
+        name = CameraNamePrefix + cameraId,
       }
     ]);
     s.Db.CameraPlacements.Add(new DBCameraPlacement
     {
       object_id = picture,
-      camera_id = CameraId,
+      camera_id = cameraId,
       is_reference = reference,
     });
     await s.Db.SaveChangesAsync();
@@ -543,6 +559,366 @@ public class DeviceDiagramServiceTests
     s.Db.Spaces.Add(new DBSpace { object_id = id, kind = SpaceKinds.Map });
     await s.Db.SaveChangesAsync();
     return id;
+  }
+
+  /// <summary>
+  /// A mnemoscheme: a diagram node drawn from a type of its own, with the regions the tests place a
+  /// device in. The type is what says which keys are places at all.
+  /// </summary>
+  private sealed record Mnemoscheme(Guid Node, Guid Type);
+
+  private static async Task<Mnemoscheme> SeedMnemoschemeAsync(
+    Services s, string name, params string[] regions)
+  {
+    var id = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = Utils.ConvertGuidToObjectId(id), name = name }
+    ]);
+
+    var type = new DBDiagramType { id = Guid.NewGuid(), name = name };
+    foreach (var key in regions)
+    {
+      type.regions.Add(new DBDiagramTypeRegion
+      {
+        diagram_type_id = type.id,
+        region_key = key,
+        geometry = new DBDiagramCoord { width = 0.5, height = 0.5 },
+      });
+    }
+
+    s.Db.DiagramTypes.Add(type);
+    s.Db.Diagrams.Add(new DBDiagram { id = id, dgr_type = type.id });
+    await s.Db.SaveChangesAsync();
+    return new Mnemoscheme(id, type.id);
+  }
+
+  /// The camera on a plan, with a configured part and a matching template: what every placement
+  /// test starts from.
+  private static async Task<Services> PlacedCameraAsync()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(
+      s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    return s;
+  }
+
+  [Fact]
+  public async Task ARegionOnAMnemoschemeShowsThePanelsDiagramThere()
+  {
+    var s = await PlacedCameraAsync();
+    var picture = await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+
+    var shownId = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    var shown = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(shownId!));
+    // A representation: it stands on the canvas and shows the diagram, it is not the diagram.
+    Assert.Equal(canvas.Node, shown.parent_id);
+    Assert.Equal(canonical.object_id, shown.owner_id);
+
+    var row = await s.Db.Diagrams.SingleAsync(d => d.id == shown.id);
+    Assert.Equal(LeftRegion, row.region_id);
+    Assert.Null(row.geometry);
+    Assert.Null(row.dgr_type);
+    Assert.Null(row.file_id);
+
+    // The diagram's own card is taken off the plan: shown on a canvas is not also drawn beside the
+    // camera, and the point it had there is not a second place.
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == canonical.object_id));
+    // The canonical node itself stays with the camera, where the reader's link finds it.
+    Assert.Equal(picture, (await s.Db.Markers.SingleAsync(m => m.id == canonical.object_id)).parent_id);
+  }
+
+  [Fact]
+  public async Task ARectangleOfItsOwnIsWhereTheRepresentationStands()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+    var rect = new DiagramCoordDTO
+    {
+      left = 40, top = 50, width = PlacementWidth, height = PlacementHeight,
+    };
+
+    var shownId = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), Geometry: rect));
+
+    var row = await s.Db.Diagrams.SingleAsync(
+      d => d.id == Guid.Parse(shownId!));
+    Assert.Null(row.region_id);
+    Assert.Equal(PlacementWidth, row.geometry!.width);
+    Assert.Equal(PlacementHeight, row.geometry.height);
+    Assert.Equal(40, row.geometry.left);
+  }
+
+  [Fact]
+  public async Task TheSameDiagramInTheSameRegionIsTheSameRepresentation()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    var first = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+    var second = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+
+    // Asking again is not a copy of a copy: the region already shows this diagram.
+    Assert.Equal(first, second);
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(
+      1, await s.Db.Markers.CountAsync(m => m.parent_id == canvas.Node && m.owner_id == canonical.object_id));
+  }
+
+  [Fact]
+  public async Task TwoRegionsOfOneMnemoschemeHoldTwoRepresentations()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+
+    var left = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+    var right = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: RightRegion));
+
+    Assert.NotEqual(left, right);
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(
+      2, await s.Db.Markers.CountAsync(m => m.parent_id == canvas.Node && m.owner_id == canonical.object_id));
+  }
+
+  [Fact]
+  public async Task OneDiagramIsShownOnAsManyMnemoschemesAsAskForIt()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var first = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+    var second = await SeedMnemoschemeAsync(s, SecondPlanName, LeftRegion);
+
+    await AttachAsync(s, target: new DiagramTarget(first.Node.ToString(), RegionId: LeftRegion));
+    await AttachAsync(s, target: new DiagramTarget(second.Node.ToString(), RegionId: LeftRegion));
+
+    // One diagram, two places: the copies belong to the same canonical node.
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    var copies = await s.Db.Markers
+      .Where(m => m.owner_id == canonical.object_id)
+      .Select(m => m.parent_id)
+      .ToListAsync();
+    Assert.Equal(2, copies.Count);
+    Assert.Contains(first.Node, copies);
+    Assert.Contains(second.Node, copies);
+  }
+
+  [Fact]
+  public async Task ARegionTheCanvasDoesNotHaveIsRefused()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: RightRegion)));
+
+    Assert.Contains(RightRegion, error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ARegionBoundToAPartIsRefused()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+    s.Db.DiagramTypeParts.Add(new DBDiagramTypePart
+    {
+      diagram_type_id = canvas.Type,
+      region_key = LeftRegion,
+      part_kind = DeviceObjectId.RelayPart,
+      match_by = DiagramPartMatch.Token,
+      match_value = LampToken,
+    });
+    await s.Db.SaveChangesAsync();
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion)));
+
+    // The reconciler's replica stands there: a second node would hide it or be hidden by it.
+    Assert.Contains(LeftRegion, error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ARegionHoldingAnotherNodeIsRefused()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    var other = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(other),
+        parent_id = canvas.Node.ToString(),
+        name = SituationName,
+      }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = other, region_id = LeftRegion });
+    await s.Db.SaveChangesAsync();
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion)));
+
+    // A region is a slot: one node stands there, and the administrator is told which.
+    Assert.Contains(LeftRegion, error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ACanvasInsideTheDiagramIsRefusedBeforeAnythingIsWritten()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    await AttachAsync(s);
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+
+    // The diagram itself is the first canvas that cannot hold it: a copy standing on what it
+    // copies would descend into itself on every walk of the tree.
+    var itself = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(
+        Utils.ConvertGuidToObjectId(canonical.object_id)!,
+        Geometry: new DiagramCoordDTO { width = 10, height = 10 })));
+    Assert.Contains("own canvas", itself.Message);
+
+    // A diagram drawn inside the panel: showing the panel on it would hang the copy under the
+    // diagram it copies.
+    var inner = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(inner),
+        parent_id = Utils.ConvertGuidToObjectId(canonical.object_id),
+        name = InnerDiagramName,
+      }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = inner });
+    await s.Db.SaveChangesAsync();
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(
+        inner.ToString(), Geometry: new DiagramCoordDTO { width = 10, height = 10 })));
+
+    Assert.Contains("own canvas", error.Message);
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.owner_id == canonical.object_id));
+  }
+
+  [Fact]
+  public async Task TwoCamerasStandInTwoRegionsOfOneMnemoscheme()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    await SeedCameraAsync(s, OtherCameraId);
+    await SeedModelAsync(s, OtherCameraId);
+    await SeedPictureAsync(s, Space, reference: true, cameraId: OtherCameraId);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+
+    var left = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+    var right = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: RightRegion),
+      cameraId: OtherCameraId);
+
+    Assert.NotEqual(left, right);
+    var owners = await s.Db.Markers
+      .Where(m => m.parent_id == canvas.Node && m.owner_id != null)
+      .Select(m => m.owner_id!.Value)
+      .Distinct()
+      .ToListAsync();
+    Assert.Equal(2, owners.Count);
+    Assert.Equal(
+      LeftRegion,
+      (await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(left!))).region_id);
+    Assert.Equal(
+      RightRegion,
+      (await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(right!))).region_id);
+  }
+
+  [Fact]
+  public async Task ShowingTheDiagramOnACanvasTakesItsCardOffThePlan()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    await AttachAsync(s);
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.True(await s.Db.GeoObjects.AnyAsync(g => g.id == canonical.object_id));
+
+    await AttachAsync(s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+
+    // One diagram, one place: the card beside the camera and the panel on the canvas are the same
+    // diagram asked to be shown in two places, and the older one gives way.
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == canonical.object_id));
+    Assert.Equal(
+      1, await s.Db.Markers.CountAsync(m => m.owner_id == canonical.object_id));
+  }
+
+  [Fact]
+  public async Task OpeningTheDiagramFromItsCameraLeavesTheRepresentationWhereItIs()
+  {
+    var s = await PlacedCameraAsync();
+    var picture = await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    var shownId = await AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion));
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+
+    // The camera's own link names no canvas: it keeps the diagram with the camera and must not
+    // move or redraw either of the two.
+    await OpenWithTheCameraAsync(s);
+
+    Assert.Equal(picture, (await s.Db.Markers.SingleAsync(m => m.id == canonical.object_id)).parent_id);
+    Assert.False(await s.Db.GeoObjects.AnyAsync(g => g.id == canonical.object_id));
+    Assert.Equal(canvas.Node, (await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(shownId!))).parent_id);
+  }
+
+  [Fact]
+  public async Task APlaceThatDoesNotFitTheCanvasKindIsRefused()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+    var space = Space.ToString();
+
+    // A space takes a point; a diagram's canvas takes a region or a rectangle.
+    await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(space, RegionId: LeftRegion)));
+    await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), Lat: 1, Lon: 2)));
+    await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion,
+        Geometry: new DiagramCoordDTO { width = 1, height = 1 })));
+
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ACanvasThatDoesNotExistIsRefused()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+
+    await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(Guid.NewGuid().ToString(), RegionId: LeftRegion)));
+
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
   }
 
   [Fact]
@@ -579,8 +955,7 @@ public class DeviceDiagramServiceTests
     await SeedTypeAsync(s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
     var picture = await SeedPictureAsync(s);
 
-    var id = await s.Diagrams.AttachAsync(
-      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+    var id = await OpenWithTheCameraAsync(s);
 
     Assert.NotNull(id);
     var node = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(id!));
@@ -599,8 +974,7 @@ public class DeviceDiagramServiceTests
     await SeedModelAsync(s);
     await SeedTypeAsync(s, new TypeSpec());
 
-    var id = await s.Diagrams.AttachAsync(
-      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+    var id = await OpenWithTheCameraAsync(s);
 
     Assert.Null(id);
     Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
@@ -623,7 +997,7 @@ public class DeviceDiagramServiceTests
     // The camera's picture appears, and the button is pressed again from the canvas without a point:
     // the diagram is nested under the picture, and the point it was dragged to stays.
     var picture = await SeedPictureAsync(s);
-    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(Space)));
+    await AttachAsync(s, target: new DiagramTarget(Utils.ConvertGuidToObjectId(Space)));
 
     Assert.Equal(picture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
     var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
@@ -645,8 +1019,8 @@ public class DeviceDiagramServiceTests
 
     // The same canvas, another click: the node already hangs where it should, and the point is
     // still the administrator's to choose. A run that returned early would drop the request.
-    await AttachAsync(s, site: new DiagramSite(
-      Utils.ConvertGuidToObjectId(Space), 38.95, -76.90));
+    await AttachAsync(s, target: new DiagramTarget(
+      Utils.ConvertGuidToObjectId(Space), Lat: 38.95, Lon: -76.90));
 
     var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
     Assert.True(geo.figure is Point point
@@ -666,17 +1040,16 @@ public class DeviceDiagramServiceTests
     var elsewhere = await SeedSpaceAsync(s, SecondPlanName);
     var elsewherePicture = await SeedPictureAsync(s, elsewhere, false);
 
-    await s.Diagrams.AttachAsync(
+    await s.Diagrams.PlaceDeviceDiagramAsync(
       DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot,
-      new DiagramSite(Utils.ConvertGuidToObjectId(elsewhere), 38.99, -76.94), default);
+      new DiagramTarget(Utils.ConvertGuidToObjectId(elsewhere), Lat: 38.99, Lon: -76.94), default);
     var objectGuid = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
     Assert.Equal(elsewherePicture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
 
     // Opening it from the camera names no canvas. The figure is drawn on the second plan, so the
     // node stays there: moving it under the reference picture would leave the figure behind in
     // another plan's coordinates.
-    await s.Diagrams.AttachAsync(
-      DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, null, default);
+    await OpenWithTheCameraAsync(s);
 
     Assert.Equal(elsewherePicture, (await s.Db.Markers.SingleAsync(m => m.id == objectGuid)).parent_id);
     Assert.Equal(elsewhere, (await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid)).canvas_id);
@@ -702,7 +1075,7 @@ public class DeviceDiagramServiceTests
     space.view_west = -77.0; space.view_east = -76.9;
     await s.Db.SaveChangesAsync();
 
-    await AttachAsync(s, site: new DiagramSite(Utils.ConvertGuidToObjectId(elsewhere)));
+    await AttachAsync(s, target: new DiagramTarget(Utils.ConvertGuidToObjectId(elsewhere)));
 
     var geo = await s.Db.GeoObjects.SingleAsync(g => g.id == objectGuid);
     Assert.Equal(elsewhere, geo.canvas_id);
@@ -829,8 +1202,17 @@ public class DeviceDiagramServiceTests
     var first = await SeedTypeAsync(s, new TypeSpec());
     var second = await SeedTypeAsync(s, new TypeSpec(Name: FrontPanelName));
 
+    // The space has a type of its own here: a region is a key of the parent's type, and this test
+    // hangs the diagram directly under it.
+    var spaceType = await SeedTypeAsync(
+      s, new TypeSpec(Name: SecondPlanName),
+      (LampRegionTwo, string.Empty, string.Empty, string.Empty));
+    await new DiagramService(s.Db).UpdateListAsync([
+      new DiagramDTO { id = Space.ToString(), dgr_type = spaceType.ToString() }
+    ]);
+
     var diagramId = await AttachAsync(
-      s, first.ToString(), site: new DiagramSite(Space.ToString(), 1, 2));
+      s, first.ToString(), target: new DiagramTarget(Space.ToString(), Lat: 1, Lon: 2));
 
     // A place and a picture of its own, put there by the editor as an ordinary diagram write.
     await new DiagramService(s.Db).UpdateListAsync([
@@ -851,7 +1233,7 @@ public class DeviceDiagramServiceTests
     var picture = (await s.Db.Diagrams.SingleAsync(
       d => d.id == Utils.ConvertObjectIdToGuid(diagramId))).file_id;
 
-    await AttachAsync(s, second.ToString(), site: null);
+    await OpenWithTheCameraAsync(s, second.ToString());
 
     // A template change is not a move: where it stands and its own picture stay.
     var row = await s.Db.Diagrams.SingleAsync(d => d.id == Utils.ConvertObjectIdToGuid(diagramId));
@@ -870,7 +1252,7 @@ public class DeviceDiagramServiceTests
     await SeedModelAsync(s);
     var type = await SeedTypeAsync(s, new TypeSpec());
     var diagramId = await AttachAsync(
-      s, type.ToString(), site: new DiagramSite(Space.ToString()));
+      s, type.ToString(), target: new DiagramTarget(Space.ToString()));
 
     // A representation on the same canvas: an ordinary replica whose place is its own.
     await s.Map.UpdateHierarchyAsync([
@@ -884,7 +1266,11 @@ public class DeviceDiagramServiceTests
     var shown = await s.Db.Markers.SingleAsync(
       m => m.owner_id == Utils.ConvertObjectIdToGuid(diagramId));
     await new DiagramService(s.Db).UpdateListAsync([
-      new DiagramDTO { id = Utils.ConvertGuidToObjectId(shown.id), region_id = LampRegionTwo }
+      new DiagramDTO
+      {
+        id = Utils.ConvertGuidToObjectId(shown.id),
+        geometry = new DiagramCoordDTO { left = 1, top = 2, width = 3, height = 4 },
+      }
     ]);
 
     await s.Nodes.RemoveCameraAsync(CameraId, default);
