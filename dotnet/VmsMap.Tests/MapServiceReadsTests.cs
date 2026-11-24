@@ -46,6 +46,13 @@ public class MapServiceReadsTests
   private const string SensorId = "sensor:1";
   private const string AckComment = "seen";
   private const string AlarmState = "ALARM";
+  private const string PanelLabel = "panel";
+  private const string ShownPanelLabel = "shown panel";
+  private const string CanvasLabel = "canvas";
+  private const string PartOwnerLabel = "input owner";
+  private const string PartLabel = "input";
+  private const double PaperWidth = 640;
+  private const double PaperHeight = 480;
   private const string FigureColor = "#123456";
   private const string FigureKind = "figure";
   private const string VisualText = "Door";
@@ -144,6 +151,46 @@ public class MapServiceReadsTests
     return node;
   }
 
+  /// <summary>A stored diagram row: the type it is drawn from, its own paper, its place.</summary>
+  private static Task SeedDiagramAsync(
+    VmsMapDbContext db, string objectId, string? typeId = null,
+    DiagramCoordDTO? geometry = null, string? regionId = null) =>
+    new DiagramService(db).UpdateListAsync([
+      new DiagramDTO
+      {
+        id = objectId,
+        dgr_type = typeId,
+        geometry = geometry,
+        region_id = regionId,
+      }
+    ]);
+
+  /// <summary>
+  /// The diagram itself — its paper and one part drawn in a region of it — and an empty canvas
+  /// the diagram can be shown on. Returns the ids the tests name.
+  /// </summary>
+  private static async Task<(BaseMarkerDTO Panel, BaseMarkerDTO Part, BaseMarkerDTO Canvas, string TypeId)>
+    SeedPanelAsync(Services s)
+  {
+    var type = new DBDiagramType { id = Guid.NewGuid(), name = PanelLabel };
+    s.Db.DiagramTypes.Add(type);
+    await s.Db.SaveChangesAsync();
+    var typeId = type.id.ToString();
+
+    var panel = await Node(s.Map, PanelLabel);
+    await SeedDiagramAsync(
+      s.Db, panel.id!, typeId, new DiagramCoordDTO { width = PaperWidth, height = PaperHeight });
+
+    var partOwner = await Node(s.Map, PartOwnerLabel);
+    var part = await Node(s.Map, PartLabel, panel.id, partOwner.id);
+    await SeedDiagramAsync(s.Db, part.id!, regionId: FirstRegionKey);
+
+    var canvas = await Node(s.Map, CanvasLabel);
+    await SeedDiagramAsync(s.Db, canvas.id!, Guid.NewGuid().ToString());
+
+    return (panel, part, canvas, typeId);
+  }
+
   private static async Task Grant(
     VmsMapDbContext db, BaseMarkerDTO node, string subject, params string[] actions)
   {
@@ -240,6 +287,186 @@ public class MapServiceReadsTests
     Assert.Equal(SecondRegionKey, rewritten.region_id);
     Assert.Equal(400, rewritten.geometry?.width);
     Assert.Equal(300, rewritten.geometry?.height);
+  }
+
+  [Fact]
+  public async Task ARepresentationInARegionOpensOnItsOwnersPaperAndChildren()
+  {
+    var s = Create();
+    var (panel, part, canvas, typeId) = await SeedPanelAsync(s);
+
+    // The panel shown in a region of the canvas: its own row says the place and nothing else.
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = shown.id!,
+      Depth = 1,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    var row = Assert.Single(content.Content, candidate => candidate.Id == shown.id);
+    Assert.True(row.IsRepresentation);
+    // The content is the diagram's: its type and its paper, not the copy's.
+    Assert.Equal(typeId, row.DgrType);
+    Assert.Equal(PaperWidth, row.Geometry!.Width);
+    Assert.Equal(PaperHeight, row.Geometry.Height);
+    // The place is the copy's, and a region is a place like any other: no `placement` here.
+    Assert.Equal(FirstRegionKey, row.RegionId);
+    Assert.Null(row.Placement);
+
+    Assert.Contains(content.Children, child => child.Id == part.id);
+    Assert.DoesNotContain(content.Children, child => child.Id == panel.id);
+    Assert.Contains(content.DgrTypes, type => type.Id == typeId);
+  }
+
+  [Fact]
+  public async Task ARepresentationDroppedOnThePaperKeepsItsRectangleAndShowsItsOwner()
+  {
+    var s = Create();
+    var (panel, part, canvas, typeId) = await SeedPanelAsync(s);
+
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, geometry: new DiagramCoordDTO
+    {
+      left = 20,
+      top = 10,
+      width = 100,
+      height = 50,
+    });
+
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = shown.id!,
+      Depth = 1,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    var row = Assert.Single(content.Content, candidate => candidate.Id == shown.id);
+    Assert.True(row.IsRepresentation);
+    Assert.Equal(typeId, row.DgrType);
+    // Where it stands and what it opens on are two different rectangles.
+    Assert.Equal(100, row.Placement!.Width);
+    Assert.Equal(50, row.Placement.Height);
+    Assert.Equal(PaperWidth, row.Geometry!.Width);
+    Assert.Empty(row.RegionId);
+
+    Assert.Contains(content.Children, child => child.Id == part.id);
+  }
+
+  [Fact]
+  public async Task AnOrdinaryDiagramIsNotARepresentation()
+  {
+    var s = Create();
+    var (panel, part, _, _) = await SeedPanelAsync(s);
+
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = panel.id!,
+      Depth = 1,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    var row = Assert.Single(content.Content, candidate => candidate.Id == panel.id);
+    Assert.False(row.IsRepresentation);
+    Assert.Null(row.Placement);
+    Assert.Contains(content.Children, child => child.Id == part.id);
+  }
+
+  [Fact]
+  public async Task AReplicaOfSomethingThatIsNotADiagramReportsNoRow()
+  {
+    var s = Create();
+    // A device part and its picture on the canvas: a replica, but not one of a diagram.
+    var owner = await Node(s.Map, PartOwnerLabel);
+    var canvas = await Node(s.Map, CanvasLabel);
+    await SeedDiagramAsync(s.Db, canvas.id!, Guid.NewGuid().ToString());
+    var copy = await Node(s.Map, PartLabel, canvas.id, owner.id);
+
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = copy.id!,
+      Depth = 1,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    Assert.DoesNotContain(content.Content, row => row.Id == copy.id);
+
+    var read = await s.Grpc.GetDiagramsByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { copy.id! },
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    Assert.Empty(read.Diagrams);
+  }
+
+  [Fact]
+  public async Task RowsFetchedByIdResolveARepresentationTheSameWay()
+  {
+    var s = Create();
+    var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
+
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var read = await s.Grpc.GetDiagramsByIds(new MapProto.GetByIdsRequest
+    {
+      Ids = { shown.id! },
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    var row = Assert.Single(read.Diagrams);
+    Assert.True(row.IsRepresentation);
+    Assert.Equal(typeId, row.DgrType);
+    Assert.Equal(FirstRegionKey, row.RegionId);
+    Assert.Null(row.Placement);
+  }
+
+  [Fact]
+  public async Task ARepresentationsTypeIsNotWritableThroughItsOwnRow()
+  {
+    var s = Create();
+    var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
+
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var rejected = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagrams(
+      new MapProto.DiagramList
+      {
+        Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = typeId } },
+      }, new TestContext()));
+    Assert.Equal(StatusCode.InvalidArgument, rejected.StatusCode);
+
+    // Its place is its own, and moving it is what a copy is for.
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams = { new MapProto.Diagram { Id = shown.id!, RegionId = SecondRegionKey } },
+    }, new TestContext());
+
+    var stored = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(shown.id!));
+    Assert.Null(stored.dgr_type);
+    Assert.Equal(SecondRegionKey, stored.region_id);
+  }
+
+  [Fact]
+  public async Task DeletingADiagramTakesItsRepresentationsFromEveryCanvas()
+  {
+    var s = Create();
+    var (panel, part, canvas, _) = await SeedPanelAsync(s);
+
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    await s.Grpc.DeleteObjects(new MapProto.ObjectIds { Ids = { panel.id! } }, new TestContext());
+
+    // `owner_id` has no foreign key: nothing but this takes the copy away.
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(shown.id!)));
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(part.id!)));
+    // The canvas it stood on is not the diagram's: a copy is not the place it is shown in.
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(canvas.id!)));
   }
 
   [Fact]

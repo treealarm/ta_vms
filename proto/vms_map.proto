@@ -1298,6 +1298,14 @@ message Diagram {
   string dgr_type = 4;
   // A row of `files`, not a path on a volume (see PutFile).
   string file_id = 5;
+  // Where a representation of a diagram stands in its parent. Its `geometry` is the paper it
+  // opens on, taken from the diagram it represents. Empty on an ordinary diagram, whose geometry
+  // is both its place and its paper.
+  DiagramCoordinate placement = 6;
+  // True when this row describes a replica of a diagram: its type, picture and children belong to
+  // the diagram it represents, and only its place is its own. Independent of `placement` — a
+  // representation placed in a region of its parent has a region and no placement.
+  bool is_representation = 7;
 }
 
 message AttachDeviceDiagramRequest {

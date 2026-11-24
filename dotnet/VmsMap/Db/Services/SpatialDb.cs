@@ -227,13 +227,34 @@ namespace VmsMap.Db
       if (subtreeIds.Count == 0)
         return new RemovalResult(0, requested, []);
 
+      // `owner_id` carries no foreign key: a replica of a node removed here stands wherever it was
+      // placed, on another canvas or another plan, and nothing else would take it away. So the
+      // removed set is the subtree plus, to a fixed point, the objects it owns — a replica of a
+      // replica goes too, should the data ever hold one.
+      var removedIds = new HashSet<Guid>(subtreeIds);
+      var frontier = subtreeIds;
+      while (frontier.Count > 0)
+      {
+        var replicas = await _db.Markers.AsNoTracking()
+          .Where(m => m.owner_id != null && frontier.Contains(m.owner_id.Value))
+          .Select(m => m.id)
+          .ToListAsync(ct);
+        frontier = replicas.Where(removedIds.Add).ToList();
+      }
+
+      var allIds = removedIds.ToList();
+      var allObjectIds = allIds
+        .Select(id => Utils.ConvertGuidToObjectId(id)!)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
       var cameras = new HashSet<string>(StringComparer.Ordinal);
 
       // The placement rows in the subtree belong to replicas of cameras, not to the cameras'
       // canonical nodes -- those stand under their server, outside any space. A camera whose
       // reference was here loses its position and stays in the tree; the rows go with their nodes.
       var placements = await _db.CameraPlacements
-        .Where(p => subtreeIds.Contains(p.object_id))
+        .Where(p => allIds.Contains(p.object_id))
         .ToListAsync(ct);
       cameras.UnionWith(placements.Select(p => p.camera_id));
       _db.CameraPlacements.RemoveRange(placements);
@@ -241,7 +262,7 @@ namespace VmsMap.Db
       // Landmarks go with the subtree, and the observations made on them with the landmarks. The
       // cameras that made them lose a model, so they are named in the notification.
       var landmarks = await _db.Landmarks
-        .Where(l => subtreeIds.Contains(l.object_id))
+        .Where(l => allIds.Contains(l.object_id))
         .ToListAsync(ct);
       if (landmarks.Count > 0)
       {
@@ -265,25 +286,32 @@ namespace VmsMap.Db
       }
 
       _db.GeoObjects.RemoveRange(
-        await _db.GeoObjects.Where(g => subtreeIds.Contains(g.id)).ToListAsync(ct));
+        await _db.GeoObjects.Where(g => allIds.Contains(g.id)).ToListAsync(ct));
 
       // The registry rows point at nodes and EF does not model those foreign keys. The parts go
       // first, in a statement of their own: PostgreSQL cascades them away with their diagram, and
       // one batch may delete the diagram first -- the parts' own delete then affects no row.
       _db.DeviceDiagramParts.RemoveRange(
         await _db.DeviceDiagramParts
-          .Where(part => subtreeIds.Contains(part.diagram_object_id))
+          .Where(part => allIds.Contains(part.diagram_object_id))
           .ToListAsync(ct));
       await _db.SaveChangesAsync(ct);
 
       _db.DeviceDiagrams.RemoveRange(
         await _db.DeviceDiagrams
-          .Where(diagram => subtreeIds.Contains(diagram.object_id))
+          .Where(diagram => allIds.Contains(diagram.object_id))
           .ToListAsync(ct));
       await _db.SaveChangesAsync(ct);
 
-      var removed = await _mapUpdateService.Delete(requested.ToList());
-      return new RemovalResult(removed, requested, cameras);
+      // The replicas are roots of their own: whatever canvas they stand on, their delete is what
+      // notifies it.
+      var roots = requested
+        .Concat(allObjectIds)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+      var removed = await _mapUpdateService.Delete(roots);
+      return new RemovalResult(removed, roots, cameras);
     }
 
     private async Task AfterRemovalAsync(RemovalResult result, bool ambient, CancellationToken ct)
