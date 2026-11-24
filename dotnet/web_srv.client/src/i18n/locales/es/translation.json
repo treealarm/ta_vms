@@ -1236,6 +1236,7 @@
     "problemBindingIndex": "La región \"{{key}}\" de \"{{name}}\" encuentra su parte por posición, que empieza en 1.",
     "problemBindingDuplicate": "Dos regiones de \"{{name}}\" reclaman la misma parte.",
     "openDeviceDiagram": "Abrir diagrama del dispositivo",
+    "openDiagram": "Abrir diagrama",
     "noDeviceDiagram": "Este dispositivo aún no tiene diagrama. Dibuje uno desde la fila de la cámara en Administración → Mapas.",
     "deviceDiagram": "Diagrama del dispositivo",
     "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo",

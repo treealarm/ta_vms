@@ -68,8 +68,10 @@ const PANEL_SHARE = 0.4
 /**
  * A mnemoscheme instead of the middle canvas: the diagram's type picture as the paper, its
  * children placed by region or by their own coordinates, values written into the regions, and
- * the breadcrumb chain out of it. A nested diagram is entered by picking it, and left by its
- * breadcrumb — the same movement the map uses for nested plans.
+ * the breadcrumb chain out of it. In the editor a pick selects the element — it is dragged and
+ * edited where it stands — and a nested diagram is entered by its "Open diagram" button; the
+ * operator, who has no editor panel, enters by picking. Both leave by the breadcrumb, the same
+ * movement the map uses for nested plans.
  */
 export default function DiagramViewer({
   diagramId, selectedId, onPick, onOpen, editing, onCreated, onDeleted,
@@ -205,8 +207,10 @@ export default function DiagramViewer({
 
 
   const pick = (marker: MapMarker) => {
-    // Entering a nested diagram is the same movement as opening a plan on the map.
-    if (marker.nodeKind === 'diagram') onOpen(marker)
+    // In the editor a pick only selects: the element is dragged by its body and edited in the panel,
+    // and entering a nested diagram on a click would take the paper away from the hand moving it.
+    // The panel's "Open diagram" is the way in. The operator has no panel, so a pick is the way in.
+    if (!editing && marker.nodeKind === 'diagram') onOpen(marker)
     else onPick(marker)
   }
 

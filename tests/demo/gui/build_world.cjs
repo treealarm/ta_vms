@@ -638,6 +638,24 @@ async function sharedCanvas(page) {
   check(!!spareRow && !spareRow.regionId,
     'the drawn diagram keeps its own rectangle on the board')
   await shot(page, '06c-shared-board.png')
+
+  // A pick selects an element so that it can be moved; the way into a nested diagram is the
+  // editor panel's button, not the click that moves it.
+  const spareOnBoard = page.getByTestId('diagram-paper').locator(`[title^="${SPARE}"]`).first()
+  check(await spareOnBoard.count() === 1, 'the drawn diagram stands on the board')
+  await spareOnBoard.click()
+  await page.waitForTimeout(800)
+  check(await page.getByTestId('diagram-paper').count() === 1,
+    'a pick on the drawn diagram leaves the board open')
+  const openSpare = page.getByRole('button', { name: 'Open diagram', exact: true })
+  check(await openSpare.count() === 1, 'the drawn diagram offers "Open diagram"')
+  await openSpare.click()
+  await page.waitForTimeout(1500)
+  const crumbs = await page.locator('.MuiBreadcrumbs-root').first().innerText()
+  check(crumbs.includes(SPARE), 'the button enters the drawn diagram')
+  await page.locator('button[aria-label="Up one level"]').click()
+  await page.waitForTimeout(1200)
+  await shot(page, '06d-pick-and-enter.png')
 }
 
 /** A right is a checkbox on the subject's row; the role `user` is the one the demo uses. */

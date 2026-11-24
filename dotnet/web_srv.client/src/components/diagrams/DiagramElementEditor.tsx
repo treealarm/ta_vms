@@ -24,6 +24,8 @@ type Props = {
   element: MapDiagram
   /** The type of the diagram it stands in — its regions are the places it may take. */
   parentType: MapDiagramType | undefined
+  /** The way into a nested diagram: a pick only selects it, so entering is this button. */
+  onOpenDiagram?: () => void
   onSaved: () => void
   onClose: () => void
 }
@@ -64,7 +66,7 @@ const draftOf = (marker: MapMarker, element: MapDiagram): Draft => {
  * colour are the map's own business, edited beside the map.
  */
 export default function DiagramElementEditor({
-  marker, element, parentType, onSaved, onClose,
+  marker, element, parentType, onOpenDiagram, onSaved, onClose,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -216,6 +218,11 @@ export default function DiagramElementEditor({
             .then(() => onClose())
             .catch((e) => setError(errorText(e)))
         }}
+        extra={isDiagram && onOpenDiagram ? (
+          <Button size="small" variant="outlined" onClick={onOpenDiagram}>
+            {t('diagramEditor.openDiagram')}
+          </Button>
+        ) : undefined}
       />
 
       <Stack direction="row" spacing={0.5} useFlexGap alignItems="center" sx={{ px: 1.5, pt: 1, flexWrap: 'wrap' }}>

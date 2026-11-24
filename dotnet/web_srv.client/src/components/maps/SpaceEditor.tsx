@@ -277,8 +277,13 @@ export default function SpaceEditor({
     ?? selectedNested?.id
     ?? undefined
   // The node whichever panel shows: a camera by its placement's replica, a landmark, a nested
-  // space by its footprint — so the Object tab is the same form for all of them.
-  const selectedNode = selectionNodeId ? markersById[selectionNodeId] : undefined
+  // space by its footprint — so the Object tab is the same form for all of them. A child of the
+  // open diagram is read with it, and the node list may not have caught up with one made a moment
+  // ago, so the diagram's own content answers when the store does not.
+  const selectedNode = selectionNodeId
+    ? markersById[selectionNodeId]
+      ?? shownDiagram?.children?.find((child) => child.id === selectionNodeId)
+    : undefined
   const selectedFigure = selectionNodeId ? figuresById[selectionNodeId] : undefined
   const selectedProps = selectionNodeId ? propsById[selectionNodeId] : undefined
   // "Show on map" names a place on this canvas: a node drawn nowhere here — a container, a camera
@@ -763,6 +768,7 @@ export default function SpaceEditor({
       marker={selectedNode}
       element={selectedElement}
       parentType={parentDiagramType}
+      onOpenDiagram={() => { if (selectedElement.id) openDiagram(selectedElement.id) }}
       onSaved={() => void dispatch(loadDiagramContent({ id: openDiagramId, depth: diagramDepth }))}
       onClose={() => setSelection(null)}
     />

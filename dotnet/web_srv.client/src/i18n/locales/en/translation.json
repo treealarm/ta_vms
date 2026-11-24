@@ -1236,6 +1236,7 @@
     "problemBindingIndex": "The region \"{{key}}\" of \"{{name}}\" finds its part by position, which counts from 1.",
     "problemBindingDuplicate": "Two regions of \"{{name}}\" claim the same part.",
     "openDeviceDiagram": "Open device diagram",
+    "openDiagram": "Open diagram",
     "noDeviceDiagram": "This device has no diagram yet. Draw one from the camera's row under Admin → Maps.",
     "deviceDiagram": "Device diagram",
     "placeDeviceDiagram": "Place the device diagram on this canvas",
