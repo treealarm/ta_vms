@@ -51,6 +51,12 @@ LAMP_RELAY_TOKEN = "lamp"
 ARMED_CAMERA = "sim-master"
 ARMED_TOKEN = "input"
 ARMED_RELAY_TOKEN = "loop"
+# The shared canvas the two cameras' rear panels stand on, its bays, the blank diagram the binding
+# check uses, and the template the panels are drawn from.
+SHARED_CANVAS_NAME = "diag2"
+SPARE_NAME = "spare"
+SHARED_BAYS = ("left", "right")
+CAM_PANEL_TYPE_NAME = "Camera rear panel"
 
 
 def camera_id(name):
@@ -463,6 +469,12 @@ def walk_the_world(vms):
                  f"the floor holds the '{LAYOUT_NAME}' diagram"):
         return None
 
+    # The shared board stands on the same plan: two bays, each taking a camera's rear panel.
+    shared = by_name(vms, floor, SHARED_CANVAS_NAME)
+    if not check(shared is not None and shared.get("nodeKind") == "diagram",
+                 f"the floor holds the '{SHARED_CANVAS_NAME}' canvas"):
+        return None
+
     # The four racks are regions of the floor's schematic, and every rack is filled with switches.
     # An administrator may draw something else on the same diagram, so the world's racks are what
     # is checked for, not the absence of anything else.
@@ -494,6 +506,7 @@ def walk_the_world(vms):
         "map": demo_map, "building": building, "layout": layout,
         "layout_racks": layout_racks, "rack": rack,
         "switch": computer, "port": port, "ports": ports,
+        "shared": shared,
     }
 
 
@@ -638,6 +651,218 @@ def check_device_diagram(vms, world):
     check(dark, "opening it again puts the socket out")
 
 
+# ── The shared board: two cameras' panels on one canvas ──────────────────────────
+
+
+def shared_panels(vms):
+    """The shared canvas, the representation standing in each bay and the blank diagram on it.
+
+    A node listing carries no region — where a node stands inside a diagram is the `diagrams` row's,
+    which `by-ids` reads. The floor is looked up by name: a space's id is the server's, so it changes
+    when the world is removed and installed again."""
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if floor is None:
+        return None, {}, None
+    canvas = by_name(vms, children(vms, floor["id"]), SHARED_CANVAS_NAME)
+    if canvas is None:
+        return None, {}, None
+    kids = children(vms, canvas["id"])
+    shown = [kid for kid in kids if kid.get("ownerId")]
+    rows = {row.get("id"): row for row in diagrams_by_ids(vms, [kid["id"] for kid in shown])}
+    replicas = {}
+    for kid in shown:
+        region = (rows.get(kid["id"]) or {}).get("regionId")
+        if region:
+            replicas[region] = kid
+    return canvas, replicas, by_name(vms, kids, SPARE_NAME)
+
+
+def panel_of(vms, camera):
+    """The canonical diagram the map keeps for a camera, under its picture on the floor."""
+    floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
+    if floor is None:
+        return None
+    node, _ = device_nodes(vms, camera)
+    picture = next((kid for kid in children(vms, floor["id"])
+                    if kid.get("ownerId") == (node or {}).get("id")), None)
+    if picture is None:
+        return None
+    canon = next((kid for kid in children(vms, picture["id"])
+                  if kid.get("nodeKind") == "diagram"), None)
+    return (canon or {}).get("id")
+
+
+def diagram_content(vms, node):
+    """The diagram's own rows and the replicas directly inside it.
+
+    A representation's children are the canonical diagram's, so they are read by the owner's id; the
+    parent node a content read carries for context is not a child and is left out by its own
+    parent."""
+    content = vms.call("GET", f"/api/map/diagrams/{node['id']}/content?depth=1") or {}
+    rows = {row.get("id"): row for row in content.get("content") or []}
+    inside = node.get("ownerId") or node.get("id")
+    parts = [rows[row.get("id")] for row in content.get("children") or []
+             if row.get("id") in rows and row.get("parentId") == inside]
+    return rows, parts
+
+
+def check_shared_canvas(vms):
+    """One canvas, two cameras: each bay holds a representation of a camera's canonical diagram, so
+    the two panels are one content shown in two places. The paper is the diagram's — a
+    representation in a region is a place, not a sheet of its own — and the parts on it are the
+    replicas of the camera's configured parts."""
+    canvas, replicas, spare = shared_panels(vms)
+    if not check(canvas is not None, f"the floor holds the '{SHARED_CANVAS_NAME}' canvas"):
+        return
+
+    # The marker on the plan is the card, as for the floor's schematic: the board is entered, not
+    # laid over the plan.
+    figures = figures_of(vms, [canvas["id"]])
+    check(any(figure.get("id") == canvas["id"] for figure in figures),
+          "the shared canvas is marked on the plan")
+
+    check(set(replicas) == set(SHARED_BAYS),
+          f"one representation stands in each bay (has {sorted(replicas)})")
+    check(spare is not None and spare.get("nodeKind") == "diagram"
+          and not children(vms, spare["id"]),
+          f"the blank '{SPARE_NAME}' diagram waits on the canvas")
+
+    masters = panel_of(vms, "sim-master")
+    slave = panel_of(vms, "sim-ptz")
+    check((replicas.get("left") or {}).get("ownerId") == masters,
+          "the left bay shows the indoor master's canonical diagram")
+    check((replicas.get("right") or {}).get("ownerId") == slave,
+          "the right bay shows the hall slave's canonical diagram")
+
+    # The panels' configured parts: the master's five sockets, the slave's one input. A device's
+    # diagram is drawn only from parts an operator set up.
+    expected = {"left": {"input", "lamp", "peer", "loop", "button"}, "right": {"input"}}
+    panel_type = next((candidate.get("id") for candidate in diagram_types(vms)
+                       if candidate.get("name") == CAM_PANEL_TYPE_NAME), None)
+    for bay in SHARED_BAYS:
+        replica = replicas.get(bay)
+        if not check(replica is not None, f"a representation stands in the {bay} bay"):
+            continue
+        rows, parts = diagram_content(vms, replica)
+        root = rows.get(replica["id"]) or {}
+        check(root.get("isRepresentation") is True,
+              f"the {bay} bay is a representation, not a diagram of its own")
+        check(root.get("dgrType") == panel_type,
+              f"the {bay} bay opens on the panel's type")
+        check(not root.get("placement"),
+              f"a representation in a region carries no rectangle of its own ({bay})")
+        check({row.get("regionId") for row in parts} == expected[bay],
+              f"the {bay} bay shows the camera's configured parts "
+              f"(has {sorted(row.get('regionId') for row in parts)})")
+
+
+def check_shared_panel_is_live(vms):
+    """The panel on the board is live: a relay closed on the camera lights its socket inside the
+    representation, because a replica shows its owner's state rather than keeping one."""
+    _, replicas, _ = shared_panels(vms)
+    left = replicas.get("left")
+    if not check(left is not None, "the master's panel stands in the left bay"):
+        return
+
+    _, parts = diagram_content(vms, left)
+    socket = next((row for row in parts if row.get("regionId") == "peer"), None)
+    if not check(socket is not None, "the left bay shows the peer socket"):
+        return
+
+    set_relay(vms, camera_id("sim-master"), "peer", True)
+    lit = wait_until(
+        lambda: "RELAY_ACTIVE" in (states_of(vms, [socket["id"]]).get(socket["id"]) or []), 40)
+    set_relay(vms, camera_id("sim-master"), "peer", False)
+    check(lit, "closing peer lights the socket inside the representation")
+
+
+def device_binding(vms, node_id):
+    return vms.call("GET", f"/api/map/admin/device-diagram/binding?nodeId={node_id}")
+
+
+def bind_diagram(vms, node_id, camera):
+    return vms.call("POST", "/api/map/admin/device-diagram/bind", {
+        "nodeId": node_id, "sourceKind": "camera", "sourceId": camera})
+
+
+def unbind_diagram(vms, node_id):
+    return vms.call("DELETE", "/api/map/admin/device-diagram/bind", {"nodeId": node_id})
+
+
+def check_shared_diagram_binding(vms):
+    """A drawn diagram can be bound to a device: the blank `spare` takes the slave's part and gives
+    it back. A device keeps one diagram per view, so the world's own panel is unbound first and put
+    back at the end — and the board keeps showing it meanwhile, as an ordinary diagram."""
+    _, replicas, spare = shared_panels(vms)
+    canon = (replicas.get("right") or {}).get("ownerId")
+    if not check(spare is not None and canon is not None,
+                 "the canvas holds the slave's panel and the blank diagram"):
+        return
+    camera = camera_id("sim-ptz")
+
+    refused = False
+    try:
+        bind_diagram(vms, spare["id"], camera)
+    except HttpError as error:
+        refused = error.status == 400
+    check(refused, "a device keeps one diagram: binding a second one is refused, and says so")
+
+    check(unbind_diagram(vms, canon).get("success") is True, "the world's panel is unbound")
+    check(device_binding(vms, canon).get("bound") is not True,
+          "the unbound panel is an ordinary diagram")
+    rows, parts = diagram_content(vms, replicas["right"])
+    check((rows.get(replicas["right"]["id"]) or {}).get("isRepresentation") is True,
+          "its representation keeps showing it")
+    check(not parts, "an unbound diagram draws no managed replica")
+
+    bind_diagram(vms, spare["id"], camera)
+    check(device_binding(vms, spare["id"]).get("sourceId") == camera,
+          "the drawn diagram is bound to the slave")
+    rows, parts = diagram_content(vms, spare)
+    check({row.get("regionId") for row in parts} == {"input"},
+          "the bound diagram takes the slave's configured part")
+
+    unbind_diagram(vms, spare["id"])
+    check(marker(vms, spare["id"]) is not None and not children(vms, spare["id"]),
+          "unbinding leaves the diagram, empty again")
+    rows, _ = diagram_content(vms, spare)
+    check((rows.get(spare["id"]) or {}).get("dgrType") is not None,
+          "and the diagram keeps its type")
+
+    bind_diagram(vms, canon, camera)
+    rows, parts = diagram_content(vms, replicas["right"])
+    check({row.get("regionId") for row in parts} == {"input"},
+          "the world's panel is back on the board, with its part")
+
+
+def check_shared_canvas_removal(vms, world):
+    """Removing the canvas takes its representations and leaves the canonical diagrams: the board
+    is one place a diagram is shown, not the diagram itself. A reinstall puts the board back."""
+    canvas, replicas, _ = shared_panels(vms)
+    canons = [replica.get("ownerId") for replica in replicas.values()]
+    if not check(canvas is not None and len(canons) == len(SHARED_BAYS),
+                 "the board and its two representations exist"):
+        return world
+
+    vms.call("DELETE", "/api/map/admin/objects", {"ids": [canvas["id"]]})
+    gone = wait_until(
+        lambda: marker(vms, canvas["id"]) is None
+        and all(marker(vms, (replica or {}).get("id")) is None for replica in replicas.values()),
+        60)
+    check(gone, "deleting the canvas takes both representations")
+    for canon in canons:
+        check(marker(vms, canon) is not None, "a canonical diagram outlives the canvas it stood on")
+
+    install_demo(vms)
+    again = walk_the_world(vms)
+    if again is None:
+        return world
+    canvas, replicas, _ = shared_panels(vms)
+    check(set(replicas) == set(SHARED_BAYS),
+          "a reinstall draws the board again, with a panel in each bay")
+    return again
+
+
 def check_types(vms):
     types = {t.get("name"): t for t in diagram_types(vms)}
 
@@ -671,6 +896,13 @@ def check_types(vms):
     bindings = {r.get("regionKey"): (r.get("part") or {}) for r in panel.get("regions") or []}
     check(bindings.get("peer", {}).get("matchValue") == "peer",
           "the peer socket finds its part by token")
+
+    shared = types.get("Cam diagrams", {})
+    shared_regions = {r.get("regionKey") for r in shared.get("regions") or []}
+    check(shared_regions == set(SHARED_BAYS),
+          f"Cam diagrams offers its two bays (has {sorted(shared_regions)})")
+    check(not any(r.get("part") for r in shared.get("regions") or []),
+          "a bay is a place on the board, not a slot of a device part")
 
 
 def check_cameras(vms, world, allow_missing):
@@ -2148,8 +2380,13 @@ def check_cleanup(vms, sensor):
 
 
 def check_camera_removal_cascade(vms, sensor):
-    """Deleting the camera takes its part nodes and their pictures with it."""
+    """Deleting the camera takes its part nodes and their pictures with it — and its panel on the
+    shared board, one place that panel is shown — while the other camera's panel keeps standing."""
     part_id = sensor["part"]["id"]
+
+    _, replicas, _ = shared_panels(vms)
+    left = (replicas.get("left") or {}).get("ownerId")
+    right = (replicas.get("right") or {}).get("ownerId")
 
     floor = next((space for space in spaces(vms) if space.get("name") == BUILDING_NAME), None)
     picture = place_part_picture(vms, part_id, floor["id"], "Sensor (plan)", 38.99285, -76.93783) \
@@ -2162,6 +2399,10 @@ def check_camera_removal_cascade(vms, sensor):
     if picture and picture.get("id"):
         check(bool(wait_until(lambda: marker(vms, picture["id"]) is None, 30)),
               "deleting the camera removes the pictures of its parts")
+    check(left is not None and marker(vms, left) is not None,
+          "the other camera's panel is untouched by the removal")
+    check(right is not None and bool(wait_until(lambda: marker(vms, right) is None, 30)),
+          "the removed camera's own panel goes with it")
     check(not any(alarm.get("objectId") == part_id
                   for branch in ("open", "closed")
                   for alarm in (alarms(vms).get(branch) or {}).get("alarms") or []),
@@ -2327,6 +2568,10 @@ def main():
         check_camera_zone_arming(vms)
         print("The device's own diagram")
         check_device_diagram(vms, world)
+        print("The shared board")
+        check_shared_canvas(vms)
+        check_shared_panel_is_live(vms)
+        check_shared_diagram_binding(vms)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
             check_part_replica(vms, sensor)
@@ -2351,6 +2596,10 @@ def main():
         check_user_node_survives(vms, world)
         # The removal above took the world away; put it back for whoever uses the installation next.
         install_demo(vms)
+
+    if not args.no_remove_check:
+        print("Removing the shared canvas")
+        world = check_shared_canvas_removal(vms, world)
 
     # Last, because it deletes and re-provisions a camera: the nodes belong to the device, and the
     # world never owns them.

@@ -66,7 +66,11 @@ namespace VmsMap.Demo
     //     the master's fourth relay is on the map and switched from there. Names are a type and a
     //     number throughout — cam1…cam5, relay1…relay4, map1, plan1, diag1 — with the replica's
     //     suffix `rep<N>`, and the operator may control the devices on the floor.
-    public const int UmdDataCenterVersion = 22;
+    // 23: one shared canvas, `diag2`, carries two cameras side by side: the indoor master's panel
+    //     and the slave's, each a representation of its camera's canonical diagram, so what stands
+    //     on the board is one content shown in two places. A blank `spare` diagram waits on the
+    //     board for the acceptance run, which binds it to a device and takes the binding away.
+    public const int UmdDataCenterVersion = 23;
 
     /// The world a deployment's `DEMO_CONFIG` names, or null when there is none by that key.
     public static DemoWorld? For(string key) =>
@@ -78,6 +82,11 @@ namespace VmsMap.Demo
     // where the equipment is. Pinned in WGS84, as the camera poses are; the simulator's constants
     // and this point are checked against each other by tests/onvifsim.
     private static readonly DemoPoint Racks = new(38.9929167, -76.9379687);
+
+    // The shared board stands in the building's east wing, clear of the rack row the schematic is
+    // marked on and of the hall pair's points: a diagram on a plan is a card, and two cards on one
+    // spot hide each other.
+    private static readonly DemoPoint CamPanelsPoint = new(38.9929200, -76.9375000);
 
     // The calibration landmarks of the two pairs: the points MarylandWorld marks with coloured
     // blocks, on the floor of the hall and out on the lot. A name is a type and a number, and the
@@ -175,12 +184,17 @@ namespace VmsMap.Demo
     // plan, with no plan of a room nested in it. What stands on the floor — the four racks — is a
     // diagram of the floor, not a place with coordinates of its own.
     private const string FloorLayout = "object/floor-layout";
+    // The shared board two cameras' rear panels stand on, its two bays the regions of its type, and
+    // the blank diagram an acceptance run binds to a device.
+    private const string CamPanels = "object/cam-panels";
+    private const string SpareDiagram = "object/spare-diagram";
 
     private const string RackType = "type/rack";
     private const string SwitchType = "type/switch";
     private const string PortType = "type/port";
     private const string FloorLayoutType = "type/floor-layout";
     private const string CameraPanelType = "type/camera-rear-panel";
+    private const string CamPanelsType = "type/cam-panels";
 
     public static DemoWorld UmdDataCenter()
     {
@@ -200,6 +214,7 @@ namespace VmsMap.Demo
         new("file/switch-background", DemoArt.Switch(), "image/svg+xml"),
         new("file/port-icon", DemoArt.Port(), "image/svg+xml"),
         new("file/camera-panel-background", DemoArt.CameraRearPanel(), "image/svg+xml"),
+        new("file/cam-panels-background", DemoArt.CamPanels(), "image/svg+xml"),
       };
 
       var types = new List<DemoDiagramType>
@@ -209,6 +224,7 @@ namespace VmsMap.Demo
         SwitchTypeDefinition(),
         new(PortType, "RJ45 Port", "file/port-icon", []),
         CameraPanelTypeDefinition(),
+        CamPanelsTypeDefinition(),
       };
 
       var spaces = new List<DemoSpace>
@@ -236,6 +252,21 @@ namespace VmsMap.Demo
         Canvas: new DemoRect(0, 0, DemoArt.FloorLayoutWidth, DemoArt.FloorLayoutHeight),
         At: Racks,
         VisualKey: "file/server-room-icon", VisualWidth: 44, VisualHeight: 44));
+
+      // The shared board: two bays drawn side by side, each taking one camera's rear panel. It is a
+      // diagram of the floor like the schematic, so it stands on the plan at a point of its own and
+      // is entered to be read.
+      nodes.Add(new DemoNode(CamPanels, "diag2", "space/building", CamPanelsType,
+        Canvas: new DemoRect(0, 0, DemoArt.CamPanelsWidth, DemoArt.CamPanelsHeight),
+        At: CamPanelsPoint,
+        VisualKey: "file/cam-panels-background", VisualWidth: 44, VisualHeight: 33));
+
+      // A blank diagram on the board, drawn by nobody: the acceptance run binds it to a camera to
+      // see the replicas arrive and unbinds it to see them go, and the sheet it leaves behind is the
+      // administrator's again. Typed, so a binding has a template's sockets to fill; empty, so what
+      // appears on it is the binding's and not a drawing of the world's.
+      nodes.Add(new DemoNode(SpareDiagram, "spare", CamPanels, CameraPanelType,
+        Canvas: new DemoRect(40, 440, 320, 200)));
 
       // The four racks stand in the floor's schematic, filled with switches: every slot takes one,
       // and every switch eight ports. A rack has no point of its own — its place is its region of
@@ -334,6 +365,28 @@ namespace VmsMap.Demo
             VisualWidth: 44,
             VisualHeight: 28),
         ],
+        [
+          // Two cameras on one board: the indoor master's panel and the hall slave's, each a
+          // representation of a canonical diagram. The master's is the one kept under its picture
+          // above — one content in two places — and the slave has no other diagram, so the service
+          // makes it as it shows it. Both stand where an administrator's click would put them.
+          new DemoDeviceRepresentation(
+            "object/cam-panel-sim-master-left",
+            CameraKey: "sim-master",
+            TypeKey: CameraPanelType,
+            CanvasKey: CamPanels,
+            RegionKey: "left"),
+          new DemoDeviceRepresentation(
+            "object/cam-panel-sim-ptz-right",
+            CameraKey: "sim-ptz",
+            TypeKey: CameraPanelType,
+            CanvasKey: CamPanels,
+            RegionKey: "right",
+            CanonKey: "object/camera-panel-sim-ptz",
+            VisualKey: "file/camera-panel-background",
+            VisualWidth: 44,
+            VisualHeight: 28),
+        ],
         states,
         [
           // The operator sees the world; `control` is what lets them act on its devices — the
@@ -385,6 +438,17 @@ namespace VmsMap.Demo
 
     private static readonly Dictionary<string, string> PanelStyle =
       new() { ["color"] = "#4fc3f7", ["fontSize"] = "12px" };
+
+    /// The shared board: two bays, each holding one camera's rear panel. Its regions stand for no
+    /// part — the panel's own type carries the sockets — so a bay is a place, not a slot.
+    private static DemoDiagramType CamPanelsTypeDefinition() => new(
+      CamPanelsType,
+      "Cam diagrams",
+      "file/cam-panels-background",
+      [
+        new DemoRegion("left", DemoArt.CamPanelBay(1), PanelStyle),
+        new DemoRegion("right", DemoArt.CamPanelBay(2), PanelStyle),
+      ]);
 
     /// A rack cabinet with six equipment slots, one switch in every slot.
     private static DemoDiagramType RackTypeDefinition()

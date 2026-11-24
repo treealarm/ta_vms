@@ -112,6 +112,13 @@ public class DemoSeederTests
   private const string PanelFileKey = "file/panel";
   private const string PartButtonKey = "object/part-button";
   private const string PartButtonName = "relay4 rep1";
+  private const string BoardTypeKey = "type/board";
+  private const string BoardKey = "object/board";
+  private const string BoardName = "board";
+  private const string BoardLeft = "left";
+  private const string PanelTypeKey = "type/panel";
+  private const string PanelTypeName = "panel";
+  private const string ShownKey = "object/cam-panel-left";
 
   private static DemoWorld World(
     IReadOnlyList<DemoNode>? nodes = null,
@@ -122,10 +129,13 @@ public class DemoSeederTests
     IReadOnlyList<DemoGroundMark>? groundMarks = null,
     IReadOnlyList<DemoPtzObservation>? ptzObservations = null,
     IReadOnlyList<DemoFile>? files = null,
-    IReadOnlyList<DemoDeviceDiagram>? deviceDiagrams = null) => new(
+    IReadOnlyList<DemoDeviceDiagram>? deviceDiagrams = null,
+    IReadOnlyList<DemoDeviceRepresentation>? deviceRepresentations = null,
+    IReadOnlyList<DemoDiagramType>? types = null) => new(
       Key,
       1,
       files ?? [],
+      types ??
       [new DemoDiagramType(RackTypeKey, "Rack 42U", null,
         [new DemoRegion(SlotKey, new DemoRect(0.1, 0.2, 0.8, 0.1))])],
       [
@@ -148,6 +158,7 @@ public class DemoSeederTests
       groundMarks ?? [],
       ptzObservations ?? [],
       deviceDiagrams ?? [],
+      deviceRepresentations ?? [],
       [new DemoState(PortKey, "DISCONNECTED")],
       [new DemoRight(MapSpaceKey, "user", RightActions.View)]);
 
@@ -340,6 +351,67 @@ public class DemoSeederTests
 
     await s.Seeder.RemoveAsync(Key, CancellationToken.None);
     Assert.Empty(await s.Db.Markers.AsNoTracking().Where(m => m.owner_id == partId).ToListAsync());
+  }
+
+  [Fact]
+  public async Task ADeviceDiagramIsShownOnAnotherCanvasAsTheSameDiagram()
+  {
+    // The world shows the master's panel on a board of its own: the copy is a representation of the
+    // canonical diagram kept under the camera's picture, placed through the service an
+    // administrator's click reaches. A second install keeps the copy it finds, and a removal takes
+    // both nodes with the world.
+    var s = Create(MasterCamera);
+    var world = World(
+      placements: [new DemoPlacement(MasterCamera, RoomSpaceKey, 39.015, -76.985)],
+      files: [new DemoFile(PanelFileKey, "<svg/>"u8.ToArray(), "image/svg+xml")],
+      deviceDiagrams:
+      [
+        new DemoDeviceDiagram("object/panel", MasterCamera, PanelTypeKey, PanelFileKey, 44, 28),
+      ],
+      deviceRepresentations:
+      [
+        new DemoDeviceRepresentation(ShownKey, MasterCamera, PanelTypeKey, BoardKey, BoardLeft),
+      ],
+      types:
+      [
+        new DemoDiagramType(RackTypeKey, "Rack 42U", null,
+          [new DemoRegion(SlotKey, new DemoRect(0.1, 0.2, 0.8, 0.1))]),
+        new DemoDiagramType(BoardTypeKey, BoardName, null,
+          [new DemoRegion(BoardLeft, new DemoRect(0.1, 0.2, 0.8, 0.8))]),
+        new DemoDiagramType(PanelTypeKey, PanelTypeName, null, []),
+      ],
+      nodes:
+      [
+        .. DefaultNodes(),
+        new DemoNode(BoardKey, BoardName, RoomSpaceKey, BoardTypeKey,
+          Canvas: new DemoRect(0, 0, 400, 300)),
+      ]);
+
+    await s.Seeder.InstallAsync(world, CancellationToken.None);
+
+    var boardId = DemoIds.For(BoardKey);
+    var canonical = Guid.Parse(CameraObjectId.For(DemoIds.Camera(MasterCamera)));
+    var picture = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.owner_id == canonical);
+    var canon = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.parent_id == picture.id);
+    var shown = await s.Db.Markers.AsNoTracking().SingleAsync(m => m.parent_id == boardId);
+
+    // The copy is the service's node, with the id the service gave it — the registry is what
+    // remembers it, so a second install and a removal find the same one.
+    Assert.Equal(canon.id, shown.owner_id);
+    // The copy carries its place and nothing else: the paper and the type are the canon's.
+    var place = await s.Db.Diagrams.AsNoTracking().SingleAsync(d => d.id == shown.id);
+    Assert.Equal(BoardLeft, place.region_id);
+    Assert.Null(place.dgr_type);
+    Assert.Null(place.geometry);
+
+    var again = await s.Seeder.InstallAsync(world, CancellationToken.None);
+    Assert.Equal(0, again.Created);
+    Assert.Equal(shown.id, (await s.Db.Markers.AsNoTracking()
+      .SingleAsync(m => m.parent_id == boardId)).id);
+
+    await s.Seeder.RemoveAsync(Key, CancellationToken.None);
+    Assert.Empty(await s.Db.Markers.AsNoTracking()
+      .Where(m => m.id == canon.id || m.id == shown.id || m.id == boardId).ToListAsync());
   }
 
   [Fact]

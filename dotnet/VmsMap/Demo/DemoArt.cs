@@ -27,6 +27,8 @@ namespace VmsMap.Demo
     public const int PortHeight = 40;
     public const int CameraPanelWidth = 640;
     public const int CameraPanelHeight = 400;
+    public const int CamPanelsWidth = 800;
+    public const int CamPanelsHeight = 600;
 
     // A degree of a great circle, in metres: the WGS84 sphere the map's coordinates are laid out on.
     // A plan is drawn in degrees, so a size in metres comes from this, at the latitude it stands at.
@@ -97,6 +99,21 @@ namespace VmsMap.Demo
       0.16,
       RackRegionWidth,
       RackRegionWidth * FloorLayoutWidth * RackHeight / RackWidth / FloorLayoutHeight);
+
+    // The two bays of the shared board: a camera's rear panel stands in each, and the bays are the
+    // regions of the board's type. The height keeps the panel's own aspect at the bay's width, so a
+    // panel shown in it is not stretched.
+    private const double CamPanelBayLeft = 0.06;
+    private const double CamPanelBayTop = 0.22;
+    private const double CamPanelBayWidth = 0.40;
+    private const double CamPanelBayStep = 0.48;
+
+    /// A bay of the shared board; `index` is 1-based. Left to right: the two panels the demo shows.
+    public static DemoRect CamPanelBay(int index) => new(
+      CamPanelBayLeft + (index - 1) * CamPanelBayStep,
+      CamPanelBayTop,
+      CamPanelBayWidth,
+      CamPanelBayWidth * CamPanelsWidth * CameraPanelHeight / CameraPanelWidth / CamPanelsHeight);
 
     /// A Catalyst's front panel: the sockets the ports take, numbered underneath them.
     public static byte[] Switch()
@@ -235,6 +252,24 @@ namespace VmsMap.Demo
         var (x, y, w, h) = Pixels(RackRegion(index), FloorLayoutWidth, FloorLayoutHeight);
         svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"4\" fill=\"#0f1a24\" stroke=\"#4a6a86\" stroke-width=\"2\"/>");
         svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y - 14)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"15\" fill=\"#9fb6cb\">RACK A-{index:00}</text>");
+      }
+
+      return Close(svg);
+    }
+
+    /// The shared board two cameras' rear panels stand on: one bay per panel, each drawn around the
+    /// region the type offers, so a representation placed in a bay sits on its frame.
+    public static byte[] CamPanels()
+    {
+      var svg = Open(CamPanelsWidth, CamPanelsHeight);
+      svg.Append("<rect x=\"8\" y=\"8\" width=\"784\" height=\"584\" rx=\"6\" fill=\"#16222e\" stroke=\"#3b5a75\" stroke-width=\"3\"/>");
+      svg.Append("<text x=\"64\" y=\"52\" font-family=\"monospace\" font-size=\"20\" letter-spacing=\"3\" fill=\"#7f9ab1\">CAM PANELS</text>");
+
+      for (var bay = 1; bay <= 2; bay += 1)
+      {
+        var (x, y, w, h) = Pixels(CamPanelBay(bay), CamPanelsWidth, CamPanelsHeight);
+        svg.Append($"<rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(w)}\" height=\"{N(h)}\" rx=\"6\" fill=\"#0f1a24\" stroke=\"#4a6a86\" stroke-width=\"2\"/>");
+        svg.Append($"<text x=\"{N(x + w / 2)}\" y=\"{N(y - 14)}\" text-anchor=\"middle\" font-family=\"monospace\" font-size=\"15\" fill=\"#9fb6cb\">{(bay == 1 ? "LEFT" : "RIGHT")} PANEL</text>");
       }
 
       return Close(svg);

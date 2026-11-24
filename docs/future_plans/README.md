@@ -16,7 +16,6 @@
 
 | Файл | Тема | Объём |
 |---|---|---|
-| [09-shared-device-diagrams.md](09-shared-device-diagrams.md) | Общий холст «Cam Diagrams»: несколько устройств с контактами на одной диаграмме | средне-крупный |
 | [10-windows-hardware-encoders.md](10-windows-hardware-encoders.md) | Аппаратный кодировщик на Windows без NVIDIA: QSV проверен, остались AMF, Media Foundation и проверки на железе | средне-крупный, нужен стенд |
 | [11-devices.md](11-devices.md) | Модель устройств: второй тип «по аналогии», общее `device_placement`, открытые вопросы по терминологии и тестам | крупный |
 | [12-event-routing-followups.md](12-event-routing-followups.md) | Что осталось за M2.4: панельная логика охраны, ISA-18.2, окна подписок, уведомления, масштаб журнала | крупный |

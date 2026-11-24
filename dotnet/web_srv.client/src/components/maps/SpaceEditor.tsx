@@ -147,7 +147,7 @@ export default function SpaceEditor({
   const figuresById = useAppSelector((s) => s.objects.figures)
   const propsById = useAppSelector((s) => s.objects.props)
   const selectedNodeId = selection?.kind === 'node' ? selection.id : null
-  const diagramContent = useAppSelector((s) => s.diagrams.content)
+  const diagramContents = useAppSelector((s) => s.diagrams.content)
   const diagramDepth = useAppSelector((s) => s.diagrams.depth)
   // The diagram of the camera picked on the canvas, offered as a link beside it.
   const deviceDiagram = useDeviceDiagramLink(selectedNodeId ? markersById[selectedNodeId] : undefined)
@@ -212,8 +212,9 @@ export default function SpaceEditor({
   // for the operator; the administrator opens it from the node tree.
   const selectOnCanvas = (id: string) => setSelection({ kind: 'node', id })
 
-  // When a diagram is open, a selected child that has a row in it is an element of it.
-  const shownDiagram = openDiagramId && diagramContent?.diagramId === openDiagramId ? diagramContent : null
+  // When a diagram is open, a selected child that has a row in it is an element of it. The content
+  // is read per diagram, so a read of the one just left cannot hide the one being shown.
+  const shownDiagram = openDiagramId ? diagramContents[openDiagramId] ?? null : null
   const selectedElement = selectedNodeId && shownDiagram
     ? shownDiagram.content?.find((candidate) => candidate.id === selectedNodeId)
     : undefined

@@ -12,9 +12,10 @@ without a browser — right after an install.
 Maryland; the first floor of **Biomolecular Sciences** as a plan — named `plan1`, its footprint
 the building's own 19-corner outline, the one OnvifSim builds its prism from, with the doorway cut in
 its north wall. The floor is the room: no plan of a room is nested in it, and the hall pair stands on
-its plan directly. What stands in the room is one diagram, `diag1` — a schematic of
+its plan directly. What stands in the room is drawn as two diagrams: `diag1`, a schematic of
 the floor with its four racks in regions of its type, each opening on its own canvas — four racks,
-every slot of every rack filled with a switch and every switch carrying its eight ports. The third
+every slot of every rack filled with a switch and every switch carrying its eight ports — and
+`diag2`, the shared board described below. The third
 port of the first switch of the first rack is `CONNECTED`: the demo writes no
 synthetic alarm, so its map starts calm. The five
 OnvifSim cameras — `sim-master`, `sim-master2`, `sim-ptz`, `sim-ptz2` and `sim-vehicle` — are placed
@@ -30,26 +31,25 @@ neither master is close enough to it to detect it. `sim-vehicle` is flagged `geo
 place given here is only where it starts, and the map follows the position the camera reports from
 then on.
 
-**The camera's own readings.** The `Device telemetry` type carries five regions — `lat`, `lon`,
-`speed`, `relay`, `sensor`, with the picture's labels drawn from the same geometry — and a replica of
-the indoor master `sim-master` stands on the floor plan beside it, showing them. It is a camera that
-does stand still, which is what makes a diagram pinned to a plan honest; the one on the car has no
-replica, because its place is the car on the map, which follows it (`geo_from_device`). The replica
-has `objects.owner_id` set to the camera's canonical node and no `camera_placement`: a diagram's
-canvas is not a space. `DemoValueFeeder` writes the values to that owner every five seconds — the
-position from the camera's own `GetGeoLocation` (six decimals of a degree), the speed from two fixes
-and the wall clock (km/h, one decimal; nought for a camera bolted to a wall), and the relay and
-sensor states from whichever demo camera has the device (`sim-master`'s relay is wired to `sim-ptz`'s
-input in the simulator's world), as `on`/`off`. A camera the map does not know yet, or one that
-reports no place, writes nothing. The map answers a replica with its owner's values, so the diagram
-shows the camera's readings while owning none of them; a removal takes them away with the world.
+**The shared board.** `diag2` is one canvas with two bays, and the two hall cameras' rear panels
+stand in them side by side: the master's in `left`, the slave's in `right`. Each is a
+**representation** of that camera's canonical diagram — the same content in a second place — so
+closing `peer` on the master lights its socket on the board, and a part configured later appears in
+both places at once. The type `Cam diagrams` draws the board and its two bays; a bay is a place, not
+a slot, so it carries no part binding of its own. The seeder shows the panels through the same
+device-diagram service the camera's button in Admin → Maps calls: the master's canonical diagram is
+the one under its picture, and the slave has no other, so the board is where it is made. The blank
+diagram `spare` on the same board is nobody's: the acceptance run binds it to a camera, watches the
+configured part arrive as a replica, unbinds it and checks the drawing stays — with its type, its
+place and no replica — which is the whole of the bind/unbind contract in one pass.
 
 **The camera's own diagram.** The same floor carries the indoor master's device diagram: the
 `Camera rear panel` template — the camera's body, lens and cable, and the terminal block its parts
-are wired to — with the relay and input replicas in its five regions. It is not a world node like
-the readings replica: `DemoSeeder` asks the device-diagram service for it, exactly as the
-administrator's button in Admin → Maps does, so the demo ships the service's own object, placed on
-the floor beside the camera under the name of the device and its template. Its marker is a thumbnail
+are wired to — with the relay and input replicas in its five regions. `DemoSeeder` asks the
+device-diagram service for it, exactly as the
+administrator's button in Admin → Maps does, so the demo ships the service's own object, kept under
+the camera's picture (the map offers a link into it beside the selected camera) under the name of
+the device and its template. Its marker is a thumbnail
 of that same picture. Removing the demo removes it with the world and the next install makes it
 again.
 

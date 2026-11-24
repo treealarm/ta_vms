@@ -8,7 +8,8 @@
      node build_world.cjs --phase demo      # install the demo (the coverage baseline)
      node build_world.cjs --phase build     # remove it, then build the parity world
      node build_world.cjs --phase continue  # finish a half-built world: rights, calibration,
-                                            # wall, routing, binding (--steps narrows it)
+                                            # wall, routing, binding, the shared board (--steps
+                                            # narrows it)
      node build_world.cjs --phase cleanup   # delete what the build made
      node build_world.cjs --reset-db --force  # drop and recreate ta_map/ta_cfg on the dev bench
 
@@ -41,6 +42,16 @@ const VEHICLE = `${PREFIX}-vehicle`
 const WALL = `${PREFIX}-wall`
 const RULE = `${PREFIX}-sensor-rule`
 const LEVEL = `${PREFIX}-ground`
+const CAM_PANELS = `${PREFIX}-cam-panels`
+const CAM_PANELS_TYPE = `${PREFIX}-cam-panels-type`
+const SPARE = `${PREFIX}-spare`
+// Where the two bays of the shared board lie on its paper: the demo's own proportions, so a click
+// lands inside a region rather than beside it.
+const PANEL_BAYS = { left: [0.26, 0.39], right: [0.74, 0.39] }
+const PANEL_BAY_REGIONS = [
+  { left: '0.06', top: '0.22', width: '0.40', height: '0.3333' },
+  { left: '0.54', top: '0.22', width: '0.40', height: '0.3333' },
+]
 
 const results = []
 function check(ok, what, detail = '') {
@@ -348,7 +359,12 @@ async function createDiagramType(page, { name, background, regions = [], device 
   for (const region of regions) {
     await type.getByRole('button', { name: /ADD REGION/i }).click()
     await page.waitForTimeout(400)
+    // The geometry is set outright where the caller wants a click to land inside the region: the
+    // editor's own default is a small box in the corner.
     if (region.left) await type.getByLabel('Left', { exact: true }).fill(region.left)
+    if (region.top) await type.getByLabel('Top', { exact: true }).fill(region.top)
+    if (region.width) await type.getByLabel('Width', { exact: true }).fill(region.width)
+    if (region.height) await type.getByLabel('Height', { exact: true }).fill(region.height)
     if (region.bind) {
       await type.getByRole('button', { name: 'STAND FOR A DEVICE PART' }).click()
       await page.waitForTimeout(300)
@@ -400,6 +416,32 @@ async function openDiagram(page) {
   const row = page.locator('[role="button"]').filter({ hasText: /^Diagram 1/ }).first()
   await row.click()
   await page.getByTestId('diagram-paper').waitFor({ timeout: 20000 })
+}
+
+async function openDiagramNamed(page, name) {
+  await page.getByRole('tab', { name: /^Nodes/ }).first().click()
+  await page.waitForTimeout(800)
+  await page.locator('[role="button"]').filter({ hasText: new RegExp(`^${name}`) }).first().click()
+  await page.getByTestId('diagram-paper').waitFor({ timeout: 20000 })
+  await page.waitForTimeout(1200)
+}
+
+/** A click on an open diagram's paper: the way an armed camera is shown in a bay. */
+async function paperClick(page, fx, fy) {
+  const box = await page.getByTestId('diagram-paper').boundingBox()
+  await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy)
+  await page.waitForTimeout(2500)
+}
+
+/** The sidebar's button on a camera's row, with the diagram open: the next click on the paper is
+ *  the place of that camera's panel. */
+async function armDeviceDiagram(page, cameraName) {
+  await page.getByRole('tab', { name: /^Nodes/ }).first().click()
+  await page.waitForTimeout(800)
+  const row = page.locator('[role="button"]')
+    .filter({ hasText: new RegExp(`^${cameraName}`) }).first()
+  await row.getByRole('button', { name: 'Place the device diagram on this canvas' }).click()
+  await page.waitForTimeout(500)
 }
 
 async function createNestedDiagram(page, name, regionFraction, typeName) {
@@ -468,6 +510,134 @@ async function placePartReplica(page, spaceName, cameraName, partName, fx, fy) {
   await page.waitForTimeout(800)
   await page.getByLabel('Caption', { exact: true }).fill(partName)
   await applyButton(page)
+}
+
+async function nodeChildren(page, parentId) {
+  const answer = await api(page, 'GET', `/api/map/objects/parent?parentId=${parentId}&count=1000`)
+  return (answer || {}).children || []
+}
+
+/** Where a diagram's nodes stand: a node listing carries no region, the `diagrams` row does. */
+async function diagramRows(page, ids) {
+  if (ids.length === 0) return []
+  const answer = await api(page, 'POST', '/api/map/diagrams/by-ids', ids)
+  return (answer || {}).diagrams || []
+}
+
+/** A diagram's own rows and the replicas directly inside it: a representation's children are the
+ *  canonical diagram's, and the parent a content read carries for context is not a child. */
+async function diagramContent(page, node) {
+  const content = await api(page, 'GET', `/api/map/diagrams/${node.id}/content?depth=1`)
+  const rows = (content || {}).content || []
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  const inside = node.ownerId || node.id
+  const parts = ((content || {}).children || [])
+    .filter((marker) => byId.has(marker.id) && marker.parentId === inside)
+    .map((marker) => byId.get(marker.id))
+  return { rows, byId, parts }
+}
+
+/** The shared board: two cameras' rear panels on one canvas, and a drawn diagram bound to a device
+ *  from its element editor. The demo's board is the same shape — a type with two bays, each camera's
+ *  panel shown in one of them by the camera's own button — plus the blank diagram an administrator
+ *  binds by hand: it takes the device's configured part and gives it back when unbound. */
+async function sharedCanvas(page) {
+  await placeDiagram(page, PLAN, 0.30, 0.82)
+  await openDiagram(page)
+  await renameSelected(page, CAM_PANELS)
+  await applyButton(page)
+
+  // The type dictionary is edited from the viewer, so it is made with the board open — and the
+  // board takes it afterwards, as any diagram does.
+  await createDiagramType(page, {
+    name: CAM_PANELS_TYPE, background: 'parity-layout.svg',
+    regions: PANEL_BAY_REGIONS,
+  })
+  await assignType(page, CAM_PANELS_TYPE)
+
+  // The blank diagram the binding check uses: a diagram of its own on the board, dropped clear of
+  // the bays so it keeps a rectangle of its own rather than taking a region. Dropping it opens it —
+  // a click on an element is a pick — and that is where the binding is done, in the element editor
+  // of the thing being bound.
+  await createNestedDiagram(page, SPARE, [0.5, 0.87], `${PREFIX}-camera-panel`)
+  await page.getByTestId('diagram-paper').waitFor({ timeout: 20000 })
+  await page.waitForTimeout(1500)
+
+  const plan = await spaceByName(page, PLAN)
+  const canvasNode = (await nodeChildren(page, plan.id)).find((node) => node.name === CAM_PANELS)
+  if (!check(!!canvasNode, 'the shared board stands on the plan'))
+    throw new Error(`the board ${CAM_PANELS} is not on ${PLAN}`)
+
+  // Bind the blank diagram to the slave from its element editor: the device's configured part
+  // arrives as a replica, and unbinding takes the replica away and leaves the diagram.
+  const board = await nodeChildren(page, canvasNode.id)
+  const spareNode = board.find((node) => node.name === SPARE)
+  if (!check(!!spareNode, 'the blank diagram stands on the board'))
+    throw new Error(`the blank diagram ${SPARE} is not on the board`)
+  await page.getByLabel('Camera', { exact: true }).click()
+  await page.getByRole('option', { name: new RegExp(`^${PTZ}$`) }).click()
+  await page.getByRole('button', { name: 'Bind to the device', exact: true }).click()
+  await page.waitForTimeout(2500)
+
+  const ptz = (await cameras(page)).find((camera) => camera.name === PTZ)
+  const bound = await api(page, 'GET',
+    `/api/map/admin/device-diagram/binding?nodeId=${spareNode.id}`)
+  check(bound && bound.bound === true && bound.sourceId === ptz.cameraId,
+    'a drawn diagram is bound to a camera from its editor', JSON.stringify(bound))
+  const boundContent = await diagramContent(page, spareNode)
+  // The socket is the template's own: the demo calls its regions left/right, and here the editor
+  // numbers them, so the region that stands for the input is read from the type.
+  const types = (await api(page, 'POST', '/api/map/diagrams/types', {})).diagramTypes || []
+  const panelType = types.find((type) => type.name === `${PREFIX}-camera-panel`)
+  const inputRegion = (panelType?.regions || [])
+    .find((region) => (region.part || {}).matchValue === 'input')?.regionKey
+  check(!!inputRegion && boundContent.parts.some((part) => part.regionId === inputRegion),
+    'the bound diagram takes the device\'s configured part',
+    JSON.stringify(boundContent.parts.map((part) => part.regionId)))
+  check(await page.getByText(/Bound to/).count() > 0, 'the editor says what it is bound to')
+  await shot(page, '06b-bound.png')
+
+  await page.getByRole('button', { name: 'Unbind', exact: true }).click()
+  await page.waitForTimeout(2000)
+  const unbound = await api(page, 'GET',
+    `/api/map/admin/device-diagram/binding?nodeId=${spareNode.id}`)
+  check(unbound && unbound.bound !== true, 'unbinding returns the diagram to the administrator')
+  const unboundContent = await diagramContent(page, spareNode)
+  check(unboundContent.parts.length === 0 && unboundContent.byId.has(spareNode.id),
+    'the diagram outlives its binding, empty again')
+
+  // Back on the board: the master's panel in the left bay. Its canonical diagram already exists —
+  // the card the earlier step put on the plan — and showing it here moves it onto the board.
+  await page.locator('button[aria-label="Up one level"]').click()
+  await page.getByTestId('diagram-paper').waitFor({ timeout: 20000 })
+  await page.waitForTimeout(1500)
+  await armDeviceDiagram(page, MASTER)
+  await shot(page, '06a-armed.png')
+  await paperClick(page, ...PANEL_BAYS.left)
+
+  // The slave's only picture is on the map, and the button that shows a device's diagram sits on a
+  // picture's row, so the plan gets a picture of the slave too — a camera may be drawn on more than
+  // one space. That leaves the board, so it is opened again afterwards.
+  await placeCamera(page, PLAN, PTZ, 0.62, 0.80)
+  await openDiagramNamed(page, CAM_PANELS)
+
+  // The slave's panel in the right bay: it has no canonical diagram anywhere else, so this press is
+  // where the map makes one — and shows it.
+  await armDeviceDiagram(page, PTZ)
+  await paperClick(page, ...PANEL_BAYS.right)
+
+  const finalBoard = await nodeChildren(page, canvasNode.id)
+  const replicas = finalBoard.filter((node) => node.ownerId)
+  const shown = (await diagramRows(page, replicas.map((node) => node.id)))
+    .filter((row) => row.regionId)
+  check(shown.length === 2 && new Set(shown.map((row) => row.regionId)).size === 2,
+    'one representation stands in each bay',
+    JSON.stringify(shown.map((row) => row.regionId)))
+  const spareAgain = finalBoard.find((node) => node.name === SPARE)
+  const [spareRow] = spareAgain ? await diagramRows(page, [spareAgain.id]) : []
+  check(!!spareRow && !spareRow.regionId,
+    'the drawn diagram keeps its own rectangle on the board')
+  await shot(page, '06c-shared-board.png')
 }
 
 /** A right is a checkbox on the subject's row; the role `user` is the one the demo uses. */
@@ -711,6 +881,7 @@ async function continueWorld(page, only) {
   }
 
   if (run('replica')) await placePartReplica(page, MAP, MASTER, 'relay1', 0.45, 0.82)
+  if (run('camcanvas')) await sharedCanvas(page)
   if (run('icon')) await setDiagramIcon(page, PLAN, `${PREFIX}-floor-plan`)
   if (run('contact')) await quietContact(page)
   if (run('level')) {
@@ -853,6 +1024,10 @@ async function build(page) {
 
   await placePartReplica(page, MAP, MASTER, 'relay1', 0.45, 0.82)
   await shot(page, '06-part-replica.png')
+
+  // The shared board goes in after the master's panel exists: the board shows it, and the blank
+  // diagram on it is bound to the slave from the element editor.
+  await sharedCanvas(page)
 
   await addLevel(page)
   await assignLevel(page, VEHICLE)
