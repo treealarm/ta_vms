@@ -8,6 +8,7 @@ using VmsDb;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.Grpc;
 using VmsMap.PubSub;
 
 namespace VmsMap.Tests;
@@ -95,6 +96,26 @@ internal static class MapPostgres
     return new SpatialDb(
       db, map, updates, geo, new KnownCatalog(), new SilentNotifier(),
       TestWiring.CameraArming(db, map));
+  }
+
+  /// <summary>
+  /// The gRPC write layer, for the operations the services expose only through it — a copy made by
+  /// hand. Everything it is not given here is a capability those operations do not use.
+  /// </summary>
+  public static MapServiceImpl Grpc(VmsMapDbContext db)
+  {
+    var (map, updates, geo) = Wire(db);
+    var stateService = new StateService(db);
+    var states = new StatesUpdateService(stateService, map, db);
+    var levels = new LevelService(db);
+    var trackService = new TrackService(db, levels);
+    var tracks = new TracksUpdateService(map, trackService, geo);
+    return new MapServiceImpl(
+      db, map, updates, geo, levels, trackService, states, stateService,
+      null!, null!, null!, tracks,
+      null!, null!, null!, new RightsService(db), null!,
+      new VisualService(db), null!, null!,
+      null!, null!, null!, null!, null!, null!, null!, null!);
   }
 
   private sealed class KnownCatalog : ICameraCatalog
