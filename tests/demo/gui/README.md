@@ -77,8 +77,8 @@ node build_world.cjs --reset-db --force # drop and recreate ta_map/ta_cfg
 ```
 
 `--phase continue` runs the steps that a partially built world still needs: `rights`, `calibrate`,
-`contact`, `replica`, `icon`, `level`, `wall`, `routing`, `binding`. Pass `--steps routing,binding`
-to run some of them.
+`contact`, `replica`, `camcanvas`, `icon`, `level`, `wall`, `routing`, `binding`. Pass
+`--steps routing,binding` to run some of them.
 
 Environment: `VMS_WEB` (default `http://localhost:5173`), `VMS_USER` / `VMS_PASS` (`admin`/`admin`),
 `PREFIX` (`parity`), `ONVIF_HOST` (`127.0.0.1`), `ONVIF_PORT_BASE` (`8101`), `SIM_URL`
@@ -107,6 +107,8 @@ arrive.
 | Region bound to a part by token | DiagramTypeRegionEditor | DB: binding resolves to the part |
 | Diagram: own canvas, parent, region, type | "+" in Nodes / DiagramElementEditor | build + DB + API |
 | Device diagram attached by model | camera row → Device diagram | build + DB + API |
+| Device diagram shown on a shared canvas | camera row → Device diagram, click on the paper | build + DB + API |
+| A drawn diagram bound to a device | element editor → Device → camera → Bind | build + API |
 | Part replica on the map | Devices → part → click | build + API |
 | Camera placement: reference/image, view | Devices → camera → click / placement panels | build + DB |
 | Dynamic position `geo_from_device` | "Position from device" on the camera | functional |
