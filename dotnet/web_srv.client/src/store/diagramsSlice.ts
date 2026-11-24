@@ -15,8 +15,10 @@ export type DiagramsState = {
   values: Record<string, MapValue[]>
   /** The diagram types, for the editor's pickers; the types dialog writes them. */
   types: MapDiagramType[]
-  loading: boolean
-  error: string | null
+  /** A read in flight, by diagram: leaving one diagram for another overlaps two. */
+  loading: Record<string, boolean>
+  /** What a diagram's read failed with, by diagram — a failure of the one just left is not shown. */
+  error: Record<string, string>
 }
 
 const initialState: DiagramsState = {
@@ -24,8 +26,8 @@ const initialState: DiagramsState = {
   depth: 1,
   values: {},
   types: [],
-  loading: false,
-  error: null,
+  loading: {},
+  error: {},
 }
 
 /** A diagram with its children down to `depth` levels, its type and its breadcrumb chain. */
@@ -68,17 +70,17 @@ const diagramsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(loadDiagramContent.pending, (state) => {
-        state.loading = true
-        state.error = null
+      .addCase(loadDiagramContent.pending, (state, action) => {
+        state.loading[action.meta.arg.id] = true
+        delete state.error[action.meta.arg.id]
       })
       .addCase(loadDiagramContent.fulfilled, (state, action) => {
-        state.loading = false
+        state.loading[action.payload.id] = false
         state.content[action.payload.id] = action.payload.content
       })
       .addCase(loadDiagramContent.rejected, (state, action) => {
-        state.loading = false
-        state.error = action.error.message ?? 'Unknown error'
+        state.loading[action.meta.arg.id] = false
+        state.error[action.meta.arg.id] = action.error.message ?? 'Unknown error'
       })
       .addCase(loadDiagramValues.fulfilled, (state, action) => {
         state.values = action.payload

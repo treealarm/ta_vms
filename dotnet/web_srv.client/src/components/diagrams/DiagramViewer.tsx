@@ -80,8 +80,8 @@ export default function DiagramViewer({
   const content = useAppSelector((s) => s.diagrams.content[diagramId])
   const depth = useAppSelector((s) => s.diagrams.depth)
   const values = useAppSelector((s) => s.diagrams.values)
-  const loading = useAppSelector((s) => s.diagrams.loading)
-  const error = useAppSelector((s) => s.diagrams.error)
+  const loading = useAppSelector((s) => s.diagrams.loading[diagramId]) ?? false
+  const error = useAppSelector((s) => s.diagrams.error[diagramId])
   const states = useAppSelector((s) => s.states.states)
   const alarms = useAppSelector((s) => s.states.alarms)
   const descriptions = useAppSelector((s) => s.states.descriptions)
