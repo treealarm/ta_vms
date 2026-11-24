@@ -19,6 +19,12 @@ export type DiagramsState = {
   loading: Record<string, boolean>
   /** What a diagram's read failed with, by diagram — a failure of the one just left is not shown. */
   error: Record<string, string>
+  /**
+   * The read each diagram's entry belongs to. Two reads of one diagram overlap when its depth
+   * changes and a drag reloads it straight away; the answer to the older one is dropped, so the
+   * paper keeps what the reader asked for last.
+   */
+  latestRequest: Record<string, string>
 }
 
 const initialState: DiagramsState = {
@@ -28,6 +34,7 @@ const initialState: DiagramsState = {
   types: [],
   loading: {},
   error: {},
+  latestRequest: {},
 }
 
 /** A diagram with its children down to `depth` levels, its type and its breadcrumb chain. */
@@ -71,14 +78,18 @@ const diagramsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(loadDiagramContent.pending, (state, action) => {
+        state.latestRequest[action.meta.arg.id] = action.meta.requestId
         state.loading[action.meta.arg.id] = true
         delete state.error[action.meta.arg.id]
       })
       .addCase(loadDiagramContent.fulfilled, (state, action) => {
+        // An answer a later read of the same diagram overtook says nothing about what is shown now.
+        if (state.latestRequest[action.payload.id] !== action.meta.requestId) return
         state.loading[action.payload.id] = false
         state.content[action.payload.id] = action.payload.content
       })
       .addCase(loadDiagramContent.rejected, (state, action) => {
+        if (state.latestRequest[action.meta.arg.id] !== action.meta.requestId) return
         state.loading[action.meta.arg.id] = false
         state.error[action.meta.arg.id] = action.error.message ?? 'Unknown error'
       })

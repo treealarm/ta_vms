@@ -12,17 +12,18 @@ const FIRST_REQUEST = 'request-first'
 const SECOND_REQUEST = 'request-second'
 const READ_FAILURE = 'the diagram could not be read'
 
-const content = (diagramId: string): MapDiagramContent => ({
+const content = (diagramId: string, depth = 1): MapDiagramContent => ({
   diagramId,
+  depth,
   content: [],
   children: [],
 })
 
-const started = (requestId: string, id: string) =>
-  loadDiagramContent.pending(requestId, { id, depth: 1 })
+const started = (requestId: string, id: string, depth = 1) =>
+  loadDiagramContent.pending(requestId, { id, depth })
 
-const answered = (requestId: string, id: string) =>
-  loadDiagramContent.fulfilled({ id, content: content(id) }, requestId, { id, depth: 1 })
+const answered = (requestId: string, id: string, depth = 1) =>
+  loadDiagramContent.fulfilled({ id, content: content(id, depth) }, requestId, { id, depth })
 
 const failed = (requestId: string, id: string) =>
   loadDiagramContent.rejected(new Error(READ_FAILURE), requestId, { id, depth: 1 })
@@ -60,5 +61,27 @@ describe('the diagram content read', () => {
     // The diagram that is open did not fail: its own read is still on and its message is not shown.
     expect(state.error[SECOND]).toBeUndefined()
     expect(state.loading[SECOND]).toBe(true)
+  })
+
+  it('keeps the newest answer when a read of the same diagram is overtaken', () => {
+    // A depth change reads the diagram again while its first read is still on; the old answer
+    // arriving last must not shrink the paper back to the depth the reader has left.
+    let state = reducer(undefined, started(FIRST_REQUEST, FIRST))
+    state = reducer(state, started(SECOND_REQUEST, FIRST, 2))
+    state = reducer(state, answered(SECOND_REQUEST, FIRST, 2))
+    state = reducer(state, answered(FIRST_REQUEST, FIRST, 1))
+
+    expect(state.content[FIRST]?.depth).toBe(2)
+    expect(state.loading[FIRST]).toBe(false)
+  })
+
+  it('does not hang an overtaken failure on the read that replaced it', () => {
+    let state = reducer(undefined, started(FIRST_REQUEST, FIRST))
+    state = reducer(state, started(SECOND_REQUEST, FIRST, 2))
+    state = reducer(state, failed(FIRST_REQUEST, FIRST))
+
+    // The read the reader is waiting for is still on, and has not failed.
+    expect(state.error[FIRST]).toBeUndefined()
+    expect(state.loading[FIRST]).toBe(true)
   })
 })
