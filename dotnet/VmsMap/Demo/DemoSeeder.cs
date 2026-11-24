@@ -475,6 +475,57 @@ namespace VmsMap.Demo
         Written(diagram.Key);
       }
 
+      // ── A device's diagram on another canvas: the same diagram, shown elsewhere ──────────────
+      foreach (var shown in world.DeviceRepresentations)
+      {
+        if (!placedCameras.Contains(shown.CameraKey))
+        {
+          Skip(shown.CameraKey);
+          continue;
+        }
+
+        // The call the administrator's button makes: the canonical diagram is found under the
+        // camera's picture — or made there when the world has none — and shown in the bay it was
+        // asked for. A second install finds the copy standing in that region and keeps it.
+        var placedId = await _deviceDiagrams.PlaceDeviceDiagramAsync(
+          DeviceObjectId.CameraSource, DemoIds.Camera(shown.CameraKey),
+          Required(shown.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot,
+          new DiagramTarget(Required(shown.CanvasKey).ToString(), RegionId: shown.RegionKey), ct);
+        if (placedId is null)
+        {
+          Skip(shown.CameraKey);
+          continue;
+        }
+
+        ids[shown.Key] = Guid.Parse(placedId);
+        keep.Add(shown.Key);
+        Written(shown.Key);
+
+        // The diagram the copy shows: the world's own node, registered under its key so a removal
+        // takes it the way it takes every node it wrote itself.
+        if (shown.CanonKey is not { } canonKey) continue;
+
+        var owner = await _db.Markers.AsNoTracking()
+          .Where(m => m.id == Guid.Parse(placedId))
+          .Select(m => m.owner_id)
+          .FirstOrDefaultAsync(ct);
+        if (owner is not { } canon) continue;
+
+        ids[canonKey] = canon;
+        keep.Add(canonKey);
+        Written(canonKey);
+
+        if (shown.VisualKey is null) continue;
+        var thumbnail = world.Files.Single(file => file.Key == shown.VisualKey);
+        await _visuals.UpdateListAsync([new VisualDTO
+        {
+          object_id = Utils.ConvertGuidToObjectId(canon),
+          image = thumbnail.Content,
+          image_width = shown.VisualWidth,
+          image_height = shown.VisualHeight,
+        }]);
+      }
+
       // ── Landmarks: the points the cameras are calibrated against ───────────────────────────
       foreach (var landmark in world.Landmarks)
       {

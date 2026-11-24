@@ -155,6 +155,24 @@ namespace VmsMap.Demo
     int VisualWidth,
     int VisualHeight);
 
+  /// A device's diagram shown on another canvas: the representation standing in one of that
+  /// canvas type's regions, and the canonical diagram it shows. The seeder places it through the
+  /// device-diagram service, exactly as the administrator's button does — the same reuse of a
+  /// canonical diagram the world already keeps under the camera's picture, and the same one copy
+  /// per (diagram, canvas, region) on a second install. `CanonKey` registers a canonical diagram
+  /// the world does not name anywhere else, so a removal takes it; the thumbnail is the picture the
+  /// map offers beside the selected camera.
+  public sealed record DemoDeviceRepresentation(
+    string Key,
+    string CameraKey,
+    string TypeKey,
+    string CanvasKey,
+    string RegionKey,
+    string? CanonKey = null,
+    string? VisualKey = null,
+    int VisualWidth = 0,
+    int VisualHeight = 0);
+
   /// A right on a node. The world grants `view` to the deployment's `user` role at its root.
   public sealed record DemoRight(string NodeKey, string Subject, string Action);
 
@@ -174,6 +192,7 @@ namespace VmsMap.Demo
     IReadOnlyList<DemoGroundMark> GroundMarks,
     IReadOnlyList<DemoPtzObservation> PtzObservations,
     IReadOnlyList<DemoDeviceDiagram> DeviceDiagrams,
+    IReadOnlyList<DemoDeviceRepresentation> DeviceRepresentations,
     IReadOnlyList<DemoState> States,
     IReadOnlyList<DemoRight> Rights);
 }

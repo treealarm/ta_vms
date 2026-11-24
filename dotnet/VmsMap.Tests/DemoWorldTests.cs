@@ -18,6 +18,13 @@ public class DemoWorldTests
   private const string SwitchTypeKey = "type/switch";
   private const string FloorLayoutTypeKey = "type/floor-layout";
   private const string FloorLayoutKey = "object/floor-layout";
+  private const string CamPanelsTypeKey = "type/cam-panels";
+  private const string CamPanelsKey = "object/cam-panels";
+  private const string SpareKey = "object/spare-diagram";
+  private const string CameraPanelTypeKey = "type/camera-rear-panel";
+  private const string CamPanelsBackgroundKey = "file/cam-panels-background";
+  private const string LeftBay = "left";
+  private const string RightBay = "right";
   private const string PortKey = "object/port-rack-a-01-1-03";
   private const string FloorPlanFileKey = "file/floor-plan";
   private const string MasterCameraId = "sim-master";
@@ -269,13 +276,58 @@ public class DemoWorldTests
   }
 
   [Fact]
+  public void TheSharedBoardHoldsTwoCamerasSideBySide()
+  {
+    // One canvas, two cameras: each bay is a region of the board's type and holds a representation
+    // of a camera's canonical diagram, so the two panels open on the content their diagrams own.
+    var type = _world.Types.Single(candidate => candidate.Key == CamPanelsTypeKey);
+    Assert.Equal("Cam diagrams", type.Name);
+    Assert.Equal(CamPanelsBackgroundKey, type.BackgroundKey);
+    Assert.Equal([LeftBay, RightBay], type.Regions.Select(region => region.Key));
+    // A bay is a place, not a slot: the panel's own type carries the sockets the parts fill.
+    Assert.All(type.Regions, region => Assert.Null(region.Part));
+    Assert.Equal(DemoArt.CamPanelBay(1), type.Regions[0].Geometry);
+    Assert.Equal(DemoArt.CamPanelBay(2), type.Regions[1].Geometry);
+
+    var board = _world.Nodes.Single(node => node.Key == CamPanelsKey);
+    Assert.Equal("diag2", board.Name);
+    Assert.Equal(BuildingSpaceKey, board.ParentKey);
+    Assert.Equal(CamPanelsTypeKey, board.TypeKey);
+    Assert.NotNull(board.At);
+    Assert.DoesNotContain(_world.Nodes, node =>
+      node.Key != CamPanelsKey && node.At is { } at && at == board.At);
+
+    // The blank diagram waits on the board for the acceptance run: a diagram of its own, drawn by
+    // nobody, with no region to fill and no place on the plan.
+    var spare = _world.Nodes.Single(node => node.Key == SpareKey);
+    Assert.Equal("spare", spare.Name);
+    Assert.Equal(CamPanelsKey, spare.ParentKey);
+    Assert.Equal(CameraPanelTypeKey, spare.TypeKey);
+    Assert.Null(spare.At);
+    Assert.Null(spare.RegionKey);
+    Assert.NotNull(spare.Canvas);
+
+    // The master's panel is the one the world keeps under its picture, shown on the board as well;
+    // the slave has no other diagram, so showing it on the board is where its canonical one is made.
+    Assert.Equal(
+      [(MasterCameraId, LeftBay), (PtzCameraId, RightBay)],
+      _world.DeviceRepresentations.Select(shown => (shown.CameraKey, shown.RegionKey)));
+    Assert.All(_world.DeviceRepresentations, shown => Assert.Equal(CameraPanelTypeKey, shown.TypeKey));
+    var master = _world.DeviceRepresentations.Single(shown => shown.CameraKey == MasterCameraId);
+    Assert.Null(master.CanonKey);
+    var slave = _world.DeviceRepresentations.Single(shown => shown.CameraKey == PtzCameraId);
+    Assert.NotNull(slave.CanonKey);
+    Assert.NotNull(slave.VisualKey);
+  }
+
+  [Fact]
   public void TheSecondPairStandsInTheParkingLot_ItsSlaveBetweenTheDoorwayAndTheMaster()
   {
     // The hall pair's master watches the line out of the hall to the doorway; the second pair works
     // in the parking lot outside: master2 stands north-west of the doorway, looking back along the
     // line the person crosses, and ptz2 on a pole of its own between the two, so it holds the doorway
     // at one side and the lot the person turns into at the other.
-    Assert.Equal(22, _world.Version);
+    Assert.Equal(23, _world.Version);
 
     var hall = _world.Placements.Single(placement => placement.CameraId == MasterCameraId);
     Assert.Equal(BuildingSpaceKey, hall.SpaceKey);
@@ -371,7 +423,7 @@ public class DemoWorldTests
     foreach (var key in new[]
     {
       "file/floor-layout-background", "file/rack-background", "file/switch-background", "file/port-icon",
-      "file/camera-icon", FloorPlanFileKey,
+      "file/camera-icon", FloorPlanFileKey, CamPanelsBackgroundKey,
     })
     {
       var file = _world.Files.Single(candidate => candidate.Key == key);
@@ -455,6 +507,29 @@ public class DemoWorldTests
     Assert.All(_world.States, state => Assert.Contains(state.NodeKey, nodeKeys));
     Assert.All(_world.Rights, right => Assert.Contains(right.NodeKey, nodeKeys.Union(spaceKeys)));
     Assert.All(_world.Placements, placement => Assert.Contains(placement.SpaceKey, spaceKeys));
+
+    // A device's diagram shown on a canvas names rows the world writes: the canvas, the template,
+    // the camera it draws, and the diagram the copy shows when the world registers one.
+    var cameraKeys = _world.Placements.Select(placement => placement.CameraId).ToHashSet(StringComparer.Ordinal);
+    foreach (var shown in _world.DeviceRepresentations)
+    {
+      Assert.Contains(shown.CameraKey, cameraKeys);
+      Assert.Contains(shown.TypeKey, typeKeys);
+      Assert.Contains(shown.CanvasKey, nodeKeys);
+      var board = _world.Nodes.Single(node => node.Key == shown.CanvasKey);
+      var type = _world.Types.Single(t => t.Key == board.TypeKey);
+      Assert.Contains(type.Regions, region => region.Key == shown.RegionKey);
+      if (shown.CanonKey is not null)
+        Assert.DoesNotContain(shown.CanonKey, nodeKeys);
+      if (shown.VisualKey is not null) Assert.Contains(shown.VisualKey, fileKeys);
+    }
+
+    Assert.All(_world.DeviceDiagrams, diagram =>
+    {
+      Assert.Contains(diagram.CameraKey, cameraKeys);
+      Assert.Contains(diagram.TypeKey, typeKeys);
+      Assert.Contains(diagram.VisualKey, fileKeys);
+    });
 
     // A node that takes a region takes one of the type of the diagram it stands in.
     foreach (var node in _world.Nodes.Where(n => n.RegionKey is not null))
