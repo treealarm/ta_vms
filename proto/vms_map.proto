@@ -101,6 +101,17 @@ service MapService {
   // automatic one.
   rpc AttachDeviceDiagram(AttachDeviceDiagramRequest) returns (Marker);
 
+  // Binds a diagram the administrator drew to a device: from then on the map maintains it — the
+  // template that describes the device and a replica per configured part. The diagram keeps its
+  // place, its own type and what was drawn in it by hand.
+  rpc BindDeviceDiagram(BindDeviceDiagramRequest) returns (Marker);
+  // Takes a diagram away from its device: the managed replicas go, the diagram itself stays and is
+  // an ordinary mnemoscheme again. Idempotent — unbinding what is not bound succeeds.
+  rpc UnbindDeviceDiagram(UnbindDeviceDiagramRequest) returns (OperationStatus);
+  // What a diagram node is bound to, if anything. The editor's device block reads it before
+  // offering a camera; an unbound node answers with `bound = false`.
+  rpc GetDeviceDiagramBinding(GetDeviceDiagramBindingRequest) returns (DeviceDiagramBinding);
+
   rpc GetStates(GetStatesRequest) returns (ObjectStateList);
   // States, alarm counters and descriptions in one answer, the way the map paints a set of nodes.
   rpc GetVisualStates(GetStatesRequest) returns (VisualStates);
@@ -1331,6 +1342,41 @@ message AttachDeviceDiagramRequest {
   string region_id = 9;
   // Whose rectangle the representation stands at, in the canvas's own pixels. Excludes `region_id`.
   DiagramCoordinate geometry = 10;
+}
+
+message BindDeviceDiagramRequest {
+  // The diagram's node: a diagram of the map, not a replica of one.
+  string node_id = 1;
+  // 'camera' today.
+  string source_kind = 2;
+  // The device's id in the owning service.
+  string source_id = 3;
+  // The template the administrator picked. Empty keeps the diagram's own type and lets the one
+  // that matches the device's model take over when there is one.
+  string diagram_type_id = 4;
+  // Which view of the device: empty means the one every device has for now.
+  string slot = 5;
+  Caller caller = 6;
+}
+
+message UnbindDeviceDiagramRequest {
+  // The diagram's node.
+  string node_id = 1;
+  Caller caller = 2;
+}
+
+message GetDeviceDiagramBindingRequest {
+  // The diagram's node.
+  string node_id = 1;
+}
+
+// What a diagram is bound to. `bound = false` says the node is an ordinary mnemoscheme; the other
+// fields are set only when it is.
+message DeviceDiagramBinding {
+  bool bound = 1;
+  string source_kind = 2;
+  string source_id = 3;
+  string slot = 4;
 }
 
 message DiagramList {

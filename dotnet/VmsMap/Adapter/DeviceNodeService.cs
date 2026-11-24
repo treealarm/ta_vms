@@ -190,9 +190,13 @@ namespace VmsMap.Adapter
           .ToListAsync(ct));
 
       // The diagram's registry goes with it, and so do the replicas it says it made: the node
-      // delete below takes the nodes, these rows are what would otherwise point at them.
+      // delete below takes the nodes, these rows are what would otherwise point at them. The
+      // replicas' rows are saved first, in a statement of their own: they are children of the
+      // diagram row by a foreign key with ON DELETE CASCADE, and a batch that deletes both may
+      // delete the parent first and then match nothing with the child.
       _db.DeviceDiagramParts.RemoveRange(
         await _db.DeviceDiagramParts.Where(p => diagramIds.Contains(p.diagram_object_id)).ToListAsync(ct));
+      await _db.SaveChangesAsync(ct);
       _db.DeviceDiagrams.RemoveRange(
         await _db.DeviceDiagrams.Where(d => diagramIds.Contains(d.object_id)).ToListAsync(ct));
 

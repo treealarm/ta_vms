@@ -35,6 +35,9 @@ public class DeviceDiagramServiceTests
   private const string RightRegion = "right";
   private const string SituationName = "already here";
   private const string InnerDiagramName = "nested diagram";
+  private const string SpareName = "spare panel";
+  private const string AnotherCanvasName = "second canvas";
+  private const string SensorKind = "sensor";
   private const double PlacementWidth = 70;
   private const double PlacementHeight = 80;
 
@@ -75,8 +78,16 @@ public class DeviceDiagramServiceTests
 
   private sealed class FakeCatalog : ICameraCatalog
   {
+    /// <summary>
+    /// Whether VmsCfg knows a camera — every camera by default. A removal publishes its event after
+    /// the camera is gone, so a test can play the gap a bind has to survive.
+    /// </summary>
+    public Func<string, bool> Known { get; set; } = _ => true;
+
     public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
-      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, CameraNamePrefix + cameraId, "srv"));
+      Task.FromResult(Known(cameraId)
+        ? new CameraInfo(cameraId, CameraNamePrefix + cameraId, "srv")
+        : null);
 
     public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
       Task.FromResult(new List<CameraInfo>());
@@ -1301,5 +1312,431 @@ public class DeviceDiagramServiceTests
     Assert.Empty(s.Db.DeviceDiagramParts);
     Assert.False(await s.Db.Markers.AnyAsync(m => m.id == row.object_id));
     Assert.False(await s.Db.Markers.AnyAsync(m => m.id == replica));
+  }
+
+  // ── Binding a diagram the administrator drew ────────────────────────────────────────────────
+
+  /// <summary>A plain node of the map: the tree has it, and nothing else does.</summary>
+  private static async Task<string> Node(
+    Services s, string name = "node", string? parent = null, string? owner = null)
+  {
+    var node = new BaseMarkerDTO
+    {
+      id = Guid.NewGuid().ToString(),
+      parent_id = parent,
+      owner_id = owner,
+      name = name,
+    };
+    await s.Map.UpdateHierarchyAsync([node]);
+    return node.id!;
+  }
+
+  /// <summary>
+  /// A diagram of the administrator's own — a nested diagram on a canvas — which is nobody's device
+  /// diagram until <see cref="BindAsync(Services, string, string, string?)"/> says so.
+  /// </summary>
+  private static async Task<string> SeedSpareDiagramAsync(
+    Services s, string name, Guid? parent = null, string? region = null)
+  {
+    var id = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(id),
+        parent_id = parent is { } at ? Utils.ConvertGuidToObjectId(at) : null,
+        name = name,
+      }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = id, region_id = region });
+    await s.Db.SaveChangesAsync();
+    return Utils.ConvertGuidToObjectId(id);
+  }
+
+  private static Task<string?> BindAsync(
+    Services s, string nodeId, string cameraId = CameraId, string? typeId = null) =>
+    s.Diagrams.BindAsync(
+      nodeId, DeviceObjectId.CameraSource, cameraId, typeId,
+      IDeviceDiagramService.DefaultSlot, default);
+
+  private static Task<bool> UnbindAsync(Services s, string nodeId) =>
+    s.Diagrams.UnbindAsync(nodeId, default);
+
+  [Fact]
+  public async Task ABoundDiagramIsMaintainedLikeAnAutomaticOne()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    var typeId = await SeedTypeAsync(
+      s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+    var spare = await SeedSpareDiagramAsync(s, SpareName, canvas.Node, LeftRegion);
+
+    var bound = await BindAsync(s, spare);
+
+    Assert.Equal(spare, bound);
+    var row = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Equal(Guid.Parse(spare), row.object_id);
+    // The template is the device's: the diagram itself had none.
+    Assert.Equal(typeId, row.diagram_type_id);
+    // And the part is drawn inside it, in the region the template gives that part.
+    var managed = await s.Db.DeviceDiagramParts.SingleAsync();
+    Assert.Equal(LampToken, managed.region_key);
+    var replica = await s.Db.Markers.SingleAsync(m => m.id == managed.replica_object_id);
+    Assert.Equal(Guid.Parse(spare), replica.parent_id);
+    // Binding is not placing: the diagram stays where the administrator drew it.
+    Assert.Equal(canvas.Node, (await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(spare))).parent_id);
+    Assert.Equal(LeftRegion, (await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(spare))).region_id);
+  }
+
+  [Fact]
+  public async Task BindingTheSameDiagramAgainChangesNothing()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(
+      s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    await BindAsync(s, spare);
+    var rows = await s.Db.DeviceDiagrams.ToListAsync();
+    var managed = await s.Db.DeviceDiagramParts.ToListAsync();
+
+    // A repeat after a network timeout: the same answer, and not a second diagram or a second copy
+    // of the part.
+    Assert.Equal(spare, await BindAsync(s, spare));
+    Assert.Equal(
+      rows.Select(r => r.object_id), (await s.Db.DeviceDiagrams.ToListAsync()).Select(r => r.object_id));
+    Assert.Equal(
+      managed.Select(m => m.replica_object_id),
+      (await s.Db.DeviceDiagramParts.ToListAsync()).Select(m => m.replica_object_id));
+  }
+
+  [Fact]
+  public async Task ADiagramBoundToAnotherDeviceMustBeUnboundFirst()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+    await BindAsync(s, spare);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(
+      () => BindAsync(s, spare, OtherCameraId));
+
+    Assert.Contains("another device", error.Message);
+    Assert.Equal(CameraId, (await s.Db.DeviceDiagrams.SingleAsync()).source_id);
+  }
+
+  [Fact]
+  public async Task ADeviceThatAlreadyHasADiagramForThisViewIsRefused()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await BindAsync(s, await SeedSpareDiagramAsync(s, SpareName));
+    var second = await SeedSpareDiagramAsync(s, "second panel");
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(
+      () => BindAsync(s, second));
+
+    Assert.Contains("already has a diagram", error.Message);
+    Assert.Equal(1, await s.Db.DeviceDiagrams.CountAsync());
+  }
+
+  [Fact]
+  public async Task BindingToACameraVmsCfgDoesNotKnowIsRefused()
+  {
+    var s = await CreateAsync();
+    // The camera is gone from the configuration; its removal event has not been handled yet.
+    s.Catalog.Known = _ => false;
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => BindAsync(s, spare));
+
+    Assert.Contains("does not exist", error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ANodeThatIsNotADiagramCannotBeBound()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var plain = await Node(s);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => BindAsync(s, plain));
+
+    Assert.Contains("not a diagram", error.Message);
+  }
+
+  [Fact]
+  public async Task AReplicaCannotBeBound()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var owner = await Node(s);
+    var canvas = await Node(s);
+    var copy = await Node(s, parent: canvas, owner: owner);
+    await new DiagramService(s.Db).UpdateListAsync([new DiagramDTO { id = copy }]);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => BindAsync(s, copy));
+
+    Assert.Contains("replica", error.Message);
+  }
+
+  [Fact]
+  public async Task ARegionThatStandsForAPartCannotHoldADeviceDiagram()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    // The parent's template draws a device part in this region; a diagram cannot take that slot.
+    var parentType = await SeedTypeAsync(
+      s, new TypeSpec(Name: CanvasName),
+      (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    var canvas = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = Utils.ConvertGuidToObjectId(canvas), name = CanvasName }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = canvas, dgr_type = parentType });
+    await s.Db.SaveChangesAsync();
+    var spare = await SeedSpareDiagramAsync(s, SpareName, canvas, LampToken);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => BindAsync(s, spare));
+
+    Assert.Contains("stands for a part", error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task UnbindingLeavesTheDiagramItsTypeItsPlaceAndItsManualChildren()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    await SeedTypeAsync(
+      s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    var canvas = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+    var spare = await SeedSpareDiagramAsync(s, SpareName, canvas.Node, LeftRegion);
+    await BindAsync(s, spare);
+
+    // Something the administrator drew in it, and something a template change will not touch.
+    var manual = await Node(s, parent: spare);
+    await new DiagramService(s.Db).UpdateListAsync([new DiagramDTO
+    {
+      id = manual,
+      geometry = new DiagramCoordDTO { left = 1, top = 2, width = 3, height = 4 },
+    }]);
+    var managed = await s.Db.DeviceDiagramParts.SingleAsync();
+    var replica = managed.replica_object_id;
+
+    Assert.True(await UnbindAsync(s, spare));
+
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+    Assert.Empty(await s.Db.DeviceDiagramParts.ToListAsync());
+    // The replicas the map made go with the binding.
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == replica));
+    // The diagram, its type, its place and the drawing stay.
+    var node = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(spare));
+    Assert.Equal(canvas.Node, node.parent_id);
+    var row = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(spare));
+    Assert.NotNull(row.dgr_type);
+    Assert.Equal(LeftRegion, row.region_id);
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(manual)));
+    Assert.True(await s.Db.Diagrams.AnyAsync(d => d.id == Guid.Parse(manual)));
+  }
+
+  [Fact]
+  public async Task UnbindingTwiceChangesNothing()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+    await BindAsync(s, spare);
+
+    Assert.True(await UnbindAsync(s, spare));
+    Assert.False(await UnbindAsync(s, spare));
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(spare)));
+  }
+
+  [Fact]
+  public async Task TheCameraTakesABoundDiagramWithIt()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+    await BindAsync(s, spare);
+
+    await s.Nodes.RemoveCameraAsync(CameraId, default);
+
+    // A diagram bound by hand belongs to the camera exactly as an automatic one does.
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(spare)));
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ARepresentationOfAnUnboundDiagramStaysAndKeepsShowingIt()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var first = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion, RightRegion);
+    var spare = await SeedSpareDiagramAsync(s, SpareName, first.Node, LeftRegion);
+    await BindAsync(s, spare);
+
+    var second = await SeedMnemoschemeAsync(s, AnotherCanvasName, LeftRegion);
+    var shown = await AttachAsync(
+      s, target: new DiagramTarget(second.Node.ToString(), RegionId: LeftRegion));
+    Assert.NotNull(shown);
+    Assert.Equal(
+      Guid.Parse(spare),
+      (await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(shown!))).owner_id);
+
+    Assert.True(await UnbindAsync(s, spare));
+
+    // Unbinding is not deleting: the copy stands where it was, and now shows an ordinary diagram —
+    // the same node, with the same type and the same children.
+    var copy = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(shown!));
+    Assert.Equal(Guid.Parse(spare), copy.owner_id);
+    Assert.Equal(second.Node, copy.parent_id);
+    Assert.NotNull((await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(spare))).dgr_type);
+  }
+
+  [Fact]
+  public async Task ADiagramSurvivesTheCameraWhenItHasBeenUnbound()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+    await BindAsync(s, spare);
+    await UnbindAsync(s, spare);
+
+    await s.Nodes.RemoveCameraAsync(CameraId, default);
+
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(spare)));
+  }
+
+  [Fact]
+  public async Task ATemplateForAnotherModelIsRefused()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    var other = await SeedTypeAsync(s, new TypeSpec(Name: FrontPanelName, Model: PtzModel));
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(
+      () => BindAsync(s, spare, typeId: other.ToString()));
+
+    Assert.Contains("does not describe this device", error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ADeviceOfAnotherKindDoesNotTakeTheTemplate()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    var typeId = await SeedTypeAsync(s, new TypeSpec());
+    var type = await s.Db.DiagramTypes.SingleAsync(t => t.id == typeId);
+    type.source_kind = SensorKind;
+    await s.Db.SaveChangesAsync();
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(
+      () => BindAsync(s, spare, typeId: typeId.ToString()));
+
+    Assert.Contains("another kind of device", error.Message);
+  }
+
+  [Fact]
+  public async Task ANamedTemplateIsRefusedWhileTheDeviceModelIsUnknown()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    // No device info: nothing can vouch for a template, and the request said one outright.
+    var typeId = await SeedTypeAsync(s, new TypeSpec());
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(
+      () => BindAsync(s, spare, typeId: typeId.ToString()));
+
+    Assert.Contains("not known", error.Message);
+  }
+
+  [Fact]
+  public async Task BindingWithoutATemplateWaitsForTheModel()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedPartAsync(s, DeviceObjectId.RelayPart, LampToken);
+    var typeId = await SeedTypeAsync(
+      s, new TypeSpec(), (LampToken, DeviceObjectId.RelayPart, DiagramPartMatch.Token, LampToken));
+    var spare = await SeedSpareDiagramAsync(s, SpareName);
+
+    // The model is not known yet: the diagram is bound as it is, with no type of its own.
+    await BindAsync(s, spare);
+    Assert.Null((await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id);
+
+    await SeedModelAsync(s);
+    await EnsureAsync(s);
+
+    // Once the model arrives, reconciliation takes the template that describes it.
+    Assert.Equal(typeId, (await s.Db.DeviceDiagrams.SingleAsync()).diagram_type_id);
+    Assert.Single(await s.Db.DeviceDiagramParts.ToListAsync());
+  }
+
+  [Fact]
+  public async Task ChangingTheCamerasPartsReachesEveryRepresentation()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var first = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+    var second = await SeedMnemoschemeAsync(s, AnotherCanvasName, LeftRegion);
+
+    var one = await AttachAsync(
+      s, target: new DiagramTarget(first.Node.ToString(), RegionId: LeftRegion));
+    var two = await AttachAsync(
+      s, target: new DiagramTarget(second.Node.ToString(), RegionId: LeftRegion));
+
+    Assert.NotNull(one);
+    Assert.NotNull(two);
+    var canonical = await s.Db.DeviceDiagrams.SingleAsync();
+    Assert.Single(await s.Db.DeviceDiagramParts.ToListAsync());
+
+    // A second part is configured and the template learns where to draw it: one reconciliation, and
+    // both copies show it, because they show the same diagram.
+    var type = await s.Db.DiagramTypes.SingleAsync(t => t.id == canonical.diagram_type_id);
+    type.regions.Add(new DBDiagramTypeRegion
+    {
+      diagram_type_id = type.id,
+      region_key = InputToken,
+      geometry = new DBDiagramCoord { width = 10, height = 10 },
+    });
+    type.parts.Add(new DBDiagramTypePart
+    {
+      diagram_type_id = type.id,
+      region_key = InputToken,
+      part_kind = DeviceObjectId.DigitalInputPart,
+      match_by = DiagramPartMatch.Token,
+      match_value = InputToken,
+    });
+    await s.Db.SaveChangesAsync();
+    await SeedPartAsync(s, DeviceObjectId.DigitalInputPart, InputToken);
+
+    await EnsureAsync(s);
+
+    Assert.Equal(2, await s.Db.DeviceDiagramParts.CountAsync());
+    // The copies never had children of their own: they stand on the canvas and show the diagram.
+    foreach (var shown in new[] { one!, two! })
+      Assert.Empty(await s.Db.Markers.Where(m => m.parent_id == Guid.Parse(shown)).ToListAsync());
+
+    // Deleting one copy leaves the other, and the diagram both show.
+    await s.Map.RemoveAsync([two!]);
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(two)));
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Guid.Parse(one)));
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == canonical.object_id));
   }
 }

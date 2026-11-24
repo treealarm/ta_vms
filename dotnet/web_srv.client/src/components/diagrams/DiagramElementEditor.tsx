@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Box, Button, MenuItem, Stack, TextField, Typography,
 } from '@mui/material'
@@ -6,10 +6,11 @@ import { useTranslation } from 'react-i18next'
 import { mapApi } from '../../api/mapApi'
 import { errorText } from '../../api/requestJson'
 import type {
-  MapDiagram, MapDiagramType, MapMarker,
+  MapDeviceDiagramBinding, MapDiagram, MapDiagramType, MapMarker,
 } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadDiagramTypes } from '../../store/diagramsSlice'
+import { loadCameras } from '../../store/liveSlice'
 import { deleteNode, saveDiagramPlacement } from '../../store/mapEditsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import DetailToolbar from '../settings/DetailToolbar'
@@ -80,19 +81,43 @@ export default function DiagramElementEditor({
   const [typesOpen, setTypesOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const preview = useMapFileImage(draft.fileId)
+  // A representation's content — its type and picture — belongs to the diagram it shows. Its
+  // place, including the region, is still its own; that is what a copy is.
+  const copy = element.isRepresentation === true
+
+  // The device a diagram node is bound to, and the camera and template the form offers next. A
+  // replica is the diagram's own content and cannot be bound, so the block is a diagram's only.
+  const camerasById = useAppSelector((s) => s.live.cameraStatesById)
+  const isDiagram = marker.nodeKind === 'diagram'
+  const [binding, setBinding] = useState<MapDeviceDiagramBinding | null>(null)
+  const [deviceCameraId, setDeviceCameraId] = useState('')
+  const [deviceTypeId, setDeviceTypeId] = useState('')
+  const cameras = useMemo(
+    () => Object.values(camerasById).sort((a, b) => a.name.localeCompare(b.name)),
+    [camerasById],
+  )
 
   useEffect(() => {
     if (types.length === 0) void dispatch(loadDiagramTypes())
   }, [types.length, dispatch])
+
+  useEffect(() => {
+    if (copy || !isDiagram) return
+    void mapApi.getDeviceDiagramBinding(marker.id)
+      .then((answer) => setBinding(answer))
+      .catch(() => setBinding({ bound: false }))
+  }, [copy, isDiagram, marker.id])
+
+  useEffect(() => {
+    if (copy || !isDiagram) return
+    if (Object.keys(camerasById).length === 0) void dispatch(loadCameras())
+  }, [copy, isDiagram, camerasById, dispatch])
 
   const set = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((previous) => ({ ...previous, [key]: value }))
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
   const inRegion = draft.regionId !== ''
-  // A representation's content — its type and picture — belongs to the diagram it shows. Its
-  // place, including the region, is still its own; that is what a copy is.
-  const copy = element.isRepresentation === true
 
   const upload = async (file: File) => {
     setBusy(true)
@@ -139,6 +164,43 @@ export default function DiagramElementEditor({
     }
   }
 
+  /** Binds this diagram to the chosen camera: the map maintains it from then on. */
+  const bindDevice = async () => {
+    if (!deviceCameraId) return
+    setBusy(true)
+    setError(null)
+    try {
+      await mapApi.bindDeviceDiagram({
+        nodeId: marker.id,
+        sourceKind: 'camera',
+        sourceId: deviceCameraId,
+        diagramTypeId: deviceTypeId || undefined,
+      })
+      setBinding(await mapApi.getDeviceDiagramBinding(marker.id))
+      setDeviceTypeId('')
+      onSaved()
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Takes the diagram away from its device; it stays an ordinary mnemoscheme. */
+  const unbindDevice = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await mapApi.unbindDeviceDiagram(marker.id)
+      setBinding({ bound: false })
+      onSaved()
+    } catch (e) {
+      setError(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Stack sx={{ flex: 1, minHeight: 0 }}>
       <DetailToolbar
@@ -175,6 +237,69 @@ export default function DiagramElementEditor({
           name={draft.name}
           onNameChange={(name) => set('name', name)}
         />
+
+        {/* A diagram drawn by hand can be made a device's own: the map maintains it from then on —
+            the template that describes the device and a replica per configured part — while the
+            drawing itself stays the administrator's. A replica shows someone else's content and is
+            not a device's diagram, so the block belongs to a diagram node only. */}
+        {isDiagram && !copy && binding ? (
+          <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 1.5 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+              {t('diagramEditor.device')}
+            </Typography>
+            {binding.bound ? (
+              <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {t('diagramEditor.deviceBound', {
+                    name: camerasById[binding.sourceId ?? '']?.name || binding.sourceId,
+                  })}
+                </Typography>
+                <Button size="small" disabled={busy} onClick={() => void unbindDevice()}>
+                  {t('diagramEditor.unbindDevice')}
+                </Button>
+              </Stack>
+            ) : (
+              <Stack spacing={1}>
+                <TextField
+                  size="small"
+                  select
+                  label={t('diagramEditor.deviceCamera')}
+                  value={deviceCameraId}
+                  onChange={(event) => setDeviceCameraId(event.target.value)}
+                >
+                  {cameras.map((camera) => (
+                    <MenuItem key={camera.cameraId} value={camera.cameraId}>
+                      {camera.name || camera.cameraId}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <TextField
+                  size="small"
+                  select
+                  label={t('diagramEditor.deviceTemplate')}
+                  value={deviceTypeId}
+                  onChange={(event) => setDeviceTypeId(event.target.value)}
+                >
+                  <MenuItem value="">{t('diagramEditor.noTemplate')}</MenuItem>
+                  {types.filter((type) => type.sourceKind === 'camera').map((type) => (
+                    <MenuItem key={type.id} value={type.id}>{type.name || type.id}</MenuItem>
+                  ))}
+                </TextField>
+                <Typography variant="caption" color="text.secondary">
+                  {t('diagramEditor.deviceHint')}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={busy || !deviceCameraId}
+                  onClick={() => void bindDevice()}
+                >
+                  {t('diagramEditor.bindDevice')}
+                </Button>
+              </Stack>
+            )}
+          </Box>
+        ) : null}
 
         {/* The type decides what draws the diagram and which places its children may take; the
             dictionary it comes from is edited right here, so an empty one is not a dead end. */}
