@@ -12,7 +12,7 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn'
 import ZoomOutIcon from '@mui/icons-material/ZoomOut'
 import { useTranslation } from 'react-i18next'
 import type {
-  MapDiagramTypeRegion, MapFigure, MapGeometry, MapMarker, MapWatchMessage,
+  MapDiagramCoordinate, MapDiagramTypeRegion, MapFigure, MapGeometry, MapMarker, MapWatchMessage,
 } from '../../dto/mapDtos'
 import { mapLiveUrl } from '../../api/mapApi'
 import { useAppDispatch, useAppSelector } from '../../store'
@@ -45,11 +45,25 @@ type Props = {
   onCreated?: (marker: MapMarker) => void
   /** The open diagram was deleted; its parent is where the editor should go. */
   onDeleted?: () => void
+  /**
+   * A camera whose diagram the administrator asked to show on this canvas: the next click on the
+   * paper stands its panel in the region under it or at a rectangle of its own. The host places it
+   * and answers whether it worked — the message about a taken region belongs beside its action.
+   */
+  armedCameraId?: string | null
+  armedCameraName?: string
+  onPlaceArmed?: (place: { regionId?: string; geometry?: MapDiagramCoordinate }) => Promise<boolean>
+  onCancelArmed?: () => void
 }
 
 const ZOOM_STEP = 1.25
 const MAX_FACTOR = 8
 const MIN_FACTOR = 0.25
+/** The rectangle a panel takes where no region of the canvas holds the click. */
+const PANEL_WIDTH = 320
+const PANEL_HEIGHT = 200
+/** On a paper narrower than the panel, the panel is this share of the paper instead. */
+const PANEL_SHARE = 0.4
 
 /**
  * A mnemoscheme instead of the middle canvas: the diagram's type picture as the paper, its
@@ -59,6 +73,7 @@ const MIN_FACTOR = 0.25
  */
 export default function DiagramViewer({
   diagramId, selectedId, onPick, onOpen, editing, onCreated, onDeleted,
+  armedCameraId, armedCameraName, onPlaceArmed, onCancelArmed,
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
@@ -158,6 +173,9 @@ export default function DiagramViewer({
   // A representation opens on the content of the diagram it shows: that content is read here and
   // edited where the diagram itself is. Its own place is still the administrator's to drag.
   const readOnly = root?.isRepresentation === true
+  // A camera armed for this canvas: the next click on the paper is a place, not an edit. A
+  // representation's paper is the diagram it shows, not a canvas of its own, so it takes no place.
+  const armed = !!armedCameraId && !!onPlaceArmed && !readOnly
 
   // A diagram placed on a map has no size of its own to store: the sheet is the picture its type
   // draws it on, so the picture is measured. A diagram with a stored rectangle never asks. The
@@ -196,6 +214,34 @@ export default function DiagramViewer({
   const regionAt = (x: number, y: number): MapDiagramTypeRegion | undefined =>
     regionAtPoint(openType?.regions, x / paper.width, y / paper.height)
 
+  /**
+   * The click that shows the armed camera's diagram here: the region under the pointer, or a
+   * rectangle of its own centred on it. A click outside every region is a place too — the panel
+   * stands free on the paper, and the administrator drags it afterwards like any other element.
+   */
+  const placeArmed = async (event: React.MouseEvent) => {
+    if (!armed || !onPlaceArmed) return
+
+    const at = paperPoint(event)
+    const region = regionAt(at.x, at.y)
+    if (region?.regionKey) {
+      if (await onPlaceArmed({ regionId: region.regionKey })) reload()
+      return
+    }
+
+    const width = Math.min(PANEL_WIDTH, Math.max(1, Math.round(paper.width * PANEL_SHARE)))
+    const height = Math.min(PANEL_HEIGHT, Math.max(1, Math.round(paper.height * PANEL_SHARE)))
+    const clamp = (value: number, limit: number) => Math.max(0, Math.min(limit, value))
+    const geometry = {
+      left: clamp(at.x - width / 2, paper.width - width),
+      top: clamp(at.y - height / 2, paper.height - height),
+      width,
+      height,
+      rotation: 0,
+    }
+    if (await onPlaceArmed({ geometry })) reload()
+  }
+
   /** Saves where an element was put: the region its middle fell in, or its own rectangle. */
   const place = async (id: string, ownerId: string | undefined, name: string | undefined, rect: Rect) => {
     const element = shown?.content?.find((candidate) => candidate.id === id)
@@ -224,7 +270,7 @@ export default function DiagramViewer({
   }
 
   const beginDrag = (marker: MapMarker, rect: Rect, event: React.PointerEvent) => {
-    if (!editing || readOnly) return
+    if (!editing || readOnly || armed) return
     event.stopPropagation()
 
     const startX = event.clientX
@@ -256,7 +302,7 @@ export default function DiagramViewer({
 
   /** A node dragged out of the editor's lists: a replica of it where it was dropped. */
   const dropNode = async (event: React.DragEvent) => {
-    if (!editing || readOnly) return
+    if (!editing || readOnly || armed) return
 
     const nodeId = event.dataTransfer.getData(NODE_DRAG_TYPE)
     if (!nodeId) return
@@ -281,7 +327,7 @@ export default function DiagramViewer({
   }
 
   const createChild = async () => {
-    if (readOnly) return
+    if (readOnly || armed) return
     try {
       const created = await dispatch(createDiagramNode({
         parentId: diagramId,
@@ -347,7 +393,7 @@ export default function DiagramViewer({
 
   /** A click on the paper while a drawing tool is armed. */
   const paperClick = (event: React.MouseEvent) => {
-    if (!editing || readOnly || !tool) return
+    if (!editing || readOnly || armed || !tool) return
     const at = paperPoint(event)
 
     if (tool === 'text') { void createFigure('text', [at]); return }
@@ -489,6 +535,14 @@ export default function DiagramViewer({
 
         {editing ? (
           <>
+            {armed ? (
+              <>
+                <Typography variant="caption" color="info.main" noWrap role="status" aria-live="polite">
+                  {t('diagramEditor.placeOnCanvasHint', { name: armedCameraName || armedCameraId })}
+                </Typography>
+                <Button size="small" onClick={() => onCancelArmed?.()}>{t('common.cancel')}</Button>
+              </>
+            ) : null}
             {readOnly ? (
               <Typography variant="caption" color="text.secondary" noWrap>
                 {t('diagramEditor.representationHint')}
@@ -556,15 +610,22 @@ export default function DiagramViewer({
               ref={paperRef}
               data-testid="diagram-paper"
               onDragOver={(event) => {
-                if (editing && !readOnly && event.dataTransfer.types.includes(NODE_DRAG_TYPE)) {
+                if (editing && !readOnly && !armed && event.dataTransfer.types.includes(NODE_DRAG_TYPE)) {
                   event.preventDefault()
                 }
               }}
-              onDrop={readOnly ? undefined : (event) => void dropNode(event)}
+              onDrop={readOnly || armed ? undefined : (event) => void dropNode(event)}
               // The root element covers the paper and stops its own clicks, so a drawing tool
               // listens in the capture phase: while one is armed, the click is for the tool.
               onClickCapture={(event) => {
-                if (!editing || readOnly || !tool) return
+                if (!editing || readOnly) return
+                if (armed) {
+                  // The armed click is the place, and it wins over whatever is under it.
+                  event.stopPropagation()
+                  void placeArmed(event)
+                  return
+                }
+                if (!tool) return
                 event.stopPropagation()
                 paperClick(event)
               }}
@@ -576,7 +637,7 @@ export default function DiagramViewer({
                 border: 1,
                 borderColor: 'divider',
                 bgcolor: '#1f1f1f',
-                cursor: editing && !readOnly && tool ? 'crosshair' : 'default',
+                cursor: editing && !readOnly && (armed || tool) ? 'crosshair' : 'default',
               }}
             >
               <Box

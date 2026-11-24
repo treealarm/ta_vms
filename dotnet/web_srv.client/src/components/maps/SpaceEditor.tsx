@@ -19,7 +19,7 @@ import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import { useTranslation } from 'react-i18next'
 import type { CameraPlacementDto, GeoPointDto, PlanCornersDto, SpaceDto } from '../../dto/dtos'
-import type { MapFigure, MapGeometry } from '../../dto/mapDtos'
+import type { MapDiagramCoordinate, MapFigure, MapGeometry } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import {
   errorText, loadLandmarks, loadPlacements, removeLandmark, removePlacement, removeSpacePlan, setPlanCorners,
@@ -131,7 +131,7 @@ export default function SpaceEditor({
   const pictureRef = useRef<HTMLInputElement>(null)
 
   const spaceId = space.id ?? ''
-  const { openDeviceDiagram, placeDeviceDiagram } = useDeviceDiagram(spaceId)
+  const { openDeviceDiagram, placeDeviceDiagram, placeDeviceDiagramOnCanvas } = useDeviceDiagram(spaceId)
   // The map is taking a click rather than selecting what is under it: a part, a camera or a
   // device's diagram, or a shape being drawn. What the click is for always wins over what it lands
   // on — the crosshair says so, and nothing under it is interactive while it is aimed.
@@ -221,6 +221,9 @@ export default function SpaceEditor({
     ? shownDiagram?.content?.find((candidate) => candidate.id === openDiagramId)
     : undefined
   const parentDiagramType = shownDiagram?.dgrTypes?.find((candidate) => candidate.id === openDiagramRow?.dgrType)
+  // A representation opens on the paper of the diagram it shows: that paper is not a canvas of its
+  // own, so a panel cannot be placed on it.
+  const openDiagramIsRepresentation = openDiagramRow?.isRepresentation === true
 
   useEffect(() => {
     void dispatch(loadPlacements())
@@ -445,6 +448,28 @@ export default function SpaceEditor({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [mode, draftPoints, pendingNewDiagram, setMode, setPendingNewDiagram])
+
+  /**
+   * Shows the armed camera's diagram on the open mnemoscheme, where the paper was clicked: in the
+   * region under it, or at a rectangle of its own. The tool is spent whatever the answer — a
+   * refusal names the region, and arming again is a click — and the message lands in the same
+   * alert every other write of the editor reports in.
+   */
+  const placeArmedOnCanvas = async (
+    place: { regionId?: string; geometry?: MapDiagramCoordinate },
+  ): Promise<boolean> => {
+    const cameraId = pendingDiagramId
+    if (!cameraId || !openDiagramId) return false
+
+    setPendingDiagramId(null)
+    let placed = false
+    await run(async () => {
+      const marker = await placeDeviceDiagramOnCanvas(cameraId, openDiagramId, place)
+      if (!marker) throw new Error(t('diagramEditor.noDeviceDiagram'))
+      placed = true
+    })
+    return placed
+  }
 
   /** A vertex was dragged: the shape follows it live and is saved when it is let go. */
   const handleGeometryChange = (figure: MapFigure, geometry: MapGeometry, commit: boolean) => {
@@ -971,6 +996,12 @@ export default function SpaceEditor({
             diagramId={openDiagramId}
             selectedId={selectedNodeId}
             editing
+            armedCameraId={openDiagramIsRepresentation ? null : pendingDiagramId}
+            armedCameraName={pendingDiagramId
+              ? camerasById[pendingDiagramId]?.name || pendingDiagramId
+              : undefined}
+            onPlaceArmed={placeArmedOnCanvas}
+            onCancelArmed={() => setPendingDiagramId(null)}
             onPick={(marker) => setSelection({ kind: 'node', id: marker.id })}
             onOpen={(marker) => {
               if (marker.nodeKind === 'space') { openDiagram(null); onOpenSpace(marker.id) }

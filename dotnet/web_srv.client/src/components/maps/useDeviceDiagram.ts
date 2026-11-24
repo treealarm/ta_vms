@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { MapMarker, MapVisual } from '../../dto/mapDtos'
+import type { MapDiagramCoordinate, MapMarker, MapVisual } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { attachDeviceDiagram } from '../../store/mapEditsSlice'
 import { childrenOf, loadChildren, loadObjProps } from '../../store/objectsSlice'
 import { useEditorState } from './editorState'
 
 /**
- * The device's diagram, two ways of reaching it.
+ * The device's diagram, three ways of reaching it.
  *
  * `openDeviceDiagram` keeps it with the camera and opens it: the node hangs under the camera's
  * picture on the plan, nothing is drawn there, and the map offers a link into it while the camera is
- * selected. `placeDeviceDiagram` also draws it on the canvas, at the point the administrator clicked
+ * selected. `placeDeviceDiagram` also draws it on the space, at the point the administrator clicked
  * — a permanent card beside the camera, and the reader stays on the plan where it landed.
+ * `placeDeviceDiagramOnCanvas` shows it on an open mnemoscheme instead: a representation in a region
+ * of the canvas's type or at a rectangle of its own, and the reader stays on that canvas.
  *
  * The server keeps one diagram per device, so asking again returns the node it has rather than a
  * second one. Answers the node, or null when the server made none; a rejection is thrown, not
@@ -23,11 +25,18 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   const [busy, setBusy] = useState(false)
 
   const attach = useCallback(async (
-    cameraId: string, canvas: string | undefined, at?: { lat: number; lon: number },
+    cameraId: string,
+    target: {
+      spaceId?: string
+      canvasId?: string
+      regionId?: string
+      geometry?: MapDiagramCoordinate
+      at?: { lat: number; lon: number }
+    },
   ) => {
     setBusy(true)
     try {
-      const marker = await dispatch(attachDeviceDiagram({ cameraId, spaceId: canvas, at })).unwrap()
+      const marker = await dispatch(attachDeviceDiagram({ cameraId, ...target })).unwrap()
       return marker?.id ? marker : null
     } finally {
       setBusy(false)
@@ -35,7 +44,7 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   }, [dispatch])
 
   const openDeviceDiagram = useCallback(async (cameraId: string) => {
-    const marker = await attach(cameraId, undefined)
+    const marker = await attach(cameraId, {})
     if (!marker) return false
     setSelection({ kind: 'node', id: marker.id })
     openDiagram(marker.id)
@@ -43,7 +52,7 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
   }, [attach, setSelection, openDiagram])
 
   const placeDeviceDiagram = useCallback(async (cameraId: string, at: { lat: number; lon: number }) => {
-    const marker = await attach(cameraId, spaceId ?? undefined, at)
+    const marker = await attach(cameraId, { spaceId: spaceId ?? undefined, at })
     if (!marker) return false
     // Selected where it landed: the card is the thing the next drag or look is about, and the
     // canvas stays the canvas.
@@ -51,7 +60,22 @@ export function useDeviceDiagram(spaceId: string | null | undefined) {
     return true
   }, [attach, spaceId, setSelection])
 
-  return { openDeviceDiagram, placeDeviceDiagram, busy }
+  /**
+   * Shows the camera's diagram on an open mnemoscheme: in a region of its type, or at a rectangle of
+   * its own. Answers the representation, which the caller selects where it stands.
+   */
+  const placeDeviceDiagramOnCanvas = useCallback(async (
+    cameraId: string,
+    canvasId: string,
+    place: { regionId?: string; geometry?: MapDiagramCoordinate },
+  ) => {
+    const marker = await attach(cameraId, { canvasId, ...place })
+    if (!marker) return null
+    setSelection({ kind: 'node', id: marker.id })
+    return marker
+  }, [attach, setSelection])
+
+  return { openDeviceDiagram, placeDeviceDiagram, placeDeviceDiagramOnCanvas, busy }
 }
 
 /**

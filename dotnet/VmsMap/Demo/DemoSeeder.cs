@@ -442,9 +442,9 @@ namespace VmsMap.Demo
         // No canvas named: the diagram hangs under the camera's picture and is not drawn on it. The
         // world does not want a second card beside the camera — the map offers a link into it when
         // the camera is selected — and drops the picture an earlier world put there.
-        var diagramId = await _deviceDiagrams.AttachAsync(
+        var diagramId = await _deviceDiagrams.PlaceDeviceDiagramAsync(
           DeviceObjectId.CameraSource, DemoIds.Camera(diagram.CameraKey),
-          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot, site: null, ct);
+          Required(diagram.TypeKey).ToString(), IDeviceDiagramService.DefaultSlot, target: null, ct);
         if (diagramId is null)
           continue;
 

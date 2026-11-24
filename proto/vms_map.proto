@@ -1319,10 +1319,18 @@ message AttachDeviceDiagramRequest {
   // Which view of the device: empty means the one every device has for now.
   string slot = 4;
   Caller caller = 5;
-  // The canvas the diagram is drawn on: a diagram is a map object, not a child of the device.
+  // The space the diagram is drawn on: a diagram is a map object, not a child of the device.
   string space_id = 6;
-  // Where it stands on that canvas. Unset puts it beside the camera's own placement.
+  // Where it stands on that space. Unset puts it beside the camera's own placement.
   Coordinate at = 7;
+  // A diagram's canvas instead of a space: the device's diagram is then not drawn here but shown
+  // here, as a representation of itself, in a region of the canvas's type or at a rectangle of its
+  // own. `space_id` and `canvas_id` exclude each other.
+  string canvas_id = 8;
+  // The region of the canvas's type the representation stands in. Excludes `geometry`.
+  string region_id = 9;
+  // Whose rectangle the representation stands at, in the canvas's own pixels. Excludes `region_id`.
+  DiagramCoordinate geometry = 10;
 }
 
 message DiagramList {

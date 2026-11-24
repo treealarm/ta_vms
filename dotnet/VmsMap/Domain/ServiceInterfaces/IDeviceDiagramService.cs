@@ -1,16 +1,31 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace VmsMap.Domain
 {
   /// <summary>
-  /// Where a device's diagram stands on the map: a space, and the point it is drawn at. Without a
-  /// point the diagram is put beside the camera's own placement in that space. `<c>null</c>` site
-  /// means "keep it with the camera and draw nothing": the node hangs under the picture the camera
-  /// really stands on, and is opened from the camera's own link.
+  /// Where a device's diagram is asked to stand. `CanvasId` names a space, which takes a point, or a
+  /// diagram of the map, which takes a region of its type or a rectangle of its own.
+  ///
+  /// A space is the diagram's own card on the plan: the canonical node is drawn there. A diagram's
+  /// canvas shows the device's diagram without owning it: the request makes a representation — a
+  /// replica that stands here and opens on the diagram it represents. A null target means "keep it
+  /// with the camera and draw nothing".
   /// </summary>
-  public sealed record DiagramSite(string SpaceId, double? Lat = null, double? Lon = null);
+  public sealed record DiagramTarget(
+    string CanvasId,
+    string? RegionId = null,
+    DiagramCoordDTO? Geometry = null,
+    double? Lat = null,
+    double? Lon = null);
 
+  /// <summary>
+  /// A placement the map cannot make: the canvas does not exist, the region is not the canvas
+  /// type's, a node already stands in it, or the canvas is the diagram itself. The message says
+  /// which, because the administrator is the one who can fix it.
+  /// </summary>
+  public sealed class DeviceDiagramException(string message) : Exception(message);
 
   /// <summary>
   /// Keeps a device's diagram in step with the template it was drawn from: one canonical diagram
@@ -30,18 +45,20 @@ namespace VmsMap.Domain
     Task ReconcileDeviceAsync(string sourceKind, string sourceId, string slot, CancellationToken ct);
 
     /// <summary>
-    /// Draws a device on the map: creates its diagram node under the camera's picture on the given
-    /// canvas (the space itself when the camera is not drawn there), at the given point, from the
-    /// template named or the one that matches the device's model — an empty sheet when none does —
-    /// and binds the device's configured parts to its regions. A device that already has a diagram
-    /// keeps it and keeps the point it stands at; the type it was drawn from is replaced when
-    /// another is named. With no site the diagram is only kept: under the picture the camera really
-    /// stands on, with no figure — drawn on a canvas is something an administrator asks for.
-    /// Returns the diagram's node id, or null when there is nowhere to keep it (a device that is
-    /// not placed at all) or the template named is gone.
+    /// Draws a device on the map: finds the device's canonical diagram — made under the camera's
+    /// reference picture when there is none, from the template named or the one that matches the
+    /// device's model, an empty sheet when none does — and puts it where the target says: on a
+    /// space as the diagram's own card, or on a diagram's canvas as a representation of it, in a
+    /// region or at a rectangle. The device's configured parts are bound to the template's regions.
+    /// A diagram already standing where it is asked to keeps its place; one already shown in that
+    /// region of that canvas is reused rather than copied.
+    /// Returns the node that was placed — the representation on a diagram's canvas, the diagram
+    /// itself elsewhere — or null when there is nowhere to keep it (a device that is not placed at
+    /// all) or the template named is gone. Throws <see cref="DeviceDiagramException"/> when the
+    /// request names a place the map cannot give.
     /// </summary>
-    Task<string?> AttachAsync(
+    Task<string?> PlaceDeviceDiagramAsync(
       string sourceKind, string sourceId, string? diagramTypeId, string slot,
-      DiagramSite? site, CancellationToken ct);
+      DiagramTarget? target, CancellationToken ct);
   }
 }

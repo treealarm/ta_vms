@@ -69,7 +69,7 @@ internal static class TestWiring
   public static DeviceDiagramService DeviceDiagrams(
     VmsMapDbContext db, MapDb map, MapUpdateService updates, IGeoService geo,
     ICameraCatalog? catalog = null, IDeviceSettingsSource? settings = null) =>
-    new(db, map, new DiagramService(db), catalog ?? new AlwaysKnownCatalog(), geo,
+    new(db, map, updates, new DiagramService(db), catalog ?? new AlwaysKnownCatalog(), geo,
         DiagramReconciler(db, map, updates, settings));
 
   public static DeviceObjectSettingsStore ObjectSettings(VmsMapDbContext db) => new(db);

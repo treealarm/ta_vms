@@ -1240,6 +1240,8 @@
     "deviceDiagram": "Diagrama del dispositivo",
     "placeDeviceDiagram": "Colocar el diagrama del dispositivo en este lienzo",
     "placeDiagramHint": "Haga clic en el mapa para colocar el diagrama de {{name}}",
+    "placeOnCanvasHint": "Haga clic en una región o en un lugar libre de la hoja para mostrar aquí el panel de {{name}}",
+    "missingRegion": "{{region}} (no es una región del tipo del padre)",
     "placeNewDiagramHint": "Haga clic en el mapa para colocar el diagrama"
   },
   "rights": {

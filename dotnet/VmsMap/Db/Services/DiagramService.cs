@@ -7,6 +7,10 @@ using VmsMap.Domain;
 
 namespace VmsMap.Db
 {
+  /// A diagram row the map cannot hold: the region it names is not one of the type its parent is
+  /// drawn from, so nothing would draw it and the editor would have to guess where it stands.
+  public sealed class DiagramConfigException(string message) : Exception(message);
+
   internal class DiagramService : IDiagramService, IDiagramServiceInternal
   {
     private readonly VmsMapDbContext _dbContext;
@@ -54,6 +58,10 @@ namespace VmsMap.Db
           .Where(d => ids.Contains(d.id))
           .ToListAsync();
 
+      // A region is a key of the parent's type: a row naming one that type does not have would be
+      // drawn nowhere, and its node would sit in the tree with no place at all.
+      await EnsureRegionsBelongToParentsAsync(dbUpdated.Select(x => x.Db).ToList());
+
       var existingDict = existing.ToDictionary(e => e.id);
 
       foreach (var (dto, dbObj) in dbUpdated)
@@ -100,6 +108,59 @@ namespace VmsMap.Db
       {
         _dbContext.Diagrams.RemoveRange(diagrams);
         await _dbContext.SaveChangesAsync();
+      }
+    }
+
+    /// <summary>
+    /// A child stands in a region of its parent's diagram type: the region is the key, and the type
+    /// is where the key is written down. A row naming a region its parent's type does not offer is
+    /// refused rather than stored — the editor draws nothing for it and the next person to look
+    /// would have to guess whether the node is missing or the picture is.
+    /// </summary>
+    private async Task EnsureRegionsBelongToParentsAsync(List<DBDiagram> rows)
+    {
+      var placed = rows
+          .Where(r => !string.IsNullOrWhiteSpace(r.region_id) && r.id != Guid.Empty)
+          .ToList();
+      if (placed.Count == 0)
+        return;
+
+      var ids = placed.Select(r => r.id).ToList();
+      var parents = await _dbContext.Markers.AsNoTracking()
+          .Where(m => ids.Contains(m.id))
+          .Select(m => new { m.id, m.parent_id })
+          .ToDictionaryAsync(m => m.id, m => m.parent_id);
+
+      var parentIds = parents.Values
+          .Where(parent => parent.HasValue)
+          .Select(parent => parent!.Value)
+          .Distinct()
+          .ToList();
+      var parentTypes = await _dbContext.Diagrams.AsNoTracking()
+          .Where(d => parentIds.Contains(d.id) && d.dgr_type != null)
+          .Select(d => new { d.id, type = d.dgr_type!.Value })
+          .ToDictionaryAsync(d => d.id, d => d.type);
+
+      var typeIds = parentTypes.Values.Distinct().ToList();
+      var keys = placed.Select(r => r.region_id!).Distinct().ToList();
+      var known = await _dbContext.DiagramTypeRegions.AsNoTracking()
+          .Where(r => typeIds.Contains(r.diagram_type_id) && keys.Contains(r.region_key))
+          .Select(r => new { r.diagram_type_id, r.region_key })
+          .ToListAsync();
+      var offered = known
+          .Select(r => (r.diagram_type_id, r.region_key))
+          .ToHashSet();
+
+      foreach (var row in placed)
+      {
+        var belongs = parents.TryGetValue(row.id, out var parent)
+                      && parent is { } parentId
+                      && parentTypes.TryGetValue(parentId, out var typeId)
+                      && offered.Contains((typeId, row.region_id!));
+        if (!belongs)
+          throw new DiagramConfigException(
+            $"The node \"{Utils.ConvertGuidToObjectId(row.id)}\" names the region " +
+            $"\"{row.region_id}\", which is not a region of the type its parent is drawn from");
       }
     }
 

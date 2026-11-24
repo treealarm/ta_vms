@@ -334,13 +334,22 @@ namespace VmsMap.Grpc
       {
         var resolved = await DiagramRepresentations.ResolveAsync(
           _db, rewritten, context.CancellationToken);
-        if (rewritten.Any(id => resolved[id].Row.is_representation))
+        // A node with no row of its own and nothing to represent is a diagram being drawn for the
+        // first time: there is no copy to protect, and the row is the one this request writes.
+        if (rewritten.Any(id => resolved[id].Row?.is_representation == true))
           throw new RpcException(new Status(StatusCode.InvalidArgument,
             "A representation takes its type and picture from the diagram it shows; " +
             "edit that diagram instead"));
       }
 
-      await _diagramService.UpdateListAsync(dtos);
+      try
+      {
+        await _diagramService.UpdateListAsync(dtos);
+      }
+      catch (DiagramConfigException ex)
+      {
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
 
       return new MapProto.DiagramList { Diagrams = { dtos.Select(ToProto) } };
     }
@@ -378,9 +387,11 @@ namespace VmsMap.Grpc
 
     /// <summary>
     /// Draws a device on the map — the administrator's path: the diagram is an object of the named
-    /// canvas, drawn from the template that matches the device's model (or a blank sheet when none
-    /// does), with the device's configured parts bound to its regions. No canvas named keeps it with
-    /// the camera: the node hangs under the camera's picture and nothing is drawn beside it.
+    /// space, drawn from the template that matches the device's model (or a blank sheet when none
+    /// does), with the device's configured parts bound to its regions; on a diagram's canvas the
+    /// request shows the diagram there as a representation, in one of the canvas type's regions or
+    /// at a rectangle of its own. No canvas named keeps it with the camera: the node hangs under the
+    /// camera's picture and nothing is drawn beside it.
     /// </summary>
     public override async Task<MapProto.Marker> AttachDeviceDiagram(
       MapProto.AttachDeviceDiagramRequest request, ServerCallContext context)
@@ -396,11 +407,45 @@ namespace VmsMap.Grpc
         ? IDeviceDiagramService.DefaultSlot
         : request.Slot;
 
-      var site = string.IsNullOrWhiteSpace(request.SpaceId)
-        ? null
-        : new DiagramSite(request.SpaceId, request.At?.Lat, request.At?.Lon);
-      var objectId = await _deviceDiagrams.AttachAsync(
-        sourceKind, request.SourceId, request.DiagramTypeId, slot, site, ct);
+      // The request matrix: a space takes a point, a diagram's canvas takes a region or a
+      // rectangle, and mixing the two kinds of place is a mistake rather than something to guess
+      // at. The service checks the same matrix against what the canvas really is.
+      var spaceId = string.IsNullOrWhiteSpace(request.SpaceId) ? null : request.SpaceId;
+      var canvasId = string.IsNullOrWhiteSpace(request.CanvasId) ? null : request.CanvasId;
+      var regionId = string.IsNullOrWhiteSpace(request.RegionId) ? null : request.RegionId;
+      var geometry = ToDto(request.Geometry);
+
+      if (spaceId is not null && canvasId is not null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument,
+          "Name a space or a diagram's canvas, not both"));
+      if (regionId is not null && geometry is not null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument,
+          "A diagram stands in a region or at a rectangle, not both"));
+      if ((regionId is not null || geometry is not null) && canvasId is null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument,
+          "A region or a rectangle places a diagram on a diagram's canvas"));
+      if (request.At is not null && canvasId is not null)
+        throw new RpcException(new Status(StatusCode.InvalidArgument,
+          "A diagram's canvas takes a region or a rectangle, not a point"));
+
+      DiagramTarget? target =
+        canvasId is not null ? new DiagramTarget(canvasId, regionId, geometry)
+        : spaceId is not null ? new DiagramTarget(spaceId, Lat: request.At?.Lat, Lon: request.At?.Lon)
+        : null;
+
+      string? objectId;
+      try
+      {
+        objectId = await _deviceDiagrams.PlaceDeviceDiagramAsync(
+          sourceKind, request.SourceId, request.DiagramTypeId, slot, target, ct);
+      }
+      catch (DeviceDiagramException ex)
+      {
+        // The place the request names is not one the map can give: the message says which, and the
+        // administrator is the one who can fix it.
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
+
       if (objectId is null)
         throw new RpcException(new Status(StatusCode.FailedPrecondition,
           "The diagram could not be created: the space does not exist, the camera is not placed, " +

@@ -161,6 +161,11 @@ namespace VmsMap.Db
               .Where(r => !incomingKeys.Contains(r.region_key))
               .ToList();
 
+          // A region is a slot: the nodes standing in it are placed by the key it has. Dropping it
+          // — or renaming it, which is the same change from the template's side — would leave them
+          // in the tree with nowhere to stand and no way to say why.
+          await EnsureRegionsAreFreeAsync(dbObj, toRemove.Select(r => r.region_key).ToList());
+
           foreach (var r in toRemove)
           {
             dbObj.regions.Remove(r);
@@ -241,6 +246,36 @@ namespace VmsMap.Db
     /// of matching that nothing understands, an empty match value, an index that is not a number,
     /// and two regions claiming the same part by the same rule. Refusing here is what keeps a
     /// device from being drawn from a template whose meaning nobody can predict.
+    /// <summary>
+    /// Refuses to take away regions a node stands in. The children of every diagram drawn from this
+    /// type are read: a direct child whose row names one of the disappearing regions is what the
+    /// template would orphan. A key left out of an update is both "deleted" and, when another key
+    /// takes its place, "renamed" — neither is allowed while something stands there.
+    /// </summary>
+    private async Task EnsureRegionsAreFreeAsync(DBDiagramType type, List<string> removedKeys)
+    {
+      if (removedKeys.Count == 0)
+        return;
+
+      var drawn = _dbContext.Diagrams.AsNoTracking()
+          .Where(d => d.dgr_type == type.id)
+          .Select(d => d.id);
+
+      var taken = await (from m in _dbContext.Markers.AsNoTracking()
+                         join d in _dbContext.Diagrams.AsNoTracking() on m.id equals d.id
+                         where m.parent_id != null
+                               && drawn.Contains(m.parent_id.Value)
+                               && d.region_id != null
+                               && removedKeys.Contains(d.region_id)
+                         select d.region_id)
+          .FirstOrDefaultAsync();
+
+      if (taken is not null)
+        throw new DiagramTypeConfigException(
+          $"The diagram type \"{type.name}\" cannot lose the region \"{taken}\": a node of a " +
+          "diagram drawn from it stands there.");
+    }
+
     private static void NormalizeKeys(List<DiagramTypeDTO> types)
     {
       foreach (var type in types)
