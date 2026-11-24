@@ -155,6 +155,9 @@ export default function DiagramViewer({
   const root = shown?.content?.find((candidate) => candidate.id === diagramId)
   const rootMarker = shown?.parents?.find((candidate) => candidate.id === diagramId) ?? { id: diagramId }
   const openType = shown?.dgrTypes?.find((candidate) => candidate.id === root?.dgrType)
+  // A representation opens on the content of the diagram it shows: that content is read here and
+  // edited where the diagram itself is. Its own place is still the administrator's to drag.
+  const readOnly = root?.isRepresentation === true
 
   // A diagram placed on a map has no size of its own to store: the sheet is the picture its type
   // draws it on, so the picture is measured. A diagram with a stored rectangle never asks. The
@@ -197,27 +200,31 @@ export default function DiagramViewer({
   const place = async (id: string, ownerId: string | undefined, name: string | undefined, rect: Rect) => {
     const element = shown?.content?.find((candidate) => candidate.id === id)
     const region = regionAt(rect.left + rect.width / 2, rect.top + rect.height / 2)
+    const copy = element?.isRepresentation === true
+    // A representation's `geometry` is the paper of the diagram it shows, not its place: its
+    // place is what `placement` carried, and writing the paper back would move the copy to it.
+    const own = copy ? element?.placement : element?.geometry
 
     await dispatch(saveDiagramPlacement({
       id,
       parentId: diagramId,
       ownerId,
       name,
-      dgrType: element?.dgrType || undefined,
+      dgrType: copy ? undefined : element?.dgrType || undefined,
       regionId: region?.regionKey,
       // A region says where the element stands, not what it opens on: its geometry stays its own
       // canvas. Dragged outside every region, the rectangle it was dropped at is that geometry.
-      geometry: region ? element?.geometry : {
+      geometry: region ? own : {
         top: rect.top, left: rect.left, width: rect.width, height: rect.height, rotation: rect.rotation,
       },
-      fileId: element?.fileId || undefined,
+      fileId: copy ? undefined : element?.fileId || undefined,
     })).unwrap()
 
     reload()
   }
 
   const beginDrag = (marker: MapMarker, rect: Rect, event: React.PointerEvent) => {
-    if (!editing) return
+    if (!editing || readOnly) return
     event.stopPropagation()
 
     const startX = event.clientX
@@ -249,7 +256,7 @@ export default function DiagramViewer({
 
   /** A node dragged out of the editor's lists: a replica of it where it was dropped. */
   const dropNode = async (event: React.DragEvent) => {
-    if (!editing) return
+    if (!editing || readOnly) return
 
     const nodeId = event.dataTransfer.getData(NODE_DRAG_TYPE)
     if (!nodeId) return
@@ -274,6 +281,7 @@ export default function DiagramViewer({
   }
 
   const createChild = async () => {
+    if (readOnly) return
     try {
       const created = await dispatch(createDiagramNode({
         parentId: diagramId,
@@ -339,7 +347,7 @@ export default function DiagramViewer({
 
   /** A click on the paper while a drawing tool is armed. */
   const paperClick = (event: React.MouseEvent) => {
-    if (!editing || !tool) return
+    if (!editing || readOnly || !tool) return
     const at = paperPoint(event)
 
     if (tool === 'text') { void createFigure('text', [at]); return }
@@ -481,41 +489,49 @@ export default function DiagramViewer({
 
         {editing ? (
           <>
-            <ToggleButtonGroup
-              size="small"
-              exclusive
-              title={t('diagramEditor.freeObjects')}
-              value={tool}
-              onChange={(_, value: 'text' | 'line' | 'polygon' | null) => { setTool(value); setDraft([]) }}
-            >
-              <ToggleButton value="text" title={t('diagramEditor.textObject')} sx={{ px: 1, py: 0.25 }}>
-                <TextFieldsIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="line" title={t('diagramEditor.lineObject')} sx={{ px: 1, py: 0.25 }}>
-                <TimelineIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="polygon" title={t('diagramEditor.zoneObject')} sx={{ px: 1, py: 0.25 }}>
-                <PentagonIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
-            {tool === 'polygon' && draft.length >= 3 ? (
-              <Button size="small" variant="outlined" onClick={() => void createFigure('polygon', draft)}>
-                {t('maps.editor.finish')}
-              </Button>
-            ) : null}
-            {tool ? (
-              <Button size="small" onClick={cancelTool}>{t('common.cancel')}</Button>
-            ) : null}
-            {tool ? (
-              <Typography variant="caption" color="info.main" noWrap role="status" aria-live="polite">
-                {t(tool === 'text'
-                  ? 'diagramEditor.textHint'
-                  : tool === 'line' ? 'diagramEditor.lineHint' : 'diagramEditor.polygonHint')}
+            {readOnly ? (
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {t('diagramEditor.representationHint')}
               </Typography>
-            ) : null}
-            <Button size="small" variant="outlined" onClick={() => void createChild()}>
-              {t('diagramEditor.newDiagram')}
-            </Button>
+            ) : (
+              <>
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  title={t('diagramEditor.freeObjects')}
+                  value={tool}
+                  onChange={(_, value: 'text' | 'line' | 'polygon' | null) => { setTool(value); setDraft([]) }}
+                >
+                  <ToggleButton value="text" title={t('diagramEditor.textObject')} sx={{ px: 1, py: 0.25 }}>
+                    <TextFieldsIcon fontSize="small" />
+                  </ToggleButton>
+                  <ToggleButton value="line" title={t('diagramEditor.lineObject')} sx={{ px: 1, py: 0.25 }}>
+                    <TimelineIcon fontSize="small" />
+                  </ToggleButton>
+                  <ToggleButton value="polygon" title={t('diagramEditor.zoneObject')} sx={{ px: 1, py: 0.25 }}>
+                    <PentagonIcon fontSize="small" />
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                {tool === 'polygon' && draft.length >= 3 ? (
+                  <Button size="small" variant="outlined" onClick={() => void createFigure('polygon', draft)}>
+                    {t('maps.editor.finish')}
+                  </Button>
+                ) : null}
+                {tool ? (
+                  <Button size="small" onClick={cancelTool}>{t('common.cancel')}</Button>
+                ) : null}
+                {tool ? (
+                  <Typography variant="caption" color="info.main" noWrap role="status" aria-live="polite">
+                    {t(tool === 'text'
+                      ? 'diagramEditor.textHint'
+                      : tool === 'line' ? 'diagramEditor.lineHint' : 'diagramEditor.polygonHint')}
+                  </Typography>
+                ) : null}
+                <Button size="small" variant="outlined" onClick={() => void createChild()}>
+                  {t('diagramEditor.newDiagram')}
+                </Button>
+              </>
+            )}
             <Button size="small" onClick={() => setTypesOpen(true)}>{t('diagramEditor.types')}</Button>
             <Button size="small" color="error" onClick={() => void deleteDiagram()}>
               {t('common.delete')}
@@ -540,13 +556,15 @@ export default function DiagramViewer({
               ref={paperRef}
               data-testid="diagram-paper"
               onDragOver={(event) => {
-                if (editing && event.dataTransfer.types.includes(NODE_DRAG_TYPE)) event.preventDefault()
+                if (editing && !readOnly && event.dataTransfer.types.includes(NODE_DRAG_TYPE)) {
+                  event.preventDefault()
+                }
               }}
-              onDrop={(event) => void dropNode(event)}
+              onDrop={readOnly ? undefined : (event) => void dropNode(event)}
               // The root element covers the paper and stops its own clicks, so a drawing tool
               // listens in the capture phase: while one is armed, the click is for the tool.
               onClickCapture={(event) => {
-                if (!editing || !tool) return
+                if (!editing || readOnly || !tool) return
                 event.stopPropagation()
                 paperClick(event)
               }}
@@ -558,7 +576,7 @@ export default function DiagramViewer({
                 border: 1,
                 borderColor: 'divider',
                 bgcolor: '#1f1f1f',
-                cursor: editing && tool ? 'crosshair' : 'default',
+                cursor: editing && !readOnly && tool ? 'crosshair' : 'default',
               }}
             >
               <Box
@@ -586,10 +604,10 @@ export default function DiagramViewer({
                     depth={shownDepth}
                     selectedId={selectedId}
                     onPick={pick}
-                    onMove={editing ? beginDrag : undefined}
+                    onMove={editing && !readOnly ? beginDrag : undefined}
                     movable={false}
                     dragged={dragging}
-                    showRegions={editing}
+                    showRegions={editing && !readOnly}
                   />
                 </Box>
 

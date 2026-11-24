@@ -117,6 +117,17 @@ namespace VmsMap.Adapter
       if (canonicalGuid is null)
         return;
 
+      // The removal takes the same locks as the writers it races with, and reads what it will
+      // delete inside the transaction: a reconciliation that creates a replica between the read
+      // and the delete would otherwise leave a node behind that nothing points at. The order is
+      // the map's one order — camera-state, alarm, then this device.
+      await using var tx = _db.Database.IsRelational()
+        ? await _db.Database.BeginTransactionAsync(ct)
+        : null;
+
+      await MapLocks.AcquireAllAsync(_db, ct);
+      await MapLocks.AcquireDeviceDiagramAsync(_db, DeviceObjectId.CameraSource, cameraId, ct);
+
       var replicaIds = await _db.Markers
         .Where(m => m.owner_id == canonicalGuid.Value)
         .Select(m => m.id)
@@ -147,15 +158,22 @@ namespace VmsMap.Adapter
         .Select(d => d.object_id)
         .ToListAsync(ct);
 
+      // A diagram's representations stand on whatever canvases an administrator put them on;
+      // `owner_id` carries no foreign key either, so they are collected by it.
+      if (diagramIds.Count > 0)
+      {
+        var representations = await _db.Markers
+          .Where(m => m.owner_id != null && diagramIds.Contains(m.owner_id.Value))
+          .Select(m => m.id)
+          .ToListAsync(ct);
+        replicaIds.AddRange(representations);
+      }
+
       var nodes = replicaIds
         .Select(id => Utils.ConvertGuidToObjectId(id))
         .Concat(diagramIds.Select(id => Utils.ConvertGuidToObjectId((Guid?)id)))
         .Append(canonicalId)
         .ToList();
-
-      await using var tx = _db.Database.IsRelational()
-        ? await _db.Database.BeginTransactionAsync(ct)
-        : null;
 
       _db.CameraPlacements.RemoveRange(
         await _db.CameraPlacements.Where(p => p.camera_id == cameraId).ToListAsync(ct));

@@ -147,7 +147,7 @@ namespace VmsMap.Adapter
             // branch below does not do this: it runs on every MediaMTX or pairing change, and a
             // diagram pass over every camera on the node is a full table scan for an event that
             // cannot create one. The periodic snapshot reconciles those.
-            await diagrams.EnsureAsync(
+            await diagrams.ReconcileDeviceAsync(
               DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot, ct);
 
             Remember(camera.ServerId, cameraId);

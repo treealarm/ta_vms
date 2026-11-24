@@ -73,19 +73,19 @@ namespace VmsMap.Db
     }
 
     /// <summary>
-    /// Serialises one device's diagram reconciliation. A snapshot and a configuration change
-    /// arrive independently and both may find no diagram to reconcile; without this they would
-    /// both create one. The key is the registry key, not user text: ids are coerced UUIDs and the
-    /// slot is a constant today.
+    /// Serialises one device's diagram work: reconciliation, placement, binding and the removal
+    /// that takes all of it away. The key is the device, not the slot: the device's canonical
+    /// diagrams may differ by slot, but these operations of one device have to exclude each other.
+    /// It is the registry key, not user text — ids are coerced UUIDs.
     /// </summary>
     public static async Task AcquireDeviceDiagramAsync(
-      VmsMapDbContext db, string sourceKind, string sourceId, string slot,
+      VmsMapDbContext db, string sourceKind, string sourceId,
       CancellationToken ct = default)
     {
       if (!db.Database.IsRelational())
         return;
 
-      var name = $"ta_map_device_diagram:{sourceKind}:{sourceId}:{slot}";
+      var name = $"ta_map_device_diagram:{sourceKind}:{sourceId}";
       await db.Database.ExecuteSqlInterpolatedAsync(
         $"SELECT pg_advisory_xact_lock(hashtext({name}));", ct);
     }

@@ -1,5 +1,6 @@
 import type {
-  MapCoordinate, MapDiagram, MapDiagramType, MapDiagramTypeRegion, MapGeometry,
+  MapCoordinate, MapDiagram, MapDiagramCoordinate, MapDiagramType, MapDiagramTypeRegion,
+  MapGeometry,
 } from '../../dto/mapDtos'
 
 /** A rectangle in the pixels of a diagram's own canvas. */
@@ -7,9 +8,7 @@ export type Rect = { left: number; top: number; width: number; height: number; r
 
 export const EMPTY_RECT: Rect = { left: 0, top: 0, width: 0, height: 0, rotation: 0 }
 
-/** A diagram row's own rectangle in its parent's canvas; a node without one has no size. */
-export function ownRect(diagram: MapDiagram | undefined): Rect {
-  const geometry = diagram?.geometry
+function rectOf(geometry: MapDiagramCoordinate | undefined): Rect {
   return {
     left: geometry?.left ?? 0,
     top: geometry?.top ?? 0,
@@ -17,6 +16,20 @@ export function ownRect(diagram: MapDiagram | undefined): Rect {
     height: geometry?.height ?? 0,
     rotation: geometry?.rotation ?? 0,
   }
+}
+
+/** A diagram row's own rectangle in its parent's canvas; a node without one has no size. */
+export function ownRect(diagram: MapDiagram | undefined): Rect {
+  return rectOf(diagram?.geometry)
+}
+
+/**
+ * Where a node stands in its parent. An ordinary diagram stands at its own geometry; a
+ * representation stands at its `placement`, because its `geometry` is the paper of the diagram it
+ * shows, not its place.
+ */
+export function placementRect(diagram: MapDiagram | undefined): Rect {
+  return rectOf(diagram?.isRepresentation ? diagram.placement : diagram?.geometry)
 }
 
 /** A plain sheet for a diagram whose picture has nothing to measure — an empty one. */
@@ -75,7 +88,7 @@ export function elementRect(
     return regionRect(region, parent)
   }
 
-  return ownRect(diagram)
+  return placementRect(diagram)
 }
 
 /** How much the canvas must shrink to show the diagram whole, never growing it past its size. */

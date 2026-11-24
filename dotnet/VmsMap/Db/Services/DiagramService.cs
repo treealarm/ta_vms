@@ -132,32 +132,45 @@ namespace VmsMap.Db
 
       foreach (var dbObj in dbos)
       {
-        var id = Utils.ConvertGuidToObjectId(dbObj.id);
-
-        newObjs.Add(id, new DiagramDTO
-        {
-          id = id,
-          dgr_type = dbObj.dgr_type.HasValue
-            ? Utils.ConvertGuidToObjectId(dbObj.dgr_type.Value)
-            : null,
-          file_id = dbObj.file_id.HasValue
-            ? Utils.ConvertGuidToObjectId(dbObj.file_id.Value)
-            : null,
-          region_id = dbObj.region_id,
-          geometry = dbObj.geometry is null
-            ? null
-            : new DiagramCoordDTO
-            {
-              top = dbObj.geometry.top,
-              left = dbObj.geometry.left,
-              width = dbObj.geometry.width,
-              height = dbObj.geometry.height,
-              rotation = dbObj.geometry.rotation
-            }
-        });
+        var dto = ToDto(dbObj);
+        newObjs.Add(dto.id!, dto);
       }
 
       return newObjs;
     }
+
+    /// <summary>
+    /// One stored row as the wire carries it. Internal because a diagram's replica reports its
+    /// owner's row with its own place (see <c>DiagramRepresentations</c>), and the two paths must
+    /// convert a row the same way.
+    /// </summary>
+    internal static DiagramDTO ToDto(DBDiagram dbObj)
+    {
+      var id = Utils.ConvertGuidToObjectId(dbObj.id);
+
+      return new DiagramDTO
+      {
+        id = id,
+        dgr_type = dbObj.dgr_type.HasValue
+          ? Utils.ConvertGuidToObjectId(dbObj.dgr_type.Value)
+          : null,
+        file_id = dbObj.file_id.HasValue
+          ? Utils.ConvertGuidToObjectId(dbObj.file_id.Value)
+          : null,
+        region_id = dbObj.region_id,
+        geometry = ToDto(dbObj.geometry)
+      };
+    }
+
+    internal static DiagramCoordDTO? ToDto(DBDiagramCoord? coord) => coord is null
+      ? null
+      : new DiagramCoordDTO
+      {
+        top = coord.top,
+        left = coord.left,
+        width = coord.width,
+        height = coord.height,
+        rotation = coord.rotation
+      };
   }
 }

@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { MapDiagram, MapDiagramType, MapDiagramTypeRegion } from '../../dto/mapDtos'
 import {
   clampRegion, diagramPaper, elementRect, figureCoordinate, figurePoint, moveGeometry, normalizeRect,
-  ownRect, regionAtPoint, regionRect, type Rect,
+  ownRect, placementRect, regionAtPoint, regionRect, type Rect,
 } from './diagramGeometry'
 
 // The fixtures these tests share: the rack's region, the nodes drawn in it, and the shape kind.
 const SLOT_ONE = 'slot-1'
 const SWITCH = 'switch'
+const SHOWN = 'shown panel'
 const FREE = 'free'
 const FRONT = 'front'
 const BACK = 'back'
@@ -71,6 +72,57 @@ describe('elementRect', () => {
     const orphan: MapDiagram = { id: SWITCH, regionId: 'slot-9' }
 
     expect(elementRect(orphan, rackType, parent)).toBeNull()
+  })
+
+  it('draws a representation at its placement, not at the paper it opens on', () => {
+    const shown: MapDiagram = {
+      id: SHOWN,
+      isRepresentation: true,
+      geometry: { left: 0, top: 0, width: 640, height: 480 },
+      placement: { left: 10, top: 20, width: 100, height: 50 },
+    }
+
+    expect(elementRect(shown, rackType, parent)).toEqual({
+      left: 10,
+      top: 20,
+      width: 100,
+      height: 50,
+      rotation: 0,
+    })
+  })
+
+  it('gives a representation in a region the region, whatever its paper says', () => {
+    const shown: MapDiagram = {
+      id: SHOWN,
+      isRepresentation: true,
+      regionId: SLOT_ONE,
+      geometry: { left: 0, top: 0, width: 640, height: 480 },
+    }
+
+    expect(elementRect(shown, rackType, parent)).toEqual({
+      left: 40,
+      top: 200,
+      width: 320,
+      height: 80,
+      rotation: 0,
+    })
+  })
+})
+
+describe('placementRect', () => {
+  it('reads the placement of a representation and the geometry of an ordinary diagram', () => {
+    const shown: MapDiagram = {
+      id: SHOWN,
+      isRepresentation: true,
+      geometry: { width: 640, height: 480 },
+      placement: { left: 10, top: 20, width: 100, height: 50 },
+    }
+
+    expect(placementRect(shown)).toEqual({ left: 10, top: 20, width: 100, height: 50, rotation: 0 })
+    // The geometry of a representation is its owner's paper: it must not be read as its place.
+    expect(ownRect(shown).width).toBe(640)
+    expect(placementRect({ id: FREE, geometry: { left: 1, top: 2, width: 3, height: 4 } }))
+      .toEqual({ left: 1, top: 2, width: 3, height: 4, rotation: 0 })
   })
 })
 

@@ -722,22 +722,41 @@ namespace VmsMap.Grpc
       if (marker is null)
         return content;
 
+      // A representation opens on the content of the diagram it represents: its children are the
+      // owner's children, wherever this node stands itself. Its own chain stays the breadcrumbs' —
+      // the reader leaves this place, not the diagram's own.
+      var root = (await DiagramRepresentations.ResolveAsync(_db, [id], ct))[id];
+
       var markers = new Dictionary<string, BaseMarkerDTO>(StringComparer.Ordinal) { [id] = marker };
       if (!string.IsNullOrEmpty(marker.parent_id))
         markers[marker.parent_id] = (await _mapService.GetAsync(marker.parent_id))!;
 
       if (request.Depth > 0)
       {
-        var children = await _mapService.GetByParentIdAsync(id, null, null, 1000);
-        foreach (var (childId, child) in children)
-          markers[childId] = child;
+        var contentParents = new List<string> { root.OwnerId ?? id };
 
-        for (var level = 1; level < request.Depth && children.Count > 0; level++)
+        for (var level = 0; level < request.Depth; level++)
         {
-          children = await _mapService.GetByParentIdsAsync(
-            children.Keys.ToList(), null, null, 1000);
+          var children = level == 0
+            ? await _mapService.GetByParentIdAsync(contentParents[0], null, null, 1000)
+            : await _mapService.GetByParentIdsAsync(contentParents, null, null, 1000);
+
+          if (children.Count == 0)
+            break;
+
           foreach (var (childId, child) in children)
             markers[childId] = child;
+
+          if (level + 1 >= request.Depth)
+            break;
+
+          // A representation among them is descended into through the diagram it represents, not
+          // through its own id: it has no children of its own.
+          var resolved = await DiagramRepresentations.ResolveAsync(_db, children.Keys.ToList(), ct);
+          contentParents = children.Keys
+            .Select(childId => resolved[childId].OwnerId ?? childId)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
         }
       }
 
@@ -747,7 +766,11 @@ namespace VmsMap.Grpc
         .Where(kv => visible.Contains(kv.Key))
         .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
 
-      var diagrams = await _diagramService.GetListByIdsAsync(markers.Keys.ToList());
+      // Every row a node reports, with a replica's row resolved to the diagram it represents; a
+      // node with no row of its own — a picture of a camera, say — reports none.
+      var diagrams = (await DiagramRepresentations.ResolveAsync(_db, markers.Keys.ToList(), ct))
+        .Where(kv => kv.Value.Row is not null)
+        .ToDictionary(kv => kv.Key, kv => kv.Value.Row!, StringComparer.Ordinal);
       var typeIds = diagrams.Values
         .Select(d => d.dgr_type)
         .Where(t => !string.IsNullOrEmpty(t))
@@ -789,9 +812,18 @@ namespace VmsMap.Grpc
     {
       var ct = context.CancellationToken;
       var ids = await VisibleAsync(request.Ids, request.Caller, ct);
-      var diagrams = await _diagramService.GetListByIdsAsync(ids.ToList());
+      var diagrams = await DiagramRepresentations.ResolveAsync(_db, ids.ToList(), ct);
 
-      return new MapProto.DiagramList { Diagrams = { diagrams.Values.Select(ToProto) } };
+      return new MapProto.DiagramList
+      {
+        Diagrams =
+        {
+          ids
+            .Select(id => diagrams[id].Row)
+            .Where(row => row is not null)
+            .Select(row => ToProto(row!))
+        }
+      };
     }
 
     public override async Task<MapProto.DiagramTypeList> GetDiagramTypes(

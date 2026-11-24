@@ -319,6 +319,27 @@ namespace VmsMap.Grpc
     {
       var dtos = request.Diagrams.Select(ToDto).ToList();
 
+      // A representation carries no type or picture of its own: those belong to the diagram it
+      // shows, and writing them through a copy would fork the content in one place only. Its own
+      // place stays writable — that is what a copy is.
+      var rewritten = dtos
+        .Where(d => !string.IsNullOrWhiteSpace(d.dgr_type) || !string.IsNullOrWhiteSpace(d.file_id))
+        .Select(d => d.id)
+        .Where(id => !string.IsNullOrWhiteSpace(id))
+        .Select(id => id!)
+        .Distinct(StringComparer.Ordinal)
+        .ToList();
+
+      if (rewritten.Count > 0)
+      {
+        var resolved = await DiagramRepresentations.ResolveAsync(
+          _db, rewritten, context.CancellationToken);
+        if (rewritten.Any(id => resolved[id].Row.is_representation))
+          throw new RpcException(new Status(StatusCode.InvalidArgument,
+            "A representation takes its type and picture from the diagram it shows; " +
+            "edit that diagram instead"));
+      }
+
       await _diagramService.UpdateListAsync(dtos);
 
       return new MapProto.DiagramList { Diagrams = { dtos.Select(ToProto) } };
@@ -632,7 +653,9 @@ namespace VmsMap.Grpc
       geometry = ToDto(diagram.Geometry),
       region_id = diagram.RegionId,
       dgr_type = diagram.DgrType,
-      file_id = diagram.FileId
+      file_id = diagram.FileId,
+      placement = ToDto(diagram.Placement),
+      is_representation = diagram.IsRepresentation
     };
 
     private static MapProto.Diagram ToProto(DiagramDTO dto) => new()
@@ -641,7 +664,9 @@ namespace VmsMap.Grpc
       Geometry = ToProto(dto.geometry),
       RegionId = dto.region_id ?? string.Empty,
       DgrType = dto.dgr_type ?? string.Empty,
-      FileId = dto.file_id ?? string.Empty
+      FileId = dto.file_id ?? string.Empty,
+      Placement = ToProto(dto.placement),
+      IsRepresentation = dto.is_representation
     };
 
     private static DiagramCoordDTO? ToDto(MapProto.DiagramCoordinate? coord) => coord == null

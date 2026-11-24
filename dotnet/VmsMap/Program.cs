@@ -121,7 +121,10 @@ builder.Services.AddScoped<IStatesUpdateService, StatesUpdateService>();
 builder.Services.AddScoped<DeviceNodeService>();
 builder.Services.AddScoped<IDeviceNodeService>(sp => sp.GetRequiredService<DeviceNodeService>());
 // A device's diagram, drawn from a template for its model: one transaction and one advisory lock
-// per device, because a snapshot and a configuration change reconcile it independently.
+// per device, because a snapshot and a configuration change reconcile it independently. The
+// reconciler is the step that keeps the type and the managed replicas in line; the service owns
+// the scenario, its transaction and its locks.
+builder.Services.AddScoped<DeviceDiagramReconciler>();
 builder.Services.AddScoped<DeviceDiagramService>();
 builder.Services.AddScoped<IDeviceDiagramService>(sp => sp.GetRequiredService<DeviceDiagramService>());
 // Device settings are cached per camera, and the pub/sub signal reaches one replica only: the

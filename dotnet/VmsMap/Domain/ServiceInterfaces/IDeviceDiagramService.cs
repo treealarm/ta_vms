@@ -13,8 +13,8 @@ namespace VmsMap.Domain
 
 
   /// <summary>
-  /// Keeps a device's diagram in step with the template it was drawn from: one node per
-  /// (device, slot) whose children are replicas of the device's configured parts, placed in the
+  /// Keeps a device's diagram in step with the template it was drawn from: one canonical diagram
+  /// per (device, slot) whose children are replicas of the device's configured parts, placed in the
   /// template's regions.
   /// </summary>
   public interface IDeviceDiagramService
@@ -27,7 +27,7 @@ namespace VmsMap.Domain
     /// diagram is a map object, and where it stands is the administrator's to say. Idempotent; a
     /// device with no diagram costs one query.
     /// </summary>
-    Task EnsureAsync(string sourceKind, string sourceId, string slot, CancellationToken ct);
+    Task ReconcileDeviceAsync(string sourceKind, string sourceId, string slot, CancellationToken ct);
 
     /// <summary>
     /// Draws a device on the map: creates its diagram node under the camera's picture on the given

@@ -60,11 +60,17 @@ internal static class TestWiring
     new(db, map, updates, catalog ?? new AlwaysKnownCatalog(),
         new NoDeviceSettings(), NullLogger<DeviceNodeService>.Instance);
 
+  public static DeviceDiagramReconciler DiagramReconciler(
+    VmsMapDbContext db, MapDb map, MapUpdateService updates,
+    IDeviceSettingsSource? settings = null) =>
+    new(db, map, updates, new DiagramService(db), settings ?? new NoDeviceSettings(),
+        NullLogger<DeviceDiagramReconciler>.Instance);
+
   public static DeviceDiagramService DeviceDiagrams(
     VmsMapDbContext db, MapDb map, MapUpdateService updates, IGeoService geo,
-    ICameraCatalog? catalog = null) =>
-    new(db, map, updates, new DiagramService(db), new NoDeviceSettings(),
-        catalog ?? new AlwaysKnownCatalog(), geo, NullLogger<DeviceDiagramService>.Instance);
+    ICameraCatalog? catalog = null, IDeviceSettingsSource? settings = null) =>
+    new(db, map, new DiagramService(db), catalog ?? new AlwaysKnownCatalog(), geo,
+        DiagramReconciler(db, map, updates, settings));
 
   public static DeviceObjectSettingsStore ObjectSettings(VmsMapDbContext db) => new(db);
 

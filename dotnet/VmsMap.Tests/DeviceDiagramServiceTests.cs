@@ -29,6 +29,9 @@ public class DeviceDiagramServiceTests
   private const string RearPanelName = "Rear panel";
   private const string FrontPanelName = "Front panel";
   private const string SecondPlanName = "second plan";
+  private const string ShownPanelName = "shown panel";
+  private const double PlacementWidth = 70;
+  private const double PlacementHeight = 80;
 
   private sealed record Services(
     VmsMapDbContext Db,
@@ -93,9 +96,10 @@ public class DeviceDiagramServiceTests
     var catalog = new FakeCatalog();
     var nodes = new DeviceNodeService(
       db, map, updates, catalog, settings, NullLogger<DeviceNodeService>.Instance);
-    var diagrams = new DeviceDiagramService(
-      db, map, updates, new DiagramService(db), settings, catalog, geo,
-      NullLogger<DeviceDiagramService>.Instance);
+    var diagramRows = new DiagramService(db);
+    var reconciler = new DeviceDiagramReconciler(
+      db, map, updates, diagramRows, settings, NullLogger<DeviceDiagramReconciler>.Instance);
+    var diagrams = new DeviceDiagramService(db, map, diagramRows, catalog, geo, reconciler);
 
     // The canvas the diagrams stand on: a diagram is a map object, and one of these tests needs
     // only the space to exist.
@@ -206,7 +210,7 @@ public class DeviceDiagramServiceTests
   }
 
   private static Task EnsureAsync(Services s, string cameraId = CameraId) =>
-    s.Diagrams.EnsureAsync(
+    s.Diagrams.ReconcileDeviceAsync(
       DeviceObjectId.CameraSource, cameraId, IDeviceDiagramService.DefaultSlot, default);
 
   /// Draws the device on the tests' canvas; without a type the one its model names is taken.
@@ -814,6 +818,81 @@ public class DeviceDiagramServiceTests
     var managed = await s.Db.DeviceDiagramParts.SingleAsync();
     Assert.Equal(LampRegionTwo, managed.region_key);
     Assert.Equal(LampRegionTwo, (await s.Db.Diagrams.SingleAsync(d => d.id == replica)).region_id);
+  }
+
+  [Fact]
+  public async Task ChangingTheTypeKeepsThePlaceAndThePicture()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    var first = await SeedTypeAsync(s, new TypeSpec());
+    var second = await SeedTypeAsync(s, new TypeSpec(Name: FrontPanelName));
+
+    var diagramId = await AttachAsync(
+      s, first.ToString(), site: new DiagramSite(Space.ToString(), 1, 2));
+
+    // A place and a picture of its own, put there by the editor as an ordinary diagram write.
+    await new DiagramService(s.Db).UpdateListAsync([
+      new DiagramDTO
+      {
+        id = diagramId,
+        region_id = LampRegionTwo,
+        geometry = new DiagramCoordDTO
+        {
+          left = 5,
+          top = 6,
+          width = PlacementWidth,
+          height = PlacementHeight,
+        },
+        file_id = Utils.ConvertGuidToObjectId(Guid.NewGuid()),
+      }
+    ]);
+    var picture = (await s.Db.Diagrams.SingleAsync(
+      d => d.id == Utils.ConvertObjectIdToGuid(diagramId))).file_id;
+
+    await AttachAsync(s, second.ToString(), site: null);
+
+    // A template change is not a move: where it stands and its own picture stay.
+    var row = await s.Db.Diagrams.SingleAsync(d => d.id == Utils.ConvertObjectIdToGuid(diagramId));
+    Assert.Equal(Utils.ConvertObjectIdToGuid(second.ToString()), row.dgr_type);
+    Assert.Equal(LampRegionTwo, row.region_id);
+    Assert.Equal(PlacementWidth, row.geometry!.width);
+    Assert.Equal(PlacementHeight, row.geometry.height);
+    Assert.Equal(picture, row.file_id);
+  }
+
+  [Fact]
+  public async Task RemovingTheCameraTakesTheRepresentationsOfItsDiagram()
+  {
+    var s = await CreateAsync();
+    await SeedCameraAsync(s);
+    await SeedModelAsync(s);
+    var type = await SeedTypeAsync(s, new TypeSpec());
+    var diagramId = await AttachAsync(
+      s, type.ToString(), site: new DiagramSite(Space.ToString()));
+
+    // A representation on the same canvas: an ordinary replica whose place is its own.
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        parent_id = Utils.ConvertGuidToObjectId(Space),
+        owner_id = diagramId,
+        name = ShownPanelName,
+      }
+    ]);
+    var shown = await s.Db.Markers.SingleAsync(
+      m => m.owner_id == Utils.ConvertObjectIdToGuid(diagramId));
+    await new DiagramService(s.Db).UpdateListAsync([
+      new DiagramDTO { id = Utils.ConvertGuidToObjectId(shown.id), region_id = LampRegionTwo }
+    ]);
+
+    await s.Nodes.RemoveCameraAsync(CameraId, default);
+
+    // `owner_id` carries no foreign key: nothing but this takes the copy away.
+    Assert.False(await s.Db.Markers.AnyAsync(m => m.id == shown.id));
+    // The canvas it stood on is not the device's.
+    Assert.True(await s.Db.Markers.AnyAsync(m => m.id == Space));
   }
 
   [Fact]

@@ -128,7 +128,7 @@ namespace VmsMap.Adapter
         if (snapshot.Reachable)
         {
           var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
-          await diagrams.EnsureAsync(
+          await diagrams.ReconcileDeviceAsync(
             snapshot.SourceKind ?? DeviceObjectId.CameraSource,
             snapshot.SourceId!,
             IDeviceDiagramService.DefaultSlot,
@@ -176,7 +176,7 @@ namespace VmsMap.Adapter
         // removed loses it now: the next snapshot is minutes away, and the administrator is
         // looking at the diagram.
         var diagrams = scope.ServiceProvider.GetRequiredService<IDeviceDiagramService>();
-        await diagrams.EnsureAsync(
+        await diagrams.ReconcileDeviceAsync(
           DeviceObjectId.CameraSource, evt.CameraId!, IDeviceDiagramService.DefaultSlot, ct);
 
         return TopicResponseAction.Success;
