@@ -3,8 +3,12 @@ import { mapApi } from '../api/mapApi'
 import type { MapDiagramContent, MapDiagramType, MapValue } from '../dto/mapDtos'
 
 export type DiagramsState = {
-  /** The last diagram read; the viewer draws it only when it is the one it asked for. */
-  content: MapDiagramContent | null
+  /**
+   * The diagrams read, by id. A diagram is left for another while its read is still in flight — a
+   * drag opens the element it drops, and the diagram it was dropped on reloads as well — so the
+   * answers overlap; each keeps its own entry and the viewer draws the one it is showing.
+   */
+  content: Record<string, MapDiagramContent>
   /** How many levels of children a diagram draws: the model allows 0–3. */
   depth: number
   /** Values by the node that owns them; a replica appears under its own id. */
@@ -16,7 +20,7 @@ export type DiagramsState = {
 }
 
 const initialState: DiagramsState = {
-  content: null,
+  content: {},
   depth: 1,
   values: {},
   types: [],
@@ -61,11 +65,6 @@ const diagramsSlice = createSlice({
     setDiagramDepth: (state, action: PayloadAction<number>) => {
       state.depth = action.payload
     },
-    clearDiagram: (state) => {
-      state.content = null
-      state.values = {}
-      state.error = null
-    },
   },
   extraReducers: (builder) => {
     builder
@@ -75,7 +74,7 @@ const diagramsSlice = createSlice({
       })
       .addCase(loadDiagramContent.fulfilled, (state, action) => {
         state.loading = false
-        state.content = action.payload.content
+        state.content[action.payload.id] = action.payload.content
       })
       .addCase(loadDiagramContent.rejected, (state, action) => {
         state.loading = false
@@ -90,5 +89,5 @@ const diagramsSlice = createSlice({
   },
 })
 
-export const { setDiagramDepth, clearDiagram } = diagramsSlice.actions
+export const { setDiagramDepth } = diagramsSlice.actions
 export default diagramsSlice.reducer

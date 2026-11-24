@@ -77,7 +77,7 @@ export default function DiagramViewer({
 }: Props) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
-  const content = useAppSelector((s) => s.diagrams.content)
+  const content = useAppSelector((s) => s.diagrams.content[diagramId])
   const depth = useAppSelector((s) => s.diagrams.depth)
   const values = useAppSelector((s) => s.diagrams.values)
   const loading = useAppSelector((s) => s.diagrams.loading)
@@ -118,7 +118,7 @@ export default function DiagramViewer({
   )
 
   // The answer for another diagram may still be in the store for a render or two.
-  const shown = content?.diagramId === diagramId ? content : null
+  const shown = content ?? null
 
   const nodeIds = useMemo(
     () => (shown ? [diagramId, ...(shown.children ?? []).map((child) => child.id)] : []),
