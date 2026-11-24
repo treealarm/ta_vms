@@ -8,6 +8,7 @@ using VmsDb;
 using VmsMap.Adapter;
 using VmsMap.Clients;
 using VmsMap.Db;
+using VmsMap.PubSub;
 
 namespace VmsMap.Tests;
 
@@ -85,6 +86,31 @@ internal static class MapPostgres
     return new DeviceNodeService(
       db, map, updates, catalog, new NoDeviceSettings(),
       NullLogger<DeviceNodeService>.Instance);
+  }
+
+  /// <summary>The map's own service: spaces, placements, and the general removal with its lock order.</summary>
+  public static SpatialDb Spatial(VmsMapDbContext db)
+  {
+    var (map, updates, geo) = Wire(db);
+    return new SpatialDb(
+      db, map, updates, geo, new KnownCatalog(), new SilentNotifier(),
+      TestWiring.CameraArming(db, map));
+  }
+
+  private sealed class KnownCatalog : ICameraCatalog
+  {
+    public Task<CameraInfo?> GetAsync(string cameraId, CancellationToken ct) =>
+      Task.FromResult<CameraInfo?>(new CameraInfo(cameraId, "Camera " + cameraId, "srv"));
+
+    public Task<List<CameraInfo>> ListAsync(string? serverId, CancellationToken ct) =>
+      Task.FromResult(new List<CameraInfo>());
+  }
+
+  private sealed class SilentNotifier : IMapConfigNotifier
+  {
+    public Task PublishAsync(
+      IReadOnlyCollection<string> objectIds, IReadOnlyCollection<string> cameraIds,
+      CancellationToken ct) => Task.CompletedTask;
   }
 
   private static (MapDb Map, MapUpdateService Updates, GeoService Geo) Wire(VmsMapDbContext db)

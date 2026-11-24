@@ -346,6 +346,16 @@ namespace VmsMap.Grpc
       var ct = context.CancellationToken;
       var caller = ToCaller(request.Caller);
 
+      await using var tx = _db.Database.IsRelational()
+        ? await _db.Database.BeginTransactionAsync(ct)
+        : null;
+
+      // The locks come before the reads below: a copy must not be made for an owner that a
+      // concurrent removal is taking away. A removal takes these same locks before it reads the
+      // replicas it deletes, so one of the two waits — and a copy created first is inside the set
+      // the removal deletes.
+      await MapLocks.AcquireAllAsync(_db, ct);
+
       var owner = await _mapService.GetAsync(request.OwnerId);
       if (owner is null)
         throw new RpcException(new Status(StatusCode.InvalidArgument, "The owner node does not exist"));
@@ -374,10 +384,6 @@ namespace VmsMap.Grpc
         owner_id = request.OwnerId,
         name = name,
       };
-
-      await using var tx = _db.Database.IsRelational()
-        ? await _db.Database.BeginTransactionAsync(ct)
-        : null;
 
       await _mapUpdateService.UpdateObjects([dto]);
 

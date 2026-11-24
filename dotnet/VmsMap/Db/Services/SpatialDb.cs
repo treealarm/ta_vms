@@ -201,6 +201,14 @@ namespace VmsMap.Db
         return 0;
 
       await using var tx = await BeginTransactionAsync(ct);
+
+      // The locks come before the first read, not after it: the set this removal deletes is
+      // computed from the replicas an owner has (`owner_id`), and a writer that creates one — the
+      // device sweep reconciling a diagram, a binding, a placement — takes these same locks before
+      // its own read. Reading first and locking later would let a replica created in between
+      // outlive the owner it names. The order is the map's one order (`MapLocks`).
+      await MapLocks.AcquireAllAsync(_db, ct);
+
       var result = await RemoveInSubtreeAsync(requested, ct);
       if (tx is not null)
         await tx.CommitAsync(ct);
