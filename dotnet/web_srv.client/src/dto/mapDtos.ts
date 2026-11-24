@@ -282,6 +282,13 @@ export type MapDiagram = {
   dgrType?: string
   /** A row of `files`, served by api/map/files/{id}. */
   fileId?: string
+  /** Where a representation of a diagram stands in its parent; `geometry` is the paper it opens
+   *  on, read from the diagram it shows. Absent on an ordinary diagram. */
+  placement?: MapDiagramCoordinate
+  /** Set on a replica of a diagram: its type, picture and children belong to the diagram it
+   *  shows, and only its place is its own. Never inferred from `placement` — a representation in
+   *  a region has no placement at all. */
+  isRepresentation?: boolean
 }
 
 export type MapDiagramList = { diagrams?: MapDiagram[] }

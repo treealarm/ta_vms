@@ -70,9 +70,16 @@ export default function DiagramElement({
     .map((name) => descriptions[name]?.stateDescr || name)
     .filter(Boolean)
 
+  // A representation shows the children of the diagram it represents — they hang under its owner,
+  // not under the copy. The flag says so; a region placement carries no `placement` to infer it from.
+  const isRepresentation = diagram?.isRepresentation === true
   const children = useMemo(
-    () => (depth > 0 ? (content.children ?? []).filter((child) => child.parentId === marker.id) : []),
-    [content.children, marker.id, depth],
+    () => {
+      if (depth <= 0) return []
+      const parentId = isRepresentation && marker.ownerId ? marker.ownerId : marker.id
+      return (content.children ?? []).filter((child) => child.parentId === parentId)
+    },
+    [content.children, isRepresentation, marker.id, marker.ownerId, depth],
   )
 
   return (
@@ -218,7 +225,9 @@ export default function DiagramElement({
             depth={depth - 1}
             selectedId={selectedId}
             onPick={onPick}
-            onMove={onMove}
+            // Inside a representation nothing of the content is moved: those children belong to
+            // the diagram it shows, and a drag here would edit every copy of it.
+            onMove={isRepresentation ? undefined : onMove}
             dragged={dragged}
           />
         )

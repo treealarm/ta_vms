@@ -39,17 +39,22 @@ type Draft = {
   fileId: string
 }
 
-const draftOf = (marker: MapMarker, element: MapDiagram): Draft => ({
-  name: marker.name ?? '',
-  typeId: element.dgrType ?? '',
-  regionId: element.regionId ?? '',
-  top: String(element.geometry?.top ?? 0),
-  left: String(element.geometry?.left ?? 0),
-  width: String(element.geometry?.width ?? 80),
-  height: String(element.geometry?.height ?? 80),
-  rotation: String(element.geometry?.rotation ?? 0),
-  fileId: element.fileId ?? '',
-})
+const draftOf = (marker: MapMarker, element: MapDiagram): Draft => {
+  // A representation's own rectangle is its placement; its geometry is the paper of the diagram it
+  // shows, and editing that here would resize the diagram in every copy of it.
+  const rect = element.isRepresentation ? element.placement : element.geometry
+  return {
+    name: marker.name ?? '',
+    typeId: element.dgrType ?? '',
+    regionId: element.regionId ?? '',
+    top: String(rect?.top ?? 0),
+    left: String(rect?.left ?? 0),
+    width: String(rect?.width ?? 80),
+    height: String(rect?.height ?? 80),
+    rotation: String(rect?.rotation ?? 0),
+    fileId: element.isRepresentation ? '' : element.fileId ?? '',
+  }
+}
 
 /**
  * Where a node stands inside a mnemoscheme: in a region of the parent's type or at its own
@@ -85,6 +90,9 @@ export default function DiagramElementEditor({
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
   const inRegion = draft.regionId !== ''
+  // A representation's content — its type and picture — belongs to the diagram it shows. Its
+  // place, including the region, is still its own; that is what a copy is.
+  const copy = element.isRepresentation === true
 
   const upload = async (file: File) => {
     setBusy(true)
@@ -109,18 +117,19 @@ export default function DiagramElementEditor({
         parentId: marker.parentId ?? '',
         ownerId: marker.ownerId,
         name: draft.name.trim() || marker.name,
-        dgrType: draft.typeId || undefined,
+        dgrType: copy ? undefined : draft.typeId || undefined,
         regionId: inRegion ? draft.regionId : undefined,
         // A region replaces the element's place in its parent, not the canvas it opens on: the
-        // rectangle shown below stays its own paper and travels unchanged.
-        geometry: inRegion ? element.geometry : {
+        // rectangle shown below stays its own paper and travels unchanged. For a representation
+        // the paper is the owner's, so only its placement travels.
+        geometry: inRegion ? (copy ? element.placement : element.geometry) : {
           top: Number(draft.top) || 0,
           left: Number(draft.left) || 0,
           width: Number(draft.width) || 1,
           height: Number(draft.height) || 1,
           rotation: Number(draft.rotation) || 0,
         },
-        fileId: draft.fileId || undefined,
+        fileId: copy ? undefined : draft.fileId || undefined,
       })).unwrap()
       onSaved()
     } catch (e) {
@@ -176,6 +185,8 @@ export default function DiagramElementEditor({
             label={t('diagramEditor.type')}
             value={draft.typeId}
             onChange={(event) => set('typeId', event.target.value)}
+            disabled={copy}
+            helperText={copy ? t('diagramEditor.representationHint') : undefined}
             sx={{ flex: 1 }}
           >
             <MenuItem value="">{t('diagramEditor.noType')}</MenuItem>
@@ -221,26 +232,28 @@ export default function DiagramElementEditor({
           </Stack>
         )}
 
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {t('diagramEditor.background')}
-          </Button>
+        {copy ? null : (
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
+              {t('diagramEditor.background')}
+            </Button>
           {preview ? (
             <Box component="img" src={preview} alt="" sx={{ height: 40, maxWidth: 90, objectFit: 'contain', bgcolor: '#000' }} />
           ) : null}
           {draft.fileId ? <Button size="small" onClick={() => set('fileId', '')}>{t('maps.editor.clearIcon')}</Button> : null}
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) void upload(file)
-            }}
-          />
-        </Stack>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                event.target.value = ''
+                if (file) void upload(file)
+              }}
+            />
+          </Stack>
+        )}
 
         <Button size="small" onClick={onClose} sx={{ alignSelf: 'flex-end' }}>{t('common.close')}</Button>
       </Box>
