@@ -57,6 +57,37 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task ACopyOfADiagramCannotHoldNodes()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    var board = new BaseMarkerDTO { name = "board" };
+    await map.UpdateHierarchyAsync([diagram, board]);
+    db.Diagrams.Add(new DBDiagram { id = Guid.Parse(diagram.id!) });
+    await db.SaveChangesAsync();
+
+    // The diagram's copy: a replica standing on the board, opening on the diagram's content.
+    var copy = new BaseMarkerDTO
+    {
+      name = "panel rep1",
+      parent_id = board.id,
+      owner_id = diagram.id,
+    };
+    await map.UpdateHierarchyAsync([copy]);
+
+    // A reader answers a copy's children from the diagram it represents, so a node hung under the
+    // copy itself would never be shown. The write is refused rather than silently lost.
+    var hidden = new BaseMarkerDTO { name = "hidden", parent_id = copy.id };
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([hidden]));
+
+    // The diagram itself takes children: that is where a copy's content comes from.
+    var drawn = new BaseMarkerDTO { name = "drawn", parent_id = diagram.id };
+    await map.UpdateHierarchyAsync([drawn]);
+    Assert.NotNull(await db.Markers.FirstOrDefaultAsync(m => m.name == "drawn"));
+  }
+
+  [Fact]
   public async Task MovingANodeUnderItsOwnDescendantIsRefused()
   {
     var (db, map) = CreateDb();

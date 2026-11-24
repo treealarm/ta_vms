@@ -804,7 +804,9 @@ def check_shared_diagram_binding(vms):
     try:
         bind_diagram(vms, spare["id"], camera)
     except HttpError as error:
-        refused = error.status == 400
+        # A device that already has a diagram for the view is the map's state refusing the
+        # binding, not a malformed request: 409.
+        refused = error.status == 409
     check(refused, "a device keeps one diagram: binding a second one is refused, and says so")
 
     check(unbind_diagram(vms, canon).get("success") is True, "the world's panel is unbound")

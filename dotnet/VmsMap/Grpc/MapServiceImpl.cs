@@ -442,8 +442,10 @@ namespace VmsMap.Grpc
       catch (DeviceDiagramException ex)
       {
         // The place the request names is not one the map can give: the message says which, and the
-        // administrator is the one who can fix it.
-        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        // administrator is the one who can fix it. A place the map's state refuses — a region
+        // already taken — is a precondition, not a malformed request.
+        throw new RpcException(new Status(
+          ex.Conflicting ? StatusCode.FailedPrecondition : StatusCode.InvalidArgument, ex.Message));
       }
 
       if (objectId is null)
@@ -488,8 +490,10 @@ namespace VmsMap.Grpc
       catch (DeviceDiagramException ex)
       {
         // The node, the slot or the template is not one the map can bind: the message says which,
-        // and the administrator is the one who can fix it.
-        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+        // and the administrator is the one who can fix it. A binding the current state refuses —
+        // the device already drawn, the diagram bound elsewhere — is a precondition.
+        throw new RpcException(new Status(
+          ex.Conflicting ? StatusCode.FailedPrecondition : StatusCode.InvalidArgument, ex.Message));
       }
 
       var marker = nodeId is null

@@ -727,6 +727,37 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
+  public async Task ACopyOfADiagramIsNotACanvas()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var board = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    // A diagram of the administrator's own, and a copy of it standing on the board.
+    var drawn = await SeedSpareDiagramAsync(s, SpareName);
+    var copy = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(copy),
+        parent_id = board.Node.ToString(),
+        owner_id = drawn,
+        name = ShownPanelName,
+      }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = copy, region_id = LeftRegion });
+    await s.Db.SaveChangesAsync();
+
+    // A copy opens on the diagram it represents: whatever stood under the copy itself would never
+    // be read, so the place is refused before anything is written.
+    var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
+      s, target: new DiagramTarget(copy.ToString(), RegionId: LeftRegion)));
+
+    Assert.Contains("representation", error.Message);
+    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+  }
+
+  [Fact]
   public async Task ARegionTheCanvasDoesNotHaveIsRefused()
   {
     var s = await PlacedCameraAsync();
@@ -737,6 +768,8 @@ public class DeviceDiagramServiceTests
       s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: RightRegion)));
 
     Assert.Contains(RightRegion, error.Message);
+    // A key the type does not offer is a malformed request, not the map's state.
+    Assert.False(error.Conflicting);
     Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
   }
 
@@ -761,6 +794,7 @@ public class DeviceDiagramServiceTests
 
     // The reconciler's replica stands there: a second node would hide it or be hidden by it.
     Assert.Contains(LeftRegion, error.Message);
+    Assert.True(error.Conflicting);
     Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
   }
 
@@ -786,8 +820,10 @@ public class DeviceDiagramServiceTests
     var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
       s, target: new DiagramTarget(canvas.Node.ToString(), RegionId: LeftRegion)));
 
-    // A region is a slot: one node stands there, and the administrator is told which.
+    // A region is a slot: one node stands there, and the administrator is told which. The request is
+    // well formed — the map's state is what refuses it.
     Assert.Contains(LeftRegion, error.Message);
+    Assert.True(error.Conflicting);
     Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
   }
 

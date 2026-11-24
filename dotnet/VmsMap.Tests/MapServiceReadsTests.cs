@@ -487,6 +487,32 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task BindingASecondDiagramForTheSameDeviceIsAPrecondition()
+  {
+    var s = Create();
+    var first = await Node(s.Map, PanelLabel);
+    var second = await Node(s.Map, ShownPanelLabel);
+    await SeedDiagramAsync(s.Db, first.id!);
+    await SeedDiagramAsync(s.Db, second.id!);
+    await s.Grpc.BindDeviceDiagram(new MapProto.BindDeviceDiagramRequest
+    {
+      NodeId = first.id!,
+      SourceId = DeviceCameraId,
+    }, new TestContext());
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.BindDeviceDiagram(
+      new MapProto.BindDeviceDiagramRequest
+      {
+        NodeId = second.id!,
+        SourceId = DeviceCameraId,
+      }, new TestContext()));
+
+    // Well formed, and the map's state refuses it: the device already shows a diagram for the view.
+    Assert.Equal(StatusCode.FailedPrecondition, error.StatusCode);
+    Assert.Contains("already has a diagram", error.Status.Detail);
+  }
+
+  [Fact]
   public async Task UnbindDeviceDiagramRefusesARequestWithoutADiagram()
   {
     var s = Create();

@@ -280,6 +280,41 @@ public class DeviceDiagramBindPostgresTests
   }
 
   [Fact]
+  public async Task UnbindingRecomputesTheDiagramsAlarm()
+  {
+    await using var connection = await MapPostgres.OpenAsync(fresh: true);
+    if (connection is null)
+      return;
+
+    var spare = await SeedAsync(connection.Db);
+    var catalog = new TestCatalog();
+    var settings = new OneRelay();
+    var service = MapPostgres.Diagrams(connection.Db, catalog, settings);
+    await service.BindAsync(
+      spare, DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, default);
+    var replica = (await connection.Db.DeviceDiagramParts.AsNoTracking().SingleAsync())
+      .replica_object_id;
+
+    // The diagram carries an alarm a child put there. Removing the replica is a map deletion, and
+    // a map deletion recomputes the alarm state of what the node hung under; a bare node removal
+    // would leave the diagram alarmed over a child that no longer exists.
+    connection.Db.AlarmStates.Add(new DBAlarmState
+    {
+      id = Guid.Parse(spare),
+      alarm = true,
+      children_alarms = 1,
+    });
+    await connection.Db.SaveChangesAsync();
+
+    await service.UnbindAsync(spare, default);
+
+    var row = await connection.Db.AlarmStates.AsNoTracking()
+      .FirstOrDefaultAsync(alarm => alarm.id == Guid.Parse(spare));
+    Assert.True(row is null || !row.alarm);
+    Assert.False(await connection.Db.Markers.AnyAsync(m => m.id == replica));
+  }
+
+  [Fact]
   public async Task TwoBindsOfOneDiagramLeaveOneWinner()
   {
     await using var first = await MapPostgres.OpenAsync(fresh: true);

@@ -217,7 +217,8 @@ namespace VmsMap.Adapter
           string.Equals(existing.source_kind, sourceKind, StringComparison.Ordinal)
           && string.Equals(existing.source_id, sourceId, StringComparison.Ordinal)
             ? $"The diagram is already bound to this device as \"{existing.slot}\""
-            : "The diagram is bound to another device; unbind it first");
+            : "The diagram is bound to another device; unbind it first",
+          conflicting: true);
       }
 
       // One canonical diagram per (device, slot): a device that already has one is not given a
@@ -227,7 +228,7 @@ namespace VmsMap.Adapter
              && d.object_id != nodeGuid, ct);
       if (taken)
         throw new DeviceDiagramException(
-          "The device already has a diagram for this view; unbind it first");
+          "The device already has a diagram for this view; unbind it first", conflicting: true);
 
       await EnsurePlaceIsNotAPartSlotAsync(marker, diagram, ct);
 
@@ -341,8 +342,10 @@ namespace VmsMap.Adapter
       if (managed.Count > 0)
       {
         // The replica is what the administrator sees; a child somebody hung under it travels with
-        // the subtree, exactly as it does when a part is unbound from the template.
-        await _map.RemoveAsync(managed
+        // the subtree, exactly as it does when a part is unbound from the template. The map's own
+        // deletion, not a bare node removal: it recomputes the alarms of the parent the replica
+        // hung under, which a direct `RemoveAsync` leaves as it was.
+        await _updates.Delete(managed
           .Select(m => Utils.ConvertGuidToObjectId(m.replica_object_id))
           .ToList());
       }
@@ -397,6 +400,17 @@ namespace VmsMap.Adapter
 
       if (!await _db.Diagrams.AsNoTracking().AnyAsync(d => d.id == id, ct))
         throw new DeviceDiagramException("The canvas does not exist");
+
+      // A copy of a diagram opens on the diagram it represents: its own row carries only where it
+      // stands, and the reader answers its children from the owner. A diagram shown on the copy
+      // would stand where nobody ever reads it.
+      var owner = await _db.Markers.AsNoTracking()
+        .Where(m => m.id == id)
+        .Select(m => m.owner_id)
+        .FirstOrDefaultAsync(ct);
+      if (owner is not null)
+        throw new DeviceDiagramException(
+          "The canvas is a representation of a diagram; show the diagram on the diagram itself");
 
       if (target.Lat is not null || target.Lon is not null)
         throw new DeviceDiagramException(
@@ -605,14 +619,16 @@ namespace VmsMap.Adapter
         .AnyAsync(p => p.diagram_type_id == canvasType!.Value && p.region_key == regionKey, ct);
       if (bound)
         throw new DeviceDiagramException(
-          $"The region \"{regionKey}\" stands for a part of the canvas's template");
+          $"The region \"{regionKey}\" stands for a part of the canvas's template",
+          conflicting: true);
 
       var occupied = await (from m in _db.Markers.AsNoTracking()
                             join d in _db.Diagrams.AsNoTracking() on m.id equals d.id
                             where m.parent_id == canvas.Id && d.region_id == regionKey
                             select (Guid?)m.id).FirstOrDefaultAsync(ct);
       if (occupied is not null)
-        throw new DeviceDiagramException($"The region \"{regionKey}\" already holds a node");
+        throw new DeviceDiagramException(
+          $"The region \"{regionKey}\" already holds a node", conflicting: true);
     }
 
     /// <summary>

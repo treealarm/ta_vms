@@ -28,9 +28,10 @@ public class DeviceDiagramPlacementPostgresTests
   /// <summary>
   /// The statements one placement on a region costs: the diagram already exists, the canvas does
   /// too, and nothing about the device is configured, so this is the cheapest real placement there
-  /// is. Changing it is a decision, not an accident.
+  /// is. Changing it is a decision, not an accident — the canvas's owner is read to refuse a copy
+  /// of a diagram as a canvas, which is the statement that took it from 27 to 28.
   /// </summary>
-  private const int PlacementStatements = 27;
+  private const int PlacementStatements = 28;
 
   /// <summary>
   /// Every command the context runs, whether it reads rows, asks for a value or writes. The async

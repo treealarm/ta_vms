@@ -350,7 +350,9 @@ namespace VmsMap.Adapter
         // so deleting it first would take the rows along and leave these deletes matching nothing.
         _db.DeviceDiagramParts.RemoveRange(dropped);
         await _db.SaveChangesAsync(ct);
-        await _map.RemoveAsync(dropped
+        // The map's own deletion, not a bare node removal: it also recomputes the alarm state of
+        // what the replica hung under, which a direct `RemoveAsync` leaves as it was.
+        await _updates.Delete(dropped
           .Select(m => Utils.ConvertGuidToObjectId(m.replica_object_id))
           .ToList());
       }

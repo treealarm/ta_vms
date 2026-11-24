@@ -21,11 +21,21 @@ namespace VmsMap.Domain
     double? Lon = null);
 
   /// <summary>
-  /// A placement the map cannot make: the canvas does not exist, the region is not the canvas
-  /// type's, a node already stands in it, or the canvas is the diagram itself. The message says
-  /// which, because the administrator is the one who can fix it.
+  /// A placement or a binding the map cannot make: the canvas does not exist, the region is not the
+  /// canvas type's, a node already stands in it, or the canvas is the diagram itself. The message
+  /// says which, because the administrator is the one who can fix it.
   /// </summary>
-  public sealed class DeviceDiagramException(string message) : Exception(message);
+  /// <remarks>
+  /// `Conflicting` tells the two kinds apart for the wire: the request is well formed and the map's
+  /// current state refuses it — the region taken, the device already having a diagram for the view —
+  /// answers `FailedPrecondition`; a request that names something that does not exist or cannot be
+  /// one answers `InvalidArgument`.
+  /// </remarks>
+  public sealed class DeviceDiagramException(string message, bool conflicting = false)
+    : Exception(message)
+  {
+    public bool Conflicting { get; } = conflicting;
+  }
 
   /// <summary>What a diagram node is bound to: the device and the view of it the diagram draws.</summary>
   public sealed record DeviceDiagramBinding(string SourceKind, string SourceId, string Slot);

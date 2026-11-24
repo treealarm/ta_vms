@@ -466,15 +466,49 @@ namespace VmsMap.Db
           .ToList();
       if (referencedParents.Count > 0)
       {
-        var existingParents = (await _db.Markers.AsNoTracking()
+        var parentRows = await _db.Markers.AsNoTracking()
             .Where(m => referencedParents.Contains(m.id))
-            .Select(m => m.id)
-            .ToListAsync())
-          .ToHashSet();
+            .Select(m => new { m.id, m.owner_id })
+            .ToListAsync();
+        var existingParents = parentRows.Select(row => row.id).ToHashSet();
         var missing = referencedParents.FirstOrDefault(id => !existingParents.Contains(id));
         if (missing != Guid.Empty)
           throw new ArgumentException(
               $"Parent node '{Utils.ConvertGuidToObjectId(missing)}' does not exist");
+
+        // A representation of a diagram draws the diagram's own content: the reader answers its
+        // children from the owner, never from the copy. Whatever stood under the copy would never
+        // be shown — a node the caller made and cannot find. So a copy is a place, not a canvas.
+        var owners = parentRows
+            .Where(row => row.owner_id.HasValue)
+            .Select(row => row.owner_id!.Value)
+            .Concat(dbUpdated.Values
+                .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue)
+                .Select(v => v.owner_id!.Value))
+            .Distinct()
+            .ToList();
+        if (owners.Count > 0)
+        {
+          var drawnAgain = await _db.Diagrams.AsNoTracking()
+              .Where(diagram => owners.Contains(diagram.id))
+              .Select(diagram => diagram.id)
+              .ToListAsync();
+          // A parent may be a row already in the tree or one this call creates; the batch's own
+          // rows are checked with the same rule.
+          var copy = parentRows
+                .Where(row => row.owner_id.HasValue && drawnAgain.Contains(row.owner_id.Value))
+                .Select(row => (Guid?)row.id)
+                .FirstOrDefault()
+            ?? dbUpdated.Values
+                .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue
+                            && drawnAgain.Contains(v.owner_id.Value))
+                .Select(v => (Guid?)v.id)
+                .FirstOrDefault();
+          if (copy is { } copyId)
+            throw new ArgumentException(
+                $"Node '{Utils.ConvertGuidToObjectId(copyId)}' is a copy of a diagram and cannot "
+                + "hold nodes: its children are the diagram's own");
+        }
       }
 
       // A move under the node's own descendant would close a loop the alarm and rights walks cannot
