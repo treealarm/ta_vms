@@ -214,6 +214,14 @@ export default function DiagramElementEditor({
           {(parentType?.regions ?? []).map((region) => (
             <MenuItem key={region.regionKey} value={region.regionKey ?? ''}>{region.regionKey}</MenuItem>
           ))}
+          {/* The saved region is not in the parent's type any more: the select shows what the row
+              says instead of silently displaying "free", and choosing another region repairs it. */}
+          {draft.regionId && !(parentType?.regions ?? [])
+            .some((region) => region.regionKey === draft.regionId) ? (
+              <MenuItem value={draft.regionId}>
+                {t('diagramEditor.missingRegion', { region: draft.regionId })}
+              </MenuItem>
+            ) : null}
         </TextField>
 
         {inRegion ? null : (

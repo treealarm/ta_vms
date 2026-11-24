@@ -9,6 +9,7 @@ import type {
   MapDemoStatus,
   MapDiagram,
   MapDiagramContent,
+  MapDiagramCoordinate,
   MapDiagramList,
   MapDiagramType,
   MapDiagramTypeList,
@@ -157,17 +158,26 @@ export const mapApi = {
 
   /** Draws a device from a template an administrator picked. */
   /**
-   * Draws a device's diagram on a canvas, under the camera's placement there. Without a canvas the
-   * diagram is only kept with the camera — under its picture and not drawn — which is how a reader
-   * opens it from the camera without a second card standing on the plan. Without a template the one
-   * the device's model names is taken, and a blank sheet when none does.
+   * Draws a device's diagram on a space, under the camera's placement there, or shows it on a
+   * diagram's canvas as a representation — in a region of the canvas's type, or at a rectangle of
+   * its own. Without a canvas the diagram is only kept with the camera — under its picture and not
+   * drawn — which is how a reader opens it from the camera without a second card standing on the
+   * plan. Without a template the one the device's model names is taken, and a blank sheet when none
+   * does.
    */
   attachDeviceDiagram: (body: {
     sourceKind: string
     sourceId: string
+    /** A space; excluded with `canvasId`. */
     spaceId?: string
+    /** A diagram of the map; excluded with `spaceId`. */
+    canvasId?: string
+    /** A region of the canvas's type; excluded with `geometry`. */
+    regionId?: string
+    /** A rectangle of its own on the canvas, in the canvas's pixels; excluded with `regionId`. */
+    geometry?: MapDiagramCoordinate
     diagramTypeId?: string
-    /** Where it stands on that canvas; unset puts it beside the camera's own placement. */
+    /** Where it stands on that space; unset puts it beside the camera's own placement. */
     at?: { lat: number; lon: number }
   }) => post<MapMarker>(`${ADMIN}/device-diagram`, body),
 

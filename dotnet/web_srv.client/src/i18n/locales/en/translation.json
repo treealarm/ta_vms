@@ -1240,6 +1240,8 @@
     "deviceDiagram": "Device diagram",
     "placeDeviceDiagram": "Place the device diagram on this canvas",
     "placeDiagramHint": "Click the map to place the diagram of {{name}}",
+    "placeOnCanvasHint": "Click a region, or an empty spot of the sheet, to show the panel of {{name}} here",
+    "missingRegion": "{{region}} (not a region of the parent's type)",
     "placeNewDiagramHint": "Click the map to place the diagram"
   },
   "rights": {
