@@ -65,6 +65,17 @@ Conventions that hold everywhere:
   never moved or removed. A diagram placed on a map has no stored paper size: the viewer lays it out
   on the size of its type's picture, so regions, stored in shares, land where the template draws
   them.
+  **A device's diagram is one canonical diagram with any number of representations.** The canonical
+  one — one per device and view (`slot`, `default` today) — is what the service maintains; showing
+  it elsewhere, in a region of a mnemoscheme or as a free rectangle on it, makes a
+  **representation**: a replica whose owner is the diagram, carrying only its place. Its type, its
+  paper and its children are the canonical diagram's, so every copy of a panel is the same content
+  shown in several places, and a new part arrives on all of them at once. A diagram the
+  administrator drew can be attached to a device instead (`BindDeviceDiagram`): the map adopts the
+  template the device's model names, fills its sockets and keeps the drawing's place and whatever
+  was drawn by hand; `UnbindDeviceDiagram` takes the managed replicas away and leaves an ordinary
+  mnemoscheme. A device has one diagram per view — binding a second one is refused until the first
+  is unbound — and a template named in the binding is checked against the device's model.
 - **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
   child unless the tree says so, and a child need not lie inside anything. The administrator sets
   the parent: a new object is created under the selected node, or under the space when nothing is
@@ -112,8 +123,15 @@ Conventions that hold everywhere:
   No separate "is a device" flag is kept; `device_node` says which originals are devices, and which
   part of one (`part_kind`, `part_token`). `owner_id` always names an original, never another
   replica: a picture dropped from a replica's canvas is written as a picture of the node both show,
-  because every read that answers through an owner resolves it in one hop. **A device need not be
-  placed at all**: it exists as a canonical node the moment it is configured, and its parts —
+  because every read that answers through an owner resolves it in one hop. **A diagram is replicated
+  the same way.** A representation of a diagram opens on what the diagram says — its type, its paper
+  and its children, read through `owner_id` — while its own row holds only where it stands: a region
+  of its parent or a rectangle of its own. The two are told apart on the wire: `Diagram.placement`
+  is the copy's place, `Diagram.geometry` the paper it opens on, and `is_representation` says what
+  the row is — never the presence of a place, because a copy standing in a region has none. The
+  structure inside a representation is read-only in the editor (its children belong to the diagram
+  it shows), while the copy itself moves, is renamed and acts on the device it shows. **A device need
+  not be placed at all**: it exists as a canonical node the moment it is configured, and its parts —
   digital inputs and relays — are canonical nodes under it. That is the tree **Admin → Nodes**
   shows in full and **Admin → Maps → Devices** offers for placement; the map's **Nodes** tab shows
   only what is drawn on the open space, pictures included. **A part may be drawn too.** A digital
