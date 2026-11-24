@@ -76,6 +76,11 @@ Conventions that hold everywhere:
   was drawn by hand; `UnbindDeviceDiagram` takes the managed replicas away and leaves an ordinary
   mnemoscheme. A device has one diagram per view — binding a second one is refused until the first
   is unbound — and a template named in the binding is checked against the device's model.
+- **In the editor a pick selects; entering is a button.** On the administrator's canvas a click
+  picks the element: it is selected, dragged by its body and edited in the panel beside it. A nested
+  diagram — or a representation of one — is entered by **Open diagram** in that panel. Entering on
+  the click would take the paper away from the hand moving the diagram. The operator, who has no
+  editor panel, enters by picking; the breadcrumb and the up arrow go back out for both.
 - **The tree decides what is a child; geometry never does.** An object inside a polygon is not its
   child unless the tree says so, and a child need not lie inside anything. The administrator sets
   the parent: a new object is created under the selected node, or under the space when nothing is
