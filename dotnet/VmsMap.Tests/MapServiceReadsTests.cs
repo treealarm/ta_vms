@@ -61,6 +61,8 @@ public class MapServiceReadsTests
   private const string NotePropName = "note";
   private const string PictureName = "my picture";
   private const string CompactGuidFormat = "N";
+  // `device_diagram.source_id` is stored as a UUID, so a camera id here is one too.
+  private const string DeviceCameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3309";
 
   private sealed class TestCatalog : ICameraCatalog
   {
@@ -97,7 +99,8 @@ public class MapServiceReadsTests
     MapServiceImpl Grpc,
     TestRightsNotifier Notifier,
     AlarmStore Alarms,
-    TestCameraState Arming);
+    TestCameraState Arming,
+    IDeviceDiagramService DeviceDiagrams);
 
   private static Services Create()
   {
@@ -142,7 +145,7 @@ public class MapServiceReadsTests
       TestWiring.ControlObjects(db, map, rights), alarms,
       deviceDiagrams);
 
-    return new Services(db, map, states, updates, grpc, notifier, alarms, arming);
+    return new Services(db, map, states, updates, grpc, notifier, alarms, arming, deviceDiagrams);
   }
 
   private static async Task<BaseMarkerDTO> Node(
@@ -396,6 +399,102 @@ public class MapServiceReadsTests
     Assert.False(row.IsRepresentation);
     Assert.Null(row.Placement);
     Assert.Contains(content.Children, child => child.Id == part.id);
+  }
+
+  [Fact]
+  public async Task ABoundDiagramIsAnOrdinaryDiagramAgainAfterUnbinding()
+  {
+    var s = Create();
+    var (panel, part, canvas, typeId) = await SeedPanelAsync(s);
+
+    // The administrator's own diagram, bound to a device and shown on a canvas.
+    await s.DeviceDiagrams.BindAsync(
+      panel.id!, CameraKind, DeviceCameraId, null, IDeviceDiagramService.DefaultSlot, default);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var bound = await s.Grpc.GetDeviceDiagramBinding(
+      new MapProto.GetDeviceDiagramBindingRequest { NodeId = panel.id! }, new TestContext());
+    Assert.True(bound.Bound);
+    Assert.Equal(DeviceCameraId, bound.SourceId);
+
+    Assert.True(await s.DeviceDiagrams.UnbindAsync(panel.id!, default));
+
+    var unbound = await s.Grpc.GetDeviceDiagramBinding(
+      new MapProto.GetDeviceDiagramBindingRequest { NodeId = panel.id! }, new TestContext());
+    Assert.False(unbound.Bound);
+
+    // The copy stays, and the diagram opens on it as an ordinary one: the same type and children.
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = shown.id!,
+      Depth = 1,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    var row = Assert.Single(content.Content, candidate => candidate.Id == shown.id);
+    Assert.True(row.IsRepresentation);
+    Assert.Equal(typeId, row.DgrType);
+    Assert.Contains(content.Children, child => child.Id == part.id);
+  }
+
+  [Fact]
+  public async Task ARepresentationDoesNotLeakTheChildrenTheCallerMayNotSee()
+  {
+    var s = Create();
+    var (panel, part, canvas, _) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+    // Alice may open the copy; the part inside the diagram was granted to nobody.
+    await Grant(s.Db, shown, AliceName, RightActions.View);
+
+    var content = await s.Grpc.GetDiagramContent(new MapProto.GetDiagramContentRequest
+    {
+      DiagramId = shown.id!,
+      Depth = 1,
+      Caller = Caller(AliceName),
+    }, new TestContext());
+
+    // The copy opens on the diagram's paper, and what she may not see is not in it.
+    Assert.Contains(content.Content, row => row.Id == shown.id);
+    Assert.DoesNotContain(content.Children, child => child.Id == part.id);
+  }
+
+  [Fact]
+  public async Task BindDeviceDiagramRefusesANodeThatIsNotADiagram()
+  {
+    var s = Create();
+    var node = await Node(s.Map, NoteLabel);
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.BindDeviceDiagram(
+      new MapProto.BindDeviceDiagramRequest { NodeId = node.id!, SourceId = DeviceCameraId },
+      new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+    Assert.Contains("not a diagram", error.Status.Detail);
+  }
+
+  [Fact]
+  public async Task BindDeviceDiagramRefusesARequestWithoutADevice()
+  {
+    var s = Create();
+    var node = await Node(s.Map, NoteLabel);
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.BindDeviceDiagram(
+      new MapProto.BindDeviceDiagramRequest { NodeId = node.id! }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+  }
+
+  [Fact]
+  public async Task UnbindDeviceDiagramRefusesARequestWithoutADiagram()
+  {
+    var s = Create();
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UnbindDeviceDiagram(
+      new MapProto.UnbindDeviceDiagramRequest(), new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
   }
 
   [Fact]

@@ -4,9 +4,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Npgsql;
-using VmsDb;
-using VmsMap.Adapter;
 using VmsMap.Db;
 using VmsMap.Domain;
 
@@ -20,8 +17,6 @@ namespace VmsMap.Tests;
 [Collection("postgis")]
 public class DeviceDiagramPlacementPostgresTests
 {
-  private static readonly string? Dsn = Environment.GetEnvironmentVariable("VMS_MAP_TEST_DSN");
-
   // The fixtures these tests share.
   private const string CameraId = "3f2504e0-4f89-11d3-9a0c-0305e82c3301";
   private const string CanvasName = "cam diagrams";
@@ -95,66 +90,6 @@ public class DeviceDiagramPlacementPostgresTests
   }
 
   /// <summary>
-  /// A data source and context of its own, which is also what two replicas of VmsMap look like. The
-  /// first call migrates and empties the shared scratch database; a second one joins it.
-  /// </summary>
-  private sealed record Connection(NpgsqlDataSource DataSource, VmsMapDbContext Db) : IAsyncDisposable
-  {
-    public async ValueTask DisposeAsync()
-    {
-      await Db.DisposeAsync();
-      await DataSource.DisposeAsync();
-    }
-  }
-
-  private static async Task<Connection?> OpenAsync(StatementCounter? counter, bool fresh)
-  {
-    if (string.IsNullOrWhiteSpace(Dsn))
-      return null;
-
-    await using (var migrationSource = new NpgsqlDataSourceBuilder(Dsn).Build())
-    {
-      await new VmsDbMigrator(migrationSource, "VmsMapTest", AppContext.BaseDirectory, "7743512881")
-        .MigrateAsync();
-    }
-
-    var dataSourceBuilder = new NpgsqlDataSourceBuilder(Dsn);
-    dataSourceBuilder.EnableDynamicJson();
-    dataSourceBuilder.UseNetTopologySuite();
-    var dataSource = dataSourceBuilder.Build();
-
-    var options = new DbContextOptionsBuilder<VmsMapDbContext>()
-      .UseNpgsql(dataSource, o => o.UseNetTopologySuite());
-    if (counter is not null)
-      options = options.AddInterceptors(counter);
-
-    var db = new VmsMapDbContext(options.Options);
-    if (fresh)
-    {
-      // The templates are a dictionary of their own, not children of `objects`: a name left from an
-      // earlier run would collide with this test's canvas type.
-      await db.Database.ExecuteSqlRawAsync("TRUNCATE objects, diagram_types CASCADE;");
-    }
-
-    return new Connection(dataSource, db);
-  }
-
-  /// The device diagram service as the application wires it: the scenario, with the reconciler as
-  /// its step.
-  private static DeviceDiagramService Diagrams(VmsMapDbContext db)
-  {
-    var map = new MapDb(db);
-    var stateService = new StateService(db);
-    var states = new StatesUpdateService(stateService, map, db);
-    var levels = new LevelService(db);
-    var trackService = new TrackService(db, levels);
-    var geo = new GeoService(db, levels);
-    var tracks = new TracksUpdateService(map, trackService, geo);
-    var updates = new MapUpdateService(db, map, tracks, states);
-    return TestWiring.DeviceDiagrams(db, map, updates, geo);
-  }
-
-  /// <summary>
   /// A plan the camera stands on, its diagram hanging under the camera's picture, and a
   /// mnemoscheme whose type offers one region.
   /// </summary>
@@ -221,11 +156,11 @@ public class DeviceDiagramPlacementPostgresTests
   public async Task PlacingAPanelOnARegionCostsAFixedNumberOfStatements()
   {
     var counter = new StatementCounter();
-    await using var connection = await OpenAsync(counter, fresh: true);
+    await using var connection = await MapPostgres.OpenAsync(counter, fresh: true);
     if (connection is null)
       return;
 
-    var diagrams = Diagrams(connection.Db);
+    var diagrams = MapPostgres.Diagrams(connection.Db);
     var (canvas, _) = await SeedAsync(connection.Db);
 
     counter.Reset();
@@ -241,7 +176,7 @@ public class DeviceDiagramPlacementPostgresTests
   [Fact]
   public async Task TwoPlacementsOfOnePanelInOneRegionMakeOneRepresentation()
   {
-    await using var first = await OpenAsync(counter: null, fresh: true);
+    await using var first = await MapPostgres.OpenAsync(fresh: true);
     if (first is null)
       return;
 
@@ -249,15 +184,15 @@ public class DeviceDiagramPlacementPostgresTests
 
     // Two connections, as two replicas of the service would have: the device lock is what keeps
     // them from each making a copy — a region holds one node, and "already there" is not a refusal.
-    await using var second = await OpenAsync(counter: null, fresh: false);
+    await using var second = await MapPostgres.OpenAsync();
     if (second is null)
       return;
 
     var target = new DiagramTarget(canvas.ToString(), RegionId: LeftRegion);
     var placed = await Task.WhenAll(
-      Diagrams(first.Db).PlaceDeviceDiagramAsync(
+      MapPostgres.Diagrams(first.Db).PlaceDeviceDiagramAsync(
         DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, target, default),
-      Diagrams(second.Db).PlaceDeviceDiagramAsync(
+      MapPostgres.Diagrams(second.Db).PlaceDeviceDiagramAsync(
         DeviceObjectId.CameraSource, CameraId, null, IDeviceDiagramService.DefaultSlot, target, default));
 
     Assert.NotNull(placed[0]);

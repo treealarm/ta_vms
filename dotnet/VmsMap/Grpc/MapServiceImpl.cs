@@ -458,6 +458,80 @@ namespace VmsMap.Grpc
       return ToMarker(marker, false, null, NodeKind.Diagram);
     }
 
+    /// <summary>
+    /// Binds a diagram the administrator drew to a device: it is maintained from then on — the
+    /// template that describes the device and a replica per configured part — and keeps its place
+    /// and what was drawn in it by hand. Repeating the same bind changes nothing.
+    /// </summary>
+    public override async Task<MapProto.Marker> BindDeviceDiagram(
+      MapProto.BindDeviceDiagramRequest request, ServerCallContext context)
+    {
+      var ct = context.CancellationToken;
+      if (string.IsNullOrWhiteSpace(request.NodeId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "A diagram is required"));
+      if (string.IsNullOrWhiteSpace(request.SourceId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "A device is required"));
+
+      var sourceKind = string.IsNullOrWhiteSpace(request.SourceKind)
+        ? DeviceObjectId.CameraSource
+        : request.SourceKind;
+      var slot = string.IsNullOrWhiteSpace(request.Slot)
+        ? IDeviceDiagramService.DefaultSlot
+        : request.Slot;
+
+      string? nodeId;
+      try
+      {
+        nodeId = await _deviceDiagrams.BindAsync(
+          request.NodeId, sourceKind, request.SourceId, request.DiagramTypeId, slot, ct);
+      }
+      catch (DeviceDiagramException ex)
+      {
+        // The node, the slot or the template is not one the map can bind: the message says which,
+        // and the administrator is the one who can fix it.
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
+
+      var marker = nodeId is null
+        ? null
+        : (await _mapService.GetAsync([nodeId])).GetValueOrDefault(nodeId);
+      if (marker is null)
+        throw new RpcException(new Status(StatusCode.Internal, "The diagram node is missing"));
+
+      return ToMarker(marker, false, null, NodeKind.Diagram);
+    }
+
+    /// <summary>
+    /// Takes a diagram away from its device: the replicas the map made go, the diagram itself stays
+    /// and is an ordinary mnemoscheme again. Unbinding what is not bound is a successful no-op.
+    /// </summary>
+    public override async Task<MapProto.OperationStatus> UnbindDeviceDiagram(
+      MapProto.UnbindDeviceDiagramRequest request, ServerCallContext context)
+    {
+      if (string.IsNullOrWhiteSpace(request.NodeId))
+        throw new RpcException(new Status(StatusCode.InvalidArgument, "A diagram is required"));
+
+      await _deviceDiagrams.UnbindAsync(request.NodeId, context.CancellationToken);
+      return Ok();
+    }
+
+    public override async Task<MapProto.DeviceDiagramBinding> GetDeviceDiagramBinding(
+      MapProto.GetDeviceDiagramBindingRequest request, ServerCallContext context)
+    {
+      var binding = await _deviceDiagrams.FindBindingAsync(
+        request.NodeId, context.CancellationToken);
+      if (binding is null)
+        return new MapProto.DeviceDiagramBinding();
+
+      return new MapProto.DeviceDiagramBinding
+      {
+        Bound = true,
+        SourceKind = binding.SourceKind,
+        SourceId = binding.SourceId,
+        Slot = binding.Slot,
+      };
+    }
+
     // ── Demo world ────────────────────────────────────────────────────────────────────────────
 
     public override async Task<MapProto.DemoReport> InstallDemo(

@@ -27,6 +27,9 @@ namespace VmsMap.Domain
   /// </summary>
   public sealed class DeviceDiagramException(string message) : Exception(message);
 
+  /// <summary>What a diagram node is bound to: the device and the view of it the diagram draws.</summary>
+  public sealed record DeviceDiagramBinding(string SourceKind, string SourceId, string Slot);
+
   /// <summary>
   /// Keeps a device's diagram in step with the template it was drawn from: one canonical diagram
   /// per (device, slot) whose children are replicas of the device's configured parts, placed in the
@@ -60,5 +63,31 @@ namespace VmsMap.Domain
     Task<string?> PlaceDeviceDiagramAsync(
       string sourceKind, string sourceId, string? diagramTypeId, string slot,
       DiagramTarget? target, CancellationToken ct);
+
+    /// <summary>
+    /// Binds a diagram the administrator drew to a device: the row that makes the map maintain it,
+    /// then the template the device's model names and a managed replica per configured part, all in
+    /// one transaction under the device's lock. The diagram keeps its place, its type (a template
+    /// named here replaces it, and must describe the device) and what was drawn in it by hand.
+    /// Binding a diagram already bound to this device and slot again changes nothing; binding a
+    /// node bound to another device, or a device that already has a diagram for this slot, is
+    /// refused until the first binding is removed. Returns the diagram's node.
+    /// Throws <see cref="DeviceDiagramException"/> when the node is not a diagram of the map, the
+    /// device is unknown, or the binding would break one of those rules.
+    /// </summary>
+    Task<string?> BindAsync(
+      string nodeId, string sourceKind, string sourceId, string? diagramTypeId, string slot,
+      CancellationToken ct);
+
+    /// <summary>
+    /// Takes a diagram away from its device: the replicas it made and the rows that name them, then
+    /// the row itself. The node, its type, its place and what was drawn in it by hand stay, and it
+    /// is an ordinary mnemoscheme again — its representations keep showing it. Idempotent: a node
+    /// that is not bound answers false and changes nothing.
+    /// </summary>
+    Task<bool> UnbindAsync(string nodeId, CancellationToken ct);
+
+    /// <summary>What the node is bound to, or null when it is an ordinary mnemoscheme.</summary>
+    Task<DeviceDiagramBinding?> FindBindingAsync(string nodeId, CancellationToken ct);
   }
 }

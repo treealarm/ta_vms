@@ -169,6 +169,211 @@ namespace VmsMap.Adapter
       return Utils.ConvertGuidToObjectId(placedId);
     }
 
+    /// <summary>
+    /// Binds a diagram the administrator drew to a device. Everything the request can be refused
+    /// for is decided before the first write — the node, its place, the device, the slot and the
+    /// template — so a refused bind leaves nothing behind. The row and the reconciliation are one
+    /// transaction under the device's lock: the sweep must never see the row before it sees the
+    /// replicas the row promises.
+    /// </summary>
+    public async Task<string?> BindAsync(
+      string nodeId, string sourceKind, string sourceId, string? diagramTypeId, string slot,
+      CancellationToken ct)
+    {
+      if (!IsSupported(sourceKind, sourceId))
+        throw new DeviceDiagramException("A device diagram belongs to a camera");
+      if (Utils.ConvertObjectIdToGuid(nodeId) is not { } nodeGuid)
+        throw new DeviceDiagramException("The node does not exist");
+
+      var wantedType = string.IsNullOrWhiteSpace(diagramTypeId)
+        ? (Guid?)null
+        : Utils.ConvertObjectIdToGuid(diagramTypeId)
+          ?? throw new DeviceDiagramException("The template does not exist");
+
+      await using var tx = await OwnTransactionAsync(ct);
+      await MapLocks.AcquireAllAsync(_db, ct);
+      await MapLocks.AcquireDeviceDiagramAsync(_db, sourceKind, sourceId, ct);
+
+      // The camera has to exist in VmsCfg now: a removal publishes its event after the camera is
+      // gone, so a bind that arrives later must not leave a diagram nothing will ever remove.
+      if (await _catalog.GetAsync(sourceId, ct) is null)
+        throw new DeviceDiagramException("The device does not exist");
+
+      var marker = await _db.Markers.AsNoTracking().FirstOrDefaultAsync(m => m.id == nodeGuid, ct);
+      if (marker is null)
+        throw new DeviceDiagramException("The node does not exist");
+      if (marker.owner_id is not null)
+        throw new DeviceDiagramException(
+          "The node is a replica; only a diagram of the map can be bound to a device");
+
+      var diagram = await _db.Diagrams.AsNoTracking().FirstOrDefaultAsync(d => d.id == nodeGuid, ct);
+      if (diagram is null)
+        throw new DeviceDiagramException("The node is not a diagram");
+
+      var existing = await _db.DeviceDiagrams.FirstOrDefaultAsync(d => d.object_id == nodeGuid, ct);
+      if (existing is not null && !SameBinding(existing, sourceKind, sourceId, slot))
+      {
+        throw new DeviceDiagramException(
+          string.Equals(existing.source_kind, sourceKind, StringComparison.Ordinal)
+          && string.Equals(existing.source_id, sourceId, StringComparison.Ordinal)
+            ? $"The diagram is already bound to this device as \"{existing.slot}\""
+            : "The diagram is bound to another device; unbind it first");
+      }
+
+      // One canonical diagram per (device, slot): a device that already has one is not given a
+      // second, whatever ids the two nodes have.
+      var taken = await _db.DeviceDiagrams.AsNoTracking().AnyAsync(
+        d => d.source_kind == sourceKind && d.source_id == sourceId && d.slot == slot
+             && d.object_id != nodeGuid, ct);
+      if (taken)
+        throw new DeviceDiagramException(
+          "The device already has a diagram for this view; unbind it first");
+
+      await EnsurePlaceIsNotAPartSlotAsync(marker, diagram, ct);
+
+      // A template named outright is the administrator's decision, and it is checked only when it
+      // changes the diagram's type: a repeat of the same bind after a timeout must not start
+      // failing because the device's model moved on in between.
+      if (wantedType is { } named && (existing is null || existing.diagram_type_id != named))
+      {
+        switch (await _reconciler.FitAsync(named, sourceId, ct))
+        {
+          case DeviceDiagramReconciler.TemplateFit.Missing:
+            throw new DeviceDiagramException("The template does not exist");
+          case DeviceDiagramReconciler.TemplateFit.OtherKind:
+            throw new DeviceDiagramException("The template is for another kind of device");
+          case DeviceDiagramReconciler.TemplateFit.ModelUnknown:
+            throw new DeviceDiagramException(
+              "The device's model is not known yet; bind without a template and the matching " +
+              "one will be taken once it is");
+          case DeviceDiagramReconciler.TemplateFit.OtherModel:
+            throw new DeviceDiagramException("The template does not describe this device");
+        }
+      }
+
+      var row = existing ?? new DBDeviceDiagram
+      {
+        object_id = nodeGuid,
+        source_kind = sourceKind,
+        source_id = sourceId,
+        slot = slot,
+        diagram_type_id = diagram.dgr_type,
+        // The administrator asked for this binding; an automatic one would mean a diagram nobody
+        // bound.
+        auto_created = false,
+      };
+
+      if (existing is null)
+      {
+        _db.DeviceDiagrams.Add(row);
+        await _db.SaveChangesAsync(ct);
+      }
+
+      if (wantedType is { } type && row.diagram_type_id != type)
+        await _reconciler.SetTypeAsync(row, type, ct);
+
+      await _reconciler.ReconcileAsync(sourceKind, sourceId, slot, ct);
+
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      return Utils.ConvertGuidToObjectId(nodeGuid);
+    }
+
+    /// <summary>
+    /// The diagram may not stand in a region its parent's template draws a part in: when it becomes
+    /// a device diagram, the reconciler will put the parts' replicas inside it, and its own place
+    /// is a slot the parent's template expects a device part in.
+    /// </summary>
+    private async Task EnsurePlaceIsNotAPartSlotAsync(
+      DBMarker marker, DBDiagram diagram, CancellationToken ct)
+    {
+      if (diagram.region_id is not { } regionKey || marker.parent_id is not { } parent)
+        return;
+
+      var parentType = await _db.Diagrams.AsNoTracking()
+        .Where(d => d.id == parent)
+        .Select(d => d.dgr_type)
+        .FirstOrDefaultAsync(ct);
+      if (parentType is null)
+        return;
+
+      var isPart = await _db.DiagramTypeParts.AsNoTracking()
+        .AnyAsync(p => p.diagram_type_id == parentType.Value && p.region_key == regionKey, ct);
+      if (isPart)
+        throw new DeviceDiagramException(
+          $"The region \"{regionKey}\" stands for a part of the parent's template");
+    }
+
+    public async Task<bool> UnbindAsync(string nodeId, CancellationToken ct)
+    {
+      if (Utils.ConvertObjectIdToGuid(nodeId) is not { } nodeGuid)
+        return false;
+
+      // The camera is read before the lock only to know whose lock to take; the row is re-read
+      // under it, and a row that went away or was rebound meanwhile is a no-op.
+      var known = await _db.DeviceDiagrams.AsNoTracking()
+        .FirstOrDefaultAsync(d => d.object_id == nodeGuid, ct);
+      if (known is null)
+        return false;
+
+      await using var tx = await OwnTransactionAsync(ct);
+      await MapLocks.AcquireAllAsync(_db, ct);
+      await MapLocks.AcquireDeviceDiagramAsync(_db, known.source_kind, known.source_id, ct);
+
+      var row = await _db.DeviceDiagrams.FirstOrDefaultAsync(d => d.object_id == nodeGuid, ct);
+      if (row is null || !SameBinding(row, known.source_kind, known.source_id, known.slot))
+        return false;
+
+      var managed = await _db.DeviceDiagramParts
+        .Where(p => p.diagram_object_id == nodeGuid)
+        .ToListAsync(ct);
+
+      // The replicas' rows go in a statement of their own: they are children of the diagram row by
+      // a foreign key with ON DELETE CASCADE, so a batch that deletes both may delete the parent
+      // first, let the database take the children, and then match nothing with the second delete.
+      // The replicas' nodes go last, for the same reason: their foreign keys cascade too.
+      _db.DeviceDiagramParts.RemoveRange(managed);
+      await _db.SaveChangesAsync(ct);
+      _db.DeviceDiagrams.Remove(row);
+      await _db.SaveChangesAsync(ct);
+
+      if (managed.Count > 0)
+      {
+        // The replica is what the administrator sees; a child somebody hung under it travels with
+        // the subtree, exactly as it does when a part is unbound from the template.
+        await _map.RemoveAsync(managed
+          .Select(m => Utils.ConvertGuidToObjectId(m.replica_object_id))
+          .ToList());
+      }
+
+      if (tx is not null)
+        await tx.CommitAsync(ct);
+
+      // The node, its type, its place and what was drawn by hand are the diagram's own: unbinding
+      // is not deleting, and its representations keep opening on it as an ordinary diagram.
+      return true;
+    }
+
+    public async Task<DeviceDiagramBinding?> FindBindingAsync(string nodeId, CancellationToken ct)
+    {
+      if (Utils.ConvertObjectIdToGuid(nodeId) is not { } nodeGuid)
+        return null;
+
+      var row = await _db.DeviceDiagrams.AsNoTracking()
+        .FirstOrDefaultAsync(d => d.object_id == nodeGuid, ct);
+
+      return row is null
+        ? null
+        : new DeviceDiagramBinding(row.source_kind, row.source_id, row.slot);
+    }
+
+    private static bool SameBinding(
+      DBDeviceDiagram row, string sourceKind, string sourceId, string slot) =>
+      string.Equals(row.source_kind, sourceKind, StringComparison.Ordinal)
+      && string.Equals(row.source_id, sourceId, StringComparison.Ordinal)
+      && string.Equals(row.slot, slot, StringComparison.Ordinal);
+
     private sealed record Canvas(Guid Id, bool IsSpace);
 
     /// <summary>

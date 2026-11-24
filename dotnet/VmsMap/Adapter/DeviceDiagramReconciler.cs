@@ -165,6 +165,40 @@ namespace VmsMap.Adapter
       return selection.TypeId is null ? current : Guid.Parse(selection.TypeId);
     }
 
+    /// <summary>
+    /// How one template stands to one device. A named template is the administrator's decision, so
+    /// it is refused unless it draws this device — and a device whose model is not known yet cannot
+    /// vouch for one: the caller binds without a template and reconciliation takes the matching one
+    /// once the model arrives.
+    /// </summary>
+    public enum TemplateFit
+    {
+      Missing,
+      OtherKind,
+      ModelUnknown,
+      OtherModel,
+      Fits,
+    }
+
+    public async Task<TemplateFit> FitAsync(Guid typeId, string cameraId, CancellationToken ct)
+    {
+      var type = await _db.DiagramTypes.AsNoTracking().FirstOrDefaultAsync(t => t.id == typeId, ct);
+      if (type is null)
+        return TemplateFit.Missing;
+
+      var info = await DeviceInfoAsync(cameraId, ct);
+      if (info is null)
+        return TemplateFit.ModelUnknown;
+
+      if (!string.Equals(type.source_kind, info.SourceKind, StringComparison.Ordinal))
+        return TemplateFit.OtherKind;
+
+      return DiagramModelMatch.Matches(
+        Candidate(type), info.SourceKind, info.Manufacturer, info.Model)
+        ? TemplateFit.Fits
+        : TemplateFit.OtherModel;
+    }
+
     private static readonly DiagramModelSelection Never = new(null, null);
 
     public async Task<DiagramModelSelection> SelectModelTypeAsync(
@@ -312,11 +346,13 @@ namespace VmsMap.Adapter
 
       if (dropped.Count > 0)
       {
+        // The registry rows go before the nodes: a replica's foreign keys cascade into this table,
+        // so deleting it first would take the rows along and leave these deletes matching nothing.
+        _db.DeviceDiagramParts.RemoveRange(dropped);
+        await _db.SaveChangesAsync(ct);
         await _map.RemoveAsync(dropped
           .Select(m => Utils.ConvertGuidToObjectId(m.replica_object_id))
           .ToList());
-        _db.DeviceDiagramParts.RemoveRange(dropped);
-        await _db.SaveChangesAsync(ct);
       }
 
       var kept = byPart
