@@ -694,7 +694,7 @@ export default function MapsOperatorPanel() {
                 onMapClick={(at) => (aiming ? void aimAt(at) : setSelectedNodeId(null))}
                 overlay={(
                   <>
-                    <SpaceNav spaces={spaces} space={space} onOpen={open} alarmed={alarmed} />
+                    <SpaceNav spaces={spaces} space={space} onOpen={openSpace} alarmed={alarmed} />
                     <DetectionsToggle on={detections} onChange={(on) => { setDetections(on); writeDetections(on) }} />
                   </>
                 )}
