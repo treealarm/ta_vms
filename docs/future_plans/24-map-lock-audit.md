@@ -25,4 +25,4 @@
 Блокировки — вопрос корректности, а не производительности: замер сам по себе не доказывает, что
 лок можно убрать. Пока матрицы и тестов нет, глобальные локи остаются.
 
-Связано: `docs/plans/device-diagram-canvas.md` (§ блокировки), `docs/plans/arming-sweep-race.md`.
+Связано: `docs/plans/archive/device-diagram-canvas.md` (§ блокировки), `docs/plans/arming-sweep-race.md`.

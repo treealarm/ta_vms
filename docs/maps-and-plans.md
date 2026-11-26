@@ -134,8 +134,11 @@ Conventions that hold everywhere:
   of its parent or a rectangle of its own. The two are told apart on the wire: `Diagram.placement`
   is the copy's place, `Diagram.geometry` the paper it opens on, and `is_representation` says what
   the row is — never the presence of a place, because a copy standing in a region has none. The
-  structure inside a representation is read-only in the editor (its children belong to the diagram
-  it shows), while the copy itself moves, is renamed and acts on the device it shows. **A device need
+  structure inside a representation is the diagram's, and editing it through a copy writes the
+  diagram, so every copy shows the change; only the copy's own row — its name, its place, its look —
+  is its own. A copy used as a canvas means the diagram too: a node added or moved onto it is the
+  diagram's child, and a diagram placed on it is placed on the diagram. What a replica shows is
+  fixed when it is made: `owner_id` never changes, and a write that names none leaves it alone. **A device need
   not be placed at all**: it exists as a canonical node the moment it is configured, and its parts —
   digital inputs and relays — are canonical nodes under it. That is the tree **Admin → Nodes**
   shows in full and **Admin → Maps → Devices** offers for placement; the map's **Nodes** tab shows
