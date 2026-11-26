@@ -190,7 +190,7 @@
 ### 4. За объёмом
 
 - Модель неисправности устройства (`FAULT`/`TROUBLE`, тревога неисправности, защёлка) — тема
-  [13-fire-alarm-integration](../../docs/future_plans/13-fire-alarm-integration.md).
+  [13-fire-alarm-integration](../../future_plans/13-fire-alarm-integration.md).
 - Уведомления о тревоге (`12-event-routing-followups`).
 - Отдельная кнопка «Закрыть» в строке списка: закрытие остаётся в диалоге.
 - Показ `reachable=false` в UI (поведение не меняется).

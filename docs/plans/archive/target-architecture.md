@@ -1,6 +1,6 @@
 # §4. Целевая архитектура (снимок решения 2026-10-28)
 
-> Снимок раздела §4 плана [Square → ta_vms](../square-merge/README.md), снятый в M5
+> Снимок раздела §4 плана [Square → ta_vms](square-merge.md), снятый в M5
 > (2026-11-18). Это запись решения, а не описание текущего кода: живая модель — по-английски, в
 > [`docs/maps-and-plans.md`](../../maps-and-plans.md) и [`docs/maps/`](../../maps/) (`devices.md`,
 > `control.md`, `states-and-alarms.md`, `demo.md`, `calibration.md`). Где код пошёл дальше снимка,

@@ -1,7 +1,7 @@
 # Кэш списка устройств ONVIF: реле и входы без чтения камеры
 
 > Ветка `feature/onvif-device-list-cache` от `master` (`0c67f189`). Исходник —
-> [`docs/future_plans/legacy/06-camera-geo-follower-first-write.md`](../future_plans/legacy/06-camera-geo-follower-first-write.md),
+> [`docs/future_plans/legacy/06-camera-geo-follower-first-write.md`](../../future_plans/legacy/06-camera-geo-follower-first-write.md),
 > раздел «Чтение списка за оверлеем устройства».
 >
 > **Результат:** открытие оверлея устройства и стены мониторов не делает ONVIF-запросов

@@ -2,7 +2,7 @@
 
 Найдено при работе над M3 (`docs/plans/archive/m3-states-events-rights.md`). **Сделано 2026-11-23**,
 ветка `feature/camera-connection-state`; файл закрыт и лежит здесь для истории. Работа описана в
-[`docs/plans/camera-connection-state.md`](../../plans/camera-connection-state.md).
+[`docs/plans/archive/camera-connection-state.md`](../../plans/archive/camera-connection-state.md).
 
 ## Суть (как было)
 
