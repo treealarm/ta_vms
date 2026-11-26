@@ -32,6 +32,23 @@ namespace VmsMap.Grpc
   /// </summary>
   internal static class DiagramRepresentations
   {
+    /// <summary>
+    /// The canvas a read means. A representation opens on the diagram it shows, and the diagram's
+    /// figures belong to the diagram, so reading a copy's canvas reads the diagram's. Anything
+    /// else — a space, an ordinary diagram, an unknown id — is its own canvas.
+    /// </summary>
+    public static async Task<string?> ResolveCanvasAsync(
+      VmsMapDbContext db, string? canvasId, CancellationToken ct)
+    {
+      if (string.IsNullOrWhiteSpace(canvasId))
+        return canvasId;
+
+      var resolved = await ResolveAsync(db, [canvasId], ct);
+      return resolved.TryGetValue(canvasId, out var diagram) && diagram.OwnerId is { } owner
+        ? owner
+        : canvasId;
+    }
+
     public static async Task<Dictionary<string, ResolvedDiagram>> ResolveAsync(
       VmsMapDbContext db, IReadOnlyCollection<string> ids, CancellationToken ct)
     {

@@ -27,8 +27,14 @@ namespace VmsMap.Grpc
         switch (request.CommandCase)
         {
           case MapProto.WatchRequest.CommandOneofCase.SetBox when request.SetBox.Box is not null:
-            subscription.SetBox(ToBoxDto(request.SetBox.Box), caller);
+          {
+            // A copy of a diagram opens on the diagram's own paper: watching the copy's canvas is
+            // watching the diagram's, where its figures are stored.
+            var box = ToBoxDto(request.SetBox.Box);
+            box.canvas_id = await DiagramRepresentations.ResolveCanvasAsync(_db, box.canvas_id, ct);
+            subscription.SetBox(box, caller);
             break;
+          }
 
           case MapProto.WatchRequest.CommandOneofCase.SetIds:
             subscription.SetIds(request.SetIds.Ids.ToList(), caller);

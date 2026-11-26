@@ -383,6 +383,120 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task ACopyShowsTheDiagramsFreeFigures()
+  {
+    var s = Create();
+    var (panel, _, canvas, _) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+
+    // A free figure of the diagram — a caption, a line, a zone — is the diagram's own content.
+    var figureId = Guid.NewGuid().ToString();
+    await s.Grpc.UpdateFigures(new MapProto.Figures
+    {
+      Figs =
+      {
+        new MapProto.Figure
+        {
+          Id = figureId,
+          ParentId = panel.id!,
+          Name = NoteLabel,
+          Geometry = new MapProto.Geometry
+          {
+            Type = "Point",
+            Coord = { new MapProto.Coordinate { Lat = 10, Lon = 20 } },
+          },
+        },
+      },
+    }, new TestContext());
+
+    // The copy opens on the diagram's paper: reading the copy's canvas is reading the diagram's,
+    // and the figures are stored on the diagram's canvas id.
+    var read = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = shown.id! },
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    Assert.Contains(read.Figs, fig => fig.Id == figureId);
+  }
+
+  [Fact]
+  public async Task AMoveIntoACopyMovesIntoTheDiagram()
+  {
+    var s = Create();
+    var (panel, _, canvas, _) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+
+    // A rack on the canvas, with a child of its own and a figure for each.
+    var rack = await Node(s.Map, RackLabel, canvas.id);
+    var shelf = await Node(s.Map, NoteLabel, rack.id);
+    foreach (var node in new[] { rack, shelf })
+    {
+      await s.Grpc.UpdateFigures(new MapProto.Figures
+      {
+        Figs =
+        {
+          new MapProto.Figure
+          {
+            Id = node.id!,
+            ParentId = node.parent_id!,
+            Name = node.name!,
+            Geometry = new MapProto.Geometry
+            {
+              Type = "Point",
+              Coord = { new MapProto.Coordinate { Lat = 5, Lon = 5 } },
+            },
+          },
+        },
+      }, new TestContext());
+    }
+
+    // Moved "onto the copy": the node becomes the diagram's content, and so does its whole subtree.
+    var moved = await s.Grpc.UpdateObjects(new MapProto.ObjectList
+    {
+      Objects = { new MapProto.Object { Id = rack.id!, ParentId = shown.id!, Name = RackLabel } },
+    }, new TestContext());
+
+    var answer = Assert.Single(moved.Objects);
+    Assert.Equal(panel.id, answer.ParentId);
+    var stored = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(rack.id!));
+    Assert.Equal(Guid.Parse(panel.id!), stored.parent_id);
+
+    var canvases = await s.Db.GeoObjects.AsNoTracking()
+      .Where(g => g.id == Guid.Parse(rack.id!) || g.id == Guid.Parse(shelf.id!))
+      .ToDictionaryAsync(g => g.id, g => g.canvas_id);
+    Assert.Equal(Guid.Parse(panel.id!), canvases[Guid.Parse(rack.id!)]);
+    Assert.Equal(Guid.Parse(panel.id!), canvases[Guid.Parse(shelf.id!)]);
+
+    // And the copy shows it, because it shows the diagram.
+    var read = await s.Grpc.GetByBox(new MapProto.GetByBoxRequest
+    {
+      Box = new MapProto.Box { CanvasId = shown.id! },
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+    Assert.Contains(read.Figs, fig => fig.Id == rack.id);
+  }
+
+  [Fact]
+  public async Task AReplicaUnderACopyStandsUnderTheDiagram()
+  {
+    var s = Create();
+    var (panel, _, canvas, _) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+
+    var replica = await s.Grpc.CreateReplica(new MapProto.CreateReplicaRequest
+    {
+      OwnerId = panel.id!,
+      ParentId = shown.id!,
+      Caller = Caller(AdminRole, AdminRole),
+    }, new TestContext());
+
+    Assert.Equal(panel.id, replica.ParentId);
+    var stored = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(replica.Id));
+    Assert.Equal(Guid.Parse(panel.id!), stored.parent_id);
+  }
+
+  [Fact]
   public async Task AnOrdinaryDiagramIsNotARepresentation()
   {
     var s = Create();

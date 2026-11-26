@@ -57,7 +57,7 @@ public class MapDbTests
   }
 
   [Fact]
-  public async Task ACopyOfADiagramCannotHoldNodes()
+  public async Task AChildOfACopyStandsUnderTheDiagramItself()
   {
     var (db, map) = CreateDb();
 
@@ -76,15 +76,40 @@ public class MapDbTests
     };
     await map.UpdateHierarchyAsync([copy]);
 
-    // A reader answers a copy's children from the diagram it represents, so a node hung under the
-    // copy itself would never be shown. The write is refused rather than silently lost.
-    var hidden = new BaseMarkerDTO { name = "hidden", parent_id = copy.id };
-    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([hidden]));
+    // A copy is where the diagram is shown, not a canvas of its own: a node hung on it belongs to
+    // the diagram, and every copy of that diagram shows it.
+    var shared = new BaseMarkerDTO { name = "shared", parent_id = copy.id };
+    await map.UpdateHierarchyAsync([shared]);
 
-    // The diagram itself takes children: that is where a copy's content comes from.
-    var drawn = new BaseMarkerDTO { name = "drawn", parent_id = diagram.id };
-    await map.UpdateHierarchyAsync([drawn]);
-    Assert.NotNull(await db.Markers.FirstOrDefaultAsync(m => m.name == "drawn"));
+    var stored = await db.Markers.SingleAsync(m => m.name == "shared");
+    Assert.Equal(Guid.Parse(diagram.id!), stored.parent_id);
+    // The answer says where the node was really written, not where the caller aimed.
+    Assert.Equal(diagram.id, shared.parent_id);
+  }
+
+  [Fact]
+  public async Task AMoveOntoACopyMovesIntoTheDiagram()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    var board = new BaseMarkerDTO { name = "board" };
+    await map.UpdateHierarchyAsync([diagram, board]);
+    db.Diagrams.Add(new DBDiagram { id = Guid.Parse(diagram.id!) });
+    await db.SaveChangesAsync();
+
+    var copy = new BaseMarkerDTO { name = "panel rep1", parent_id = board.id, owner_id = diagram.id };
+    await map.UpdateHierarchyAsync([copy]);
+
+    var node = new BaseMarkerDTO { name = "rack", parent_id = board.id };
+    await map.UpdateHierarchyAsync([node]);
+
+    node.parent_id = copy.id;
+    await map.UpdateHierarchyAsync([node]);
+
+    var stored = await db.Markers.SingleAsync(m => m.id == Guid.Parse(node.id!));
+    Assert.Equal(Guid.Parse(diagram.id!), stored.parent_id);
+    Assert.Equal(diagram.id, node.parent_id);
   }
 
   [Fact]

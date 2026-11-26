@@ -402,15 +402,18 @@ namespace VmsMap.Adapter
         throw new DeviceDiagramException("The canvas does not exist");
 
       // A copy of a diagram opens on the diagram it represents: its own row carries only where it
-      // stands, and the reader answers its children from the owner. A diagram shown on the copy
-      // would stand where nobody ever reads it.
+      // stands, and the reader answers its children from the owner. A diagram put "on the copy" is
+      // therefore put on the diagram itself, and every copy of that diagram shows it.
       var owner = await _db.Markers.AsNoTracking()
         .Where(m => m.id == id)
         .Select(m => m.owner_id)
         .FirstOrDefaultAsync(ct);
-      if (owner is not null)
-        throw new DeviceDiagramException(
-          "The canvas is a representation of a diagram; show the diagram on the diagram itself");
+      if (owner is { } ownerId)
+      {
+        if (!await _db.Diagrams.AsNoTracking().AnyAsync(d => d.id == ownerId, ct))
+          throw new DeviceDiagramException("The canvas is not a diagram");
+        id = ownerId;
+      }
 
       if (target.Lat is not null || target.Lon is not null)
         throw new DeviceDiagramException(
