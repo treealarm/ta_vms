@@ -356,6 +356,65 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task AReplicaDoesNotChangeItsOwner()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    var other = new BaseMarkerDTO { name = "other panel" };
+    await map.UpdateHierarchyAsync([diagram, other]);
+    var copy = new BaseMarkerDTO { name = "panel rep1", owner_id = diagram.id };
+    await map.UpdateHierarchyAsync([copy]);
+
+    // What a copy shows is fixed when it is made: every read resolves an owner in one hop.
+    var rewrite = new BaseMarkerDTO { id = copy.id, name = "renamed", owner_id = other.id };
+    await Assert.ThrowsAsync<ArgumentException>(() => map.UpdateHierarchyAsync([rewrite]));
+
+    var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(copy.id!));
+    Assert.Equal(Guid.Parse(diagram.id!), stored.owner_id);
+    Assert.Equal("panel rep1", stored.name);
+  }
+
+  [Fact]
+  public async Task AReplicaKeepsItsOwnerWhenTheWriteOmitsIt()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    await map.UpdateHierarchyAsync([diagram]);
+    var copy = new BaseMarkerDTO { name = "panel rep1", owner_id = diagram.id };
+    await map.UpdateHierarchyAsync([copy]);
+
+    // A rename names no owner; that means "leave it", not "detach it".
+    await map.UpdateHierarchyAsync([new BaseMarkerDTO { id = copy.id, name = "renamed" }]);
+
+    var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(copy.id!));
+    Assert.Equal(Guid.Parse(diagram.id!), stored.owner_id);
+    Assert.Equal("renamed", stored.name);
+  }
+
+  [Fact]
+  public async Task AReplicaNamingItsOwnersPictureKeepsItsOwner()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    await map.UpdateHierarchyAsync([diagram]);
+    var copy = new BaseMarkerDTO { name = "panel rep1", owner_id = diagram.id };
+    var picture = new BaseMarkerDTO { name = "panel rep2", owner_id = diagram.id };
+    await map.UpdateHierarchyAsync([copy, picture]);
+
+    // A replica of a replica is stored as a replica of the node both show, so naming the picture
+    // resolves back to the diagram the copy already shows: nothing changes.
+    await map.UpdateHierarchyAsync([
+      new BaseMarkerDTO { id = copy.id, name = "panel rep1", owner_id = picture.id }
+    ]);
+
+    var stored = await db.Markers.AsNoTracking().SingleAsync(m => m.id == Guid.Parse(copy.id!));
+    Assert.Equal(Guid.Parse(diagram.id!), stored.owner_id);
+  }
+
+  [Fact]
   public async Task ANodeWithAMissingParentIsRefused()
   {
     var (db, map) = CreateDb();

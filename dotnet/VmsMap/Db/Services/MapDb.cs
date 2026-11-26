@@ -578,6 +578,29 @@ namespace VmsMap.Db
         kvp.Key.owner_id = Utils.ConvertGuidToObjectId(original);
       }
 
+      // What a replica shows is fixed when it is made: every read resolves an owner in one hop, so
+      // re-pointing a copy would change the diagram that every place showing it displays. A write
+      // that names no owner means "leave it" — renaming a replica must not detach it from its
+      // diagram.
+      foreach (var pair in dbUpdated)
+      {
+        if (!existingEntities.TryGetValue(pair.Value.id, out var current)
+            || current.owner_id is not { } owner)
+          continue;
+
+        if (pair.Value.owner_id is null)
+        {
+          pair.Value.owner_id = owner;
+          pair.Key.owner_id = Utils.ConvertGuidToObjectId(owner);
+        }
+        else if (pair.Value.owner_id != owner)
+        {
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(pair.Value.id)}' shows " +
+              $"'{Utils.ConvertGuidToObjectId(owner)}' and cannot show another node");
+        }
+      }
+
       // Nodes whose parent changes also change the canvas their figure is drawn on.
       var moved = new List<Guid>();
 

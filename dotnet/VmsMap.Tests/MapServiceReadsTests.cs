@@ -958,6 +958,46 @@ public class MapServiceReadsTests
   }
 
   [Fact]
+  public async Task AChangeOfOwnerIsABadRequest()
+  {
+    var s = Create();
+    var panel = await Node(s.Map, PanelLabel);
+    var other = await Node(s.Map, CanvasLabel);
+    var copy = await Node(s.Map, ShownPanelLabel, ownerId: panel.id);
+
+    var refused = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateObjects(
+      new MapProto.ObjectList
+      {
+        Objects =
+        {
+          new MapProto.Object { Id = copy.id!, Name = ShownPanelLabel, OwnerId = other.id! },
+        },
+      }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, refused.StatusCode);
+    var stored = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(copy.id!));
+    Assert.Equal(Guid.Parse(panel.id!), stored.owner_id);
+  }
+
+  [Fact]
+  public async Task ARenameOfACopyKeepsItsOwner()
+  {
+    var s = Create();
+    var panel = await Node(s.Map, PanelLabel);
+    var copy = await Node(s.Map, ShownPanelLabel, ownerId: panel.id);
+
+    // The editor renames a node without naming its owner: that must not detach the copy.
+    await s.Grpc.UpdateObjects(new MapProto.ObjectList
+    {
+      Objects = { new MapProto.Object { Id = copy.id!, Name = NoteLabel } },
+    }, new TestContext());
+
+    var stored = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(copy.id!));
+    Assert.Equal(Guid.Parse(panel.id!), stored.owner_id);
+    Assert.Equal(NoteLabel, stored.name);
+  }
+
+  [Fact]
   public async Task GetAlarmedStatesWithoutIdsReturnsEveryAlarmTheCallerSees()
   {
     var s = Create();

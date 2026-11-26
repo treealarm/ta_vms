@@ -125,7 +125,17 @@ namespace VmsMap.Grpc
 
       await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
-      var updated = await _mapUpdateService.UpdateObjects(dtos);
+      List<BaseMarkerDTO> updated;
+      try
+      {
+        updated = await _mapUpdateService.UpdateObjects(dtos);
+      }
+      catch (ArgumentException ex)
+      {
+        // A tree rule refused the write — a cycle, a missing parent, a copy told to show
+        // something else: the request is wrong, not the server.
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
 
       if (tx is not null)
         await tx.CommitAsync(context.CancellationToken);
@@ -202,7 +212,15 @@ namespace VmsMap.Grpc
 
       await using var tx = await BeginTransactionAsync(context.CancellationToken);
 
-      await _mapUpdateService.UpdateFigures(figures);
+      try
+      {
+        await _mapUpdateService.UpdateFigures(figures);
+      }
+      catch (ArgumentException ex)
+      {
+        // The figure write also writes the tree row; a refused one is the caller's mistake.
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
 
       if (tx is not null)
         await tx.CommitAsync(context.CancellationToken);
