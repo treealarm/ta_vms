@@ -1172,7 +1172,7 @@
     "diagram": "Mimosesquema",
     "newDiagram": "Nuevo mimosesquema",
     "addDiagram": "Nuevo mimosesquema en este lienzo",
-    "representationHint": "Una copia de otro mimosesquema: su contenido se edita allí y aquí solo su sitio es propio.",
+    "representationHint": "Una copia de otro mimosesquema: los cambios aquí se guardan en el diagrama mismo y aparecen en todas las copias.",
     "types": "Tipos",
     "typesHint": "Un tipo dibuja todos sus mimosesquemas: su imagen de fondo y las regiones que sus hijos pueden ocupar en lugar de un rectángulo propio.",
     "manageTypes": "Gestionar tipos…",

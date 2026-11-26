@@ -17,6 +17,7 @@ import DetailToolbar from '../settings/DetailToolbar'
 import NodeIdentity from '../objects/NodeIdentity'
 import NodeStateChips from '../objects/NodeStateChips'
 import MapDiagramTypesDialog from './MapDiagramTypesDialog'
+import { contentWrite } from './diagramWrites'
 
 type Props = {
   marker: MapMarker
@@ -55,7 +56,8 @@ const draftOf = (marker: MapMarker, element: MapDiagram): Draft => {
     width: String(rect?.width ?? 80),
     height: String(rect?.height ?? 80),
     rotation: String(rect?.rotation ?? 0),
-    fileId: element.isRepresentation ? '' : element.fileId ?? '',
+    // A copy shows the diagram's own type and picture; editing them here edits the diagram.
+    fileId: element.fileId ?? '',
   }
 }
 
@@ -83,8 +85,8 @@ export default function DiagramElementEditor({
   const [typesOpen, setTypesOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const preview = useMapFileImage(draft.fileId)
-  // A representation's content — its type and picture — belongs to the diagram it shows. Its
-  // place, including the region, is still its own; that is what a copy is.
+  // A copy's type and picture belong to the diagram it shows: editing them here edits the diagram
+  // and is seen in every copy. Its own place, including the region, is still its own.
   const copy = element.isRepresentation === true
 
   // The device a diagram node is bound to, and the camera and template the form offers next. A
@@ -137,6 +139,7 @@ export default function DiagramElementEditor({
   const apply = async () => {
     setBusy(true)
     setError(null)
+    const content = contentWrite(copy, draft.typeId, draft.fileId)
     try {
       await dispatch(saveDiagramPlacement({
         id: marker.id,
@@ -144,7 +147,10 @@ export default function DiagramElementEditor({
         parentId: marker.parentId ?? '',
         ownerId: marker.ownerId,
         name: draft.name.trim() || marker.name,
-        dgrType: copy ? undefined : draft.typeId || undefined,
+        // A copy's type and picture are the diagram's: the server writes them to its row. Sending
+        // an empty value clears it, so a copy always names both; an ordinary diagram keeps the
+        // full-row write it always did.
+        dgrType: content.dgrType,
         regionId: inRegion ? draft.regionId : undefined,
         // A region replaces the element's place in its parent, not the canvas it opens on: the
         // rectangle shown below stays its own paper and travels unchanged. For a representation
@@ -156,7 +162,7 @@ export default function DiagramElementEditor({
           height: Number(draft.height) || 1,
           rotation: Number(draft.rotation) || 0,
         },
-        fileId: copy ? undefined : draft.fileId || undefined,
+        fileId: content.fileId,
       })).unwrap()
       onSaved()
     } catch (e) {
@@ -317,8 +323,6 @@ export default function DiagramElementEditor({
             label={t('diagramEditor.type')}
             value={draft.typeId}
             onChange={(event) => set('typeId', event.target.value)}
-            disabled={copy}
-            helperText={copy ? t('diagramEditor.representationHint') : undefined}
             sx={{ flex: 1 }}
           >
             <MenuItem value="">{t('diagramEditor.noType')}</MenuItem>
@@ -372,28 +376,26 @@ export default function DiagramElementEditor({
           </Stack>
         )}
 
-        {copy ? null : (
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
-              {t('diagramEditor.background')}
-            </Button>
-          {preview ? (
-            <Box component="img" src={preview} alt="" sx={{ height: 40, maxWidth: 90, objectFit: 'contain', bgcolor: '#000' }} />
-          ) : null}
-          {draft.fileId ? <Button size="small" onClick={() => set('fileId', '')}>{t('maps.editor.clearIcon')}</Button> : null}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) void upload(file)
-              }}
-            />
-          </Stack>
-        )}
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button size="small" variant="outlined" disabled={busy} onClick={() => fileRef.current?.click()}>
+            {t('diagramEditor.background')}
+          </Button>
+        {preview ? (
+          <Box component="img" src={preview} alt="" sx={{ height: 40, maxWidth: 90, objectFit: 'contain', bgcolor: '#000' }} />
+        ) : null}
+        {draft.fileId ? <Button size="small" onClick={() => set('fileId', '')}>{t('maps.editor.clearIcon')}</Button> : null}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) void upload(file)
+            }}
+          />
+        </Stack>
 
         <Button size="small" onClick={onClose} sx={{ alignSelf: 'flex-end' }}>{t('common.close')}</Button>
       </Box>
