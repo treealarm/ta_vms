@@ -464,6 +464,16 @@ namespace VmsMap.Db
           .Select(v => v.parent_id!.Value)
           .Distinct()
           .ToList();
+      // A representation of a diagram is where the diagram is shown, not a canvas of its own: the
+      // reader answers its children from the owner, so whatever stands under the copy is really
+      // the diagram's content and is seen in every copy. Resolve the parent to the diagram before
+      // the tree is checked, so a move, its cycle check and the canvas recompute below all work on
+      // the node the caller will find it under.
+      //
+      // A parent is either a row already in the tree or one this call creates in the same batch,
+      // and the rule is the same for both. A stored row keeps the owner it has -- the request may
+      // not name one at all -- while a new one brings the owner it is created with.
+      var parentOwners = new Dictionary<Guid, Guid>();
       if (referencedParents.Count > 0)
       {
         var parentRows = await _db.Markers.AsNoTracking()
@@ -476,36 +486,37 @@ namespace VmsMap.Db
           throw new ArgumentException(
               $"Parent node '{Utils.ConvertGuidToObjectId(missing)}' does not exist");
 
-        // A representation of a diagram is where the diagram is shown, not a canvas of its own:
-        // the reader answers its children from the owner, so whatever stands under the copy is
-        // really the diagram's content and is seen in every copy. Resolve the parent to the
-        // diagram before the tree is checked, so a move, its cycle check and the canvas recompute
-        // below all work on the node the caller will find it under.
-        var parentOwners = parentRows
-            .Where(row => row.owner_id.HasValue)
-            .ToDictionary(row => row.id, row => row.owner_id!.Value);
-        foreach (var created in dbUpdated.Values
-                   .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue))
-          parentOwners[created.id] = created.owner_id!.Value;
+        foreach (var row in parentRows.Where(row => row.owner_id.HasValue))
+          parentOwners[row.id] = row.owner_id!.Value;
+      }
 
-        if (parentOwners.Count > 0)
+      var namedParents = dbUpdated.Values
+          .Where(v => v.parent_id.HasValue)
+          .Select(v => v.parent_id!.Value)
+          .ToHashSet();
+      foreach (var row in dbUpdated.Values.Where(v => namedParents.Contains(v.id)))
+      {
+        if (existingEntities.TryGetValue(row.id, out var before) && before.owner_id.HasValue)
+          parentOwners[row.id] = before.owner_id.Value;
+        else if (row.owner_id.HasValue)
+          parentOwners[row.id] = row.owner_id.Value;
+      }
+
+      if (parentOwners.Count > 0)
+      {
+        var owners = parentOwners.Values.Distinct().ToList();
+        var drawnAgain = (await _db.Diagrams.AsNoTracking()
+            .Where(diagram => owners.Contains(diagram.id))
+            .Select(diagram => diagram.id)
+            .ToListAsync()).ToHashSet();
+        foreach (var pair in dbUpdated)
         {
-          var owners = parentOwners.Values.Distinct().ToList();
-          var drawnAgain = (await _db.Diagrams.AsNoTracking()
-              .Where(diagram => owners.Contains(diagram.id))
-              .Select(diagram => diagram.id)
-              .ToListAsync()).ToHashSet();
-          // A parent may be a row already in the tree or one this call creates; the batch's own
-          // rows are resolved by the same rule.
-          foreach (var pair in dbUpdated)
+          if (pair.Value.parent_id is { } parent
+              && parentOwners.TryGetValue(parent, out var owner)
+              && drawnAgain.Contains(owner))
           {
-            if (pair.Value.parent_id is { } parent
-                && parentOwners.TryGetValue(parent, out var owner)
-                && drawnAgain.Contains(owner))
-            {
-              pair.Value.parent_id = owner;
-              pair.Key.parent_id = Utils.ConvertGuidToObjectId(owner);
-            }
+            pair.Value.parent_id = owner;
+            pair.Key.parent_id = Utils.ConvertGuidToObjectId(owner);
           }
         }
       }

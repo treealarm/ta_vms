@@ -48,6 +48,9 @@ public class MapServiceReadsTests
   private const string AlarmState = "ALARM";
   private const string PanelLabel = "panel";
   private const string ShownPanelLabel = "shown panel";
+  private const string ShownCanvasLabel = "shown canvas";
+  private const string WallLabel = "wall";
+  private const string BayRegionKey = "bay";
   private const string CanvasLabel = "canvas";
   private const string PartOwnerLabel = "input owner";
   private const string PartLabel = "input";
@@ -731,7 +734,8 @@ public class MapServiceReadsTests
   {
     var s = Create();
     var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
-    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    // The diagram the copy shows has no children, so taking its type away leaves nothing undrawn.
+    var shown = await Node(s.Map, ShownCanvasLabel, panel.id, canvas.id);
     await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
 
     var fileId = Guid.NewGuid().ToString();
@@ -743,7 +747,7 @@ public class MapServiceReadsTests
       },
     }, new TestContext());
 
-    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(canvas.id!));
     Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
     Assert.Equal(Guid.Parse(fileId), diagram.file_id);
 
@@ -753,9 +757,56 @@ public class MapServiceReadsTests
       Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = "", FileId = "" } },
     }, new TestContext());
 
-    diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(canvas.id!));
     Assert.Null(diagram.dgr_type);
     Assert.Null(diagram.file_id);
+  }
+
+  [Fact]
+  public async Task ATypeChangeThatWouldLeaveAChildUndrawnIsRefused()
+  {
+    var s = Create();
+    var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    // The type chosen offers another key only: the diagram's child stands in slot-1, so it would be
+    // in the tree with nothing drawing it -- and it would vanish from every copy at once.
+    var wall = new DBDiagramType { id = Guid.NewGuid(), name = WallLabel };
+    wall.regions.Add(RegionRow(wall.id, BayRegionKey));
+    s.Db.DiagramTypes.Add(wall);
+    await s.Db.SaveChangesAsync();
+
+    // Through the copy: the write is the diagram's, and so is the refusal.
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagrams(
+      new MapProto.DiagramList
+      {
+        Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = wall.id.ToString() } },
+      }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+    Assert.Contains(FirstRegionKey, error.Status.Detail, StringComparison.Ordinal);
+    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
+  }
+
+  [Fact]
+  public async Task ATypeCannotBeTakenAwayWhileAChildStandsInItsRegion()
+  {
+    var s = Create();
+    var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var error = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagrams(
+      new MapProto.DiagramList
+      {
+        Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = "" } },
+      }, new TestContext()));
+
+    Assert.Equal(StatusCode.InvalidArgument, error.StatusCode);
+    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
   }
 
   [Fact]

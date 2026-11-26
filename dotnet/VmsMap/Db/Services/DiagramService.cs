@@ -64,6 +64,15 @@ namespace VmsMap.Db
 
       var existingDict = existing.ToDictionary(e => e.id);
 
+      // The other side of the same rule: a type is the key its children stand in, so replacing it
+      // is checked against what its children name.
+      await EnsureChildrenKeepTheirRegionsAsync(dbUpdated
+          .Select(x => x.Db)
+          .Where(row => existingDict.TryGetValue(row.id, out var stored)
+                        && stored.dgr_type != row.dgr_type)
+          .Select(row => (row.id, row.dgr_type))
+          .ToList());
+
       foreach (var (dto, dbObj) in dbUpdated)
       {
         if (dbObj.id == Guid.Empty || !existingDict.ContainsKey(dbObj.id))
@@ -109,6 +118,23 @@ namespace VmsMap.Db
           .Where(d => ids.Contains(d.id))
           .ToDictionaryAsync(d => d.id);
 
+      var changes = new List<(Guid Id, Guid? Type)>();
+      foreach (var dto in rows)
+      {
+        if (Utils.ConvertObjectIdToGuid(dto.id) is not { } id
+            || !existing.TryGetValue(id, out var row)
+            || dto.dgr_type is null)
+          continue;
+
+        var type = Utils.ConvertObjectIdToGuid(dto.dgr_type);
+        if (type != row.dgr_type)
+          changes.Add((id, type));
+      }
+
+      // The type is written through from a copy, so this is also where a change made through one
+      // is checked against the children that stand in the diagram.
+      await EnsureChildrenKeepTheirRegionsAsync(changes);
+
       foreach (var dto in rows)
       {
         if (Utils.ConvertObjectIdToGuid(dto.id) is not { } id
@@ -143,6 +169,66 @@ namespace VmsMap.Db
       {
         _dbContext.Diagrams.RemoveRange(diagrams);
         await _dbContext.SaveChangesAsync();
+      }
+    }
+
+    /// <summary>
+    /// A type names the regions a diagram's direct children stand in, so replacing it — or taking it
+    /// away — must not leave a child naming a key the new one does not offer: it would sit in the
+    /// tree with nothing to draw it and simply vanish from every copy. The type dictionary refuses
+    /// to take a region away while a node stands there; this is the same rule seen from the
+    /// diagram's side. Only a change is checked, so a row written before this rule existed does not
+    /// block an edit that leaves its type alone.
+    /// </summary>
+    private async Task EnsureChildrenKeepTheirRegionsAsync(List<(Guid Id, Guid? Type)> changes)
+    {
+      if (changes.Count == 0)
+        return;
+
+      var ids = changes.Select(change => change.Id).ToList();
+      var children = await _dbContext.Markers.AsNoTracking()
+          .Where(m => m.parent_id != null && ids.Contains(m.parent_id!.Value))
+          .Select(m => new { parent = m.parent_id!.Value, child = m.id })
+          .ToListAsync();
+      if (children.Count == 0)
+        return;
+
+      var childIds = children.Select(child => child.child).ToList();
+      var placed = await _dbContext.Diagrams.AsNoTracking()
+          .Where(d => childIds.Contains(d.id) && d.region_id != null)
+          .Select(d => new { d.id, d.region_id })
+          .ToDictionaryAsync(d => d.id, d => d.region_id!);
+      if (placed.Count == 0)
+        return;
+
+      var typeIds = changes
+          .Where(change => change.Type.HasValue)
+          .Select(change => change.Type!.Value)
+          .Distinct()
+          .ToList();
+      var offered = (await _dbContext.DiagramTypeRegions.AsNoTracking()
+              .Where(r => typeIds.Contains(r.diagram_type_id))
+              .Select(r => new { r.diagram_type_id, r.region_key })
+              .ToListAsync())
+          .Select(r => (r.diagram_type_id, r.region_key))
+          .ToHashSet();
+
+      foreach (var (id, type) in changes)
+      {
+        var orphan = children.FirstOrDefault(child =>
+            child.parent == id
+            && placed.TryGetValue(child.child, out var region)
+            && (!type.HasValue || !offered.Contains((type.Value, region))));
+        if (orphan is null)
+          continue;
+
+        var region = placed[orphan.child];
+        throw new DiagramConfigException(type.HasValue
+            ? $"The diagram \"{Utils.ConvertGuidToObjectId(id)}\" cannot be drawn from the new " +
+              $"type: the node \"{Utils.ConvertGuidToObjectId(orphan.child)}\" stands in the " +
+              $"region \"{region}\", which that type does not offer"
+            : $"The diagram \"{Utils.ConvertGuidToObjectId(id)}\" cannot lose its type: the node " +
+              $"\"{Utils.ConvertGuidToObjectId(orphan.child)}\" stands in the region \"{region}\"");
       }
     }
 

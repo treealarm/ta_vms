@@ -194,6 +194,35 @@ RabbitMQ и MediaMTX в compose.
   доступны, тип копии редактируется (запись уходит в канон), «Open diagram» работает.
 - Стек, Vite и compose погашены, тестовая база `ta_map_test` удалена.
 
+## Правки по ревью (2026-11-26)
+
+Ревью влитого мержа нашло две щели; обе подтверждены тестами, которые падали до правки.
+
+1. **Родитель, созданный в том же пакете.** `MapDb.UpdateHierarchyAsync` исключает из
+   `referencedParents` родителей, создаваемых этим же вызовом, а `parentOwners` строился только по
+   ним — ветка «родитель пришёл в пакете» была недостижима. Копия, созданная вместе с ребёнком в
+   одном `UpdateObjects`, не разрешалась в канон, и ребёнок оставался под копией. Теперь владельцы
+   собираются из всего пакета: у существующей строки — сохранённый `owner_id` (запрос может его не
+   называть вовсе), у новой — присланный; разрешение по-прежнему только для владельца, у которого
+   есть строка `diagrams`. Тесты
+   `AChildCreatedUnderANewDiagramCopyInTheSameBatchStandsUnderTheDiagram`,
+   `AChildCreatedBesideItsStoredCopyInTheSameBatchStandsUnderTheDiagram`.
+2. **Смена типа оставляла детей без региона.** `UpdateContentAsync` менял `dgr_type` канона без
+   проверки детей, а ребёнок, стоящий в ключе, которого новый тип не предлагает, не рисуется
+   (`elementRect` возвращает null) — пропадает со всех копий сразу. Теперь `DiagramService`
+   проверяет смену и снятие типа на обоих путях записи — `UpdateListAsync` и `UpdateContentAsync`;
+   это зеркало `DiagramTypeService.EnsureRegionsAreFreeAsync`, которое не даёт убрать регион
+   из-под стоящего в нём узла. Отказ — `DiagramConfigException` → `InvalidArgument`, а транзакция
+   `UpdateDiagrams` откатывает обе записи. Тесты
+   `ATypeChangeThatWouldLeaveAChildUndrawnIsRefused` (через копию) и
+   `ATypeCannotBeTakenAwayWhileAChildStandsInItsRegion`;
+   `ATypeAndPictureThroughACopyAreClearedOnTheDiagram` переведён на диаграмму без детей.
+
+Рядом найдено, но не в этой работе: удаление типа словаря не проверяется вовсе —
+[docs/future_plans/26-deleting-a-diagram-type-in-use.md](../future_plans/26-deleting-a-diagram-type-in-use.md).
+Проверка оттуда же — удаление копии обычным путём не должно трогать канон и другие копии —
+закреплена Postgres-тестом `RemovingACopyLeavesTheDiagramAndTheOtherCopies`.
+
 ## Состояние
 
 - [x] 1. План в репозитории.
@@ -204,3 +233,4 @@ RabbitMQ и MediaMTX в compose.
 - [x] 5. Клиент: снятие только-чтения, тип/картинка у копии, подсказка, вит-тесты.
 - [x] 6. Демо-проверки.
 - [x] 7. Документация, архив старого плана.
+- [x] 8. Правки по ревью: родитель из того же пакета, проверка смены типа.
