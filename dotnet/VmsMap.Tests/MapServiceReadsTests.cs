@@ -690,7 +690,7 @@ public class MapServiceReadsTests
   }
 
   [Fact]
-  public async Task ARepresentationsTypeIsNotWritableThroughItsOwnRow()
+  public async Task ARepresentationsTypeIsWrittenToTheDiagram()
   {
     var s = Create();
     var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
@@ -698,22 +698,64 @@ public class MapServiceReadsTests
     var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
     await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
 
-    var rejected = await Assert.ThrowsAsync<RpcException>(() => s.Grpc.UpdateDiagrams(
-      new MapProto.DiagramList
-      {
-        Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = typeId } },
-      }, new TestContext()));
-    Assert.Equal(StatusCode.InvalidArgument, rejected.StatusCode);
+    // A type written through the copy is the diagram's: its row changes, the copy's place does not.
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = typeId } },
+    }, new TestContext());
 
-    // Its place is its own, and moving it is what a copy is for.
+    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
+    // The diagram's own paper was not a thing this request asked about.
+    Assert.Equal(PaperWidth, diagram.geometry!.width);
+    Assert.Equal(PaperHeight, diagram.geometry.height);
+
+    var copy = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(shown.id!));
+    Assert.Null(copy.dgr_type);
+    Assert.Equal(FirstRegionKey, copy.region_id);
+
+    // Its place is its own, and moving it is what a copy is for — and it leaves the diagram alone.
     await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
     {
       Diagrams = { new MapProto.Diagram { Id = shown.id!, RegionId = SecondRegionKey } },
     }, new TestContext());
 
-    var stored = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(shown.id!));
-    Assert.Null(stored.dgr_type);
-    Assert.Equal(SecondRegionKey, stored.region_id);
+    copy = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(shown.id!));
+    Assert.Equal(SecondRegionKey, copy.region_id);
+    diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
+  }
+
+  [Fact]
+  public async Task ATypeAndPictureThroughACopyAreClearedOnTheDiagram()
+  {
+    var s = Create();
+    var (panel, _, canvas, typeId) = await SeedPanelAsync(s);
+    var shown = await Node(s.Map, ShownPanelLabel, canvas.id, panel.id);
+    await SeedDiagramAsync(s.Db, shown.id!, regionId: FirstRegionKey);
+
+    var fileId = Guid.NewGuid().ToString();
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams =
+      {
+        new MapProto.Diagram { Id = shown.id!, DgrType = typeId, FileId = fileId },
+      },
+    }, new TestContext());
+
+    var diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Equal(Guid.Parse(typeId), diagram.dgr_type);
+    Assert.Equal(Guid.Parse(fileId), diagram.file_id);
+
+    // Present but empty is "clear it", not "leave it".
+    await s.Grpc.UpdateDiagrams(new MapProto.DiagramList
+    {
+      Diagrams = { new MapProto.Diagram { Id = shown.id!, DgrType = "", FileId = "" } },
+    }, new TestContext());
+
+    diagram = await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(panel.id!));
+    Assert.Null(diagram.dgr_type);
+    Assert.Null(diagram.file_id);
   }
 
   [Fact]

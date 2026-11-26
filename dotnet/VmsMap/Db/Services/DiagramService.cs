@@ -89,6 +89,41 @@ namespace VmsMap.Db
       await _dbContext.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Writes only the content fields of the named rows. A copy of a diagram writes its type and
+    /// picture through to the diagram itself, and must not touch the diagram's paper or the place
+    /// it stands in: a null field means "not asked" and stays as it is, an empty one clears it.
+    /// </summary>
+    public async Task UpdateContentAsync(List<DiagramDTO> rows)
+    {
+      var ids = rows
+          .Select(row => Utils.ConvertObjectIdToGuid(row.id))
+          .Where(id => id.HasValue)
+          .Select(id => id!.Value)
+          .Distinct()
+          .ToList();
+      if (ids.Count == 0)
+        return;
+
+      var existing = await _dbContext.Diagrams
+          .Where(d => ids.Contains(d.id))
+          .ToDictionaryAsync(d => d.id);
+
+      foreach (var dto in rows)
+      {
+        if (Utils.ConvertObjectIdToGuid(dto.id) is not { } id
+            || !existing.TryGetValue(id, out var row))
+          continue;
+
+        if (dto.dgr_type is not null)
+          row.dgr_type = Utils.ConvertObjectIdToGuid(dto.dgr_type);
+        if (dto.file_id is not null)
+          row.file_id = Utils.ConvertObjectIdToGuid(dto.file_id);
+      }
+
+      await _dbContext.SaveChangesAsync();
+    }
+
     public async Task RemoveAsync(List<string> ids)
     {
       var guidIds = ids

@@ -113,7 +113,7 @@ internal static class MapPostgres
     return new MapServiceImpl(
       db, map, updates, geo, levels, trackService, states, stateService,
       null!, null!, null!, tracks,
-      null!, null!, null!, new RightsService(db), null!,
+      new DiagramService(db), null!, null!, new RightsService(db), null!,
       new VisualService(db), null!, null!,
       null!, null!, null!, null!, null!, null!, null!, null!);
   }

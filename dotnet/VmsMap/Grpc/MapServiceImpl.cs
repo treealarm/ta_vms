@@ -317,39 +317,58 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.DiagramList> UpdateDiagrams(
       MapProto.DiagramList request, ServerCallContext context)
     {
+      var ct = context.CancellationToken;
       var dtos = request.Diagrams.Select(ToDto).ToList();
 
-      // A representation carries no type or picture of its own: those belong to the diagram it
-      // shows, and writing them through a copy would fork the content in one place only. Its own
-      // place stays writable — that is what a copy is.
-      var rewritten = dtos
-        .Where(d => !string.IsNullOrWhiteSpace(d.dgr_type) || !string.IsNullOrWhiteSpace(d.file_id))
+      // A copy carries only its own place: its type and picture belong to the diagram it shows, so
+      // writing them through the copy writes the diagram's row. The place stays the copy's, and the
+      // content write touches nothing else on the diagram's row — its paper and the place it stands
+      // in are not the copy's to change.
+      var candidates = dtos
         .Select(d => d.id)
         .Where(id => !string.IsNullOrWhiteSpace(id))
         .Select(id => id!)
         .Distinct(StringComparer.Ordinal)
         .ToList();
+      var resolved = candidates.Count == 0
+        ? new Dictionary<string, ResolvedDiagram>()
+        : await DiagramRepresentations.ResolveAsync(_db, candidates, ct);
 
-      if (rewritten.Count > 0)
+      var place = new List<DiagramDTO>();
+      var content = new List<DiagramDTO>();
+      foreach (var dto in dtos)
       {
-        var resolved = await DiagramRepresentations.ResolveAsync(
-          _db, rewritten, context.CancellationToken);
-        // A node with no row of its own and nothing to represent is a diagram being drawn for the
-        // first time: there is no copy to protect, and the row is the one this request writes.
-        if (rewritten.Any(id => resolved[id].Row?.is_representation == true))
-          throw new RpcException(new Status(StatusCode.InvalidArgument,
-            "A representation takes its type and picture from the diagram it shows; " +
-            "edit that diagram instead"));
+        if (dto.id is not null
+            && resolved.TryGetValue(dto.id, out var diagram)
+            && diagram.Row?.is_representation == true
+            && diagram.OwnerId is { } owner)
+        {
+          if (dto.dgr_type is not null || dto.file_id is not null)
+            content.Add(new DiagramDTO { id = owner, dgr_type = dto.dgr_type, file_id = dto.file_id });
+          if (dto.geometry is not null || !string.IsNullOrEmpty(dto.region_id))
+            place.Add(new DiagramDTO { id = dto.id, geometry = dto.geometry, region_id = dto.region_id });
+          continue;
+        }
+
+        place.Add(dto);
       }
 
+      // Both writes or neither: a refused region must not leave the diagram's type changed.
+      await using var tx = await BeginTransactionAsync(ct);
       try
       {
-        await _diagramService.UpdateListAsync(dtos);
+        if (content.Count > 0)
+          await _diagramService.UpdateContentAsync(content);
+        if (place.Count > 0)
+          await _diagramService.UpdateListAsync(place);
       }
       catch (DiagramConfigException ex)
       {
         throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
       }
+
+      if (tx is not null)
+        await tx.CommitAsync(ct);
 
       return new MapProto.DiagramList { Diagrams = { dtos.Select(ToProto) } };
     }
@@ -775,22 +794,30 @@ namespace VmsMap.Grpc
       id = diagram.Id,
       geometry = ToDto(diagram.Geometry),
       region_id = diagram.RegionId,
-      dgr_type = diagram.DgrType,
-      file_id = diagram.FileId,
+      // Absent means "leave it": a copy's place must not clear the diagram's type or picture.
+      dgr_type = diagram.HasDgrType ? diagram.DgrType : null,
+      file_id = diagram.HasFileId ? diagram.FileId : null,
       placement = ToDto(diagram.Placement),
       is_representation = diagram.IsRepresentation
     };
 
-    private static MapProto.Diagram ToProto(DiagramDTO dto) => new()
+    private static MapProto.Diagram ToProto(DiagramDTO dto)
     {
-      Id = dto.id ?? string.Empty,
-      Geometry = ToProto(dto.geometry),
-      RegionId = dto.region_id ?? string.Empty,
-      DgrType = dto.dgr_type ?? string.Empty,
-      FileId = dto.file_id ?? string.Empty,
-      Placement = ToProto(dto.placement),
-      IsRepresentation = dto.is_representation
-    };
+      var diagram = new MapProto.Diagram
+      {
+        Id = dto.id ?? string.Empty,
+        Geometry = ToProto(dto.geometry),
+        RegionId = dto.region_id ?? string.Empty,
+        Placement = ToProto(dto.placement),
+        IsRepresentation = dto.is_representation
+      };
+      // Absent when the row has none, so a reader can tell "no type" from "not read".
+      if (dto.dgr_type is not null)
+        diagram.DgrType = dto.dgr_type;
+      if (dto.file_id is not null)
+        diagram.FileId = dto.file_id;
+      return diagram;
+    }
 
     private static DiagramCoordDTO? ToDto(MapProto.DiagramCoordinate? coord) => coord == null
       ? null

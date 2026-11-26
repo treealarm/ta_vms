@@ -1306,9 +1306,11 @@ message Diagram {
   // in the parent. Not a replacement for the geometry above.
   string region_id = 3;
   // The id of a DiagramType, not its name: a rename must not orphan the diagrams of a type.
-  string dgr_type = 4;
-  // A row of `files`, not a path on a volume (see PutFile).
-  string file_id = 5;
+  // Present on a write means "set it" (an empty value clears it); absent means "leave it": a
+  // copy's place must not clear the diagram's type.
+  optional string dgr_type = 4;
+  // A row of `files`, not a path on a volume (see PutFile). Presence means the same as above.
+  optional string file_id = 5;
   // Where a representation of a diagram stands in its parent. Its `geometry` is the paper it
   // opens on, taken from the diagram it represents. Empty on an ordinary diagram, whose geometry
   // is both its place and its paper.
