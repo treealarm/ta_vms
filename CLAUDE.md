@@ -309,8 +309,8 @@ subsystem, is being folded into ta_vms as its map and events layer: Square's ser
 a map service of ta_vms, its object tree, states with alarms bubbling to the parent, event journal
 and mnemonic diagrams with it. The integration was removed first (`VmsSquareSingleton`, the
 `SquareIntegrationClient` submodule, the shared `common_app_network`). The plan, by milestones, is
-[`docs/plans/square-merge/`](docs/plans/square-merge/README.md); new work on maps, object states,
-events or permissions must not contradict it. Two of its rules already hold:
+[`docs/plans/archive/square-merge.md`](docs/plans/archive/square-merge.md); new work on maps, object
+states, events or permissions must not contradict it. Two of its rules already hold:
 
 - **The map is a layer; the heavy core does not know about it.** The map service learns from the
   ordinary events (`server-config-changed`, `camera-state-changed`, `retention-event-created`) and
