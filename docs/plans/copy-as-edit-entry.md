@@ -220,6 +220,8 @@ RabbitMQ и MediaMTX в compose.
 
 Рядом найдено, но не в этой работе: удаление типа словаря не проверяется вовсе —
 [docs/future_plans/26-deleting-a-diagram-type-in-use.md](../future_plans/26-deleting-a-diagram-type-in-use.md).
+Проверка оттуда же — удаление копии обычным путём не должно трогать канон и другие копии —
+закреплена Postgres-тестом `RemovingACopyLeavesTheDiagramAndTheOtherCopies`.
 
 ## Состояние
 

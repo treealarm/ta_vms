@@ -132,4 +132,48 @@ public class MapRemovalPostgresTests
     Assert.False(
       await first.Db.Markers.AsNoTracking().AnyAsync(m => m.id == ownerGuid || m.owner_id == ownerGuid));
   }
+
+  [Fact]
+  public async Task RemovingACopyLeavesTheDiagramAndTheOtherCopies()
+  {
+    await using var connection = await MapPostgres.OpenAsync(fresh: true);
+    if (connection is null)
+      return;
+
+    var db = connection.Db;
+    var canvas = new BaseMarkerDTO { id = Utils.ConvertGuidToObjectId(Guid.NewGuid()), name = CanvasName };
+    var diagram = new BaseMarkerDTO { id = Utils.ConvertGuidToObjectId(Guid.NewGuid()), name = OwnerName };
+    var left = new BaseMarkerDTO
+    {
+      id = Utils.ConvertGuidToObjectId(Guid.NewGuid()),
+      name = "left copy",
+      parent_id = canvas.id,
+      owner_id = diagram.id,
+    };
+    var right = new BaseMarkerDTO
+    {
+      id = Utils.ConvertGuidToObjectId(Guid.NewGuid()),
+      name = "right copy",
+      parent_id = canvas.id,
+      owner_id = diagram.id,
+    };
+    await new MapDb(db).UpdateHierarchyAsync([canvas, diagram, left, right]);
+    var diagramId = Guid.Parse(diagram.id!);
+    var leftId = Guid.Parse(left.id!);
+    db.Diagrams.AddRange(
+      new DBDiagram { id = diagramId },
+      new DBDiagram { id = leftId },
+      new DBDiagram { id = Guid.Parse(right.id!) });
+    await db.SaveChangesAsync();
+
+    // A copy is deleted from wherever it stands: it is nobody's owner and nothing stands under it,
+    // so the diagram it shows and the other copies of it are not part of what goes.
+    await MapPostgres.Spatial(db).RemoveSubtreeAsync([left.id!], CancellationToken.None);
+
+    Assert.False(await db.Markers.AnyAsync(m => m.id == leftId));
+    Assert.False(await db.Diagrams.AnyAsync(d => d.id == leftId));
+    Assert.True(await db.Markers.AnyAsync(m => m.id == diagramId));
+    Assert.True(await db.Diagrams.AnyAsync(d => d.id == diagramId));
+    Assert.True(await db.Markers.AnyAsync(m => m.id == Guid.Parse(right.id!)));
+  }
 }
