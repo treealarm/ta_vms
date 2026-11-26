@@ -180,6 +180,20 @@ cd dotnet/web_srv.client && npm test && npm run build
 - Правка словаря типов (`UpdateDiagramTypes`) — отдельная поверхность.
 - Миграции и новых колонок нет.
 
+## Живая проверка (2026-11-26)
+
+Dev-стек `scripts/dev-up.sh --build`, OnvifSim `onvifsim_lab.py up --world maryland`, Postgres,
+RabbitMQ и MediaMTX в compose.
+
+- `check_demo.py --provision-cameras` — **All demo checks passed**, включая шаг «The shared board» и
+  новый «через копию правится канон».
+- Новый шаг отдельно: ребёнок, переименованный через копию, меняется на диаграмме; узел,
+  созданный с `parent_id` копии, стоит под каноном и виден в копии; мир возвращён как был.
+- Браузер (Vite + Chrome): открытая копия `cam2 / Camera rear panel` показывает подсказку «changes
+  here are saved to the diagram itself and appear in every copy», инструменты и «New diagram»
+  доступны, тип копии редактируется (запись уходит в канон), «Open diagram» работает.
+- Стек, Vite и compose погашены, тестовая база `ta_map_test` удалена.
+
 ## Состояние
 
 - [x] 1. План в репозитории.
