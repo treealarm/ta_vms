@@ -655,6 +655,17 @@ async function sharedCanvas(page) {
   check(crumbs.includes(SPARE), 'the button enters the drawn diagram')
   await page.locator('button[aria-label="Up one level"]').click()
   await page.waitForTimeout(1200)
+
+  // A copy is an entry point for the diagram: opening one offers the editor's tools and says the
+  // changes reach the diagram itself. (Until this change the panel was read-only.)
+  const copy = replicas[0]
+  await openDiagramNamed(page, copy.name)
+  check(await page.getByText(/appear in every copy/i).count() >= 1,
+    'an opened copy says its changes appear in every copy')
+  check(await page.getByRole('button', { name: 'New diagram', exact: true }).count() === 1,
+    "a copy offers the editor's tools")
+  await page.locator('button[aria-label="Up one level"]').click()
+  await page.waitForTimeout(1200)
   await shot(page, '06d-pick-and-enter.png')
 }
 

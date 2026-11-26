@@ -1172,7 +1172,7 @@
     "diagram": "Diagram",
     "newDiagram": "New diagram",
     "addDiagram": "New diagram on this canvas",
-    "representationHint": "A copy of another diagram: its content is edited there, and only its place here is its own.",
+    "representationHint": "A copy of another diagram: changes here are saved to the diagram itself and appear in every copy.",
     "types": "Types",
     "typesHint": "A type draws every diagram of it: its background picture, and the regions its children may take instead of a rectangle of their own.",
     "manageTypes": "Manage types…",

@@ -222,9 +222,6 @@ export default function SpaceEditor({
     ? shownDiagram?.content?.find((candidate) => candidate.id === openDiagramId)
     : undefined
   const parentDiagramType = shownDiagram?.dgrTypes?.find((candidate) => candidate.id === openDiagramRow?.dgrType)
-  // A representation opens on the paper of the diagram it shows: that paper is not a canvas of its
-  // own, so a panel cannot be placed on it.
-  const openDiagramIsRepresentation = openDiagramRow?.isRepresentation === true
 
   useEffect(() => {
     void dispatch(loadPlacements())
@@ -1003,7 +1000,7 @@ export default function SpaceEditor({
             diagramId={openDiagramId}
             selectedId={selectedNodeId}
             editing
-            armedCameraId={openDiagramIsRepresentation ? null : pendingDiagramId}
+            armedCameraId={pendingDiagramId}
             armedCameraName={pendingDiagramId
               ? camerasById[pendingDiagramId]?.name || pendingDiagramId
               : undefined}

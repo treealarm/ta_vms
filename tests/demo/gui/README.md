@@ -108,6 +108,7 @@ arrive.
 | Diagram: own canvas, parent, region, type | "+" in Nodes / DiagramElementEditor | build + DB + API |
 | Device diagram attached by model | camera row → Device diagram | build + DB + API |
 | Device diagram shown on a shared canvas | camera row → Device diagram, click on the paper | build + DB + API |
+| A copy edited as the diagram | representation row → its paper: tools, hint | build + API |
 | A drawn diagram bound to a device | element editor → Device → camera → Bind | build + API |
 | Part replica on the map | Devices → part → click | build + API |
 | Camera placement: reference/image, view | Devices → camera → click / placement panels | build + DB |

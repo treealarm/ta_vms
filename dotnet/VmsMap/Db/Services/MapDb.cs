@@ -476,38 +476,37 @@ namespace VmsMap.Db
           throw new ArgumentException(
               $"Parent node '{Utils.ConvertGuidToObjectId(missing)}' does not exist");
 
-        // A representation of a diagram draws the diagram's own content: the reader answers its
-        // children from the owner, never from the copy. Whatever stood under the copy would never
-        // be shown — a node the caller made and cannot find. So a copy is a place, not a canvas.
-        var owners = parentRows
+        // A representation of a diagram is where the diagram is shown, not a canvas of its own:
+        // the reader answers its children from the owner, so whatever stands under the copy is
+        // really the diagram's content and is seen in every copy. Resolve the parent to the
+        // diagram before the tree is checked, so a move, its cycle check and the canvas recompute
+        // below all work on the node the caller will find it under.
+        var parentOwners = parentRows
             .Where(row => row.owner_id.HasValue)
-            .Select(row => row.owner_id!.Value)
-            .Concat(dbUpdated.Values
-                .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue)
-                .Select(v => v.owner_id!.Value))
-            .Distinct()
-            .ToList();
-        if (owners.Count > 0)
+            .ToDictionary(row => row.id, row => row.owner_id!.Value);
+        foreach (var created in dbUpdated.Values
+                   .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue))
+          parentOwners[created.id] = created.owner_id!.Value;
+
+        if (parentOwners.Count > 0)
         {
-          var drawnAgain = await _db.Diagrams.AsNoTracking()
+          var owners = parentOwners.Values.Distinct().ToList();
+          var drawnAgain = (await _db.Diagrams.AsNoTracking()
               .Where(diagram => owners.Contains(diagram.id))
               .Select(diagram => diagram.id)
-              .ToListAsync();
+              .ToListAsync()).ToHashSet();
           // A parent may be a row already in the tree or one this call creates; the batch's own
-          // rows are checked with the same rule.
-          var copy = parentRows
-                .Where(row => row.owner_id.HasValue && drawnAgain.Contains(row.owner_id.Value))
-                .Select(row => (Guid?)row.id)
-                .FirstOrDefault()
-            ?? dbUpdated.Values
-                .Where(v => referencedParents.Contains(v.id) && v.owner_id.HasValue
-                            && drawnAgain.Contains(v.owner_id.Value))
-                .Select(v => (Guid?)v.id)
-                .FirstOrDefault();
-          if (copy is { } copyId)
-            throw new ArgumentException(
-                $"Node '{Utils.ConvertGuidToObjectId(copyId)}' is a copy of a diagram and cannot "
-                + "hold nodes: its children are the diagram's own");
+          // rows are resolved by the same rule.
+          foreach (var pair in dbUpdated)
+          {
+            if (pair.Value.parent_id is { } parent
+                && parentOwners.TryGetValue(parent, out var owner)
+                && drawnAgain.Contains(owner))
+            {
+              pair.Value.parent_id = owner;
+              pair.Key.parent_id = Utils.ConvertGuidToObjectId(owner);
+            }
+          }
         }
       }
 
@@ -577,6 +576,29 @@ namespace VmsMap.Db
 
         kvp.Value.owner_id = original;
         kvp.Key.owner_id = Utils.ConvertGuidToObjectId(original);
+      }
+
+      // What a replica shows is fixed when it is made: every read resolves an owner in one hop, so
+      // re-pointing a copy would change the diagram that every place showing it displays. A write
+      // that names no owner means "leave it" — renaming a replica must not detach it from its
+      // diagram.
+      foreach (var pair in dbUpdated)
+      {
+        if (!existingEntities.TryGetValue(pair.Value.id, out var current)
+            || current.owner_id is not { } owner)
+          continue;
+
+        if (pair.Value.owner_id is null)
+        {
+          pair.Value.owner_id = owner;
+          pair.Key.owner_id = Utils.ConvertGuidToObjectId(owner);
+        }
+        else if (pair.Value.owner_id != owner)
+        {
+          throw new ArgumentException(
+              $"Node '{Utils.ConvertGuidToObjectId(pair.Value.id)}' shows " +
+              $"'{Utils.ConvertGuidToObjectId(owner)}' and cannot show another node");
+        }
       }
 
       // Nodes whose parent changes also change the canvas their figure is drawn on.

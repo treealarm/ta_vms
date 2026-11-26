@@ -727,14 +727,18 @@ public class DeviceDiagramServiceTests
   }
 
   [Fact]
-  public async Task ACopyOfADiagramIsNotACanvas()
+  public async Task ADiagramShownOnACopyStandsOnTheDiagramItself()
   {
     var s = await PlacedCameraAsync();
     await SeedPictureAsync(s);
     var board = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
 
-    // A diagram of the administrator's own, and a copy of it standing on the board.
+    // A diagram of the administrator's own, drawn from the board's type, and a copy of it standing
+    // on the board.
     var drawn = await SeedSpareDiagramAsync(s, SpareName);
+    (await s.Db.Diagrams.SingleAsync(d => d.id == Guid.Parse(drawn))).dgr_type = board.Type;
+    await s.Db.SaveChangesAsync();
+
     var copy = Guid.NewGuid();
     await s.Map.UpdateHierarchyAsync([
       new BaseMarkerDTO
@@ -748,13 +752,44 @@ public class DeviceDiagramServiceTests
     s.Db.Diagrams.Add(new DBDiagram { id = copy, region_id = LeftRegion });
     await s.Db.SaveChangesAsync();
 
-    // A copy opens on the diagram it represents: whatever stood under the copy itself would never
-    // be read, so the place is refused before anything is written.
+    // A copy opens on the diagram it represents, so a diagram put "on the copy" is put on the
+    // diagram itself, in a region of the diagram's type — and every copy of it shows the panel.
+    var shownId = await AttachAsync(
+      s, target: new DiagramTarget(copy.ToString(), RegionId: LeftRegion));
+
+    var shown = await s.Db.Markers.SingleAsync(m => m.id == Guid.Parse(shownId!));
+    Assert.Equal(Guid.Parse(drawn), shown.parent_id);
+  }
+
+  [Fact]
+  public async Task ADiagramCannotBeShownOnACopyOfItself()
+  {
+    var s = await PlacedCameraAsync();
+    await SeedPictureAsync(s);
+    var board = await SeedMnemoschemeAsync(s, CanvasName, LeftRegion);
+
+    // The camera's own diagram, and a copy of it standing on the board beside its representation.
+    await AttachAsync(s, target: new DiagramTarget(board.Node.ToString(), RegionId: LeftRegion));
+    var canon = (await s.Db.DeviceDiagrams.SingleAsync()).object_id;
+    var copy = Guid.NewGuid();
+    await s.Map.UpdateHierarchyAsync([
+      new BaseMarkerDTO
+      {
+        id = Utils.ConvertGuidToObjectId(copy),
+        parent_id = board.Node.ToString(),
+        owner_id = Utils.ConvertGuidToObjectId(canon),
+        name = ShownPanelName,
+      }
+    ]);
+    s.Db.Diagrams.Add(new DBDiagram { id = copy, region_id = LeftRegion });
+    await s.Db.SaveChangesAsync();
+
+    // Resolving the copy to the diagram lands on the diagram's own canvas: the cycle is refused
+    // before anything is written.
     var error = await Assert.ThrowsAsync<DeviceDiagramException>(() => AttachAsync(
       s, target: new DiagramTarget(copy.ToString(), RegionId: LeftRegion)));
 
-    Assert.Contains("representation", error.Message);
-    Assert.Empty(await s.Db.DeviceDiagrams.ToListAsync());
+    Assert.Contains("own canvas", error.Message);
   }
 
   [Fact]

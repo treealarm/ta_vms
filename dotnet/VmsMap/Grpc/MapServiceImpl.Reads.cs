@@ -118,6 +118,11 @@ namespace VmsMap.Grpc
       var caller = ToCaller(request.Caller);
       var box = ToBoxDto(request.Box);
 
+      // A copy of a diagram opens on the diagram's own paper, and its figures are stored on the
+      // diagram's canvas — resolve before the spatial read, or the query looks for them on the
+      // copy, where nothing is ever drawn.
+      box.canvas_id = await DiagramRepresentations.ResolveCanvasAsync(_db, box.canvas_id, ct);
+
       // The cursor is read here, at the boundary: a malformed one is a client bug, and answering
       // "nothing after it" would pass for the end of the canvas.
       if (!string.IsNullOrEmpty(request.AfterId))

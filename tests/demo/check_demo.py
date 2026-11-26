@@ -776,6 +776,58 @@ def check_shared_panel_is_live(vms):
     check(lit, "closing peer lights the socket inside the representation")
 
 
+def check_copy_edits_the_diagram(vms):
+    """A copy is an entry point for the diagram: content edited through it is written to the
+    diagram, and what it adds is found under the diagram itself — never under the copy."""
+    _, replicas, _ = shared_panels(vms)
+    left = replicas.get("left")
+    if not check(left is not None, "the master's panel stands in the left bay"):
+        return
+    canon = left.get("ownerId")
+    _, parts = diagram_content(vms, left)
+    socket = next((row for row in parts if row.get("regionId") == "peer"), None)
+    if not check(socket is not None and canon is not None, "the left bay shows the peer socket"):
+        return
+
+    before = (marker(vms, socket["id"]) or {}).get("name")
+    renamed = f"{before} (through a copy)"
+    vms.call("PUT", "/api/map/admin/objects", {
+        "objects": [{
+            "id": socket["id"],
+            "parentId": marker(vms, socket["id"]).get("parentId"),
+            "ownerId": marker(vms, socket["id"]).get("ownerId"),
+            "name": renamed,
+        }]})
+    check((marker(vms, socket["id"]) or {}).get("name") == renamed,
+          "a child renamed through a copy is renamed on the diagram")
+
+    # A node added through the copy hangs under the diagram, so the diagram's own read — and every
+    # copy of it — carries the node.
+    added = str(uuid.uuid4())
+    vms.call("PUT", "/api/map/admin/objects", {
+        "objects": [{"id": added, "parentId": left["id"], "name": "check child"}]})
+    vms.call("PUT", "/api/map/admin/diagrams", {
+        "diagrams": [{"id": added, "geometry": {"top": 10, "left": 10, "width": 40, "height": 40}}]})
+    under_canon = any(kid.get("id") == added for kid in children(vms, canon))
+    _, grown = diagram_content(vms, left)
+    check(under_canon and any(row.get("id") == added for row in grown),
+          "a node added through a copy stands under the diagram and shows in the copy")
+
+    # Leave the world as it was found.
+    vms.call("DELETE", "/api/map/admin/objects", {"ids": [added]})
+    vms.call("DELETE", "/api/map/admin/diagrams", {"ids": [added]})
+    vms.call("PUT", "/api/map/admin/objects", {
+        "objects": [{
+            "id": socket["id"],
+            "parentId": marker(vms, socket["id"]).get("parentId"),
+            "ownerId": marker(vms, socket["id"]).get("ownerId"),
+            "name": before,
+        }]})
+    check(not any(kid.get("id") == added for kid in children(vms, canon))
+          and (marker(vms, socket["id"]) or {}).get("name") == before,
+          "the diagram is left the way the check found it")
+
+
 def device_binding(vms, node_id):
     return vms.call("GET", f"/api/map/admin/device-diagram/binding?nodeId={node_id}")
 
@@ -2573,6 +2625,7 @@ def main():
         print("The shared board")
         check_shared_canvas(vms)
         check_shared_panel_is_live(vms)
+        check_copy_edits_the_diagram(vms)
         check_shared_diagram_binding(vms)
         sensor = check_sensor_in_the_tree(vms)
         if sensor is not None:
