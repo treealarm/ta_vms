@@ -88,6 +88,63 @@ public class MapDbTests
   }
 
   [Fact]
+  public async Task AChildCreatedUnderANewDiagramCopyInTheSameBatchStandsUnderTheDiagram()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    var board = new BaseMarkerDTO { name = "board" };
+    await map.UpdateHierarchyAsync([diagram, board]);
+    db.Diagrams.Add(new DBDiagram { id = Guid.Parse(diagram.id!) });
+    await db.SaveChangesAsync();
+
+    // The copy and a node hung on it arrive together: what the node stands under is the diagram,
+    // exactly as if the copy had been stored before the request that used it as a canvas.
+    var copy = new BaseMarkerDTO
+    {
+      id = Utils.ConvertGuidToObjectId(Guid.NewGuid()),
+      name = "panel rep1",
+      parent_id = board.id,
+      owner_id = diagram.id,
+    };
+    var shared = new BaseMarkerDTO
+    {
+      id = Utils.ConvertGuidToObjectId(Guid.NewGuid()),
+      name = "shared",
+      parent_id = copy.id,
+    };
+    await map.UpdateHierarchyAsync([copy, shared]);
+
+    Assert.Equal(Guid.Parse(board.id!), (await db.Markers.SingleAsync(m => m.id == Guid.Parse(copy.id!))).parent_id);
+    Assert.Equal(Guid.Parse(diagram.id!), (await db.Markers.SingleAsync(m => m.name == "shared")).parent_id);
+    Assert.Equal(diagram.id, shared.parent_id);
+  }
+
+  [Fact]
+  public async Task AChildCreatedBesideItsStoredCopyInTheSameBatchStandsUnderTheDiagram()
+  {
+    var (db, map) = CreateDb();
+
+    var diagram = new BaseMarkerDTO { name = "panel" };
+    var board = new BaseMarkerDTO { name = "board" };
+    await map.UpdateHierarchyAsync([diagram, board]);
+    db.Diagrams.Add(new DBDiagram { id = Guid.Parse(diagram.id!) });
+    await db.SaveChangesAsync();
+
+    var copy = new BaseMarkerDTO { name = "panel rep1", parent_id = board.id, owner_id = diagram.id };
+    await map.UpdateHierarchyAsync([copy]);
+
+    // A rename of the copy carries no owner at all, and its place does not change; the node beside
+    // it still belongs to the diagram the copy shows.
+    copy.name = "panel rep2";
+    var shared = new BaseMarkerDTO { name = "shared", parent_id = copy.id };
+    await map.UpdateHierarchyAsync([copy, shared]);
+
+    Assert.Equal(Guid.Parse(board.id!), (await db.Markers.SingleAsync(m => m.name == "panel rep2")).parent_id);
+    Assert.Equal(Guid.Parse(diagram.id!), (await db.Markers.SingleAsync(m => m.name == "shared")).parent_id);
+  }
+
+  [Fact]
   public async Task AMoveOntoACopyMovesIntoTheDiagram()
   {
     var (db, map) = CreateDb();
