@@ -25,24 +25,78 @@ namespace VmsMap.Db
       if (ids == null || ids.Count == 0)
         return;
 
+      // The client's order, not the query's: no ORDER BY promises one, and the refusal names the
+      // first type in use, so which one that is must not change between two runs of the same call.
       var guidIds = ids
           .Select(Utils.ConvertObjectIdToGuid)
           .Where(g => g.HasValue)
           .Select(g => g!.Value)
+          .Distinct()
           .ToList();
 
       if (guidIds.Count == 0)
         return;
 
-      var toDelete = await _dbContext.DiagramTypes
-          .Where(d => guidIds.Contains(d.id))
-          .ToListAsync();
+      var byId = (await _dbContext.DiagramTypes
+              .Where(d => guidIds.Contains(d.id))
+              .ToListAsync())
+          .ToDictionary(d => d.id);
+
+      foreach (var id in guidIds)
+      {
+        if (byId.TryGetValue(id, out var type))
+          await EnsureTypeIsUnusedAsync(type);
+      }
+
+      // One SaveChanges for the whole call: a request either deletes all of its types or none, so
+      // an id that turns out to be in use cannot leave its siblings already gone.
+      var toDelete = guidIds
+          .Where(byId.ContainsKey)
+          .Select(id => byId[id])
+          .ToList();
 
       if (toDelete.Count > 0)
       {
         _dbContext.DiagramTypes.RemoveRange(toDelete);
         await _dbContext.SaveChangesAsync();
       }
+    }
+
+    /// <summary>
+    /// Refuses to delete a type a diagram is drawn from or a device binding keeps. The type's
+    /// regions are the keys children stand at and the template device parts are drawn from, so
+    /// taking it away leaves those rows naming a dictionary entry that no longer exists: the
+    /// editor draws nothing for them and nobody can tell a missing node from a broken picture.
+    /// This is the same rule as <see cref="EnsureRegionsAreFreeAsync"/> and
+    /// <c>EnsureChildrenKeepTheirRegionsAsync</c>, seen from the third side.
+    /// </summary>
+    private async Task EnsureTypeIsUnusedAsync(DBDiagramType type)
+    {
+      // The join is what the schema already says: a diagram row lives only as long as its node
+      // (`diagrams.id` references `objects` with ON DELETE CASCADE). Counting rows whose node is
+      // gone would refuse a deletion over a diagram nobody can see — and the in-memory provider
+      // the tests use has no cascades, so such rows exist there and nowhere else.
+      var drawn = await (from d in _dbContext.Diagrams.AsNoTracking()
+                         join m in _dbContext.Markers.AsNoTracking() on d.id equals m.id
+                         where d.dgr_type == type.id
+                         select (Guid?)d.id)
+          .FirstOrDefaultAsync();
+
+      if (drawn is { } diagramId)
+        throw new DiagramTypeConfigException(
+          $"The diagram type \"{type.name}\" cannot be deleted: the diagram " +
+          $"\"{Utils.ConvertGuidToObjectId(diagramId)}\" is drawn from it.");
+
+      var bound = await (from d in _dbContext.DeviceDiagrams.AsNoTracking()
+                         join m in _dbContext.Markers.AsNoTracking() on d.object_id equals m.id
+                         where d.diagram_type_id == type.id
+                         select new { d.source_kind, d.source_id })
+          .FirstOrDefaultAsync();
+
+      if (bound is not null)
+        throw new DiagramTypeConfigException(
+          $"The diagram type \"{type.name}\" cannot be deleted: the device " +
+          $"\"{bound.source_kind}:{bound.source_id}\" keeps a diagram of it.");
     }
 
     public async Task<Dictionary<string, DiagramTypeDTO>> GetListByTypeNamesAsync(List<string> typeNames)

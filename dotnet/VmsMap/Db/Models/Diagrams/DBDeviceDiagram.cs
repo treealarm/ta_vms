@@ -15,7 +15,11 @@ namespace VmsMap.Db
     public string source_id { get; set; } = null!;
     public string slot { get; set; } = "default";
 
-    // Null once the type has been deleted: the canvas and its replicas stay, drawn by nothing.
+    // Null while no template applies: a binding made without one takes whatever the diagram has,
+    // which may be nothing, and the reconciler adopts a template once the device's model is known
+    // (`DeviceDiagramReconciler`). Deleting a type used to be the other way here; the dictionary
+    // now refuses that, so the column stays nullable for the first case and for rows written
+    // before the refusal existed.
     public Guid? diagram_type_id { get; set; }
 
     // Who asked for it, not how it behaves: an attached diagram is maintained exactly like an

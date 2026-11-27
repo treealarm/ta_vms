@@ -418,7 +418,15 @@ namespace VmsMap.Grpc
     public override async Task<MapProto.OperationStatus> DeleteDiagramTypes(
       MapProto.ObjectIds request, ServerCallContext context)
     {
-      await _diagramTypeService.DeleteAsync(request.Ids.ToList());
+      try
+      {
+        await _diagramTypeService.DeleteAsync(request.Ids.ToList());
+      }
+      catch (DiagramTypeConfigException ex)
+      {
+        throw new RpcException(new Status(StatusCode.InvalidArgument, ex.Message));
+      }
+
       return Ok();
     }
 
