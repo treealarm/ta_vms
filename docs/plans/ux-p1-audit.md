@@ -467,6 +467,36 @@ Playwright: одна страница за раз (`domcontentloaded`), сцен
   В испанском: `Celda vacía`, `Ninguna cámara seleccionada` (шкала в playback), `Auto-actualizar`,
   сообщение ONVIF, вкладка `Elegir` и контекст `map1 · Mapa`. Демо-мир не менялся; стенд и Vite
   остановлены, инфраструктура (postgres, rabbitmq, mediamtx, Keycloak, OnvifSim) оставлена.
+- **Этап 2 сделан** — `44d7d1b1`:
+  - `GroupedNav` (`components/GroupedNav.tsx`) и дескрипторы `components/navGroups.ts`; `AdminView`
+    — 6 групп, `OperatorView` — 3, слаги и `Routes` не менялись; `selectTab(slug)` сохраняет
+    dirty-guard и `switching`; тест `navGroups.test.ts` фиксирует 14 и 7 слагов ровно по одному
+    разу;
+  - подписи — полные (`nav.cameras`, `nav.onvifConfiguration`, `nav.recordingProfiles`,
+    `nav.recordingSchedules`, `nav.videoWalls` для админских стен), испанские тоже;
+  - `ViewControls` — `ToggleButtonGroup` «Operator | Admin» с текущим представлением, Admin-сегмент
+    только при `mayAdminister`, переход через `applyPending`;
+  - шкала — `timelineStyles.ts` (`segmentSx`, `unavailableSx`, `noAnswerSx`), `WallTimelineLegend`
+    с шестью образцами и Retry при отказе, `windowRangeLabel` в `utils/wallTime.ts` с тестом;
+    `wallCoverageSlice` хранит `failedKeys`/`missingByKey`, `useWallCoverage` возвращает
+    `failed`/`missing`/`retry`;
+  - ячейка — меню `MoreVert` (Switch camera / Move / Clear), режим переноса с подсветкой цели и
+    `Esc`, подсказки на пустой ячейке доски, подписи камеры и кнопке меню, метка активной ячейки,
+    `captionTooltip` в `CameraUnifiedCard` (вне стены подпись по-прежнему прозрачна для указателя).
+  - Прогоны: vitest 174/174 (6 новых), `tsc -b` + `vite build`, eslint — чисто.
+- Живая проверка этапа 2 на демо `umd-datacenter` (Playwright, стенд из аудита), 61/61:
+  все 14 админских и 7 операторских путей прямыми ссылками дают ровно одну выбранную вкладку,
+  неизвестный слаг уводит на первую; заголовки групп и полные подписи на месте, сокращений нет;
+  переключатель Operator ↔ Admin ходит в обе стороны и помечает текущее представление;
+  у ячейки стены меню из трёх пунктов, «Switch camera» раскрывает `cam1…cam5`, Move подсвечивает
+  8 целей, `Esc` снимает подсветку; подпись камеры показывает подсказку, активная ячейка подписана
+  `Active`; пустая ячейка доски (созданная и удалённая в ходе проверки) говорит
+  `Click to add a camera`; шкала показывает шесть образцов легенды и диапазон `16:11–16:41`;
+  отказ `/api/fs/recording-timeline` даёт штриховку и `Retry`, повтор убирает отказ, а ответ без
+  дорожек четырёх камер даёт `4 cameras did not answer`; испанские группы, подписи, меню
+  (`Acciones de la celda`, `Mover`, `Vaciar`), `Activa` и легенда переведены и не обрезаются.
+  Запись раскладки (Clear/Move) не выполнялась, чтобы не менять демо-мир; тестовая доска удалена.
+  Стенд и Vite остановлены, инфраструктура оставлена.
 
 ## Связано
 
