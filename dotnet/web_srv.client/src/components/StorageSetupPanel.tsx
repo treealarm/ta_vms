@@ -5,7 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { addStorage, loadStorages, removeStorage, updateStorage } from '../store/storageSlice'
 import { loadServers } from '../store/liveSlice'
 import type { StorageDto } from '../dto/dtos'
-import { isAbsoluteHostPath } from '../utils/hostPath'
+import { isAbsoluteHostPath, normalizeDisplayPath } from '../utils/hostPath'
 import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
@@ -132,7 +132,9 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
     // are different decisions.
     const used = storage?.cameraCount ?? 0
     if (!await confirm({
-      title: t('storage.confirmDelete', { path: storage?.rootPath ?? rootPath }),
+      title: t('storage.confirmDelete', {
+        path: normalizeDisplayPath(storage?.rootPath ?? rootPath),
+      }),
       message: used > 0
         ? t('storage.deleteMessageUsed', { count: used })
         : t('storage.deleteMessageUnused'),
@@ -154,7 +156,7 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   return (
     <Box component="form" onSubmit={(e) => void handleApply(e)} sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       <DetailToolbar
-        title={isNew ? t('storage.newStorage') : storage.rootPath}
+        title={isNew ? t('storage.newStorage') : normalizeDisplayPath(storage.rootPath)}
         dirty={isNew ? Boolean(rootPath.trim()) : dirty}
         busy={saving}
         applyLabel={isNew ? t('common.add') : undefined}
@@ -247,7 +249,7 @@ export default function StorageSetupPanel({ ref }: { ref?: React.Ref<ApplyIfDirt
           key={s.storageId}
           selected={selected?.storageId === s.storageId}
           onClick={() => select(s.storageId)}
-          primary={s.rootPath}
+          primary={normalizeDisplayPath(s.rootPath)}
           secondary={s.disabled ? t('storage.disabled') : undefined}
         />
       ))}

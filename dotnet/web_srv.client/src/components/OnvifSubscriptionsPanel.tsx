@@ -241,7 +241,11 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
       ))}
       {managed.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ p: 1.5 }}>
-          {t('onvifSubs.noCameras')}
+          {allCameras.length === 0
+            ? t('onvifSubs.noCameras')
+            : available.length === 0
+              ? t('onvifSubs.noCamerasWithOnvif')
+              : t('onvifSubs.noSubscriptions')}
         </Typography>
       )}
     </Box>
@@ -251,7 +255,7 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
     <MasterDetailLayout
       listTitle={t('onvifSubs.listTitle')}
       onAdd={(e) => setAddMenuAnchor(e.currentTarget)}
-      addTooltip={t('onvifSubs.addCamera')}
+      addTooltip={t('onvifSubs.addSubscription')}
       addDisabled={available.length === 0}
       list={list}
     >

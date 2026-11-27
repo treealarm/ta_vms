@@ -166,14 +166,14 @@ function CameraSlot({
         >
           <Typography variant="body2" color="text.disabled">
             {activeCameraId
-              ? `Camera "${activeCameraId}" not found`
-              : openCameraPool ? t('monitors.addCamera') : 'Empty slot'}
+              ? t('monitors.cameraNotFound', { id: activeCameraId })
+              : openCameraPool ? t('monitors.addCamera') : t('monitors.emptySlot')}
           </Typography>
         </Box>
       )}
 
       {selectableCameraIds.length > 1 && camera && (
-        <Tooltip title="Switch camera" placement="top">
+        <Tooltip title={t('monitors.switchCamera')} placement="top">
           <IconButton
             size="small"
             onClick={(e) => setMenuAnchor(e.currentTarget)}

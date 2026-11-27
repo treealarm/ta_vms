@@ -28,6 +28,10 @@ interface CameraStreamProps {
   /** An extra layer over the picture, given the <video> so it can do the letterbox arithmetic.
    *  How the master/slave survey draws and picks its marked spots. */
   overlay?: (videoRef: React.RefObject<HTMLVideoElement | null>) => React.ReactNode;
+  /** Native browser controls on the picture. Off by default: a wall cell has controls of its own,
+   *  and the native bar both covers the bottom of the tile and swallows clicks meant for it. The
+   *  diagnostic live page has nothing around the picture, so it asks for them. */
+  controls?: boolean;
 }
 
 // A WHEP exchange can succeed in full — session created, peer connection reporting `connected` —
@@ -62,6 +66,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
   trackAimsOthers,
   trackingHighlight,
   overlay,
+  controls = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // Announced once per mount. A re-negotiation after a stall is not a new arrival for the caller:
@@ -160,11 +165,12 @@ const CameraStream: React.FC<CameraStreamProps> = ({
           return;
         }
 
-        // The element carries `controls`, so the operator can stop it, and a stopped clock is not a
-        // stalled stream: re-negotiating for that would silently undo the pause on every cycle,
-        // because a fresh session autoplays. HAVE_NOTHING is excluded from the exemption on
-        // purpose — a connection that never delivered a frame also leaves the element paused, and
-        // that is precisely the state this exists to catch.
+        // A paused element is not a stalled stream: re-negotiating for that would silently undo
+        // the pause on every cycle, because a fresh session autoplays. The operator cannot pause a
+        // live cell (it has no native controls), but the browser can — a backgrounded tab, an
+        // autoplay policy. HAVE_NOTHING is excluded from the exemption on purpose — a connection
+        // that never delivered a frame also leaves the element paused, and that is precisely the
+        // state this exists to catch.
         if (el.paused && el.readyState > HTMLMediaElement.HAVE_NOTHING) {
           lastTime = el.currentTime;
           stalledChecks = 0;
@@ -402,7 +408,7 @@ const CameraStream: React.FC<CameraStreamProps> = ({
         autoPlay
         playsInline
         muted
-        controls
+        controls={controls}
         onTimeUpdate={() => {
           if (firstFramesSeenRef.current) return;
           const el = videoRef.current;

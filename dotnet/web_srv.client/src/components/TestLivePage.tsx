@@ -48,7 +48,11 @@ export default function TestLivePage() {
       </Stack>
       {cameraId && streamName && (
         <Box sx={{ flex: 1, minHeight: 0, bgcolor: 'black' }}>
-          <CameraStream whepUrl={`/api/live/whep-test/offer/${cameraId}/${streamName}`} stunUrl={stunUrl} />
+          <CameraStream
+            whepUrl={`/api/live/whep-test/offer/${cameraId}/${streamName}`}
+            stunUrl={stunUrl}
+            controls
+          />
         </Box>
       )}
     </Box>
