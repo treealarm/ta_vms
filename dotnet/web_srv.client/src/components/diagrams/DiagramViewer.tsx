@@ -710,7 +710,17 @@ export default function DiagramViewer({
       </Box>
 
       {editing ? (
-        <MapDiagramTypesDialog open={typesOpen} onClose={() => setTypesOpen(false)} onSaved={reload} />
+        <MapDiagramTypesDialog
+          open={typesOpen}
+          onClose={() => setTypesOpen(false)}
+          onSaved={reload}
+          onOpenDiagram={(entry) => {
+            // The host already knows how to leave this canvas: a diagram is a dive, and a
+            // representation opens the diagram it shows with its own breadcrumbs.
+            setTypesOpen(false)
+            onOpen({ id: entry.id, name: entry.name, nodeKind: 'diagram' })
+          }}
+        />
       ) : null}
     </Box>
   )

@@ -324,6 +324,30 @@ export type MapDiagramType = {
 
 export type MapDiagramTypeList = { diagramTypes?: MapDiagramType[] }
 
+/** One place a diagram type is shown: the diagram's own node or one of its replicas. */
+export type MapDiagramTypeUsageEntry = {
+  /** The node to open; a replica opens the diagram it shows, with its own breadcrumbs. */
+  diagramId?: string
+  name?: string
+  /** The nearest space or mnemoscheme it stands in; empty when there is none. */
+  canvasId?: string
+  canvasName?: string
+  /** True when the row is a replica of the diagram rather than the diagram's own node. */
+  isRepresentation?: boolean
+  /** Set on a diagram a device binding keeps. */
+  sourceKind?: string
+  sourceId?: string
+}
+
+/**
+ * Where a type is in use, derived by the server on every read from the diagrams drawn from it and
+ * the device bindings that keep one. Nothing is stored, so it cannot drift from the rows it names.
+ */
+export type MapDiagramTypeUsage = {
+  diagrams?: MapDiagramTypeUsageEntry[]
+  deviceDiagrams?: MapDiagramTypeUsageEntry[]
+}
+
 export type MapDiagramContent = {
   diagramId?: string
   depth?: number

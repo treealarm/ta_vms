@@ -14,6 +14,7 @@ import type {
   MapDiagramList,
   MapDiagramType,
   MapDiagramTypeList,
+  MapDiagramTypeUsage,
   MapEffectiveRights,
   MapEffectiveRightsRequest,
   MapEventList,
@@ -156,6 +157,10 @@ export const mapApi = {
 
   getDiagramTypes: (request: MapGetDiagramTypesRequest = {}) =>
     post<MapDiagramTypeList>(`${BASE}/diagrams/types`, request),
+
+  /** Where a type is in use: a row per place, derived from the diagrams and bindings naming it. */
+  getDiagramTypeUsage: (typeId: string) =>
+    post<MapDiagramTypeUsage>(`${BASE}/diagrams/types/usage`, { typeId }),
 
   /** Draws a device from a template an administrator picked. */
   /**
