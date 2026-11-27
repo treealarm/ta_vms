@@ -3,8 +3,8 @@
 > План по разделам P1 и P2 из [27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md)
 > (аудит 2026-11-27, уже в `master`). P0 закрыт отдельной работой
 > ([ux-p0-confirmations.md](ux-p0-confirmations.md)); его коммиты в `master`, вершина `fd01812b`.
-> Ветка: `ux-p1-audit` от `master`. Составлен 2026-11-27; кода в этой сессии нет — следующий
-> сеанс начинает отсюда.
+> Ветка: `ux-p1-audit` от `master`. Составлен 2026-11-27; этапы 0–3 выполнены на этой же ветке
+> (см. «Состояние»).
 
 ## Что это и чего это не касается
 
@@ -497,6 +497,37 @@ Playwright: одна страница за раз (`domcontentloaded`), сцен
   (`Acciones de la celda`, `Mover`, `Vaciar`), `Activa` и легенда переведены и не обрезаются.
   Запись раскладки (Clear/Move) не выполнялась, чтобы не менять демо-мир; тестовая доска удалена.
   Стенд и Vite остановлены, инфраструктура оставлена.
+- **Этап 3 сделан** — `384c0676`:
+  - `components/events/eventPresentation.ts` — `eventKind`, `eventNameKey`, `paramLabelKey`,
+    `paramValueKey`, `rowSummary`, `humanProps`, `technicalProps`, `episodeFromEvent`,
+    `isAlarmEvent`; неизвестное имя события и значение остаются сырыми, `Technical details`
+    не теряет незнакомые ключи;
+  - `components/events/eventsFilter.ts` — `eventsFilterFromState` (поддерево ссылки важнее
+    выбранного узла, камера без узлов оставляет только время);
+  - `EventsJournal` — первая строка `From / To / Type / Object or camera / Search loaded events /
+    Apply`, за `More filters` — `Param 0`, `Param 1`, `With pictures`; подписи `Param` берут смысл
+    из выбранного типа; объект и камера ищутся через `mapApi.searchDeviceNodes` (2 символа,
+    300 мс); счётчик, `List/Gallery` и `Refresh` переехали в заголовок списка, автообновление
+    осталось в подвале; строка читается как `Sensor · Open`, `Arming · admin · Armed`;
+  - карточка — человеческие поля и сворачиваемый `Technical details`; идентификаторы события и
+    объекта переехали туда из `EventDetailsPanel`; `streamName`/`trigger` эпизода берутся только
+    у события тревоги; выбранная строка без камеры говорит `No archive is linked to this event.`,
+    пока маркер грузится — молчит;
+  - локали `en`/`es` — `type`, `objectOrCamera`, `searchText` («Search loaded events»),
+    `moreFilters`/`lessFilters`, `count` (мн. число), `technical`, `eventHasNoArchive`, `name`,
+    `param`, `value` (включая `inherit`), `prop`, дружелюбные `Event ID`/`Object ID`;
+  - прогоны: vitest 205/205 (31 новый), `tsc -b` + `vite build`, eslint — чисто.
+- Живая проверка этапа 3 на демо `umd-datacenter` (Playwright, стенд из аудита), 38/38:
+  первая строка фильтров подписана, `Param` скрыты за `More filters`, `Type` предлагает пять
+  значений с иконками и переименовывает `Param 0` в `Contact`; счётчик `16 events`, `Refresh`
+  у списка; строки `Sensor · Open`, `Relay · Active`, `Arming · admin · Armed`, `inherit`
+  переведён; карточка датчика показывает `Contact/Open`, технический блок свёрнут и открывается
+  на `Camera ID`/`Part`/`Polarity known`; строка реле без камеры даёт `No archive is linked…`;
+  поиск объекта находит `cam1…cam5`, Apply с выбранным узлом сохраняет страницу; переход
+  стена → журнал, `Back` и холодная загрузка ссылки работают; в испанском — `Tipo`,
+  `Objeto o cámara`, `Buscar en eventos cargados`, `16 eventos`, `Sensor · Abierto`, `Contacto`,
+  `ID de cámara`, `Heredado` и сообщение об отсутствии архива. Демо-мир не менялся; стенд и Vite
+  остановлены, инфраструктура оставлена.
 
 ## Связано
 
