@@ -43,32 +43,53 @@
 
 ## Шаги
 
-1. **Проверка в `DeleteAsync`.** До `RemoveRange`, по каждой строке из `toDelete` (в порядке
-   запроса):
+1. **Проверка в `DeleteAsync`.** До `RemoveRange`, в порядке исходного запроса, а не в порядке
+   выдачи БД: `Where(Contains)` не гарантирует ни порядок строк, ни порядок `guidIds`, поэтому
+   собрать `toDelete.ToDictionary(t => t.id)` и идти по `guidIds` — клиентскому порядку — падая на
+   первом найденном:
    - диаграмма с `dgr_type == type.id` → `DiagramTypeConfigException`
      `The diagram type "<name>" cannot be deleted: the diagram "<object id>" is drawn from it.`;
    - привязка с `diagram_type_id == type.id` → `… : the device "<source_kind>:<source_id>" keeps a
      diagram of it.`;
-   - падаем на первой найденной, id печатаем через `Utils.ConvertGuidToObjectId`, как это делает
+   - id печатается через `Utils.ConvertGuidToObjectId`, как это делает
      `EnsureChildrenKeepTheirRegionsAsync`.
-   Чтение и удаление идут в одном `DbContext`; `SaveChanges` — одна транзакция.
+   Проверки и удаление идут одним экземпляром `DbContext`, изменения фиксирует один `SaveChanges` —
+   поэтому запрос из нескольких id либо проходит целиком, либо не удаляет ничего. Атомарности
+   «проверка + удаление» при этом нет: между чтением и коммитом может появиться новая ссылка.
+   Это та же гонка, что у соседних проверок, и она остаётся темой
+   [24-map-lock-audit](../future_plans/24-map-lock-audit.md).
 2. **gRPC.** Обернуть вызов в `try/catch (DiagramTypeConfigException)` в
    `MapServiceImpl.DeleteDiagramTypes` и отдать `RpcException(StatusCode.InvalidArgument, …)` —
-   ровно как `UpdateDiagramTypes`.
-3. **Комментарий у `DBDeviceDiagram.diagram_type_id`**: колонка остаётся nullable для строк,
-   записанных до этого правила, но сервис больше не создаёт такие; переписать комментарий.
-4. **Тесты** (`DiagramTemplateTests` — in-memory, как соседние проверки словаря):
-   - `ADiagramDrawnFromTheTypeCannotBeDeleted` — тип, узел-диаграмма с `dgr_type`, ожидание
-     `DiagramTypeConfigException` с object id диаграммы; тип на месте после отказа;
+   ровно как `UpdateDiagramTypes`. У границы свой тест (шаг 4), потому что без него сервисные
+   тесты остаются зелёными, а клиент получает `Internal`.
+3. **Комментарий у `DBDeviceDiagram.diagram_type_id`.** Перед правкой — семантика (проверено
+   2026-11-27): `null` не наследие удаления, а **штатное состояние** «шаблона пока нет». Привязка
+   без шаблона создаётся с `diagram_type_id = diagram.dgr_type` (`Adapter/DeviceDiagramService.cs:261`),
+   а `dgr_type` может быть пуст; `DeviceDiagramReconciler` (`:69–73`) такой строке подбирает
+   шаблон, как только устройство назвало модель. Удаление типа было вторым путём к тому же
+   состоянию — его закрывает отказ. Комментарий переписать под обе семантики и убрать «Null once
+   the type has been deleted».
+4. **Тесты стражей** — новый файл `DiagramTypeDeleteTests` (in-memory, как `DiagramTemplateTests`):
+   - `ADiagramDrawnFromTheTypeCannotBeDeleted` — тип, узел-диаграмма с `dgr_type`; ожидание
+     `DiagramTypeConfigException` с object id диаграммы, тип на месте после отказа;
    - `ADeviceDiagramKeptFromTheTypeCannotBeDeleted` — строка `DeviceDiagrams`, ожидание отказа;
-   - `AFreeTypeIsDeleted` — свободный тип удаляется без исключения.
+   - `DeletingOneOfSeveralTypesChecksOnlyItsOwnReferences` — в одном запросе свободный тип и
+     используемый: отказ, и свободный тоже остался (ни одной строки не удалено);
+   - `AFreeTypeIsDeleted` — свободный тип удаляется без исключения;
+   - `TheRefusalReachesTheRpcCallerAsInvalidArgument` — прямой вызов
+     `MapServiceImpl.DeleteDiagramTypes`: `RpcException`, `StatusCode.InvalidArgument`, в сообщении
+     имя типа, тип остался в БД. Тест in-memory (маппинг не зависит от провайдера): добавить в
+     `TestWiring` фабрику наподобие `MapPostgres.Grpc`, где `diagramTypeService` не `null!`. Иначе
+     без `VMS_MAP_TEST_DSN` он молча пропускается — а в CI эта переменная не ставится.
 5. **Тест каскада — только Postgres** (`MapDiagramWritePostgresTests`, `[Collection("postgis")]`):
    `DeletingAFreeTypeTakesItsRegionsAndBindings` — после удаления свободного типа его строки в
-   `diagram_type_regions` и `diagram_type_parts` уходят. In-memory провайдер каскад БД не
-   выполняет, поэтому без него этот пункт не проверить.
-6. **Живая проверка в GUI** (стек не гасить): в словаре типов удалить тип, которым нарисованы
-   диаграммы демо, — текст ошибки появляется в окне; удалить свободный тип — он уходит вместе с
-   регионами.
+   `diagram_type_regions` и `diagram_type_parts` уходят, и **ничего чужого не тронуто**: регионы и
+   привязки второго, живого типа, сама диаграмма и строка `device_diagram`. In-memory провайдер
+   каскад БД не выполняет, поэтому без него этот пункт не проверить.
+6. **Живая проверка в GUI** (стек не гасить), три случая: тип, которым нарисована обычная
+   диаграмма — текст ошибки в окне словаря; тип, который держит привязка устройства — тот же отказ;
+   свободный тип — уходит вместе с регионами. Третий случай — контроль: отказ не должен мешать
+   штатному каскаду собственных детей типа.
 
 ## Что не входит
 
@@ -76,11 +97,14 @@
   [24-map-lock-audit](../future_plans/24-map-lock-audit.md).
 - Каскадное снятие типа.
 - Удаление nullable-колонки `device_diagram.diagram_type_id` из схемы.
+- Общий механизм «защищённое удаление» и универсальная проверка зависимостей: три проверки живут в
+  двух конкретных сервисах и защищают одну модель, четвёртого потребителя нет — абстракция тут не
+  окупается.
 
 ## Проверка
 
 ```
-dotnet test dotnet/VmsMap.Tests/VmsMap.Tests.csproj --filter "FullyQualifiedName~DiagramTemplateTests|FullyQualifiedName~MapDiagramWritePostgresTests|FullyQualifiedName~DemoSeeder"
+dotnet test dotnet/VmsMap.Tests/VmsMap.Tests.csproj --filter "FullyQualifiedName~DiagramTypeDeleteTests|FullyQualifiedName~MapDiagramWritePostgresTests|FullyQualifiedName~DemoSeeder"
 ```
 
 Postgres-тесты идут, только если задан `VMS_MAP_TEST_DSN`; без него они молча возвращаются — это
