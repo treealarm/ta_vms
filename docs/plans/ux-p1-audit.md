@@ -437,10 +437,36 @@ Playwright: одна страница за раз (`domcontentloaded`), сцен
 
 ## Состояние на 2026-11-27
 
-- План составлен по P1/P2 аудита; кода в этой сессии нет.
+- План составлен по P1/P2 аудита.
 - Ветка `ux-p1-audit` создана от `master` (`fd01812b`, P0 влит).
 - P0 закрыт: подтверждения, видимый отказ панелей, dirty-guard четырёх вкладок и переход
   стена → журнал уже в `master`; этот план на них опирается.
+- **Этап 0 сделан** — `e60c1f00`: P1/P2 в аудите сокращены до ссылки на этот план, «Объём и
+  приёмка» оставил только P0-строки, критерии P0/P1-P2 заменены ссылками на планы; заведены
+  `28-rights-control-view-live.md` и `29-event-journal-server-filters.md`, README обновлён.
+  Уточнение к аудиту: `noCamerasWithOnvif` существовал только под `onvifSettings`, под `onvifSubs`
+  ключ пришлось добавить.
+- **Этап 1 сделан** — `c03e0bd8`:
+  - `CameraStream` — проп `controls` с умолчанием `false`, `TestLivePage` передаёт `true`,
+    комментарий watchdog'а переписан; архивные `<video controls>` не тронуты;
+  - `OnvifSubscriptionsPanel` — три пустых состояния (`noCameras`, `noCamerasWithOnvif`,
+    `noSubscriptions`), «+» подписан `addSubscription`;
+  - локали `en`/`es` — `events.autoRefresh`, `wall.noCameraSelected`, `monitors.emptySlot`,
+    `monitors.switchCamera`, `monitors.cameraNotFound`, ключи ONVIF, `maps.selectionNone` и
+    `maps.node.kind.part` (в испанском не хватало); `MonitorGrid` переведён на `t()`;
+  - `normalizeDisplayPath` в `utils/hostPath.ts` с тестами, применён к списку, заголовку и
+    подтверждению удаления хранилища;
+  - `SpaceEditor` — вкладка `Selection` → `Select`/`Elegir` и строка контекста выбора под вкладками.
+  - Прогоны: vitest 168/168, `tsc -b` + `vite build`, eslint — чисто.
+- Живая проверка этапа 1 на демо `umd-datacenter` (Playwright, стенд из аудита), 18/18:
+  в живых ячейках стены `UMD DC` пять `<video>`, ни у одного нет `controls`; клик по подписи
+  `cam1` фокусирует ячейку (контур `none` → `solid`); ONVIF Events показывает все три пустых
+  состояния (подписок нет / камеры без ONVIF — подменой `/api/live/cameras` / камер нет), «+»
+  называется `Add subscription`; Storages показывает `/mnt/wdblue/tests/media_storage` без `..`;
+  редактор карты — вкладка `Select` и контекст `map1 · Map`; журнал показывает `Auto-refresh`.
+  В испанском: `Celda vacía`, `Ninguna cámara seleccionada` (шкала в playback), `Auto-actualizar`,
+  сообщение ONVIF, вкладка `Elegir` и контекст `map1 · Mapa`. Демо-мир не менялся; стенд и Vite
+  остановлены, инфраструктура (postgres, rabbitmq, mediamtx, Keycloak, OnvifSim) оставлена.
 
 ## Связано
 
