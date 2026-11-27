@@ -6,9 +6,13 @@ import { useNavigate } from 'react-router-dom'
 import type { AnalyticsDetectionDto, EpisodeDto, RecordingDto } from '../dto/dtos'
 import { getErrorMessage } from '../store/api'
 import { useCameraName } from '../store'
+import type { ArchiveSelectionState } from './events/eventPresentation'
 
 type Props = {
   selected: EpisodeDto | null
+  /** What to say when there is no episode: nothing while the row's marker loads, and a reason
+   *  once it is known that no archive is linked. */
+  selection?: ArchiveSelectionState
 }
 
 type EventSource = 'analytics' | 'onvif' | 'other'
@@ -196,7 +200,7 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-export default function EventDetailsPanel({ selected }: Props) {
+export default function EventDetailsPanel({ selected, selection = 'none' }: Props) {
   const { t } = useTranslation()
   const cameraName = useCameraName(selected?.cameraId)
   const [clips, setClips] = useState<RecordingDto[]>([])
@@ -243,9 +247,12 @@ export default function EventDetailsPanel({ selected }: Props) {
   }, [selected, detailsReady])
 
   if (!selected) {
+    // A row is picked but its archive is not known yet: saying "select an event row" would be a
+    // lie, and saying there is none would flash on every click while the marker loads.
+    if (selection === 'pending') return null
     return (
       <Typography variant="body2" color="text.secondary">
-        {t('archive.selectHint')}
+        {t(selection === 'noArchive' ? 'events.eventHasNoArchive' : 'archive.selectHint')}
       </Typography>
     )
   }
@@ -275,8 +282,6 @@ export default function EventDetailsPanel({ selected }: Props) {
           <DetailRow label={t('events.alarmStart')} value={start.toLocaleString()} />
           <DetailRow label={t('events.alarmEnd')} value={end ? end.toLocaleString() : t('events.active')} />
           {duration && <DetailRow label={t('events.duration')} value={duration} />}
-          <DetailRow label={t('events.eventId', 'Event ID')} value={selected.eventId} />
-          {selected.objectId && <DetailRow label={t('events.objectId', 'Object ID')} value={selected.objectId} />}
         </Stack>
       </Box>
 

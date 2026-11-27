@@ -9,6 +9,7 @@ import { useHlsPlayer } from '../hooks/useHlsPlayer'
 import { playlistWallBounds } from '../utils/playlistTime'
 import ArchiveBboxOverlay from './bbox/ArchiveBboxOverlay'
 import { useArchiveMetadataCoverage } from '../hooks/archiveMetadataClient'
+import type { ArchiveSelectionState } from './events/eventPresentation'
 
 type StreamEntry = {
   streamName: string | null  // null = all streams
@@ -21,6 +22,8 @@ type StreamEntry = {
 
 type Props = {
   selected: EpisodeDto | null
+  /** What to say when there is no episode; see EventDetailsPanel. */
+  selection?: ArchiveSelectionState
 }
 
 async function fetchEventPlaylists(eventUuid: string, signal: AbortSignal): Promise<StreamEntry[]> {
@@ -38,7 +41,7 @@ function entryLabel(e: StreamEntry, allStreamsLabel: string, defaultLabel: strin
   return `${streamPart} · ${from}–${to}`
 }
 
-export default function ArchiveHlsPreview({ selected }: Props) {
+export default function ArchiveHlsPreview({ selected, selection = 'none' }: Props) {
   const { t } = useTranslation()
   const cameraName = useCameraName(selected?.cameraId)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -120,9 +123,10 @@ export default function ArchiveHlsPreview({ selected }: Props) {
   const showBboxToggle = coverage === 'some' && activeEntry?.streamName != null
 
   if (!selected) {
+    if (selection === 'pending') return null
     return (
       <Typography variant="body2" color="text.secondary">
-        {t('archive.selectHint')}
+        {t(selection === 'noArchive' ? 'events.eventHasNoArchive' : 'archive.selectHint')}
       </Typography>
     )
   }
