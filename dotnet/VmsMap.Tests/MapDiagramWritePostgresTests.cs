@@ -82,6 +82,74 @@ public class MapDiagramWritePostgresTests
     Assert.Equal(OfferedRegion, storedCopy.region_id);
   }
 
+  /// <summary>
+  /// A type's own rows go with it — its regions and the part bindings that name them — by the
+  /// database's cascade, and nothing else does. The in-memory provider has no cascades, so this is
+  /// the only place the boundary can be checked; a deleted type must not reach another type's
+  /// regions, another type's bindings or a diagram drawn from the other type.
+  /// </summary>
+  [Fact]
+  public async Task DeletingAFreeTypeTakesItsChildrenAndNothingElse()
+  {
+    await using var connection = await MapPostgres.OpenAsync(fresh: true);
+    if (connection is null)
+      return;
+    var db = connection.Db;
+
+    var free = new DBDiagramType { id = Guid.NewGuid(), name = "spare panel" };
+    free.regions.Add(TypeRegion(free.id, OfferedRegion));
+    var live = new DBDiagramType { id = Guid.NewGuid(), name = PanelName };
+    live.regions.Add(TypeRegion(live.id, OfferedRegion));
+    db.DiagramTypes.AddRange(free, live);
+    await db.SaveChangesAsync();
+
+    db.DiagramTypeParts.Add(TypePart(free.id, "spare lamp"));
+    db.DiagramTypeParts.Add(TypePart(live.id, "live lamp"));
+    var drawn = Guid.NewGuid();
+    db.Markers.Add(new DBMarker { id = drawn, name = PanelName });
+    await db.SaveChangesAsync();
+
+    // The diagram's own insert names the node, and only a save of the node has made that row
+    // exist: EF has no relationship configured between the two, so the order is mine to keep.
+    db.Diagrams.Add(new DBDiagram { id = drawn, dgr_type = live.id });
+    await db.SaveChangesAsync();
+
+    await new DiagramTypeService(db).DeleteAsync([Utils.ConvertGuidToObjectId(free.id)]);
+
+    Assert.Null(await db.DiagramTypes.AsNoTracking()
+      .FirstOrDefaultAsync(t => t.id == free.id));
+    Assert.Empty(await db.DiagramTypeRegions.AsNoTracking()
+      .Where(r => r.diagram_type_id == free.id).ToListAsync());
+    Assert.Empty(await db.DiagramTypeParts.AsNoTracking()
+      .Where(p => p.diagram_type_id == free.id).ToListAsync());
+
+    Assert.NotNull(await db.DiagramTypes.AsNoTracking()
+      .FirstOrDefaultAsync(t => t.id == live.id));
+    Assert.Single(await db.DiagramTypeRegions.AsNoTracking()
+      .Where(r => r.diagram_type_id == live.id).ToListAsync());
+    Assert.Single(await db.DiagramTypeParts.AsNoTracking()
+      .Where(p => p.diagram_type_id == live.id).ToListAsync());
+    var diagram = await db.Diagrams.AsNoTracking().FirstOrDefaultAsync(d => d.id == drawn);
+    Assert.NotNull(diagram);
+    Assert.Equal(live.id, diagram!.dgr_type);
+  }
+
+  private static DBDiagramTypeRegion TypeRegion(Guid typeId, string key) => new()
+  {
+    diagram_type_id = typeId,
+    region_key = key,
+    geometry = new DBDiagramCoord { width = 0.5, height = 0.5 },
+  };
+
+  private static DBDiagramTypePart TypePart(Guid typeId, string token) => new()
+  {
+    diagram_type_id = typeId,
+    region_key = OfferedRegion,
+    part_kind = DeviceObjectId.RelayPart,
+    match_by = DiagramPartMatch.Token,
+    match_value = token,
+  };
+
   private sealed class TestContext : ServerCallContext
   {
     protected override string MethodCore => "test";
