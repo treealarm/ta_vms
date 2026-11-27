@@ -17,8 +17,11 @@ import PasswordField from './PasswordField'
 import CameraStream from './CameraStream'
 import DetailToolbar from './settings/DetailToolbar'
 import FieldHint from './settings/FieldHint'
+import { useConfirm } from './settings/confirmContext'
+import { usePanelAction } from './settings/usePanelAction'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { errorText } from '../api/requestJson'
 
 type Props = {
   ref?: React.Ref<ApplyIfDirtyHandle>
@@ -31,6 +34,8 @@ type Props = {
 export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serverId: initialServerId, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const confirm = useConfirm()
+  const { busy, error, clearError, run } = usePanelAction()
   const servers = useAppSelector((state) => state.live.servers)
   const mtxServers = useAppSelector((state) => state.mediaMtx.servers)
   const allStorages = useAppSelector((state) => state.storage.storages)
@@ -164,29 +169,43 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   const applyInternal = async (): Promise<boolean> => {
     if (isNew) {
       if (!name.trim()) return true  // nothing worth saving — allow discard
-      const payload = buildPayload()
-      const result = await dispatch(addCamera(payload))
-      if (addCamera.rejected.match(result)) return false
-      if (pendingStorages.length > 0) {
-        const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
-        await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId }))
-      }
-      if (pendingSchedules.length > 0)
-        await dispatch(setCameraSchedules({ cameraId: payload.cameraId, scheduleIds: pendingSchedules }))
-      await onSaved(payload.cameraId)
-      return true
+      return run(async () => {
+        const payload = buildPayload()
+        await dispatch(addCamera(payload)).unwrap()
+        // Creating a camera is a chain, and every step that writes configuration is checked: a
+        // camera saved without its storages or schedules is a stated partial state, not a success.
+        // There is no rollback — deleting the camera would throw away what the operator typed,
+        // and VmsCfg has no transaction across these calls. Re-applying is safe: the form's
+        // cameraId is stable, so addCamera upserts the same camera and the assignments overwrite.
+        if (pendingStorages.length > 0) {
+          const withId = pendingStorages.map((a, i) => ({ ...a, cameraId: payload.cameraId, priority: i }))
+          try {
+            await dispatch(setCameraStorages({ cameraId: payload.cameraId, assignments: withId })).unwrap()
+          } catch (e) {
+            throw new Error(t('cameras.storageAssignFailed', { error: errorText(e) }))
+          }
+        }
+        if (pendingSchedules.length > 0) {
+          try {
+            await dispatch(setCameraSchedules({ cameraId: payload.cameraId, scheduleIds: pendingSchedules })).unwrap()
+          } catch (e) {
+            throw new Error(t('cameras.schedulesAssignFailed', { error: errorText(e) }))
+          }
+        }
+        // The list refresh is not part of the save: its refusal must not read as one.
+        await onSaved(payload.cameraId).catch(() => undefined)
+      })
     }
     if (!dirty) return true
-    const payload = buildPayload()
-    const serverChanged = existing && serverId !== existing.serverId
-    const action = serverChanged ? changeCameraParent : addCamera
-    const result = await dispatch(action(payload))
-    if (!action.rejected.match(result)) {
+    return run(async () => {
+      const payload = buildPayload()
+      const serverChanged = existing && serverId !== existing.serverId
+      const action = serverChanged ? changeCameraParent : addCamera
+      await dispatch(action(payload)).unwrap()
       setSnap({ name, serverId, mediaMtxServerId, user, pass, ip, port, disabled, edgeBackfillStream, roiTranscode, onvifMetadataDisabled, hasTelemetry, geoFromDevice, roiDelayHours, roiMinCoverage, roiMaxCoverage })
-      await dispatch(fetchCameraState(initialCameraId))
-      return true
-    }
-    return false
+      // Same: refreshing the saved state is an update, not part of the save.
+      await dispatch(fetchCameraState(initialCameraId)).unwrap().catch(() => undefined)
+    })
   }
 
   const handleApply = async (e: React.FormEvent) => {
@@ -216,10 +235,15 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
   }
 
   const handleRemove = async () => {
-    const result = await dispatch(removeCamera({ cameraId: initialCameraId }))
-    if (!removeCamera.rejected.match(result)) {
+    const confirmed = await confirm({
+      title: t('cameras.deleteConfirmTitle', { name: existing?.name || initialCameraId }),
+      message: t('cameras.deleteConfirmBody'),
+    })
+    if (!confirmed) return
+    await run(async () => {
+      await dispatch(removeCamera({ cameraId: initialCameraId })).unwrap()
       await onRemoved()
-    }
+    })
   }
 
   // applyIfDirty for the parent (selection/tab switch) + beforeunload warning.
@@ -237,6 +261,9 @@ export default function CameraSetupPanel({ ref, cameraId: initialCameraId, serve
         onCancel={isNew ? undefined : handleCancel}
         onDelete={isNew ? undefined : () => void handleRemove()}
         deleteLabel={t('cameras.deleteCamera')}
+        busy={busy}
+        error={error}
+        onDismissError={clearError}
       />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>

@@ -6,6 +6,8 @@ import { removeMonitor, setMonitorCameras, setMonitorSlot, upsertMonitor } from 
 import type { MonitorDto, MonitorLayout } from '../dto/dtos'
 import { MONITOR_LAYOUTS, layoutColumns, layoutSlotCount } from '../dto/dtos'
 import DetailToolbar from './settings/DetailToolbar'
+import { useConfirm } from './settings/confirmContext'
+import { usePanelAction } from './settings/usePanelAction'
 import { useDirtyGuard } from './settings/useDirtyGuard'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
@@ -28,6 +30,8 @@ const initialSlots = (monitor: MonitorDto | null, layout: MonitorLayout): string
 export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const confirm = useConfirm()
+  const { busy, error, clearError, run } = usePanelAction()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const isNew = monitor === null
 
@@ -66,28 +70,30 @@ export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: 
   const applyInternal = async (): Promise<boolean> => {
     if (!isNew && !dirty) return true
     if (!name.trim()) return false
-    const result = await dispatch(upsertMonitor({
-      monitorId: monitor?.monitorId ?? '',
-      name: name.trim(),
-      layout,
-      cameraIds: monitor?.cameraIds ?? [],
-      slots: monitor?.slots ?? [],
-      kind: 'wall',
-      owner: '',
-    }))
-    if (!upsertMonitor.fulfilled.match(result)) return false
+    return run(async () => {
+      const saved = await dispatch(upsertMonitor({
+        monitorId: monitor?.monitorId ?? '',
+        name: name.trim(),
+        layout,
+        cameraIds: monitor?.cameraIds ?? [],
+        slots: monitor?.slots ?? [],
+        kind: 'wall',
+        owner: '',
+      })).unwrap()
 
-    const savedId = result.payload.monitorId
-    const poolIds = [...new Set(slotCameras.filter(Boolean))]
-    await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds: poolIds }))
-    for (let i = 0; i < slotCameras.length; i++) {
-      if (slotCameras[i]) {
-        await dispatch(setMonitorSlot({ monitorId: savedId, slotIndex: i, cameraId: slotCameras[i] }))
+      // The API has no single "save whole monitor" call: the pool and every slot are separate
+      // writes, and each of them can refuse on its own.
+      const savedId = saved.monitorId
+      const poolIds = [...new Set(slotCameras.filter(Boolean))]
+      await dispatch(setMonitorCameras({ monitorId: savedId, cameraIds: poolIds })).unwrap()
+      for (let i = 0; i < slotCameras.length; i++) {
+        if (slotCameras[i]) {
+          await dispatch(setMonitorSlot({ monitorId: savedId, slotIndex: i, cameraId: slotCameras[i] })).unwrap()
+        }
       }
-    }
-    setSnap({ name: name.trim(), layout, slotCameras: [...slotCameras] })
-    onSaved(savedId)
-    return true
+      setSnap({ name: name.trim(), layout, slotCameras: [...slotCameras] })
+      onSaved(savedId)
+    })
   }
 
   const handleApply = async (e: React.FormEvent) => {
@@ -102,8 +108,16 @@ export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: 
   }
 
   const handleRemove = async () => {
-    await dispatch(removeMonitor(monitor!.monitorId))
-    onRemoved()
+    if (!monitor) return
+    const confirmed = await confirm({
+      title: t('monitors.deleteConfirmTitle', { name: monitor.name }),
+      message: t('monitors.deleteConfirmBody'),
+    })
+    if (!confirmed) return
+    await run(async () => {
+      await dispatch(removeMonitor(monitor.monitorId)).unwrap()
+      onRemoved()
+    })
   }
 
   // For a new form "dirty" means "complete enough to save" — navigation then
@@ -122,6 +136,9 @@ export default function MonitorSetupPanel({ ref, monitor, onSaved, onRemoved }: 
         onCancel={isNew ? undefined : handleCancel}
         onDelete={isNew ? undefined : () => void handleRemove()}
         deleteLabel={t('monitors.deleteMonitor')}
+        busy={busy}
+        error={error}
+        onDismissError={clearError}
       />
 
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 2 }}>

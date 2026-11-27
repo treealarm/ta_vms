@@ -1,5 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { MonitorDto } from '../dto/dtos'
+import { errorText } from '../api/requestJson'
 import { parseApiResponse, parseJson } from './api'
 
 type MonitorsState = {
@@ -97,6 +98,55 @@ export const setMonitorSlotStream = createAsyncThunk(
       }
     )
     return { monitorId, slotIndex, streamName, result: await parseApiResponse(response) }
+  }
+)
+
+export type RestoreMonitorResult = {
+  /** The board that was created, or '' when even that step refused. */
+  monitorId: string
+  /** The step that refused; absent when the whole board came back. */
+  failedStep?: 'monitor' | 'cameras' | 'slots' | 'streams'
+  error?: string
+}
+
+/**
+ * Puts a deleted investigation board back by rebuilding its contents: name and layout, camera
+ * pool, slots, and the streams this user had pinned. The copy has a new monitorId — the content
+ * is restored, the identity is not.
+ *
+ * The sequence is not atomic, so a refusal names the step instead of throwing: the caller decides
+ * whether to remove the partial board again or to keep it and say what was restored.
+ */
+export const restoreMonitor = createAsyncThunk<RestoreMonitorResult, MonitorDto>(
+  'monitors/restore',
+  async (dto, { dispatch }) => {
+    const created = await dispatch(upsertMonitor({ ...dto, monitorId: '', cameraIds: [], slots: [] }))
+    if (!upsertMonitor.fulfilled.match(created))
+      return { monitorId: '', failedStep: 'monitor', error: errorText(created.error) }
+    const monitorId = created.payload.monitorId
+
+    const cameras = await dispatch(setMonitorCameras({ monitorId, cameraIds: dto.cameraIds }))
+    if (!setMonitorCameras.fulfilled.match(cameras))
+      return { monitorId, failedStep: 'cameras', error: errorText(cameras.error) }
+
+    for (const slot of dto.slots) {
+      const result = await dispatch(
+        setMonitorSlot({ monitorId, slotIndex: slot.slotIndex, cameraId: slot.cameraId }),
+      )
+      if (!setMonitorSlot.fulfilled.match(result))
+        return { monitorId, failedStep: 'slots', error: errorText(result.error) }
+    }
+
+    for (const slot of dto.slots) {
+      if (!slot.streamName) continue
+      const result = await dispatch(
+        setMonitorSlotStream({ monitorId, slotIndex: slot.slotIndex, streamName: slot.streamName }),
+      )
+      if (!setMonitorSlotStream.fulfilled.match(result))
+        return { monitorId, failedStep: 'streams', error: errorText(result.error) }
+    }
+
+    return { monitorId }
   }
 )
 

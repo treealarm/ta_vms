@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   IconButton,
   Menu,
   MenuItem,
+  Snackbar,
   Stack,
   Tab,
   Tabs,
@@ -26,15 +28,27 @@ import {
   copyMonitorTo,
   loadMonitors,
   removeMonitor,
+  restoreMonitor,
   setMonitorCameras,
   setMonitorSlot,
   upsertMonitor,
 } from '../store/monitorsSlice'
-import type { MonitorKind, MonitorLayout } from '../dto/dtos'
+import type { RestoreMonitorResult } from '../store/monitorsSlice'
+import type { MonitorDto, MonitorKind, MonitorLayout } from '../dto/dtos'
 import { MONITOR_LAYOUTS } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
+import { errorText } from '../api/requestJson'
 import MonitorGrid from './MonitorGrid'
 import MonitorEditDialog from './MonitorEditDialog'
 import WallPlaybackPanel from './wall/WallPlaybackPanel'
+
+/** The sentence naming the step an Undo failed at, in the operator's language. */
+const RESTORE_STEP_LABELS: Record<NonNullable<RestoreMonitorResult['failedStep']>, string> = {
+  monitor: 'monitors.restoreStepMonitor',
+  cameras: 'monitors.restoreStepCameras',
+  slots: 'monitors.restoreStepSlots',
+  streams: 'monitors.restoreStepStreams',
+}
 
 type Props = {
   readOnly?: boolean
@@ -49,6 +63,7 @@ type Props = {
 export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const allMonitors = useAppSelector((state) => state.monitors.monitors)
   const status = useAppSelector((state) => state.monitors.status)
   // Selected as the stored map and turned into a list here, not inside the selector: Object.values
@@ -73,6 +88,15 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
   const [shareAnchor, setShareAnchor] = useState<HTMLElement | null>(null)
   const [users, setUsers] = useState<string[]>([])
+  // The board just deleted, held so Undo can put its contents back; it is a snapshot, because the
+  // store row is gone by the time the snackbar appears.
+  const [undo, setUndo] = useState<MonitorDto | null>(null)
+  const [restoring, setRestoring] = useState(false)
+  // State alone is a render late: a double click on Undo before it re-renders would start two
+  // rebuilds and create two boards.
+  const restoringRef = useRef(false)
+  // What an Undo could not bring back, with the step it stopped at.
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null)
 
   useEffect(() => {
     void dispatch(loadMonitors())
@@ -130,7 +154,58 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
   }
 
   const handleDelete = async (monitorId: string) => {
-    await dispatch(removeMonitor(monitorId))
+    const board = monitors.find((m) => m.monitorId === monitorId)
+    if (!board) return
+    // A board is the operator's own workspace, so it is thrown away with an Undo rather than a
+    // question; a wall is shared configuration and keeps the ordinary confirmation.
+    if (!investigation) {
+      const confirmed = await confirm({
+        title: t('monitors.deleteConfirmTitle', { name: board.name }),
+        message: t('monitors.deleteConfirmBody'),
+      })
+      if (!confirmed) return
+    }
+    const result = await dispatch(removeMonitor(monitorId))
+    // A refusal stays on the existing status Alert: the row is still there, and an Undo for a
+    // deletion that did not happen would only confuse.
+    if (!removeMonitor.fulfilled.match(result)) return
+    setRestoreNotice(null)
+    if (investigation) setUndo(board)
+  }
+
+  const handleUndo = async () => {
+    if (!undo || restoringRef.current) return
+    const board = undo
+    restoringRef.current = true
+    setRestoring(true)
+    try {
+      const result = await dispatch(restoreMonitor(board)).unwrap()
+      if (!result.failedStep && result.monitorId) {
+        setUndo(null)
+        setRequestedMonitorId(result.monitorId)
+        return
+      }
+      // The board exists in part. Take it out again, so the list does not keep a shell the
+      // operator never asked to keep; if even that fails, it stays and the message says so.
+      const cleaned = result.monitorId
+        ? removeMonitor.fulfilled.match(await dispatch(removeMonitor(result.monitorId)))
+        : true
+      if (!cleaned && result.monitorId) setRequestedMonitorId(result.monitorId)
+      const step = result.failedStep ? t(RESTORE_STEP_LABELS[result.failedStep]) : ''
+      setRestoreNotice(
+        t(cleaned ? 'monitors.restoreFailed' : 'monitors.restorePartial', {
+          step,
+          error: result.error ?? '',
+        }),
+      )
+      setUndo(null)
+    } catch (e) {
+      setRestoreNotice(errorText(e))
+      setUndo(null)
+    } finally {
+      restoringRef.current = false
+      setRestoring(false)
+    }
   }
 
   // Investigation boards are never configured up front: the board is created by the act of putting
@@ -276,6 +351,35 @@ export default function MonitorsView({ readOnly = false, kind = 'wall' }: Props)
           {status}
         </Alert>
       )}
+
+      {restoreNotice && (
+        <Alert severity="error" onClose={() => setRestoreNotice(null)} sx={{ flexShrink: 0 }}>
+          {restoreNotice}
+        </Alert>
+      )}
+
+      {/* The deletion already happened on the server; Undo rebuilds the board's contents under a
+          new id. The button is disabled while the rebuild is in flight — a second Undo would make
+          a second board. */}
+      <Snackbar
+        open={undo !== null}
+        autoHideDuration={restoring ? null : 6000}
+        onClose={(_e, reason) => { if (reason !== 'clickaway') setUndo(null) }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          severity="success"
+          variant="filled"
+          onClose={() => setUndo(null)}
+          action={
+            <Button color="inherit" size="small" disabled={restoring} onClick={() => void handleUndo()}>
+              {t('common.undo')}
+            </Button>
+          }
+        >
+          {t('common.deleted')}{undo ? ` “${undo.name}”` : ''}
+        </Alert>
+      </Snackbar>
 
       {/* Picking a camera here is what creates the board */}
       <Menu anchorEl={addAnchor} open={Boolean(addAnchor)} onClose={() => setAddAnchor(null)}>

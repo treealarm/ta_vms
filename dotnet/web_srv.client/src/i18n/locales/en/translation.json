@@ -136,6 +136,8 @@
     "deleteCamera": "Delete camera",
     "deleteConfirmTitle": "Delete camera “{{name}}”?",
     "deleteConfirmBody": "Its streams, recording schedules and storage assignments are removed with it.",
+    "storageAssignFailed": "The camera was created, but its storages were not assigned: {{error}}",
+    "schedulesAssignFailed": "The camera was created, but its recording schedules were not assigned: {{error}}",
     "disabled": "Disable camera",
     "hasTelemetry": "Has telemetry (PTZ)",
     "hasTelemetryHelper": "Tick this only for cameras that really move. Firmware advertises the ONVIF PTZ service whether or not there is a motor behind it, so the joystick and object tracking are gated on this switch, not on what the camera claims. The camera's ONVIF settings page still shows what it reports — check there first.",
