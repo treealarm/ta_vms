@@ -1,4 +1,4 @@
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Stack, Typography } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 
 type Props = {
@@ -16,6 +16,9 @@ type Props = {
   deleteLabel?: string
   /** Right-aligned slot for immediate actions (arm switch, subscription toggle, chips). */
   extra?: React.ReactNode
+  /** The panel's last failed operation, shown under the action row. */
+  error?: string | null
+  onDismissError?: () => void
 }
 
 /**
@@ -24,32 +27,40 @@ type Props = {
  */
 export default function DetailToolbar({
   title, subtitle, dirty, busy, applyLabel, onApply, hideApply, onCancel, onDelete, deleteLabel, extra,
+  error, onDismissError,
 }: Props) {
   const { t } = useTranslation()
   return (
-    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ px: 2, py: 1, borderBottom: 1, borderColor: 'divider', flexShrink: 0, minHeight: 52 }}>
-      <Box sx={{ minWidth: 0, mr: 1 }}>
-        <Typography variant="subtitle1" fontWeight={600} noWrap>{title}</Typography>
-        {subtitle && (
-          <Typography variant="caption" color="text.disabled" noWrap display="block">{subtitle}</Typography>
+    <Box sx={{ flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
+      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ px: 2, py: 1, minHeight: 52 }}>
+        <Box sx={{ minWidth: 0, mr: 1 }}>
+          <Typography variant="subtitle1" fontWeight={600} noWrap>{title}</Typography>
+          {subtitle && (
+            <Typography variant="caption" color="text.disabled" noWrap display="block">{subtitle}</Typography>
+          )}
+        </Box>
+        {!hideApply && (
+          <Button type={onApply ? 'button' : 'submit'} variant="outlined" size="small" disabled={!dirty || busy} onClick={onApply}>
+            {applyLabel ?? t('common.apply')}
+          </Button>
         )}
-      </Box>
-      {!hideApply && (
-        <Button type={onApply ? 'button' : 'submit'} variant="outlined" size="small" disabled={!dirty || busy} onClick={onApply}>
-          {applyLabel ?? t('common.apply')}
-        </Button>
+        {onCancel && (
+          <Button variant="text" size="small" disabled={!dirty || busy} onClick={onCancel}>
+            {t('common.cancel')}
+          </Button>
+        )}
+        {onDelete && (
+          <Button color="error" variant="outlined" size="small" disabled={busy} onClick={onDelete}>
+            {deleteLabel ?? t('common.delete')}
+          </Button>
+        )}
+        {extra && <Box sx={{ ml: 'auto', flexShrink: 0 }}>{extra}</Box>}
+      </Stack>
+      {error && (
+        <Alert severity="error" onClose={onDismissError} sx={{ mx: 2, mb: 1, py: 0 }}>
+          {error}
+        </Alert>
       )}
-      {onCancel && (
-        <Button variant="text" size="small" disabled={!dirty || busy} onClick={onCancel}>
-          {t('common.cancel')}
-        </Button>
-      )}
-      {onDelete && (
-        <Button color="error" variant="outlined" size="small" disabled={busy} onClick={onDelete}>
-          {deleteLabel ?? t('common.delete')}
-        </Button>
-      )}
-      {extra && <Box sx={{ ml: 'auto', flexShrink: 0 }}>{extra}</Box>}
-    </Stack>
+    </Box>
   )
 }

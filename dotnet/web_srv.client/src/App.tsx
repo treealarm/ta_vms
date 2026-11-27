@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { ConfirmProvider } from './components/settings/ConfirmDialog'
 import { PendingEditsProvider } from './components/settings/PendingEdits'
 import { Alert, Box, Button, CircularProgress, IconButton, Tab, Tabs, Typography } from '@mui/material'
 import CloseIcon from '@mui/icons-material/Close'
@@ -149,6 +150,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ConfirmProvider>
       <PendingEditsProvider>
       <Box sx={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
         {/* The gateway is up but something it needs is not, so the app would load and then show
@@ -258,6 +260,7 @@ export default function App() {
         )}
       </Box>
       </PendingEditsProvider>
+      </ConfirmProvider>
     </BrowserRouter>
   )
 }

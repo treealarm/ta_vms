@@ -1,7 +1,7 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { CameraSetupDto, CameraStreamDto, ApiResponseDto, MediaServerNodeDto } from '../dto/dtos'
+import type { CameraSetupDto, CameraStreamDto, MediaServerNodeDto } from '../dto/dtos'
 import { RECORDING_PROFILE_OFF_ID, RECORDING_PROFILE_PREALARM_ID, recordableStreams } from '../dto/dtos'
-import { parseJson } from './api'
+import { parseApiResponse, parseJson } from './api'
 
 type LiveState = {
   cameraStatesById: Record<string, CameraSetupDto>
@@ -38,7 +38,7 @@ export const addCamera = createAsyncThunk('live/addCamera', async (payload: Came
     body: JSON.stringify(payload)
   })
 
-  return parseJson<ApiResponseDto>(response)
+  return parseApiResponse(response)
 })
 
 export const removeCamera = createAsyncThunk(
@@ -49,7 +49,7 @@ export const removeCamera = createAsyncThunk(
       { method: 'DELETE' }
     )
 
-    return parseJson<ApiResponseDto>(response)
+    return parseApiResponse(response)
   }
 )
 
@@ -65,7 +65,7 @@ export const changeCameraParent = createAsyncThunk(
       }
     )
 
-    return parseJson<ApiResponseDto>(response)
+    return parseApiResponse(response)
   }
 )
 
@@ -225,14 +225,16 @@ const liveSlice = createSlice({
       .addCase(fetchCameraState.fulfilled, (state, action) => {
         state.cameraStatesById[action.payload.cameraId] = action.payload
       })
-      .addCase(addCamera.fulfilled, (state, action) => {
-        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      // A refusal no longer reaches `fulfilled` (parseApiResponse rejects on success:false), so
+      // there is no failure to describe here.
+      .addCase(addCamera.fulfilled, (state) => {
+        state.status = 'OK'
       })
-      .addCase(removeCamera.fulfilled, (state, action) => {
-        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      .addCase(removeCamera.fulfilled, (state) => {
+        state.status = 'OK'
       })
-      .addCase(changeCameraParent.fulfilled, (state, action) => {
-        state.status = `${action.payload.success ? 'OK' : 'Fail'}: ${action.payload.message}`
+      .addCase(changeCameraParent.fulfilled, (state) => {
+        state.status = 'OK'
       })
 .addMatcher((action: AnyAction) => action.type.startsWith('live/') && action.type.endsWith('/pending'), (state) => {
         state.isBusy = true

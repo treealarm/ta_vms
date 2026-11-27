@@ -1,6 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { ApiResponseDto, RecordingScheduleDto } from '../dto/dtos'
-import { parseJson } from './api'
+import { parseApiResponse, parseJson } from './api'
 
 type ScheduleState = {
   schedules: RecordingScheduleDto[]
@@ -54,7 +54,7 @@ export const setCameraSchedules = createAsyncThunk(
         body: JSON.stringify({ scheduleIds })
       }
     )
-    return parseJson<ApiResponseDto>(response)
+    return parseApiResponse(response)
   }
 )
 

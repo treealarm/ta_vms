@@ -1,6 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
-import type { MonitorDto, ApiResponseDto } from '../dto/dtos'
-import { parseJson } from './api'
+import type { MonitorDto } from '../dto/dtos'
+import { parseApiResponse, parseJson } from './api'
 
 type MonitorsState = {
   monitors: MonitorDto[]
@@ -30,7 +30,7 @@ export const upsertMonitor = createAsyncThunk('monitors/upsert', async (dto: Mon
 
 export const removeMonitor = createAsyncThunk('monitors/remove', async (id: string) => {
   const response = await fetch(`/api/monitor/${encodeURIComponent(id)}`, { method: 'DELETE' })
-  return { id, result: await parseJson<ApiResponseDto>(response) }
+  return { id, result: await parseApiResponse(response) }
 })
 
 export const setMonitorCameras = createAsyncThunk(
@@ -41,7 +41,7 @@ export const setMonitorCameras = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cameraIds }),
     })
-    return { monitorId, cameraIds, result: await parseJson<ApiResponseDto>(response) }
+    return { monitorId, cameraIds, result: await parseApiResponse(response) }
   }
 )
 
@@ -52,7 +52,7 @@ export const clearMonitorSlot = createAsyncThunk(
       `/api/monitor/${encodeURIComponent(monitorId)}/slots/${slotIndex}`,
       { method: 'DELETE' }
     )
-    return { monitorId, slotIndex, result: await parseJson<ApiResponseDto>(response) }
+    return { monitorId, slotIndex, result: await parseApiResponse(response) }
   }
 )
 
@@ -80,7 +80,7 @@ export const setMonitorSlot = createAsyncThunk(
         body: JSON.stringify({ cameraId }),
       }
     )
-    return { monitorId, slotIndex, cameraId, result: await parseJson<ApiResponseDto>(response) }
+    return { monitorId, slotIndex, cameraId, result: await parseApiResponse(response) }
   }
 )
 
@@ -96,7 +96,7 @@ export const setMonitorSlotStream = createAsyncThunk(
         body: JSON.stringify({ streamName }),
       }
     )
-    return { monitorId, slotIndex, streamName, result: await parseJson<ApiResponseDto>(response) }
+    return { monitorId, slotIndex, streamName, result: await parseApiResponse(response) }
   }
 )
 

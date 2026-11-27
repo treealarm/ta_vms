@@ -1,21 +1,28 @@
 /**
- * fetch for the API endpoints. They answer errors as {"error": "..."} — the shape the gateway
- * gives gRPC failures — so the message shown to the user is the sentence the service wrote
- * rather than a JSON blob.
+ * The sentence a failed response carries.
+ *
+ * The gateway writes gRPC failures as {"error": "..."}; a few endpoints answer {"message": "..."};
+ * a body that is not JSON is its own message. Reading all three here means a caller never shows a
+ * JSON blob to the operator, and there is no second format to keep in step.
  */
+export async function responseErrorText(response: Response): Promise<string> {
+  const text = await response.text()
+  if (!text) return response.statusText || 'The request failed'
+  try {
+    const body = JSON.parse(text) as { error?: unknown; message?: unknown }
+    if (typeof body?.error === 'string' && body.error) return body.error
+    if (typeof body?.message === 'string' && body.message) return body.message
+  } catch {
+    // Not JSON: the text itself is the message.
+  }
+  return text
+}
+
+/** fetch for the API endpoints; a failed response becomes an Error carrying its sentence. */
 export async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init)
+  if (!response.ok) throw new Error(await responseErrorText(response))
   const text = await response.text()
-  if (!response.ok) {
-    let message = text || response.statusText
-    try {
-      const body = JSON.parse(text) as { error?: string }
-      if (body?.error) message = body.error
-    } catch {
-      // Not JSON: the text itself is the message.
-    }
-    throw new Error(message)
-  }
   return (text ? JSON.parse(text) : undefined) as T
 }
 

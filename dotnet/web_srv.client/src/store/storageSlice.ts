@@ -1,6 +1,6 @@
 import { type AnyAction, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { ApiResponseDto, CameraStorageAssignmentDto, StorageDto } from '../dto/dtos'
-import { parseJson } from './api'
+import { parseApiResponse, parseJson } from './api'
 
 type StorageState = {
   storages: StorageDto[]
@@ -59,7 +59,7 @@ export const setCameraStorages = createAsyncThunk(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(assignments)
     })
-    return parseJson<ApiResponseDto>(response)
+    return parseApiResponse(response)
   }
 )
 
