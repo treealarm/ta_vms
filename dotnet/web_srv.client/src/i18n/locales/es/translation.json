@@ -1182,6 +1182,8 @@
     "deleteType": "Eliminar tipo",
     "confirmDeleteType": "¿Eliminar el tipo «{{name}}»? Un tipo sin uso se elimina con sus regiones y vínculos de partes.",
     "usageLoading": "Comprobando dónde se usa este tipo…",
+    "usageFailed": "No se pudo leer la lista: {{error}} El servidor sigue rechazando la eliminación mientras el tipo esté en uso.",
+    "usageRetry": "Reintentar",
     "usageTitle": "Dónde se usa este tipo",
     "usageCount": "Se usa en {{count}} lugares",
     "usageDiagrams": "Mimosesquemas normales",

@@ -286,17 +286,6 @@ public class MapDiagramsController(MapProto.MapService.MapServiceClient map) : C
     var request = MapApi.Parse<MapProto.GetDiagramTypesRequest>(body);
     return MapApi.Json(await map.GetDiagramTypesAsync(request, MapApi.Options(ct)));
   }
-
-  /// Where a type is in use: the diagrams drawn from it and the device bindings that keep one, a
-  /// row per place. The type dictionary is global configuration, so this read is not scoped by
-  /// rights; the refusal to delete a type in use is what the editor must respect.
-  [HttpPost("types/usage")]
-  public async Task<IActionResult> GetTypeUsage(
-    [FromBody] JsonElement body, CancellationToken ct)
-  {
-    var request = MapApi.Parse<MapProto.GetDiagramTypeUsageRequest>(body);
-    return MapApi.Json(await map.GetDiagramTypeUsageAsync(request, MapApi.Options(ct)));
-  }
 }
 
 [ApiController]

@@ -1182,6 +1182,8 @@
     "deleteType": "Delete type",
     "confirmDeleteType": "Delete the type \"{{name}}\"? An unused type goes with its regions and part bindings.",
     "usageLoading": "Checking where this type is used…",
+    "usageFailed": "The list could not be read: {{error}} Deleting is still refused by the server while the type is in use.",
+    "usageRetry": "Retry",
     "usageTitle": "Where this type is used",
     "usageCount": "Used in {{count}} places",
     "usageDiagrams": "Ordinary diagrams",

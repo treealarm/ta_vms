@@ -187,8 +187,8 @@ service MapService {
   // Where a type is in use, derived on every read from the diagrams drawn from it and the device
   // bindings that keep one. Nothing is stored: a list that could drift from the rows it describes
   // is worse than one computed each time. The dictionary's own view, not scoped by rights — the
-  // type dictionary is global configuration, and the refusal to delete a type in use is the
-  // authority, not this list.
+  // refusal to delete a type in use is the authority, not this list — and the gateway serves it on
+  // the admin surface only, because the refusal it explains is an administrator's.
   rpc GetDiagramTypeUsage(GetDiagramTypeUsageRequest) returns (DiagramTypeUsage);
 
   rpc GetLevels(google.protobuf.Empty) returns (LevelList);

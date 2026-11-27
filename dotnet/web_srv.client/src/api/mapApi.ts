@@ -158,10 +158,6 @@ export const mapApi = {
   getDiagramTypes: (request: MapGetDiagramTypesRequest = {}) =>
     post<MapDiagramTypeList>(`${BASE}/diagrams/types`, request),
 
-  /** Where a type is in use: a row per place, derived from the diagrams and bindings naming it. */
-  getDiagramTypeUsage: (typeId: string) =>
-    post<MapDiagramTypeUsage>(`${BASE}/diagrams/types/usage`, { typeId }),
-
   /** Draws a device from a template an administrator picked. */
   /**
    * Draws a device's diagram on a space, under the camera's placement there, or shows it on a
@@ -274,6 +270,11 @@ export const mapApi = {
 
   deleteDiagramTypes: (ids: string[]) =>
     requestJson<MapOperationStatus>(`${ADMIN}/diagram-types`, jsonRequest('DELETE', { ids })),
+
+  /** Where a type is in use, a row per place: what explains a refused delete. It sits on the admin
+   *  surface because the delete does, and its rows name places on the map. */
+  getDiagramTypeUsage: (typeId: string) =>
+    post<MapDiagramTypeUsage>(`${ADMIN}/diagram-types/usage`, { typeId }),
 
   // ── Demo world ─────────────────────────────────────────────────────────────────────────────
   // The world itself is VmsMap's; its video wall is VmsCfg's. The gateway calls both and answers
