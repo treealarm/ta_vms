@@ -5,6 +5,7 @@ import { useAppDispatch, useAppSelector } from '../store'
 import { loadSchedules, removeSchedule, upsertSchedule } from '../store/scheduleSlice'
 import type { RecordingScheduleDto } from '../dto/dtos'
 import ScheduleWeekGrid from './ScheduleWeekGrid'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -53,6 +54,7 @@ type FormProps = {
 function RecordingScheduleForm({ ref, schedule, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
+  const confirm = useConfirm()
   const isNew = schedule === null
 
   const [form, setForm] = useState<RecordingScheduleDto>(schedule ?? emptySchedule())
@@ -87,6 +89,10 @@ function RecordingScheduleForm({ ref, schedule, onSaved, onRemoved }: FormProps)
 
   const handleRemove = async () => {
     if (!form.id) return
+    if (!await confirm({
+      title: t('schedule.confirmDeleteSchedule', { name: form.name }),
+      message: t('schedule.confirmDeleteScheduleMessage'),
+    })) return
     setBusy(true)
     setError(null)
     try {

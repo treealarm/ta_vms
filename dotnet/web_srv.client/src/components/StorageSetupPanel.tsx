@@ -6,6 +6,7 @@ import { addStorage, loadStorages, removeStorage, updateStorage } from '../store
 import { loadServers } from '../store/liveSlice'
 import type { StorageDto } from '../dto/dtos'
 import { isAbsoluteHostPath } from '../utils/hostPath'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -32,6 +33,7 @@ type FormProps = {
 function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const isNew = storage === null
 
   // The id is internal now — a UUID the server accepts as the row's key — so a new storage gets
@@ -125,10 +127,16 @@ function StorageForm({ ref, storage, onSaved, onRemoved }: FormProps) {
 
   const handleRemove = async () => {
     // Deleting takes every camera's assignment with it — the foreign key cascades and there is
-    // no undo. Say how many before asking, because "3 cameras" and "none" are different decisions.
+    // no undo. The storage is always confirmed, not only when cameras use it: the consequence for
+    // an unused one is still a deleted configuration. Say how many cameras, because "3" and "none"
+    // are different decisions.
     const used = storage?.cameraCount ?? 0
-    if (used > 0 && !window.confirm(t('storage.deleteWarning', { count: used })))
-      return
+    if (!await confirm({
+      title: t('storage.confirmDelete', { path: storage?.rootPath ?? rootPath }),
+      message: used > 0
+        ? t('storage.deleteMessageUsed', { count: used })
+        : t('storage.deleteMessageUnused'),
+    })) return
     setError('')
     const result = await dispatch(removeStorage(storage!.storageId))
     if (removeStorage.rejected.match(result)) {

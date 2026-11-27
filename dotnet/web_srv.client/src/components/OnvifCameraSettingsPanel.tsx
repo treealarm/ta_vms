@@ -30,6 +30,7 @@ import CameraStream from './CameraStream'
 import PtzControlPad from './PtzControlPad'
 import DeviceIoSection from './DeviceIoSection'
 import OnvifMetadataSection from './OnvifMetadataSection'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import { useCameraDeepLink } from './settings/useCameraDeepLink'
@@ -453,6 +454,7 @@ type OnvifProfileInfo = { token: string; name: string }
 
 function PtzPresetsSection({ cameraId, onProfileTokenChange }: { cameraId: string; onProfileTokenChange?: (token: string) => void }) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [profiles, setProfiles] = useState<OnvifProfileInfo[]>([])
   const [profileToken, setProfileToken] = useState('')
   const [presets, setPresets] = useState<PtzPresetDto[]>([])
@@ -497,6 +499,11 @@ function PtzPresetsSection({ cameraId, onProfileTokenChange }: { cameraId: strin
   }
 
   const handleDelete = async (presetToken: string) => {
+    const name = presets.find((p) => p.token === presetToken)?.name || presetToken
+    if (!await confirm({
+      title: t('onvifSettings.confirmDeletePreset', { name }),
+      message: t('onvifSettings.confirmDeletePresetMessage'),
+    })) return
     setActionError(null)
     try {
       await apiFetch(`/api/ptz/cameras/${encodeURIComponent(cameraId)}/presets/${encodeURIComponent(presetToken)}?profileToken=${encodeURIComponent(profileToken)}`, { method: 'DELETE' })
@@ -671,6 +678,7 @@ function toDatetimeLocalValue(utcIso: string): string {
 
 function SystemSection({ cameraId }: { cameraId: string }) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [deviceTime, setDeviceTime] = useState<string | null>(null)
   const [timeLoading, setTimeLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -719,7 +727,11 @@ function SystemSection({ cameraId }: { cameraId: string }) {
   }
 
   const handleReboot = async () => {
-    if (!window.confirm(t('onvifSettings.rebootConfirm'))) return
+    if (!await confirm({
+      title: t('onvifSettings.rebootTitle'),
+      message: t('onvifSettings.rebootMessage'),
+      confirmLabel: t('onvifSettings.reboot'),
+    })) return
     setRebooting(true); setError(null); setRebootMsg(null)
     try {
       const r = await apiFetch<{ message?: string }>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/reboot`, { method: 'POST' })

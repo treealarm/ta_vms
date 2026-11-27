@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import { ANALYTICS_DETECTION_CLASSES } from '../dto/dtos'
 import type { AnalyticsDetectionClass, AnalyticsWatchDto, CameraSetupDto } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -51,6 +52,7 @@ type FormProps = {
 
 function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const isNew = watch === null
 
   const [form, setForm] = useState<AnalyticsWatchDto>(watch ?? { ...EMPTY_WATCH })
@@ -117,6 +119,10 @@ function AnalyticsWatchForm({ ref, watch, allCameras, takenCameraIds, onSaved, o
   const handleCancel = () => setForm({ ...snap })
 
   const handleRemove = async () => {
+    if (!await confirm({
+      title: t('analytics.confirmDeleteWatch', { name: cameraName }),
+      message: t('analytics.confirmDeleteWatchMessage'),
+    })) return
     setBusy(true)
     setError(null)
     try {

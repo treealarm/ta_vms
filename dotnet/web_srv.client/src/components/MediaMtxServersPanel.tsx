@@ -7,6 +7,7 @@ import { DEFAULT_STUN_URL, isValidStunUrl } from '../utils/iceServers'
 import { useAppDispatch, useAppSelector } from '../store'
 import { loadMediaMtxServers, removeMediaMtxServer, upsertMediaMtxServer } from '../store/mediaMtxSlice'
 import type { MediaMtxServerDto } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import PasswordField from './PasswordField'
@@ -48,6 +49,7 @@ type FormProps = {
 function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const { isBusy, status, servers } = useAppSelector((s) => s.mediaMtx)
   // The nodes a router can be pinned to — same list the camera form offers.
   const mediaServers = useAppSelector((s) => s.live.servers)
@@ -89,6 +91,10 @@ function MediaMtxServerForm({ ref, server, onSaved, onRemoved }: FormProps) {
   const handleCancel = () => setForm({ ...snap })
 
   const handleRemove = async () => {
+    if (!await confirm({
+      title: t('mediaMtx.confirmDeleteServer', { name: form.name }),
+      message: t('mediaMtx.confirmDeleteServerMessage'),
+    })) return
     const result = await dispatch(removeMediaMtxServer(form.id))
     // A fulfilled-but-unsuccessful delete must keep the form (and its status
     // Alert) mounted — otherwise the failure message is never seen

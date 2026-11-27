@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { useAppSelector } from '../store'
 import type { CameraSetupDto, OnvifCameraEntryDto } from '../dto/dtos'
 import OnvifAlarmFiltersPanel from './OnvifAlarmFiltersPanel'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -161,6 +162,7 @@ function SubscriptionDetail({ ref, entry, cam, onRemove, onToggleSubscribed, onP
 
 export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<ApplyIfDirtyHandle> }) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const allCamerasById = useAppSelector((s) => s.live.cameraStatesById)
 
@@ -192,6 +194,11 @@ export default function OnvifSubscriptionsPanel({ ref }: { ref?: React.Ref<Apply
   }
 
   const handleRemove = async (cameraId: string) => {
+    if (!await confirm({
+      title: t('onvifSubs.confirmRemoveCamera', { name: allCamerasById[cameraId]?.name || cameraId }),
+      message: t('onvifSubs.confirmRemoveCameraMessage'),
+      confirmLabel: t('common.remove'),
+    })) return
     await removeCamera(cameraId)
     setManaged((prev) => prev.filter((e) => e.cameraId !== cameraId))
     if (selected?.cameraId === cameraId) reset()

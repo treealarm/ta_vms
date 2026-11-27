@@ -46,6 +46,7 @@ import { readVisualImage, type VisualImage } from '../../map/visualImage'
 import { CameraPlacementPanel, FootprintPanel, LandmarkPanel } from './PlacementPanels'
 import MoveToField from './MoveToField'
 import ObjectPropsEditor from './ObjectPropsEditor'
+import { useConfirm } from '../settings/confirmContext'
 import ObjectRights from '../objects/ObjectRights'
 import DiagramViewer from '../diagrams/DiagramViewer'
 import DiagramElementEditor from '../diagrams/DiagramElementEditor'
@@ -101,6 +102,7 @@ export default function SpaceEditor({
   initialFootprintId, onInitialFootprintShown, onOpenSpace,
 }: Props) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const dispatch = useAppDispatch()
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
   const placements = useAppSelector((s) => s.spatial.placements)
@@ -721,6 +723,12 @@ export default function SpaceEditor({
         })}
         onChange={(p) => void savePlacement(p)}
         onRemove={() => void run(async () => {
+          const cameraName = camerasById[selectedPlacement.cameraId]?.name || selectedPlacement.cameraId
+          if (!await confirm({
+            title: t('maps.confirmRemovePlacement', { camera: cameraName, space: space.name }),
+            message: t('maps.confirmRemovePlacementMessage'),
+            confirmLabel: t('common.remove'),
+          })) return
           await dispatch(removePlacement({ cameraId: selectedPlacement.cameraId, spaceId })).unwrap()
           setSelection(null)
         })}
@@ -736,8 +744,11 @@ export default function SpaceEditor({
       showLayer={space.kind === 'map'}
       onChange={(m) => void run(() => dispatch(upsertLandmark(m)).unwrap())}
       onRemove={() => {
-        if (!window.confirm(t('maps.confirmRemoveLandmark', { name: selectedLandmark.name }))) return
         void run(async () => {
+          if (!await confirm({
+            title: t('maps.confirmRemoveLandmark', { name: selectedLandmark.name }),
+            message: t('maps.confirmRemoveLandmarkMessage'),
+          })) return
           await dispatch(removeLandmark({ spaceId, landmarkId: selectedLandmark.id! })).unwrap()
           setSelection(null)
         })
@@ -860,10 +871,15 @@ export default function SpaceEditor({
             color="inherit"
             startIcon={<DeleteOutlineIcon />}
             onClick={() => {
-              if (window.confirm(t('maps.confirmRemovePlan'))) {
-                void run(() => dispatch(removeSpacePlan(spaceId)).unwrap())
+              void run(async () => {
+                if (!await confirm({
+                  title: t('maps.confirmRemovePlan'),
+                  message: t('maps.confirmRemovePlanMessage'),
+                  confirmLabel: t('common.remove'),
+                })) return
+                await dispatch(removeSpacePlan(spaceId)).unwrap()
                 setMode('select')
-              }
+              })
             }}
           >
             {t('maps.removePlan')}

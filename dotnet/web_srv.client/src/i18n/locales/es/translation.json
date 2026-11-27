@@ -21,7 +21,8 @@
     "undoLast": "Deshacer el último cambio (Ctrl+Z)",
     "confirmDelete": "Eliminar",
     "deleted": "Eliminado",
-    "undo": "Deshacer"
+    "undo": "Deshacer",
+    "remove": "Quitar"
   },
   "nodes": {
     "title": "Árbol lógico",
@@ -63,7 +64,9 @@
     "position": "Paso {{position}}",
     "kind": "Tipo",
     "params": "parámetros",
-    "saved": "Guardada"
+    "saved": "Guardada",
+    "confirmDelete": "¿Eliminar la suscripción «{{name}}»?",
+    "confirmDeleteMessage": "Los eventos que enruta ya no se procesan. No se puede deshacer."
   },
   "nav": {
     "monitors": "Monitores",
@@ -227,7 +230,9 @@
     "browseNotWritable": "Sin permiso de escritura: ábralo para ver su contenido",
     "disabled": "Escritura deshabilitada",
     "camerasUsing": "{{count}} cámara(s) graban aquí — eliminar el almacenamiento quita su asignación.",
-    "deleteWarning": "{{count}} cámara(s) graban en este almacenamiento. Al eliminarlo se quita su asignación y no se puede deshacer. ¿Eliminar de todos modos?"
+    "confirmDelete": "¿Eliminar el almacenamiento «{{path}}»?",
+    "deleteMessageUsed": "{{count}} cámara(s) graban aquí; al eliminarlo se quita su asignación. No se puede deshacer.",
+    "deleteMessageUnused": "Eliminarlo quita el almacenamiento de la grabación. No se puede deshacer."
   },
   "storageControl": {
     "title": "Asignación de almacén",
@@ -253,7 +258,9 @@
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",
     "deleteProfile": "Eliminar perfil",
-    "selectHint": "Seleccione un perfil de grabación"
+    "selectHint": "Seleccione un perfil de grabación",
+    "confirmDeleteProfile": "¿Eliminar el perfil de grabación «{{name}}»?",
+    "confirmDeleteProfileMessage": "Las cámaras que lo usan vuelven a su perfil predeterminado. No se puede deshacer."
   },
   "schedule": {
     "title": "Horarios de grabación",
@@ -281,7 +288,9 @@
     "addDate": "Fecha",
     "add": "Añadir",
     "windowCount_one": "{{count}} ventana",
-    "windowCount_other": "{{count}} ventanas"
+    "windowCount_other": "{{count}} ventanas",
+    "confirmDeleteSchedule": "¿Eliminar el horario de grabación «{{name}}»?",
+    "confirmDeleteScheduleMessage": "Las cámaras asignadas a él pierden su horario de grabación. No se puede deshacer."
   },
   "scheduleControl": {
     "title": "Horarios de grabación",
@@ -320,7 +329,9 @@
     "source": {
       "cv": "Analítica",
       "onvif": "Metadatos de la cámara"
-    }
+    },
+    "confirmDeleteWatch": "¿Eliminar el análisis de «{{name}}»?",
+    "confirmDeleteWatchMessage": "El análisis deja de observar esta cámara y se elimina su configuración. No se puede deshacer."
   },
   "analyticsActivity": {
     "tabLabel": "Analítica",
@@ -425,7 +436,9 @@
     "noServers": "Sin routers configurados",
     "selectHint": "Seleccione un router o pulse + para agregar uno",
     "transcodeHevc": "Transcodificar HEVC a H.264",
-    "transcodeHevcHelper": "Desactivado: las cámaras H.265 pasan sin tocarse y MediaMTX las entrega por WebRTC a los navegadores capaces de decodificarlas, sin recodificar nada. Actívalo cuando los usuarios no puedan reproducirlas: Firefox no admite HEVC en WebRTC, Chrome depende de la plataforma y un flujo con fotogramas B se rechaza sea cual sea el navegador."
+    "transcodeHevcHelper": "Desactivado: las cámaras H.265 pasan sin tocarse y MediaMTX las entrega por WebRTC a los navegadores capaces de decodificarlas, sin recodificar nada. Actívalo cuando los usuarios no puedan reproducirlas: Firefox no admite HEVC en WebRTC, Chrome depende de la plataforma y un flujo con fotogramas B se rechaza sea cual sea el navegador.",
+    "confirmDeleteServer": "¿Eliminar el router «{{name}}»?",
+    "confirmDeleteServerMessage": "Las cámaras que publican por él se asignan a otro router. No se puede deshacer."
   },
   "logs": {
     "title": "Diario de registros",
@@ -626,7 +639,9 @@
         "label": "Detección de objetos",
         "desc": "Detección de objetos (persona, vehículo)"
       }
-    }
+    },
+    "confirmDelete": "¿Eliminar el filtro de alarma «{{name}}»?",
+    "confirmDeleteMessage": "Los eventos que coinciden ya no se guardan como alarmas."
   },
   "cameraCard": {
     "switchToArchive": "Cambiar a archivo",
@@ -702,7 +717,9 @@
     "pollConfig": "Sondeo de eventos",
     "pollTimeoutSeconds": "Tiempo de espera (s)",
     "messageLimit": "Mensajes por sondeo",
-    "subscription": "Suscripción"
+    "subscription": "Suscripción",
+    "confirmRemoveCamera": "¿Quitar la cámara «{{name}}» del monitoreo ONVIF?",
+    "confirmRemoveCameraMessage": "Se dejan de consultar sus eventos, así que las alarmas ya no se registran. Los filtros de alarma se conservan."
   },
   "fsActivity": {
     "tabLabel": "Actividad FS",
@@ -836,7 +853,6 @@
     "syncTime": "Sincronizar con hora del servidor",
     "setTime": "Establecer hora (UTC)",
     "reboot": "Reiniciar cámara",
-    "rebootConfirm": "¿Reiniciar cámara? Puede tardar 1–2 minutos en reconectarse.",
     "deviceInfo": "Información del dispositivo",
     "manufacturer": "Fabricante",
     "model": "Modelo",
@@ -879,7 +895,11 @@
     "metadataCellNumber": "Celda {{n}}",
     "metadataCellsNoLayout": "La cámara no informa la disposición de la rejilla; las celdas se muestran en su propio orden.",
     "metadataCellAt": "Fila {{row}}, columna {{col}}",
-    "metadataCellsLayout": "Rejilla {{columns}} × {{rows}}, según informa la cámara"
+    "metadataCellsLayout": "Rejilla {{columns}} × {{rows}}, según informa la cámara",
+    "confirmDeletePreset": "¿Eliminar la posición predefinida «{{name}}»?",
+    "confirmDeletePresetMessage": "Se elimina la posición guardada de la cámara; la cámara no se mueve.",
+    "rebootTitle": "¿Reiniciar la cámara?",
+    "rebootMessage": "Puede tardar 1–2 minutos en reconectar."
   },
   "wall": {
     "modeLive": "En vivo",
@@ -1104,7 +1124,10 @@
     "nudgePan": "Mueva el eje de paneo y observe la imagen. Pulse pan+ tantas veces como necesite; pan− devuelve la cámara.",
     "nudgeTilt": "Ahora el eje de inclinación. Pulse tilt+ tantas veces como necesite; tilt− devuelve la cámara.",
     "method_auto": "automática",
-    "method_wizard": "asistente"
+    "method_wizard": "asistente",
+    "confirmRecalibrate": "¿Calibrar la cámara «{{name}}» automáticamente de nuevo?",
+    "confirmRecalibrateMessage": "Se reemplaza la calibración existente.",
+    "recalibrateConfirm": "Recalibrar"
   },
   "tracking": {
     "trackObject": "Seguir este objeto",
@@ -1304,7 +1327,10 @@
       "ptz": "PTZ",
       "control": "Control",
       "export": "Exportar"
-    }
+    },
+    "confirmRevokeTitle": "¿Revocar «{{action}}» a «{{subject}}»?",
+    "confirmRevokeMessage": "Se aplica a este nodo y todo lo que hay debajo.",
+    "revokeConfirm": "Revocar"
   },
   "maps": {
     "title": "Mapas y planos",
@@ -1523,7 +1549,7 @@
     "landmarkHeight": "Altura, m",
     "landmarkHeightHint": "Sobre el piso de este plano",
     "landmarkHint": "Un punto de referencia es algo que se ve en la imagen de una cámara: una esquina, un poste, una tapa. Arrástrelo a su posición real.",
-    "confirmRemoveLandmark": "¿Eliminar el punto \"{{name}}\"? Las calibraciones que lo usan pierden ese punto.",
+    "confirmRemoveLandmark": "¿Eliminar el punto «{{name}}»?",
     "noLive": "Sin vídeo en vivo",
     "openInMonitor": "Abrir monitor \"{{name}}\"",
     "aimHere": "Apuntar a un punto del mapa",
@@ -1595,7 +1621,11 @@
     "viewAlarm": "Grabación de la alarma",
     "tabObject": "Objeto",
     "objectOnItsTab": "Los ajustes propios de este nodo — nombre, aspecto, propiedades — están en la pestaña Objeto.",
-    "faults": "Averías"
+    "faults": "Averías",
+    "confirmRemovePlacement": "¿Quitar «{{camera}}» de «{{space}}»?",
+    "confirmRemovePlacementMessage": "Deja de mostrarse en este plano. Su configuración, sus otras colocaciones y su posición real se conservan.",
+    "confirmRemoveLandmarkMessage": "Las calibraciones que lo usan pierden ese punto.",
+    "confirmRemovePlanMessage": "El plano se conserva; solo se quita su imagen."
   },
   "ptzGeo": {
     "open": "Calibrar con puntos de referencia…",

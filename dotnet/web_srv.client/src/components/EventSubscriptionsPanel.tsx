@@ -9,6 +9,7 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import { useTranslation } from 'react-i18next'
 import type { EventSubscriptionDto, SubscriptionActionDto } from '../dto/dtos'
 import { enc, errorText, jsonRequest, requestJson } from '../api/requestJson'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import { useDirtyGuard } from './settings/useDirtyGuard'
@@ -91,6 +92,7 @@ export default function EventSubscriptionsPanel(
   { ref }: { ref?: React.Ref<ApplyIfDirtyHandle> },
 ) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [subscriptions, setSubscriptions] = useState<EventSubscriptionDto[]>([])
   const [loaded, setLoaded] = useState(false)
   const [form, setForm] = useState<EditForm | null>(null)
@@ -198,6 +200,10 @@ export default function EventSubscriptionsPanel(
 
   const remove = async () => {
     if (!form?.id) return
+    if (!await confirm({
+      title: t('eventRouting.confirmDelete', { name: form.name || t('eventRouting.newTitle') }),
+      message: t('eventRouting.confirmDeleteMessage'),
+    })) return
     setBusy(true)
     setError(null)
     try {

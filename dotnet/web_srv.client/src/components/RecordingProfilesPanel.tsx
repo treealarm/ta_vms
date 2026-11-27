@@ -12,6 +12,7 @@ import {
 } from '@mui/material'
 import { useTranslation } from 'react-i18next'
 import type { RecordingProfileDto, RecordingMode } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import SettingsListItem from './settings/SettingsListItem'
@@ -39,6 +40,7 @@ type FormProps = {
 
 function RecordingProfileForm({ ref, profile, onSaved, onRemoved }: FormProps) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const isNew = profile === null
   const readOnly = profile?.isBuiltin === true
 
@@ -89,6 +91,10 @@ function RecordingProfileForm({ ref, profile, onSaved, onRemoved }: FormProps) {
   const handleCancel = () => setForm({ ...snap })
 
   const handleRemove = async () => {
+    if (!await confirm({
+      title: t('recording.confirmDeleteProfile', { name: form.name }),
+      message: t('recording.confirmDeleteProfileMessage'),
+    })) return
     setBusy(true)
     setError(null)
     try {

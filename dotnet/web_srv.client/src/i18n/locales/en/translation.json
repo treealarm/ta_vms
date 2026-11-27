@@ -21,7 +21,8 @@
     "undoLast": "Undo the last change (Ctrl+Z)",
     "confirmDelete": "Delete",
     "deleted": "Deleted",
-    "undo": "Undo"
+    "undo": "Undo",
+    "remove": "Remove"
   },
   "nodes": {
     "title": "Logical tree",
@@ -63,7 +64,9 @@
     "position": "Step {{position}}",
     "kind": "Kind",
     "params": "parameters",
-    "saved": "Saved"
+    "saved": "Saved",
+    "confirmDelete": "Delete subscription \"{{name}}\"?",
+    "confirmDeleteMessage": "Events it routes are no longer acted on. This cannot be undone."
   },
   "nav": {
     "monitors": "Monitors",
@@ -227,7 +230,9 @@
     "browseNotWritable": "Not writable — open it to look inside",
     "disabled": "Disabled for writing",
     "camerasUsing": "{{count}} camera(s) record here — deleting the storage removes their assignment.",
-    "deleteWarning": "{{count}} camera(s) record on this storage. Deleting it removes their storage assignment, and that cannot be undone. Delete anyway?"
+    "confirmDelete": "Delete storage \"{{path}}\"?",
+    "deleteMessageUsed": "{{count}} camera(s) record here; deleting it removes their storage assignment. This cannot be undone.",
+    "deleteMessageUnused": "Deleting it removes the storage from recording. This cannot be undone."
   },
   "storageControl": {
     "title": "Storage assignment",
@@ -253,7 +258,9 @@
     "prePostSeg": "pre {{pre}}s · post {{post}}s · seg {{seg}}s",
     "seg": "seg {{seg}}s",
     "deleteProfile": "Delete profile",
-    "selectHint": "Select a recording profile"
+    "selectHint": "Select a recording profile",
+    "confirmDeleteProfile": "Delete recording profile \"{{name}}\"?",
+    "confirmDeleteProfileMessage": "Cameras that use it fall back to their default profile. This cannot be undone."
   },
   "schedule": {
     "title": "Recording schedules",
@@ -281,7 +288,9 @@
     "addDate": "Date",
     "add": "Add",
     "windowCount_one": "{{count}} window",
-    "windowCount_other": "{{count}} windows"
+    "windowCount_other": "{{count}} windows",
+    "confirmDeleteSchedule": "Delete recording schedule \"{{name}}\"?",
+    "confirmDeleteScheduleMessage": "Cameras assigned to it lose their recording schedule. This cannot be undone."
   },
   "scheduleControl": {
     "title": "Recording schedules",
@@ -320,7 +329,9 @@
     "source": {
       "cv": "Analytics",
       "onvif": "Camera metadata"
-    }
+    },
+    "confirmDeleteWatch": "Delete analytics watch for \"{{name}}\"?",
+    "confirmDeleteWatchMessage": "Analytics stops watching this camera and its settings are deleted. This cannot be undone."
   },
   "analyticsActivity": {
     "tabLabel": "Analytics",
@@ -425,7 +436,9 @@
     "noServers": "No routers configured",
     "selectHint": "Select a router or press + to add one",
     "transcodeHevc": "Transcode HEVC to H.264",
-    "transcodeHevcHelper": "Off: H.265 cameras are passed through untouched, and MediaMTX carries them over WebRTC to browsers that can decode it — nothing is re-encoded at all. Turn on where viewers cannot play that: Firefox has no HEVC in WebRTC, Chrome depends on the platform, and a stream carrying B-frames is refused whatever the browser supports."
+    "transcodeHevcHelper": "Off: H.265 cameras are passed through untouched, and MediaMTX carries them over WebRTC to browsers that can decode it — nothing is re-encoded at all. Turn on where viewers cannot play that: Firefox has no HEVC in WebRTC, Chrome depends on the platform, and a stream carrying B-frames is refused whatever the browser supports.",
+    "confirmDeleteServer": "Delete router \"{{name}}\"?",
+    "confirmDeleteServerMessage": "Cameras that publish through it are assigned another router. This cannot be undone."
   },
   "logs": {
     "title": "Log Journal",
@@ -626,7 +639,9 @@
         "label": "Object Detection",
         "desc": "Object detection (person, vehicle)"
       }
-    }
+    },
+    "confirmDelete": "Delete alarm filter \"{{name}}\"?",
+    "confirmDeleteMessage": "Events matching it are no longer kept as alarms."
   },
   "cameraCard": {
     "switchToArchive": "Switch to Archive",
@@ -702,7 +717,9 @@
     "pollConfig": "Event polling",
     "pollTimeoutSeconds": "Poll timeout (s)",
     "messageLimit": "Messages per poll",
-    "subscription": "Subscription"
+    "subscription": "Subscription",
+    "confirmRemoveCamera": "Remove camera \"{{name}}\" from ONVIF monitoring?",
+    "confirmRemoveCameraMessage": "Its events stop being polled, so alarms from it are no longer recorded. Alarm filters are kept."
   },
   "fsActivity": {
     "tabLabel": "FS Activity",
@@ -836,7 +853,6 @@
     "syncTime": "Sync to server time",
     "setTime": "Set time (UTC)",
     "reboot": "Reboot camera",
-    "rebootConfirm": "Reboot camera? It may take 1–2 minutes to reconnect.",
     "deviceInfo": "Device information",
     "manufacturer": "Manufacturer",
     "model": "Model",
@@ -879,7 +895,11 @@
     "metadataCellNumber": "Cell {{n}}",
     "metadataCellsNoLayout": "The camera does not report the grid layout, so cells are shown in its own order.",
     "metadataCellAt": "Row {{row}}, column {{col}}",
-    "metadataCellsLayout": "Grid {{columns}} × {{rows}}, as reported by the camera"
+    "metadataCellsLayout": "Grid {{columns}} × {{rows}}, as reported by the camera",
+    "confirmDeletePreset": "Delete preset \"{{name}}\"?",
+    "confirmDeletePresetMessage": "The saved camera position is removed; the camera does not move.",
+    "rebootTitle": "Reboot camera?",
+    "rebootMessage": "It may take 1–2 minutes to reconnect."
   },
   "wall": {
     "modeLive": "Live",
@@ -1104,7 +1124,10 @@
     "nudgePan": "Move the pan axis and watch the picture. Press pan+ as many times as you need; pan− puts the camera back.",
     "nudgeTilt": "Now the tilt axis. Press tilt+ as many times as you need; tilt− puts the camera back.",
     "method_auto": "automatic",
-    "method_wizard": "wizard"
+    "method_wizard": "wizard",
+    "confirmRecalibrate": "Calibrate camera \"{{name}}\" automatically again?",
+    "confirmRecalibrateMessage": "The existing calibration is replaced.",
+    "recalibrateConfirm": "Recalibrate"
   },
   "tracking": {
     "trackObject": "Track this object",
@@ -1304,7 +1327,10 @@
       "ptz": "PTZ",
       "control": "Control",
       "export": "Export"
-    }
+    },
+    "confirmRevokeTitle": "Revoke \"{{action}}\" from \"{{subject}}\"?",
+    "confirmRevokeMessage": "It applies to this node and everything under it.",
+    "revokeConfirm": "Revoke"
   },
   "maps": {
     "title": "Maps & plans",
@@ -1524,7 +1550,7 @@
     "landmarkHeight": "Height, m",
     "landmarkHeightHint": "Above this plan's floor",
     "landmarkHint": "A landmark is a point you can find in a camera's picture: a corner, a pole, a hatch. Drag it to where it really is.",
-    "confirmRemoveLandmark": "Delete landmark \"{{name}}\"? Calibrations that use it lose that point.",
+    "confirmRemoveLandmark": "Delete landmark \"{{name}}\"?",
     "noLive": "No live video",
     "openInMonitor": "Open monitor \"{{name}}\"",
     "aimHere": "Aim at a map point",
@@ -1596,7 +1622,11 @@
     "viewAlarm": "Alarm recording",
     "tabObject": "Object",
     "objectOnItsTab": "This node's own settings — name, look, properties — are on the Object tab.",
-    "faults": "Faults"
+    "faults": "Faults",
+    "confirmRemovePlacement": "Remove \"{{camera}}\" from \"{{space}}\"?",
+    "confirmRemovePlacementMessage": "It is no longer shown on this plan. Its settings, other placements and its real position stay.",
+    "confirmRemoveLandmarkMessage": "Calibrations that use it lose that point.",
+    "confirmRemovePlanMessage": "The plan itself stays; only its picture is removed."
   },
   "ptzGeo": {
     "open": "Calibrate by landmarks…",

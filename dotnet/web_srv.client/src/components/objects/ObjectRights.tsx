@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '../../store'
 import {
   grantRight, loadNodeRights, loadRightActions, loadRightSubjects, loadRightsMode, revokeRight,
 } from '../../store/rightsSlice'
+import { useConfirm } from '../settings/confirmContext'
 import DetailToolbar from '../settings/DetailToolbar'
 
 /**
@@ -17,6 +18,7 @@ import DetailToolbar from '../settings/DetailToolbar'
  */
 export default function ObjectRights({ nodeId }: { nodeId: string }) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const dispatch = useAppDispatch()
   const marker = useAppSelector((s) => s.objects.markers[nodeId])
   const state = useAppSelector((s) => s.rights)
@@ -55,9 +57,22 @@ export default function ObjectRights({ nodeId }: { nodeId: string }) {
   const granted = (subject: string, action: string) =>
     rows.some((row) => row.subject === subject && row.action === action)
 
-  const toggle = (subject: string, action: string, on: boolean) => {
-    if (on) void dispatch(grantRight({ objectId: nodeId, subject, action }))
-    else void dispatch(revokeRight({ objectId: nodeId, subject, action }))
+  const toggle = async (subject: string, action: string, on: boolean) => {
+    if (on) {
+      void dispatch(grantRight({ objectId: nodeId, subject, action }))
+      return
+    }
+    // Only revocation asks: granting adds a row, revoking takes one away — and a right inherits
+    // downwards, so the row disappears from everything under this node too.
+    if (!await confirm({
+      title: t('rights.confirmRevokeTitle', {
+        subject,
+        action: t(`rights.action.${action}`, { defaultValue: action }),
+      }),
+      message: t('rights.confirmRevokeMessage'),
+      confirmLabel: t('rights.revokeConfirm'),
+    })) return
+    void dispatch(revokeRight({ objectId: nodeId, subject, action }))
   }
 
   return (
@@ -109,7 +124,7 @@ export default function ObjectRights({ nodeId }: { nodeId: string }) {
                       <Checkbox
                         size="small"
                         checked={granted(subject, action)}
-                        onChange={(event) => toggle(subject, action, event.target.checked)}
+                        onChange={(event) => void toggle(subject, action, event.target.checked)}
                       />
                     </TableCell>
                   ))}

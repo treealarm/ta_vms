@@ -15,6 +15,7 @@ import CloseIcon from '@mui/icons-material/Close'
 import EditIcon from '@mui/icons-material/Edit'
 import { useTranslation } from 'react-i18next'
 import type { ObservedTopicDto, OnvifAlarmFilterDto } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
 
 type TopicOption = {
   filterText: string
@@ -104,6 +105,7 @@ function FilterRow({ filter, cameraId, topicOptions, onSaved, onDeleted }: {
   onDeleted: () => void
 }) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(filter.filterText)
   const [textFilter, setTextFilter] = useState(filter.textFilter ?? '')
@@ -130,6 +132,10 @@ function FilterRow({ filter, cameraId, topicOptions, onSaved, onDeleted }: {
   }
 
   const handleDelete = async () => {
+    if (!await confirm({
+      title: t('onvifFilters.confirmDelete', { name: filter.filterText }),
+      message: t('onvifFilters.confirmDeleteMessage'),
+    })) return
     const resp = await fetch(
       `/api/onvif/cameras/${encodeURIComponent(cameraId)}/alarm-filters/${encodeURIComponent(filter.id!)}`,
       { method: 'DELETE' },

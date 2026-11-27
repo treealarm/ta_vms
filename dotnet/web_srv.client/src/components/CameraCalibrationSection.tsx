@@ -11,6 +11,7 @@ import {
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
 import type { PtzCalibrationDto } from '../dto/dtos'
+import { useConfirm } from './settings/confirmContext'
 
 type Props = {
   cameraId: string
@@ -39,6 +40,7 @@ function errorMessage(err: unknown, fallback: string): string {
 
 export default function CameraCalibrationSection({ cameraId, hasTelemetry }: Props) {
   const { t } = useTranslation()
+  const confirm = useConfirm()
   const [calibration, setCalibration] = useState<PtzCalibrationDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -63,6 +65,14 @@ export default function CameraCalibrationSection({ cameraId, hasTelemetry }: Pro
   useEffect(() => { void reload() }, [reload])
 
   const runAuto = async () => {
+    // The first calibration is what the button exists for; running it over an existing one
+    // discards a result someone may have adjusted with the wizard, so that one is confirmed.
+    if (calibration && !await confirm({
+      title: t('ptzCalibration.confirmRecalibrate', { name: cameraId }),
+      message: t('ptzCalibration.confirmRecalibrateMessage'),
+      confirmLabel: t('ptzCalibration.recalibrateConfirm'),
+      danger: false,
+    })) return
     setBusy(true)
     setError(null)
     try {
