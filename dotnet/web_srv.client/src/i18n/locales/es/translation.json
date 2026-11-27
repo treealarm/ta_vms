@@ -765,6 +765,8 @@
     "encoding": "Codificación",
     "noConfigs": "No se encontraron configuraciones de codificador de video",
     "noCamerasWithOnvif": "No hay cámaras con conexión ONVIF configurada",
+    "sectionSaveFailed": "No se guardó {{section}}: {{error}}",
+    "sectionNotSaved": "No se guardó {{section}}",
     "videoTab": "Video",
     "audioTab": "Audio",
     "ptzTab": "Presets PTZ",

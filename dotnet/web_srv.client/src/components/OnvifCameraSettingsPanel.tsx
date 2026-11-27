@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -33,6 +33,10 @@ import OnvifMetadataSection from './OnvifMetadataSection'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
 import { useCameraDeepLink } from './settings/useCameraDeepLink'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
+import { OnvifEditsContext, useOnvifEdit, useOnvifEdits } from './settings/onvifEdits'
+import type { OnvifEditOutcome } from './settings/onvifEdits'
 import type {
   AudioEncoderConfigDto,
   AudioEncoderConfigOptionsDto,
@@ -50,9 +54,19 @@ import type {
 
 // ── Video encoder section ──────────────────────────────────────────────────
 
+/** The fields the card's own Save sends; `token` and the rest of the camera's answer are not edited. */
+function encoderChanged(a: VideoEncoderConfigDto, b: VideoEncoderConfigDto): boolean {
+  return a.name !== b.name || a.encoding !== b.encoding || a.width !== b.width || a.height !== b.height
+    || a.frameRateLimit !== b.frameRateLimit || a.bitrateLimit !== b.bitrateLimit
+    || a.govLength !== b.govLength || a.h264Profile !== b.h264Profile || a.quality !== b.quality
+}
+
 function EncoderCard({ cameraId, config: initial }: { cameraId: string; config: VideoEncoderConfigDto }) {
   const { t } = useTranslation()
   const [cfg, setCfg] = useState<VideoEncoderConfigDto>(initial)
+  // What the camera last answered: the card is saved when its edits match it, and a save moves it.
+  // The parent refetches on a camera switch, so a new `initial` resets both.
+  const [snap, setSnap] = useState<VideoEncoderConfigDto>(initial)
   const [options, setOptions] = useState<VideoEncoderConfigOptionsDto | null>(null)
   const [loadingOpts, setLoadingOpts] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -69,10 +83,16 @@ function EncoderCard({ cameraId, config: initial }: { cameraId: string; config: 
       .finally(() => setLoadingOpts(false))
   }, [cameraId, initial.token, initial.encoding])
 
+  useEffect(() => {
+    setCfg(initial)
+    setSnap(initial)
+  }, [initial])
+
   const hasGov = cfg.encoding === 'H264' || cfg.encoding === 'H265' || cfg.encoding === 'MPEG4'
   const isH264 = cfg.encoding === 'H264'
+  const dirty = encoderChanged(cfg, snap)
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<OnvifEditOutcome> => {
     setSaving(true); setSaveError(null); setSaveOk(false)
     try {
       await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/video-encoder-configs/${encodeURIComponent(cfg.token)}`, {
@@ -80,14 +100,25 @@ function EncoderCard({ cameraId, config: initial }: { cameraId: string; config: 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cfg.name, encoding: cfg.encoding, width: cfg.width, height: cfg.height, frameRateLimit: cfg.frameRateLimit, bitrateLimit: cfg.bitrateLimit, govLength: cfg.govLength, h264Profile: cfg.h264Profile, quality: cfg.quality }),
       })
+      setSnap(cfg)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      setSaveError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  useOnvifEdit({
+    key: `video:${cameraId}:${cfg.token}`,
+    section: t('onvifSettings.videoTab'),
+    dirty,
+    apply: async () => (dirty ? handleSave() : { ok: true, error: null }),
+  })
 
   return (
     <Card variant="outlined">
@@ -168,9 +199,16 @@ function VideoSection({ cameraId }: { cameraId: string }) {
 
 // ── Audio encoder section ─────────────────────────────────────────────────
 
+/** The fields the card's own Save sends. */
+function audioChanged(a: AudioEncoderConfigDto, b: AudioEncoderConfigDto): boolean {
+  return a.name !== b.name || a.encoding !== b.encoding
+    || a.bitrate !== b.bitrate || a.sampleRate !== b.sampleRate
+}
+
 function AudioCard({ cameraId, config: initial }: { cameraId: string; config: AudioEncoderConfigDto }) {
   const { t } = useTranslation()
   const [cfg, setCfg] = useState<AudioEncoderConfigDto>(initial)
+  const [snap, setSnap] = useState<AudioEncoderConfigDto>(initial)
   const [options, setOptions] = useState<AudioEncoderConfigOptionsDto | null>(null)
   const [loadingOpts, setLoadingOpts] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -187,7 +225,14 @@ function AudioCard({ cameraId, config: initial }: { cameraId: string; config: Au
       .finally(() => setLoadingOpts(false))
   }, [cameraId, initial.token, initial.encoding])
 
-  const handleSave = async () => {
+  useEffect(() => {
+    setCfg(initial)
+    setSnap(initial)
+  }, [initial])
+
+  const dirty = audioChanged(cfg, snap)
+
+  const handleSave = async (): Promise<OnvifEditOutcome> => {
     setSaving(true); setSaveError(null); setSaveOk(false)
     try {
       await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/audio-encoder-configs/${encodeURIComponent(cfg.token)}`, {
@@ -195,14 +240,25 @@ function AudioCard({ cameraId, config: initial }: { cameraId: string; config: Au
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: cfg.name, encoding: cfg.encoding, bitrate: cfg.bitrate, sampleRate: cfg.sampleRate }),
       })
+      setSnap(cfg)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      setSaveError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  useOnvifEdit({
+    key: `audio:${cameraId}:${cfg.token}`,
+    section: t('onvifSettings.audioTab'),
+    dirty,
+    apply: async () => (dirty ? handleSave() : { ok: true, error: null }),
+  })
 
   return (
     <Card variant="outlined">
@@ -279,6 +335,7 @@ function AudioSection({ cameraId }: { cameraId: string }) {
 function ImagingSection({ cameraId }: { cameraId: string }) {
   const { t } = useTranslation()
   const [settings, setSettings] = useState<ImagingSettingsDto | null>(null)
+  const [snap, setSnap] = useState<ImagingSettingsDto | null>(null)
   const [options, setOptions] = useState<ImagingOptionsDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -292,13 +349,20 @@ function ImagingSection({ cameraId }: { cameraId: string }) {
       apiFetch<ImagingSettingsDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-settings`),
       apiFetch<ImagingOptionsDto>(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-options`),
     ])
-      .then(([s, o]) => { setSettings(s); setOptions(o) })
+      .then(([s, o]) => { setSettings(s); setSnap(s); setOptions(o) })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false))
   }, [cameraId])
 
-  const handleSave = async () => {
-    if (!settings) return
+  const dirty = !!settings && !!snap && (
+    (settings.brightness ?? null) !== (snap.brightness ?? null)
+    || (settings.contrast ?? null) !== (snap.contrast ?? null)
+    || (settings.colorSaturation ?? null) !== (snap.colorSaturation ?? null)
+    || (settings.sharpness ?? null) !== (snap.sharpness ?? null)
+  )
+
+  const handleSave = async (): Promise<OnvifEditOutcome> => {
+    if (!settings) return { ok: true, error: null }
     setSaving(true); setSaveError(null); setSaveOk(false)
     try {
       await apiFetch(`/api/onvif/cameras/${encodeURIComponent(cameraId)}/imaging-settings`, {
@@ -311,14 +375,25 @@ function ImagingSection({ cameraId }: { cameraId: string }) {
           sharpness: settings.sharpness ?? null,
         }),
       })
+      setSnap(settings)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      setSaveError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  useOnvifEdit({
+    key: `imaging:${cameraId}`,
+    section: t('onvifSettings.imagingTab'),
+    dirty,
+    apply: async () => (dirty ? handleSave() : { ok: true, error: null }),
+  })
 
   if (loading) return <Stack spacing={1}><Skeleton variant="rounded" height={40} /><Skeleton variant="rounded" height={40} /></Stack>
   if (error) return <Alert severity="error">{error}</Alert>
@@ -704,10 +779,28 @@ function SystemSection({ cameraId }: { cameraId: string }) {
 
 // ── Camera detail pane ────────────────────────────────────────────────────
 
-function CameraDetail({ camera, initialTab }: { camera: CameraSetupDto; initialTab?: string | null }) {
+function CameraDetail({ camera, initialTab, beforeTabChange }: {
+  camera: CameraSetupDto
+  initialTab?: string | null
+  /** Saves the cards of the tab being left; false keeps the operator on it. */
+  beforeTabChange: () => Promise<boolean>
+}) {
   const { t } = useTranslation()
   const [tabKey, setTabKey] = useState(initialTab || 'video')
   const [caps, setCaps] = useState<DeviceCapabilitiesDto | null>(null)
+  // Serializes tab changes so a rapid second click cannot start a second save for the same cards.
+  const switching = useRef(false)
+
+  const changeTab = async (key: string) => {
+    if (switching.current) return
+    switching.current = true
+    try {
+      if (!(await beforeTabChange())) return
+      setTabKey(key)
+    } finally {
+      switching.current = false
+    }
+  }
 
   useEffect(() => {
     apiFetch<DeviceCapabilitiesDto>(`/api/onvif/cameras/${encodeURIComponent(camera.cameraId)}/capabilities`)
@@ -753,7 +846,7 @@ function CameraDetail({ camera, initialTab }: { camera: CameraSetupDto; initialT
   return (
     <Stack direction="row" spacing={2} sx={{ height: '100%' }}>
       <Stack spacing={0} sx={{ flex: 1, minWidth: 0 }}>
-        <Tabs value={activeKey} onChange={(_, v: string) => setTabKey(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={activeKey} onChange={(_, v: string) => void changeTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
           {tabs.map((tb) => <Tab key={tb.key} value={tb.key} label={tb.label} />)}
         </Tabs>
         <Box sx={{ flex: 1, overflow: 'auto', pt: 1 }}>
@@ -831,12 +924,47 @@ function ServerGroup({ serverId, cameras, selectedId, isOpen, onOpen, onSelect }
 
 // ── Main panel ────────────────────────────────────────────────────────────
 
-export default function OnvifCameraSettingsPanel() {
+export default function OnvifCameraSettingsPanel(
+  { ref }: { ref?: React.Ref<ApplyIfDirtyHandle> },
+) {
   const { t } = useTranslation()
   const allCameras = useAppSelector((s) => Object.values(s.live.cameraStatesById))
   const onvifCameras = allCameras.filter((c) => c.onvifConn?.ip)
   const deepLink = useCameraDeepLink()
   const [selectedId, setSelectedId] = useState<string | null>(deepLink.cameraId)
+  const edits = useOnvifEdits()
+  const applyAllCards = edits.applyAll
+  const [panelError, setPanelError] = useState<string | null>(null)
+
+  /**
+   * Every way off a card — the admin tab strip, the camera list, the inner tabs — asks the
+   * registry first. A refusal leaves the operator on the card that refused, with its own message
+   * repeated up here next to the camera's name.
+   */
+  const saveOpenCards = useCallback(async (): Promise<boolean> => {
+    const failed = await applyAllCards()
+    setPanelError(failed === null
+      ? null
+      : failed.error
+        ? t('onvifSettings.sectionSaveFailed', { section: failed.section, error: failed.error })
+        : t('onvifSettings.sectionNotSaved', { section: failed.section }))
+    return failed === null
+  }, [applyAllCards, t])
+
+  useDirtyGuard(ref, edits.dirty, saveOpenCards)
+
+  // Serializes camera switches so a rapid second click cannot start a second save.
+  const switching = useRef(false)
+  const selectCamera = async (cameraId: string) => {
+    if (switching.current) return
+    switching.current = true
+    try {
+      if (!(await saveOpenCards())) return
+      setSelectedId(cameraId)
+    } finally {
+      switching.current = false
+    }
+  }
 
   const groups = onvifCameras.reduce<Record<string, CameraSetupDto[]>>((acc, cam) => {
     const key = cam.serverId ?? ''
@@ -886,7 +1014,7 @@ export default function OnvifCameraSettingsPanel() {
               selectedId={selectedId}
               isOpen={openServerId === serverId}
               onOpen={() => setOpenServerId(serverId)}
-              onSelect={setSelectedId}
+              onSelect={(cameraId) => void selectCamera(cameraId)}
             />
           ))}
         </Box>
@@ -898,15 +1026,24 @@ export default function OnvifCameraSettingsPanel() {
         </Typography>
       ) : (
         <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {/* No panel-wide Apply here — each ONVIF card saves independently against the camera */}
+          {/* No panel-wide Apply here — each ONVIF card saves independently against the camera.
+              The toolbar's dirty flag and error come from the card registry instead. */}
           <DetailToolbar
             title={selectedCamera.name || selectedCamera.cameraId}
             subtitle={`${selectedCamera.onvifConn?.ip}:${selectedCamera.onvifConn?.port}`}
-            dirty={false}
+            dirty={edits.dirty}
             hideApply
+            error={panelError}
+            onDismissError={() => setPanelError(null)}
           />
           <Box sx={{ flex: 1, minHeight: 0, p: 2 }}>
-            <CameraDetail camera={selectedCamera} initialTab={deepLink.tab} />
+            <OnvifEditsContext.Provider value={edits.api}>
+              <CameraDetail
+                camera={selectedCamera}
+                initialTab={deepLink.tab}
+                beforeTabChange={saveOpenCards}
+              />
+            </OnvifEditsContext.Provider>
           </Box>
         </Box>
       )}

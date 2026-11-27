@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Divider } from '@mui/material'
 import { getControlObject } from '../../api/controlApi'
+import type { ApplyIfDirtyHandle } from '../settings/useDirtyGuard'
 import ObjectSettingsCard from './ObjectSettingsCard'
 
 /**
@@ -12,7 +13,13 @@ import ObjectSettingsCard from './ObjectSettingsCard'
  * and goes with it rather than standing over nothing.
  */
 export default function NodeSettingsCard(
-  { nodeId, divider }: { nodeId: string; divider?: boolean }) {
+  { nodeId, divider, ref, onDirtyChange }: {
+    nodeId: string
+    divider?: boolean
+    /** Forwarded to the card, which registers its save-on-leave contract. */
+    ref?: React.Ref<ApplyIfDirtyHandle>
+    onDirtyChange?: (dirty: boolean) => void
+  }) {
   // The answer keeps the node it belongs to: the previous node's mode is not this one's, and the
   // card stays hidden until this node answers.
   const [answer, setAnswer] = useState<{ nodeId: string; kind: string | null } | null>(null)
@@ -36,7 +43,7 @@ export default function NodeSettingsCard(
   return (
     <Fragment>
       {divider ? <Divider /> : null}
-      <ObjectSettingsCard nodeId={nodeId} />
+      <ObjectSettingsCard nodeId={nodeId} ref={ref} onDirtyChange={onDirtyChange} />
     </Fragment>
   )
 }

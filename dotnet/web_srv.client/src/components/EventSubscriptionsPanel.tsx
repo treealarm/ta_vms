@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Divider, FormControlLabel, IconButton, List, ListItemButton, ListItemText,
   MenuItem, Stack, Switch, TextField, Tooltip, Typography,
@@ -11,6 +11,8 @@ import type { EventSubscriptionDto, SubscriptionActionDto } from '../dto/dtos'
 import { enc, errorText, jsonRequest, requestJson } from '../api/requestJson'
 import DetailToolbar from './settings/DetailToolbar'
 import MasterDetailLayout from './settings/MasterDetailLayout'
+import { useDirtyGuard } from './settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
 /**
  * Admin → Event routing: what the router in VmsSingleton executes when a journal event matches.
@@ -85,7 +87,9 @@ function parseObject(text: string, label: string): string {
   return JSON.stringify(parsed)
 }
 
-export default function EventSubscriptionsPanel() {
+export default function EventSubscriptionsPanel(
+  { ref }: { ref?: React.Ref<ApplyIfDirtyHandle> },
+) {
   const { t } = useTranslation()
   const [subscriptions, setSubscriptions] = useState<EventSubscriptionDto[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -115,6 +119,9 @@ export default function EventSubscriptionsPanel() {
     () => (form && snap ? JSON.stringify(form) !== JSON.stringify(snap) : false),
     [form, snap],
   )
+  // A new subscription is worth saving once it has a name; an empty one is not a form at all, so
+  // leaving it is not an edit lost.
+  const isDirty = isNew ? Boolean(form?.name.trim()) : dirty
 
   const select = (subscription: EventSubscriptionDto) => {
     const next = toEdit(subscription)
@@ -132,8 +139,8 @@ export default function EventSubscriptionsPanel() {
     setError(null)
   }
 
-  const save = async () => {
-    if (!form) return
+  const applyInternal = async (): Promise<boolean> => {
+    if (!form) return true
     setBusy(true)
     setError(null)
     setNotice(null)
@@ -164,10 +171,28 @@ export default function EventSubscriptionsPanel() {
       if (saved) select(saved)
       else setSnap(form)
       setNotice(t('eventRouting.saved'))
+      return true
     } catch (e) {
       setError(errorText(e))
+      return false
     } finally {
       setBusy(false)
+    }
+  }
+
+  useDirtyGuard(ref, isDirty, applyInternal)
+
+  // Selecting another subscription or starting a new one goes through the same contract as the
+  // admin tab strip: save the open form first, and stay put when the server refuses it.
+  const switching = useRef(false)
+  const switchTo = async (next: () => void) => {
+    if (switching.current) return
+    switching.current = true
+    try {
+      if (!(await (isDirty ? applyInternal() : Promise.resolve(true)))) return
+      next()
+    } finally {
+      switching.current = false
     }
   }
 
@@ -223,7 +248,7 @@ export default function EventSubscriptionsPanel() {
           </IconButton>
         </Tooltip>
       )}
-      onAdd={addNew}
+      onAdd={() => void switchTo(addNew)}
       addTooltip={t('eventRouting.add')}
       list={(
         <List dense disablePadding>
@@ -231,7 +256,7 @@ export default function EventSubscriptionsPanel() {
             <ListItemButton
               key={subscription.id}
               selected={form?.id === subscription.id}
-              onClick={() => select(subscription)}
+              onClick={() => void switchTo(() => select(subscription))}
               sx={{ pr: 0.5 }}
             >
               <ListItemText
@@ -268,14 +293,14 @@ export default function EventSubscriptionsPanel() {
         </Typography>
       ) : (
         <Box component="form" sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
-          onSubmit={(event) => { event.preventDefault(); void save() }}>
+          onSubmit={(event) => { event.preventDefault(); void applyInternal() }}>
           <DetailToolbar
             title={form.name || t('eventRouting.newTitle')}
             subtitle={form.id}
             dirty={dirty || isNew}
             busy={busy}
             applyLabel={t('common.apply')}
-            onApply={() => void save()}
+            onApply={() => void applyInternal()}
             onDelete={form ? () => void remove() : undefined}
             deleteLabel={t('common.delete')}
           />

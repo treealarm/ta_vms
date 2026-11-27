@@ -765,6 +765,8 @@
     "encoding": "Encoding",
     "noConfigs": "No video encoder configurations found",
     "noCamerasWithOnvif": "No cameras with ONVIF connection configured",
+    "sectionSaveFailed": "{{section}} was not saved: {{error}}",
+    "sectionNotSaved": "{{section}} was not saved",
     "videoTab": "Video",
     "audioTab": "Audio",
     "ptzTab": "PTZ Presets",

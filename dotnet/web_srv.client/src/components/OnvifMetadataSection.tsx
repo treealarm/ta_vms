@@ -19,6 +19,8 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { useTranslation } from 'react-i18next'
 import { apiFetch } from '../api/apiFetch'
+import { useOnvifEdit } from './settings/onvifEdits'
+import type { OnvifEditOutcome } from './settings/onvifEdits'
 import type {
   MetadataConfigDto,
   MetadataConfigsResponseDto,
@@ -319,16 +321,21 @@ function ModuleEditor({ cameraId, kind, configToken, module, descriptions, onCha
 }) {
   const { t } = useTranslation()
   const [items, setItems] = useState(module.simpleItems)
+  const [snap, setSnap] = useState(module.simpleItems)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Reset when the camera or configuration switches under us — this component is keyed by module
   // name, which repeats across configurations.
-  useEffect(() => { setItems(module.simpleItems) }, [module])
+  useEffect(() => {
+    setItems(module.simpleItems)
+    setSnap(module.simpleItems)
+  }, [module])
 
   const description = descriptions.find((d) => d.type === module.type)
+  const dirty = JSON.stringify(items) !== JSON.stringify(snap)
 
-  const save = async () => {
+  const save = async (): Promise<OnvifEditOutcome> => {
     setBusy(true); setError(null)
     try {
       await apiFetch(`${base(cameraId)}/${kind}?configToken=${encodeURIComponent(configToken)}`, {
@@ -344,13 +351,24 @@ function ModuleEditor({ cameraId, kind, configToken, module, descriptions, onCha
           elementItems: module.elementItems,
         }),
       })
+      setSnap(items)
       onChanged()
+      return { ok: true, error: null }
     } catch (e) {
-      setError(errText(e))
+      const message = errText(e)
+      setError(message)
+      return { ok: false, error: message }
     } finally {
       setBusy(false)
     }
   }
+
+  useOnvifEdit({
+    key: `metadata:${cameraId}:${kind}:${configToken}:${module.name}`,
+    section: t('onvifSettings.metadataTab'),
+    dirty,
+    apply: async () => (dirty ? save() : { ok: true, error: null }),
+  })
 
   const remove = async () => {
     setBusy(true); setError(null)

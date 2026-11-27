@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -35,6 +35,9 @@ import type {
 import { setRelayOutputState, useRelayToggle } from '../hooks/useRelayToggle'
 import { useDeviceIoLive } from '../hooks/useDeviceIoLive'
 import ObjectSettingsCard from './objects/ObjectSettingsCard'
+import { useOnvifEdit } from './settings/onvifEdits'
+import type { OnvifEditOutcome } from './settings/onvifEdits'
+import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
 type PartKind = 'digital_input' | 'relay'
 
@@ -63,10 +66,11 @@ function PartNameField({ cameraId, kind, token, savedName, onSaved }: {
   const trimmed = name.trim()
   const dirty = trimmed !== saved
 
-  const save = async () => {
+  const save = async (): Promise<OnvifEditOutcome> => {
     if (!trimmed) {
-      setError(t('onvifSettings.deviceIoNameEmpty'))
-      return
+      const message = t('onvifSettings.deviceIoNameEmpty')
+      setError(message)
+      return { ok: false, error: message }
     }
     setSaving(true); setError(null); setOk(false)
     try {
@@ -76,12 +80,22 @@ function PartNameField({ cameraId, kind, token, savedName, onSaved }: {
       setOk(true)
       onSaved(trimmed)
       setTimeout(() => setOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setError(errorText(e))
+      const message = errorText(e)
+      setError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  useOnvifEdit({
+    key: `name:${cameraId}:${kind}:${token}`,
+    section: t('onvifSettings.deviceIoTab'),
+    dirty,
+    apply: async () => (dirty ? save() : { ok: true, error: null }),
+  })
 
   return (
     <Stack spacing={0.5}>
@@ -153,20 +167,32 @@ function DigitalInputRow({
   onDirtyChange: (dirty: boolean) => void
 }) {
   const { t } = useTranslation()
-  const [idleState, setIdleState] = useState<IdleState>(input.idleState ?? 'closed')
+  const savedIdle = input.idleState ?? 'closed'
+  const [idleState, setIdleState] = useState<IdleState>(savedIdle)
+  const [idleSnap, setIdleSnap] = useState<IdleState>(savedIdle)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveOk, setSaveOk] = useState(false)
   const [displayName, setDisplayName] = useState(settings?.name || input.token)
   const configurable = options?.idleStateConfigurable ?? false
+  // The rule card under this row keeps its own unsaved edit; this row is one card to the panel.
+  const objectRef = useRef<ApplyIfDirtyHandle>(null)
+  const [objectDirty, setObjectDirty] = useState(false)
 
   useEffect(() => setDisplayName(settings?.name || input.token), [settings?.name, input.token])
+
+  useEffect(() => {
+    setIdleState(savedIdle)
+    setIdleSnap(savedIdle)
+  }, [savedIdle])
 
   // Unknown polarity is a warning, not a disabled control: the setting is stored, the alarm simply
   // cannot be raised until the camera says which contact is idle.
   const polarityUnknown = input.idleState === null
+  const idleDirty = configurable && idleState !== idleSnap
+  const dirty = idleDirty || objectDirty
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<OnvifEditOutcome> => {
     setSaving(true); setSaveError(null); setSaveOk(false)
     try {
       await apiFetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/digital-inputs/${encodeURIComponent(input.token)}/idle-state`, {
@@ -174,14 +200,38 @@ function DigitalInputRow({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idleState }),
       })
+      setIdleSnap(idleState)
       setSaveOk(true)
       setTimeout(() => setSaveOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      setSaveError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  /** The row is one card to the panel: its own idle state, then the rule card below it. */
+  const apply = async (): Promise<OnvifEditOutcome> => {
+    if (idleDirty) {
+      const outcome = await handleSave()
+      if (!outcome.ok) return outcome
+    }
+    if (!objectRef.current) return { ok: true, error: null }
+    // The rule card shows its own message; the row only says its section failed.
+    return (await objectRef.current.applyIfDirty())
+      ? { ok: true, error: null }
+      : { ok: false, error: null }
+  }
+
+  useOnvifEdit({
+    key: `input:${cameraId}:${input.token}`,
+    section: t('onvifSettings.deviceIoTab'),
+    dirty,
+    apply: async () => (dirty ? apply() : { ok: true, error: null }),
+  })
 
   return (
     <Stack spacing={1}>
@@ -245,12 +295,16 @@ function DigitalInputRow({
         {t('onvifSettings.deviceIoBehaviourGroup')}
       </Typography>
       <ObjectSettingsCard
+        ref={objectRef}
         cameraId={cameraId}
         partKind="digital_input"
         partToken={input.token}
         showArming={false}
         refreshKey={refreshKey}
-        onDirtyChange={onDirtyChange}
+        onDirtyChange={(next) => {
+          setObjectDirty(next)
+          onDirtyChange(next)
+        }}
       />
       {saveError && <Alert severity="error" onClose={() => setSaveError(null)}>{saveError}</Alert>}
     </Stack>
@@ -330,6 +384,8 @@ function RelayOutputRow({
   const [mode, setMode] = useState<RelayMode>(relay.mode)
   const [idleState, setIdleState] = useState<IdleState>(relay.idleState)
   const [delayMs, setDelayMs] = useState(relay.delayMs)
+  // The camera's last answer; a save moves it, and a live reload with new values resets the form.
+  const [snap, setSnap] = useState({ mode: relay.mode, idleState: relay.idleState, delayMs: relay.delayMs })
   const [displayName, setDisplayName] = useState(settings?.name || relay.token)
   // The server answers with the operator's wish until the camera confirms it, so the switch needs
   // no guess of its own here.
@@ -341,6 +397,16 @@ function RelayOutputRow({
   const [saveOk, setSaveOk] = useState(false)
 
   useEffect(() => setDisplayName(settings?.name || relay.token), [settings?.name, relay.token])
+
+  useEffect(() => {
+    const next = { mode: relay.mode, idleState: relay.idleState, delayMs: relay.delayMs }
+    setMode(next.mode)
+    setIdleState(next.idleState)
+    setDelayMs(next.delayMs)
+    setSnap(next)
+  }, [relay.mode, relay.idleState, relay.delayMs])
+
+  const dirty = mode !== snap.mode || idleState !== snap.idleState || delayMs !== snap.delayMs
 
   const handleToggle = async () => {
     const next = !active
@@ -357,7 +423,7 @@ function RelayOutputRow({
     }
   }
 
-  const handleSave = async () => {
+  const handleSave = async (): Promise<OnvifEditOutcome> => {
     setSaving(true); setSaveError(null); setSaveOk(false)
     try {
       await apiFetch(`/api/DeviceIo/cameras/${encodeURIComponent(cameraId)}/relay-outputs/${encodeURIComponent(relay.token)}/settings`, {
@@ -365,15 +431,26 @@ function RelayOutputRow({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode, idleState, delayMs }),
       })
+      setSnap({ mode, idleState, delayMs })
       setSaveOk(true)
       onSaved()
       setTimeout(() => setSaveOk(false), 3000)
+      return { ok: true, error: null }
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : String(e))
+      const message = e instanceof Error ? e.message : String(e)
+      setSaveError(message)
+      return { ok: false, error: message }
     } finally {
       setSaving(false)
     }
   }
+
+  useOnvifEdit({
+    key: `relay:${cameraId}:${relay.token}`,
+    section: t('onvifSettings.deviceIoTab'),
+    dirty,
+    apply: async () => (dirty ? handleSave() : { ok: true, error: null }),
+  })
 
   const min = options?.minDelayMs ?? 0
   const max = options?.maxDelayMs ?? 60_000

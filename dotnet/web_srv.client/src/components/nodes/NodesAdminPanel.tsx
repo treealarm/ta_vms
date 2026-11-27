@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Chip, Dialog, DialogContent, DialogTitle, IconButton, List,
   ListItemButton, ListItemText, Stack, TextField, Tooltip, Typography,
@@ -23,6 +23,8 @@ import { useMapLive } from '../../hooks/useMapLive'
 import PartStateDot from '../objects/PartStateDot'
 import DetailToolbar from '../settings/DetailToolbar'
 import MasterDetailLayout from '../settings/MasterDetailLayout'
+import { useDirtyGuard } from '../settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from '../settings/useDirtyGuard'
 import CameraUnifiedCard from '../CameraUnifiedCard'
 import NodeSettingsCard from '../objects/NodeSettingsCard'
 import NodeStateChips from '../objects/NodeStateChips'
@@ -34,7 +36,9 @@ import DiagramViewer from '../diagrams/DiagramViewer'
  * everything" are different things. It is not the map's palette (what stands on a space) and not
  * the camera page (a device's hardware): here a node's place in the tree is the subject.
  */
-export default function NodesAdminPanel() {
+export default function NodesAdminPanel(
+  { ref }: { ref?: React.Ref<ApplyIfDirtyHandle> },
+) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   // `?node=` is a way in from the map: the same link the camera's placement panel offers.
@@ -59,6 +63,34 @@ export default function NodesAdminPanel() {
   const [error, setError] = useState<string | null>(null)
   // The diagram open in a read-only viewer over the tree, and which one it is.
   const [viewer, setViewer] = useState<{ id: string; name: string } | null>(null)
+
+  // The selected node's settings card is the only form here; it reports its own unsaved edit, and
+  // the panel saves it before it lets the reader select something else.
+  const detailRef = useRef<ApplyIfDirtyHandle>(null)
+  const [detailDirty, setDetailDirty] = useState(false)
+  const saveDetail = useCallback(
+    async () => (detailRef.current ? detailRef.current.applyIfDirty() : true),
+    [],
+  )
+
+  useDirtyGuard(ref, detailDirty, saveDetail)
+
+  // Serializes selection changes so a rapid second click cannot start a second save.
+  const switching = useRef(false)
+  const switchSelection = async (next: () => void) => {
+    if (switching.current) return
+    switching.current = true
+    try {
+      if (!(await saveDetail())) return
+      next()
+    } finally {
+      switching.current = false
+    }
+  }
+
+  // The card unmounts with its own state; a new selection starts clean, and the next card reports
+  // its own edits once it has loaded.
+  useEffect(() => { setDetailDirty(false) }, [selectedId])
 
   useEffect(() => {
     if (roots === null) void dispatch(loadRoots())
@@ -122,7 +154,9 @@ export default function NodesAdminPanel() {
     setExpanded(next)
   }
 
-  const openInTree = async (node: MapMarker | string) => {
+  // Revealing another node changes the selection too, so it saves the open card first — a refused
+  // save keeps the search results and the selected node where they are.
+  const openInTree = (node: MapMarker | string) => switchSelection(async () => {
     setQuery('')
     setResults(null)
     const { marker, ancestors } = await dispatch(revealNodePath(node)).unwrap()
@@ -131,7 +165,7 @@ export default function NodesAdminPanel() {
     if (marker?.parentId) next.add(marker.parentId)
     setExpanded(next)
     setSelectedId(typeof node === 'string' ? node : node.id)
-  }
+  })
 
   // A link from the map names a node the page has not read yet; the reveal reads it on the way.
   // Re-running on every marker change would fight the reader's own navigation.
@@ -240,7 +274,7 @@ export default function NodesAdminPanel() {
                 <ListItemButton
                   key={marker.id}
                   selected={selectedId === marker.id}
-                  onClick={() => setSelectedId(marker.id)}
+                  onClick={() => void switchSelection(() => setSelectedId(marker.id))}
                   sx={{ pl: 0.5 + depth * 1.5 }}
                 >
                   <Box sx={{ width: 24, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
@@ -371,7 +405,11 @@ export default function NodesAdminPanel() {
               {selectedCamera || isPart ? (
                 <Box>
                   <Typography variant="subtitle2">{t('objectSettings.title')}</Typography>
-                  <NodeSettingsCard nodeId={selected.id} />
+                  <NodeSettingsCard
+                    nodeId={selected.id}
+                    ref={detailRef}
+                    onDirtyChange={setDetailDirty}
+                  />
                 </Box>
               ) : null}
 

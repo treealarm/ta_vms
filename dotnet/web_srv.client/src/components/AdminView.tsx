@@ -62,16 +62,18 @@ export default function AdminView() {
           <Routes>
             <Route path="cameras" element={<CameraControlPanel ref={panelRef} />} />
             <Route path="maps" element={<MapsAdminPanel ref={panelRef} />} />
-            <Route path="nodes" element={<NodesAdminPanel />} />
+            <Route path="nodes" element={<NodesAdminPanel ref={panelRef} />} />
             <Route path="mediamtx" element={<MediaMtxServersPanel ref={panelRef} />} />
             <Route path="monitors" element={<MonitorListPanel ref={panelRef} />} />
             <Route path="storages" element={<StorageSetupPanel ref={panelRef} />} />
             <Route path="recording" element={<RecordingProfilesPanel ref={panelRef} />} />
             <Route path="schedules" element={<RecordingSchedulesPanel ref={panelRef} />} />
             <Route path="onvif" element={<OnvifSubscriptionsPanel ref={panelRef} />} />
-            <Route path="onvif-settings" element={<OnvifCameraSettingsPanel />} />
-            <Route path="event-routing" element={<EventSubscriptionsPanel />} />
+            <Route path="onvif-settings" element={<OnvifCameraSettingsPanel ref={panelRef} />} />
+            <Route path="event-routing" element={<EventSubscriptionsPanel ref={panelRef} />} />
             <Route path="analytics" element={<AnalyticsWatchesPanel ref={panelRef} />} />
+            {/* No guard: every action on the edge archive is immediate and already confirmed, so
+                the tab holds no unsaved edit to lose. */}
             <Route path="edge-archive" element={<EdgeArchivePanel />} />
             <Route path="deployment" element={<DeploymentPanel ref={panelRef} />} />
             <Route path="*" element={<Navigate to="/admin/cameras" replace />} />

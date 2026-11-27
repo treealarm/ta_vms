@@ -11,6 +11,8 @@ import {
 import { errorText } from '../../api/requestJson'
 import { formatUntil } from '../control/bypassTime'
 import { guardState } from '../control/guardState'
+import { useDirtyGuard } from '../settings/useDirtyGuard'
+import type { ApplyIfDirtyHandle } from '../settings/useDirtyGuard'
 import type { CameraArmMode, ObjectSettingsBody, ObjectSettingsDto } from '../../dto/dtos'
 
 type Props =
@@ -29,6 +31,8 @@ type Flags = {
   refreshKey?: number
   /** Tells the caller whether this card holds unsaved changes. */
   onDirtyChange?: (dirty: boolean) => void
+  /** Registered by a container that saves open forms before letting the reader leave. */
+  ref?: React.Ref<ApplyIfDirtyHandle>
 }
 
 /**
@@ -108,7 +112,7 @@ export default function ObjectSettingsCard(props: Props & Flags) {
     if (!dirty) setPendingReload(false)
   }, [dirty])
 
-  const save = async () => {
+  const save = async (): Promise<boolean> => {
     setBusy(true)
     setError(null)
     try {
@@ -123,12 +127,18 @@ export default function ObjectSettingsCard(props: Props & Flags) {
         ? await setNodeSettings(props.nodeId, body)
         : await setDeviceSettings(props.cameraId, props.partKind, props.partToken ?? '', body)
       apply(next)
+      return true
     } catch (e) {
       setError(errorText(e))
+      return false
     } finally {
       setBusy(false)
     }
   }
+
+  // The card is embedded in several pages; where the container offers a ref, the container saves
+  // this form before it switches the reader away from it.
+  useDirtyGuard(props.ref, dirty, save)
 
   if (loading && settings === null)
     return <CircularProgress size={20} />
