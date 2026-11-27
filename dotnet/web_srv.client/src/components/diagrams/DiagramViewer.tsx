@@ -39,6 +39,13 @@ type Props = {
   onPick: (marker: MapMarker) => void
   /** A breadcrumb or a nested diagram: open that canvas — a space is the map, a diagram a dive. */
   onOpen: (marker: MapMarker) => void
+  /**
+   * Open a diagram this canvas may not know: the type editor lists every place a type is shown,
+   * and those diagrams usually stand on other spaces. Unlike `onOpen`, the node is not expected to
+   * be one of this canvas's own. A host with nowhere to open a diagram from omits it, and the
+   * usage rows are then read-only.
+   */
+  onOpenCanvas?: (marker: MapMarker) => void
   /** The administrator's canvas: elements move, nodes can be dropped on the paper, diagrams are made. */
   editing?: boolean
   /** A diagram was just made: the editor selects it, which opens it. */
@@ -74,7 +81,7 @@ const PANEL_SHARE = 0.4
  * movement the map uses for nested plans.
  */
 export default function DiagramViewer({
-  diagramId, selectedId, onPick, onOpen, editing, onCreated, onDeleted,
+  diagramId, selectedId, onPick, onOpen, onOpenCanvas, editing, onCreated, onDeleted,
   armedCameraId, armedCameraName, onPlaceArmed, onCancelArmed,
 }: Props) {
   const { t } = useTranslation()
@@ -710,7 +717,19 @@ export default function DiagramViewer({
       </Box>
 
       {editing ? (
-        <MapDiagramTypesDialog open={typesOpen} onClose={() => setTypesOpen(false)} onSaved={reload} />
+        <MapDiagramTypesDialog
+          open={typesOpen}
+          onClose={() => setTypesOpen(false)}
+          onSaved={reload}
+          onOpenDiagram={onOpenCanvas
+            ? (entry) => {
+              // A row is a place on some canvas, not necessarily this one: the host opens it as a
+              // canvas by node, rather than treating it as a click on this canvas's own tree.
+              setTypesOpen(false)
+              onOpenCanvas({ id: entry.id, name: entry.name, nodeKind: 'diagram' })
+            }
+            : undefined}
+        />
       ) : null}
     </Box>
   )

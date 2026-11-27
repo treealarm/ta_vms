@@ -55,6 +55,17 @@ internal sealed class TestCameraState(bool armed = false, string armMode = "inhe
 
 internal static class TestWiring
 {
+  /// <summary>
+  /// The gRPC layer for a call that only touches the type dictionary: everything it is not given
+  /// here is a capability <c>DeleteDiagramTypes</c> does not use. In-memory on purpose — like
+  /// <see cref="MapPostgres.Grpc"/> but without the scratch database, so the RPC contract is
+  /// checked even when no test DSN is set.
+  /// </summary>
+  public static VmsMap.Grpc.MapServiceImpl MapRpc(VmsMapDbContext db) => new(
+    db, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!, null!,
+    null!, new DiagramTypeService(db), null!, null!, null!, null!, null!, null!, null!, null!,
+    null!, null!, null!, null!, null!, null!);
+
   public static DeviceNodeService DeviceNodes(
     VmsMapDbContext db, MapDb map, MapUpdateService updates, ICameraCatalog? catalog = null) =>
     new(db, map, updates, catalog ?? new AlwaysKnownCatalog(),

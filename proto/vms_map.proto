@@ -184,6 +184,12 @@ service MapService {
   rpc GetDiagramContent(GetDiagramContentRequest) returns (DiagramContent);
   rpc GetDiagramsByIds(GetByIdsRequest) returns (DiagramList);
   rpc GetDiagramTypes(GetDiagramTypesRequest) returns (DiagramTypeList);
+  // Where a type is in use, derived on every read from the diagrams drawn from it and the device
+  // bindings that keep one. Nothing is stored: a list that could drift from the rows it describes
+  // is worse than one computed each time. The dictionary's own view, not scoped by rights — the
+  // type dictionary is global configuration, and the refusal to delete a type in use is the
+  // authority, not this list.
+  rpc GetDiagramTypeUsage(GetDiagramTypeUsageRequest) returns (DiagramTypeUsage);
 
   rpc GetLevels(google.protobuf.Empty) returns (LevelList);
   rpc GetLevel(GetLevelRequest) returns (GetLevelResponse);
@@ -1423,6 +1429,34 @@ message DiagramType {
 
 message DiagramTypeList {
   repeated DiagramType diagram_types = 1;
+}
+
+message GetDiagramTypeUsageRequest {
+  string type_id = 1;
+}
+
+// One row per place the type is shown: a diagram node and each of its replicas are separate rows,
+// because a diagram shown on three canvases is in use in three places.
+message DiagramTypeUsageEntry {
+  // The node to open. A replica opens the diagram it shows, with its own place in the breadcrumbs.
+  string diagram_id = 1;
+  // The placement's own name.
+  string name = 2;
+  // The nearest space or mnemoscheme the node stands in; empty when there is none.
+  string canvas_id = 3;
+  string canvas_name = 4;
+  // True when this row is a replica of the diagram rather than the diagram's own node.
+  bool is_representation = 5;
+  // Set on the rows of a diagram a device binding keeps.
+  string source_kind = 6;
+  string source_id = 7;
+}
+
+message DiagramTypeUsage {
+  // Diagrams drawn from the type and not bound to a device.
+  repeated DiagramTypeUsageEntry diagrams = 1;
+  // Diagrams a device binding keeps from the type.
+  repeated DiagramTypeUsageEntry device_diagrams = 2;
 }
 
 message GetDiagramContentRequest {

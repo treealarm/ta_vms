@@ -862,6 +862,36 @@ namespace VmsMap.Grpc
       return new MapProto.DiagramTypeList { DiagramTypes = { types.Values.Select(ToProto) } };
     }
 
+    /// <summary>
+    /// Where a type is in use: the same two columns the delete refusal reads, so the editor can
+    /// show the administrator what stands in the way instead of only telling them something does.
+    /// </summary>
+    public override async Task<MapProto.DiagramTypeUsage> GetDiagramTypeUsage(
+      MapProto.GetDiagramTypeUsageRequest request, ServerCallContext context)
+    {
+      var usage = new MapProto.DiagramTypeUsage();
+      if (Utils.ConvertObjectIdToGuid(request.TypeId) is not { } typeId)
+        return usage;
+
+      var rows = await DiagramTypeUsage.ResolveAsync(_db, typeId, context.CancellationToken);
+      foreach (var row in rows)
+      {
+        (row.IsDevice ? usage.DeviceDiagrams : usage.Diagrams).Add(
+          new MapProto.DiagramTypeUsageEntry
+          {
+            DiagramId = row.DiagramId,
+            Name = row.Name,
+            CanvasId = row.CanvasId,
+            CanvasName = row.CanvasName,
+            IsRepresentation = row.IsRepresentation,
+            SourceKind = row.SourceKind,
+            SourceId = row.SourceId,
+          });
+      }
+
+      return usage;
+    }
+
     // ── Levels ────────────────────────────────────────────────────────────────────────────────
 
     public override async Task<MapProto.LevelList> GetLevels(
