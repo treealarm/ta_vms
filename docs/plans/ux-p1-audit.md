@@ -75,8 +75,9 @@
   ключ `onvifSubs.noCameras`), даже когда камеры есть, а подписок нет.
 - Кнопка «+» в заголовке списка подписана «Add camera» (`onvifSubs.addCamera`, `:254`) и
   отключена, когда нет доступных ONVIF-камер (`:255`); причина отказа не названа.
-- Ключ `onvifSubs.noCamerasWithOnvif` уже существует (`en/translation.json:784`) и называет
-  настоящую причину для случая «камеры есть, ONVIF-соединения нет».
+- Фраза «No cameras with ONVIF connection configured» уже есть, но под `onvifSettings`
+  (`en/translation.json:789`); под `onvifSubs` ключ добавляется в этапе 1 и называет настоящую
+  причину для случая «камеры есть, ONVIF-соединения нет».
 
 **Журнал событий.**
 
