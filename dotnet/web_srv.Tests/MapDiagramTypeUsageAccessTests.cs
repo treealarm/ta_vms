@@ -21,23 +21,30 @@ public class MapDiagramTypeUsageAccessTests
       .Where(type => !type.IsAbstract && typeof(ControllerBase).IsAssignableFrom(type))
       .SelectMany(ServedRoutes)
       .Where(served => served.Route == UsageRoute)
-      .Select(served => served.Controller)
       .ToList();
 
-    var controller = Assert.Single(serving);
-    Assert.Equal(typeof(MapAdminController), controller);
-    Assert.Equal(AuthPolicies.AdminOnly, controller.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+    var action = Assert.Single(serving);
+    Assert.Equal(typeof(MapAdminController), action.Controller);
+    Assert.Equal(
+      AuthPolicies.AdminOnly,
+      action.Controller.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+
+    // The policy is the controller's, so an `[AllowAnonymous]` on either level would void it. None
+    // is there today; this keeps it that way.
+    Assert.Null(action.Action.GetCustomAttribute<AllowAnonymousAttribute>());
+    Assert.Null(action.Controller.GetCustomAttribute<AllowAnonymousAttribute>());
   }
 
   /// Every route a controller serves: its own route with each action's template under it, which is
   /// how the framework builds them. One action may carry several, for a second path to the same read.
-  private static IEnumerable<(Type Controller, string Route)> ServedRoutes(Type controller)
+  private static IEnumerable<(Type Controller, MethodInfo Action, string Route)> ServedRoutes(
+    Type controller)
   {
     var prefix = controller.GetCustomAttribute<RouteAttribute>()?.Template.Trim('/') ?? string.Empty;
     return controller
       .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
-      .SelectMany(action => action.GetCustomAttributes<HttpMethodAttribute>(inherit: true))
-      .Select(attribute => (controller, Join(prefix, attribute.Template)));
+      .SelectMany(action => action.GetCustomAttributes<HttpMethodAttribute>(inherit: true)
+        .Select(attribute => (controller, action, Route: Join(prefix, attribute.Template))));
   }
 
   private static string Join(string prefix, string? template)

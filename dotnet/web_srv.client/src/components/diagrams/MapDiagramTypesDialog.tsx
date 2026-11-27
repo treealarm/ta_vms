@@ -232,7 +232,7 @@ export default function MapDiagramTypesDialog(
                   <Button
                     size="small"
                     color="error"
-                    disabled={!deletable}
+                    disabled={busy || !deletable}
                     onClick={() => void remove(type)}
                   >
                     {t('diagramEditor.deleteType')}
