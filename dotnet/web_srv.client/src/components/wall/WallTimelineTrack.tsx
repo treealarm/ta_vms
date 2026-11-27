@@ -3,6 +3,10 @@ import { alpha, Box, Typography } from '@mui/material'
 import type { Segment } from '../../utils/archiveRanges'
 import { msToX } from '../../utils/timelineTicks'
 import type { WallRange } from '../../utils/wallTime'
+import { noAnswerSx, segmentSx, unavailableSx } from './timelineStyles'
+
+/** What the lane knows, as opposed to what it happens to be empty of. */
+export type LaneState = 'ready' | 'unavailable' | 'noAnswer'
 
 type Props = {
   label: string
@@ -13,6 +17,9 @@ type Props = {
   emphasis?: boolean
   /** Lane has no camera behind it — drawn muted so it reads as inactive, not as "no archive". */
   disabled?: boolean
+  state?: LaneState
+  /** Short note at the lane's right end, e.g. how many cameras did not answer. */
+  counter?: string
   children?: React.ReactNode
 }
 
@@ -25,6 +32,8 @@ export default function WallTimelineTrack({
   height,
   emphasis = false,
   disabled = false,
+  state = 'ready',
+  counter,
   children,
 }: Props) {
   return (
@@ -42,13 +51,7 @@ export default function WallTimelineTrack({
           const left = msToX(Math.max(seg.startMs, win.startMs), win, pxWidth)
           const right = msToX(Math.min(seg.endMs, win.endMs), win, pxWidth)
           if (right <= 0 || left >= pxWidth) return null
-          // Footage recovered from the camera's own storage is drawn hatched rather than in another
-          // colour: the lane's colours already mean "this camera" and "the selected one", and a
-          // third shade would read as a third camera instead of a different provenance.
           const recovered = seg.origin === 'edge'
-          // Re-encoded footage gets a band along the bottom rather than a fill colour, for the
-          // same reason recovered footage is hatched: the fill already carries camera identity.
-          // A band also composes -- a stretch can be both recovered and re-encoded.
           const recompressed = seg.roiState === 'recompressed'
           const marks = [
             recovered ? 'Recovered from the camera' : null,
@@ -65,17 +68,18 @@ export default function WallTimelineTrack({
                 left: `${left}px`,
                 // Always at least a hairline, so a short recording never vanishes entirely.
                 width: `${Math.max(1, right - left)}px`,
-                bgcolor: emphasis ? 'primary.main' : 'primary.light',
-                opacity: emphasis ? 0.85 : 0.5,
-                backgroundImage: recovered
-                  ? 'repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 3px, transparent 3px 7px)'
-                  : undefined,
-                borderBottom: recompressed ? '2px solid' : undefined,
-                borderBottomColor: recompressed ? 'warning.main' : undefined,
+                ...segmentSx({ emphasis, recovered, recompressed }),
               }}
             />
           )
         })}
+        {state !== 'ready' && (
+          <Box
+            // Which hatch it is: the warning one when the whole request failed, the vertical one
+            // when only this camera stayed silent.
+            sx={{ position: 'absolute', inset: 0, ...(state === 'unavailable' ? unavailableSx : noAnswerSx) }}
+          />
+        )}
         {children}
       </Box>
 
@@ -98,6 +102,25 @@ export default function WallTimelineTrack({
       >
         {label}
       </Typography>
+
+      {counter && (
+        <Typography
+          sx={{
+            position: 'absolute',
+            right: 4,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            fontSize: '0.58rem',
+            lineHeight: 1,
+            color: 'warning.main',
+            pointerEvents: 'none',
+            textShadow: '0 0 3px var(--app-video-bg, rgba(0,0,0,.6))',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {counter}
+        </Typography>
+      )}
     </Box>
   )
 }

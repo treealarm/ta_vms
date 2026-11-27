@@ -7,9 +7,10 @@ import { panWindow, seekTo, selectWall, setWindow, zoomWindow } from '../../stor
 import { wallClockBus } from '../../hooks/wallClockBus'
 import { useWallCoverage } from '../../hooks/useWallCoverage'
 import { buildTicks, msToX, xToMs } from '../../utils/timelineTicks'
-import { DAY_MS, isSameLocalDay } from '../../utils/wallTime'
+import { DAY_MS, isSameLocalDay, windowRangeLabel } from '../../utils/wallTime'
 import type { WallRange } from '../../utils/wallTime'
 import WallTimelineTrack from './WallTimelineTrack'
+import WallTimelineLegend from './WallTimelineLegend'
 import EventBrackets from './EventBrackets'
 import { useWallEvents } from '../../hooks/useWallEvents'
 
@@ -58,6 +59,10 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
     () => (focusedCameraId ? (coverage.byCamera[focusedCameraId] ?? []) : []),
     [focusedCameraId, coverage.byCamera]
   )
+  // A camera with no track in an otherwise successful response stayed silent; that is not the same
+  // answer as "it has no recording", so the lane says so instead of staying empty.
+  const focusedSilent = !coverage.failed && focusedCameraId !== null && coverage.missing.includes(focusedCameraId)
+  const missingCount = coverage.failed ? 0 : coverage.missing.length
 
   const ticks = useMemo(
     () => buildTicks(win, pxWidth, focusedSegments),
@@ -165,6 +170,20 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
       >
         {/* Ruler. No filled band behind it — a grey strip here would sit on top of the tracks. */}
         <Box sx={{ position: 'relative', height: TICKS_H }}>
+          <Typography
+            sx={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              fontSize: '0.62rem',
+              lineHeight: 1,
+              color: 'text.secondary',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+            }}
+          >
+            {windowRangeLabel(win)}
+          </Typography>
           {pxWidth > 0 &&
             ticks.map((tick) => {
               const x = msToX(tick.ms, win, pxWidth)
@@ -227,6 +246,7 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
           height={TRACK_H}
           emphasis
           disabled={!focusedCameraId}
+          state={coverage.failed ? 'unavailable' : focusedSilent ? 'noAnswer' : 'ready'}
         >
           {focusedCameraId && (
             <EventBrackets
@@ -248,6 +268,8 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
           win={win}
           pxWidth={pxWidth}
           height={TRACK_H}
+          state={coverage.failed ? 'unavailable' : 'ready'}
+          counter={missingCount > 0 ? t('wall.noAnswerCount', { count: missingCount }) : undefined}
         />
 
         <Box
@@ -264,6 +286,8 @@ export default function WallTimeline({ monitorId, cameraIds, focusedCameraId }: 
           }}
         />
       </Box>
+
+      <WallTimelineLegend failed={coverage.failed} onRetry={coverage.retry} />
     </Box>
   )
 }

@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 
 import { useAppDispatch, useAppSelector } from '../store'
 import {
   fetchRecordingTimeline,
   selectWallCoverage,
+  selectWallCoverageFailed,
   selectWallCoverageLoading,
+  selectWallCoverageMissing,
   wallCoverageKey,
 } from '../store/wallCoverageSlice'
 import type { RecordingTimelineQueryDto } from '../dto/dtos'
@@ -28,9 +30,15 @@ export type WallCoverage = {
   /** All wall cameras collapsed into one track. */
   union: Segment[]
   loading: boolean
+  /** The request failed outright: nothing here is known, as opposed to known to be empty. */
+  failed: boolean
+  /** Cameras the successful response carried no track for — the camera did not answer. */
+  missing: string[]
+  retry: () => void
 }
 
 const EMPTY: Record<string, Segment[]> = {}
+const NO_MISSING: string[] = []
 
 /**
  * Archive coverage for every camera on the wall over the visible window, in one request.
@@ -67,6 +75,8 @@ export function useWallCoverage(
   const key = query ? wallCoverageKey(query) : ''
   const cached = useAppSelector(selectWallCoverage(key))
   const loading = useAppSelector(selectWallCoverageLoading(key))
+  const failed = useAppSelector(selectWallCoverageFailed(key))
+  const missing = useAppSelector(selectWallCoverageMissing(key)) ?? NO_MISSING
 
   useEffect(() => {
     if (!query || cached || inFlight.has(key)) return
@@ -83,8 +93,24 @@ export function useWallCoverage(
     return () => clearTimeout(timer)
   }, [dispatch, query, key, cached])
 
+  // A failed key is deliberately not retried by the effect: an outage would then hammer the
+  // endpoint on every render. The operator asks for it again from the timeline.
+  const retry = useCallback(() => {
+    if (!query || inFlight.has(key)) return
+    inFlight.add(key)
+    void dispatch(fetchRecordingTimeline(query)).finally(() => inFlight.delete(key))
+  }, [dispatch, query, key])
+
   const byCamera = cached ?? EMPTY
   const union = useMemo(() => unionSegments(Object.values(byCamera)), [byCamera])
 
-  return { byCamera, union, loading }
+  return {
+    byCamera,
+    union,
+    loading,
+    failed,
+    // While the request is failing there is no response to be missing from.
+    missing: failed ? NO_MISSING : missing,
+    retry,
+  }
 }

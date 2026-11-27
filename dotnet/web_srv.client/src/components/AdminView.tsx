@@ -1,9 +1,10 @@
 import { useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Box, Stack, Tab, Tabs } from '@mui/material'
+import { Box, Stack } from '@mui/material'
 import { useRegisterPendingEdits } from './settings/pendingEditsContext'
-import { useTranslation } from 'react-i18next'
 import ViewControls from './ViewControls'
+import GroupedNav from './GroupedNav'
+import { ADMIN_NAV_GROUPS } from './navGroups'
 
 import MonitorListPanel from './MonitorListPanel'
 import CameraControlPanel from './CameraControlPanel'
@@ -23,14 +24,11 @@ import NodesAdminPanel from './nodes/NodesAdminPanel'
 import EventSubscriptionsPanel from './EventSubscriptionsPanel'
 import type { ApplyIfDirtyHandle } from './settings/useDirtyGuard'
 
-const TABS = ['cameras', 'maps', 'nodes', 'mediamtx', 'monitors', 'storages', 'recording', 'schedules', 'onvif', 'onvif-settings', 'event-routing', 'analytics', 'edge-archive', 'deployment'] as const
-
 export default function AdminView() {
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
-  const tab = TABS.indexOf(location.pathname.split('/').pop() as typeof TABS[number])
-  const currentTab = tab === -1 ? 0 : tab
+  // Route segment of the open tab; an unknown one matches no group and the splat route redirects.
+  const current = location.pathname.split('/').pop() ?? ''
 
   // Only one route is mounted at a time, so a single ref serves every panel
   const panelRef = useRef<ApplyIfDirtyHandle>(null)
@@ -41,12 +39,12 @@ export default function AdminView() {
   // Also reachable from outside: leaving for the operator view is routing, not a tab change.
   useRegisterPendingEdits(panelRef)
 
-  const handleTabChange = async (_: unknown, v: number) => {
+  const selectTab = async (slug: string) => {
     if (switching.current) return
     switching.current = true
     try {
       if (!(await panelRef.current?.applyIfDirty() ?? true)) return
-      navigate(`/admin/${TABS[v]}`)
+      navigate(`/admin/${slug}`)
     } finally {
       switching.current = false
     }
@@ -56,7 +54,7 @@ export default function AdminView() {
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, md: 4 }, pt: 1 }}>
-          <ViewControls target="operator" />
+          <ViewControls current="admin" />
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', px: { xs: 2, md: 4 }, pb: { xs: 2, md: 4 }, pt: 1, display: 'flex', flexDirection: 'column' }}>
           <Routes>
@@ -88,33 +86,16 @@ export default function AdminView() {
           borderColor: 'divider',
           display: 'flex',
           flexDirection: 'column',
+          maxWidth: 240,
         }}
       >
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
-          <Tabs
-            orientation="vertical"
-            value={currentTab}
-            onChange={(e, v) => void handleTabChange(e, v)}
-            sx={{ '& .MuiTab-root': { minWidth: 90 } }}
-          >
-            <Tab label={t('nav.camSetup')} />
-            <Tab label={t('nav.maps')} />
-            <Tab label={t('nav.nodes')} />
-            <Tab label={t('nav.mediaMtx')} />
-            <Tab label={t('nav.monitors')} />
-            <Tab label={t('nav.storages')} />
-            <Tab label={t('nav.recording')} />
-            <Tab label={t('nav.schedules')} />
-            <Tab label={t('nav.onvif')} />
-            <Tab label={t('nav.onvifSettings')} />
-            <Tab label={t('nav.eventRouting')} />
-            <Tab label={t('nav.analytics')} />
-            <Tab label={t('nav.edgeArchive')} />
-            <Tab label={t('nav.deployment')} />
-          </Tabs>
-        </Box>
+        <GroupedNav
+          groups={ADMIN_NAV_GROUPS}
+          current={current}
+          onSelect={(slug) => void selectTab(slug)}
+        />
 
-        <Stack alignItems="center" sx={{ pb: 1 }}>
+        <Stack alignItems="center" sx={{ pb: 1, pt: 1 }}>
           <LogToggleButton />
           <SimulationFab />
         </Stack>
