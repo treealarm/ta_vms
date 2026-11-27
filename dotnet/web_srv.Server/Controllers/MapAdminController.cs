@@ -192,6 +192,18 @@ public class MapAdminController(
     return MapApi.Json(await map.DeleteDiagramTypesAsync(request, MapApi.Options(ct)));
   }
 
+  /// Where a type is in use, so the editor can say what stands in the way instead of only that
+  /// something does. The list is not scoped by rights — it is the dictionary's view — but it names
+  /// places on the map, and the refusal it explains is an administrator's; so it sits on the
+  /// surface the refusal is on, and an operator is not told about diagrams they cannot see.
+  [HttpPost("diagram-types/usage")]
+  public async Task<IActionResult> GetDiagramTypeUsage(
+    [FromBody] JsonElement body, CancellationToken ct)
+  {
+    var request = MapApi.Parse<MapProto.GetDiagramTypeUsageRequest>(body);
+    return MapApi.Json(await map.GetDiagramTypeUsageAsync(request, MapApi.Options(ct)));
+  }
+
   /// Draws a device from a template the administrator picked, for a model no template attaches
   /// itself to. The diagram it creates is maintained exactly like an automatic one.
   [HttpPost("device-diagram")]

@@ -29,6 +29,12 @@ type Props = {
 
 const round = (value: number) => Math.round(value * 1000) / 1000
 
+/** The list of places the open type is used in, as the server last answered it. */
+type UsageState =
+  | { typeId: string; status: 'loading' }
+  | { typeId: string; status: 'ready'; usage: MapDiagramTypeUsage }
+  | { typeId: string; status: 'error'; message: string }
+
 /**
  * What the server would refuse anyway, said before the round trip: every region needs a key of its
  * own, and a region outside the paper would have no picture under it.
@@ -96,9 +102,10 @@ export default function MapDiagramTypesDialog(
   const [types, setTypes] = useState<MapDiagramType[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Where each saved type is used, by type id. Missing while the read is in flight, null when it
-  // failed: the server's refusal is the authority, so a failed read only hides the list.
-  const [usage, setUsage] = useState<Record<string, MapDiagramTypeUsage | null>>({})
+  // Where the type in the open accordion is used. It is read again every time an accordion opens,
+  // so a diagram made in another window since the last look is never answered from an old list.
+  const [usage, setUsage] = useState<UsageState | null>(null)
+  const [usageAttempt, setUsageAttempt] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
 
   useEffect(() => {
@@ -111,15 +118,22 @@ export default function MapDiagramTypesDialog(
   }, [open])
 
   useEffect(() => {
-    if (!open || !expanded || expanded.startsWith('new:')) return
-    if (usage[expanded] !== undefined) return
+    if (!open || !expanded || expanded.startsWith('new:')) {
+      setUsage(null)
+      return
+    }
 
     let live = true
+    setUsage({ typeId: expanded, status: 'loading' })
     void mapApi.getDiagramTypeUsage(expanded)
-      .then((result) => { if (live) setUsage((all) => ({ ...all, [expanded]: result })) })
-      .catch(() => { if (live) setUsage((all) => ({ ...all, [expanded]: null })) })
+      .then((result) => {
+        if (live) setUsage({ typeId: expanded, status: 'ready', usage: result })
+      })
+      .catch((e) => {
+        if (live) setUsage({ typeId: expanded, status: 'error', message: errorText(e) })
+      })
     return () => { live = false }
-  }, [open, expanded, usage])
+  }, [open, expanded, usageAttempt])
 
   const change = (index: number, patch: Partial<MapDiagramType>) =>
     setTypes((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
@@ -136,7 +150,6 @@ export default function MapDiagramTypesDialog(
     try {
       const saved = await mapApi.updateDiagramTypes(types)
       setTypes(saved.diagramTypes ?? types)
-      setUsage({})
       void dispatch(loadDiagramTypes())
       onSaved?.()
     } catch (e) {
@@ -158,7 +171,7 @@ export default function MapDiagramTypesDialog(
     try {
       await mapApi.deleteDiagramTypes([type.id])
       setTypes((rows) => rows.filter((row) => row.id !== type.id))
-      setUsage({})
+      setExpanded((current) => (current === type.id ? null : current))
       void dispatch(loadDiagramTypes())
       onSaved?.()
     } catch (e) {
@@ -179,10 +192,13 @@ export default function MapDiagramTypesDialog(
 
         {types.map((type, index) => {
           const key = type.id ?? `new:${index}`
-          const used = type.id ? usage[type.id] : undefined
-          const places = used
-            ? (used.diagrams?.length ?? 0) + (used.deviceDiagrams?.length ?? 0)
+          const used = type.id && usage?.typeId === type.id ? usage : null
+          const places = used?.status === 'ready'
+            ? (used.usage.diagrams?.length ?? 0) + (used.usage.deviceDiagrams?.length ?? 0)
             : 0
+          // The server refuses a type in use whether or not this list was read, but an unread list
+          // is not an empty one: the button stands only once the list has answered "nothing".
+          const deletable = !type.id || (used?.status === 'ready' && places === 0)
 
           return (
             <Accordion
@@ -204,11 +220,19 @@ export default function MapDiagramTypesDialog(
                   <TypeRow type={type} onChange={(patch) => change(index, patch)} />
                   <Typography variant="overline" color="text.secondary">{t('diagramEditor.regions')}</Typography>
                   <DiagramTypeRegionEditor type={type} onChange={(patch) => change(index, patch)} />
-                  {type.id ? <TypeUsage usage={used} onOpen={onOpenDiagram} /> : null}
+                  {type.id
+                    ? (
+                      <TypeUsage
+                        state={used}
+                        onOpen={onOpenDiagram}
+                        onRetry={() => setUsageAttempt((attempt) => attempt + 1)}
+                      />
+                    )
+                    : null}
                   <Button
                     size="small"
                     color="error"
-                    disabled={places > 0}
+                    disabled={!deletable}
                     onClick={() => void remove(type)}
                   >
                     {t('diagramEditor.deleteType')}
@@ -346,19 +370,32 @@ function TypeRow({ type, onChange }: { type: MapDiagramType; onChange: (patch: P
 /**
  * Where a type is used, as the server derives it: one row per place, so a diagram shown on three
  * canvases is three rows. The list explains the delete button rather than guarding it — the server
- * refuses a type in use whether or not this was read.
+ * refuses a type in use whether or not this was read — but a list that could not be read says so,
+ * and offers to ask again, instead of reading as "nothing uses this type".
  */
-function TypeUsage({ usage, onOpen }: {
-  usage?: MapDiagramTypeUsage | null
+function TypeUsage({ state, onOpen, onRetry }: {
+  state: UsageState | null
   onOpen?: (entry: { id: string; name: string }) => void
+  onRetry: () => void
 }) {
   const { t } = useTranslation()
 
-  if (usage === undefined) {
+  if (state === null || state.status === 'loading') {
     return <Typography variant="caption" color="text.secondary">{t('diagramEditor.usageLoading')}</Typography>
   }
-  if (usage === null) return null
 
+  if (state.status === 'error') {
+    return (
+      <Alert
+        severity="warning"
+        action={<Button size="small" onClick={onRetry}>{t('diagramEditor.usageRetry')}</Button>}
+      >
+        {t('diagramEditor.usageFailed', { error: state.message })}
+      </Alert>
+    )
+  }
+
+  const usage = state.usage
   const places = (usage.diagrams?.length ?? 0) + (usage.deviceDiagrams?.length ?? 0)
   if (places === 0) {
     return <Typography variant="caption" color="text.secondary">{t('diagramEditor.usageNone')}</Typography>
