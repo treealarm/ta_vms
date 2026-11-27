@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Box, Button, Card, CardContent, Chip, FormControlLabel, LinearProgress, List, ListItemButton,
-  Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Alert, Box, Button, Card, CardContent, Chip, FormControlLabel, LinearProgress, List,
+  ListItemButton, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import InsightsIcon from '@mui/icons-material/Insights'
@@ -16,10 +16,14 @@ import type { MapAlarm, MapEvent } from '../../dto/mapDtos'
 import { useAppDispatch, useAppSelector } from '../../store'
 import { loadNodes } from '../../store/objectsSlice'
 import {
-  DEFAULT_EVENT_COUNT, emptyEventsFilter, eventProp, loadEvents, type EventsFilter,
+  DEFAULT_EVENT_COUNT, eventProp, loadEvents, type EventsFilter,
 } from '../../store/eventsSlice'
 import { useMapFileImage } from '../../hooks/useMapFileImage'
 import { mapApi } from '../../api/mapApi'
+import { useJournalDeepLink } from '../settings/useJournalDeepLink'
+import {
+  cameraNodesOf, journalLinkFilter, localCursorValue, lookupLinkedEvent, type EventLookup,
+} from './journalLink'
 import { AlarmActionButton } from '../alarms/AlarmAction'
 import ArchiveHlsPreview from '../ArchiveHlsPreview'
 import EventDetailsPanel from '../EventDetailsPanel'
@@ -61,6 +65,7 @@ export default function EventsJournal() {
   const { t } = useTranslation()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
+  const link = useJournalDeepLink()
   const [searchParams] = useSearchParams()
   const subtree = searchParams.get('node') ?? ''
 
@@ -73,7 +78,9 @@ export default function EventsJournal() {
   const camerasById = useAppSelector((s) => s.live.cameraStatesById)
 
   const [start, setStart] = useState('')
-  const [end, setEnd] = useState('')
+  // The cursor the wall sent is the page's "To": shown in local time, the way the operator reads
+  // the clock on the wall.
+  const [end, setEnd] = useState(() => localCursorValue(link.before))
   const [param0, setParam0] = useState('')
   const [param1, setParam1] = useState('')
   const [imagesOnly, setImagesOnly] = useState(false)
@@ -84,11 +91,114 @@ export default function EventsJournal() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [kind, setKind] = useState<EventKind>('all')
 
+  // A wall link names a camera and a cursor, and sometimes the event it was clicked on. The
+  // camera's nodes are resolved once; null means that lookup is still running.
+  const [linkCameraNodes, setLinkCameraNodes] = useState<string[] | null>(
+    () => (link.cameraId && !subtree ? null : []),
+  )
+  const [cameraHasNoNodes, setCameraHasNoNodes] = useState(false)
+  const [eventLookup, setEventLookup] = useState<EventLookup>(link.eventUuid ? 'pending' : 'found')
+  const linkedRowRef = useRef<HTMLElement | null>(null)
+  const scrolledToLink = useRef(false)
+
+  // The camera of the wall link becomes the node filter. An unresolved camera is treated like one
+  // the map does not carry: the cursor alone must not be passed off as the camera's own page, and
+  // the explanation below says as much.
   useEffect(() => {
-    void dispatch(loadEvents({
-      filter: { ...emptyEventsFilter, objects: subtree ? [subtree] : [] },
-    }))
-  }, [subtree, dispatch])
+    const cameraId = link.cameraId
+    if (!cameraId || linkCameraNodes !== null) return
+
+    let cancelled = false
+    void mapApi.searchDeviceNodes(cameraId)
+      .then((response) => {
+        if (cancelled) return
+        const ids = cameraNodesOf(response.markers ?? [], cameraId)
+        setCameraHasNoNodes(ids.length === 0)
+        setLinkCameraNodes(ids)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setCameraHasNoNodes(true)
+        setLinkCameraNodes([])
+      })
+
+    return () => { cancelled = true }
+  }, [link.cameraId, linkCameraNodes])
+
+  // Loads the page the link asks for, then walks back through older pages until the event it
+  // named appears, the journal runs out, or the page cap is reached; then says it was not found
+  // instead of showing the newest row as though it were the one asked for.
+  useEffect(() => {
+    if (linkCameraNodes === null) return
+
+    const eventUuid = link.eventUuid
+    const filter = journalLinkFilter({
+      node: subtree || null,
+      before: link.before,
+      cameraNodeIds: linkCameraNodes,
+    })
+    let cancelled = false
+
+    void (async () => {
+      let page
+      try {
+        page = await dispatch(loadEvents({ filter })).unwrap()
+      } catch {
+        // The failure is already on the page; the link simply has nothing to select.
+        return
+      }
+      if (cancelled || !eventUuid) return
+
+      let loaded = page.events
+      let more = loaded.length >= filter.count
+      let fetched = 0
+
+      for (;;) {
+        const lookup = lookupLinkedEvent(loaded, eventUuid, more, fetched)
+        if (lookup === 'found') {
+          if (!cancelled) {
+            setEventLookup('found')
+            setSelectedId(eventUuid)
+          }
+          return
+        }
+        if (lookup === 'notFound') {
+          if (!cancelled) setEventLookup('notFound')
+          return
+        }
+
+        fetched += 1
+        // Paging back stops the refresh loop, exactly as the "Load older" button does.
+        setPaged(true)
+        try {
+          page = await dispatch(loadEvents({ filter, append: true })).unwrap()
+        } catch {
+          return
+        }
+        if (cancelled) return
+
+        loaded = [...loaded, ...page.events]
+        more = page.events.length >= filter.count
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [subtree, link.before, link.eventUuid, linkCameraNodes, dispatch])
+
+  // Bring the linked row into view once, without fighting the operator's own scrolling later.
+  useEffect(() => {
+    if (eventLookup !== 'found' || selectedId !== link.eventUuid || scrolledToLink.current) return
+    const row = linkedRowRef.current
+    if (!row) return
+    row.scrollIntoView({ block: 'center' })
+    scrolledToLink.current = true
+  }, [eventLookup, selectedId, link.eventUuid, rows])
+
+  // Choosing a row is the operator taking the page over from the link, note included.
+  const selectRow = (id: string | null) => {
+    setSelectedId(id)
+    setEventLookup('found')
+  }
 
   // The names of the nodes an event mentions, for the rows and for the archive link.
   const objectIdsKey = useMemo(() => {
@@ -102,12 +212,13 @@ export default function EventsJournal() {
     if (missing.length > 0) void dispatch(loadNodes(missing))
   }, [objectIdsKey, markers, dispatch])
 
-  // Keeps the newest page fresh; a journal the operator has paged back through stays where it is.
+  // Keeps the newest page fresh; a journal the operator has paged back through stays where it is,
+  // and so does one still looking for the event a link named.
   useEffect(() => {
-    if (!autoRefresh || paged) return
+    if (!autoRefresh || paged || (link.eventUuid && eventLookup === 'pending')) return
     const timer = window.setInterval(() => { void dispatch(loadEvents({ filter: applied })) }, AUTO_REFRESH_MS)
     return () => window.clearInterval(timer)
-  }, [autoRefresh, paged, applied, dispatch])
+  }, [autoRefresh, paged, link.eventUuid, eventLookup, applied, dispatch])
 
   const apply = () => {
     const filter: EventsFilter = {
@@ -122,6 +233,8 @@ export default function EventsJournal() {
 
     setPaged(false)
     setSelectedId(null)
+    // Applying a filter of one's own ends the link lookup; its note no longer describes the page.
+    setEventLookup('found')
     void dispatch(loadEvents({ filter }))
   }
 
@@ -148,7 +261,11 @@ export default function EventsJournal() {
     })
   }, [rows, kind, text, markers, camerasById])
 
-  const selected = visibleRows.find((event) => event.id === selectedId) ?? visibleRows[0] ?? null
+  // While the link's event is being looked for, or was not found, no row is passed off as it:
+  // the detail stays empty until the operator picks one.
+  const linkSelectionPending = Boolean(link.eventUuid) && eventLookup !== 'found'
+  const selected = visibleRows.find((event) => event.id === selectedId)
+    ?? (linkSelectionPending ? null : visibleRows[0] ?? null)
 
   const selectedEpisode = useMemo<EpisodeDto | null>(() => {
     if (!selected?.objectId) return null
@@ -244,11 +361,21 @@ export default function EventsJournal() {
           </Button>
         </Stack>
 
-        {loading && rows.length === 0 ? <LinearProgress sx={{ flexShrink: 0 }} /> : null}
+        {cameraHasNoNodes ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            {t('events.cameraHasNoNodes')}
+          </Typography>
+        ) : null}
+        {(loading && rows.length === 0) || linkCameraNodes === null
+          ? <LinearProgress sx={{ flexShrink: 0 }} />
+          : null}
         {error ? <Typography color="error" sx={{ mb: 1 }}>{error}</Typography> : null}
 
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ flex: 1, minHeight: 0 }}>
           <Box sx={{ width: { xs: '100%', md: 360 }, flexShrink: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            {eventLookup === 'notFound' ? (
+              <Alert severity="warning" sx={{ mb: 1, flexShrink: 0 }}>{t('events.eventNotFound')}</Alert>
+            ) : null}
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}>
               {gallery ? (
                 <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 1, p: 1 }}>
@@ -257,7 +384,11 @@ export default function EventsJournal() {
                     return (
                       <Box
                         key={event.id ?? event.timestamp}
-                        onClick={() => setSelectedId(event.id ?? null)}
+                        ref={(element) => {
+                          if (event.id === link.eventUuid && element instanceof HTMLElement)
+                            linkedRowRef.current = element
+                        }}
+                        onClick={() => selectRow(event.id ?? null)}
                         sx={{
                           border: 1, borderColor: selected?.id === event.id ? 'primary.main' : 'divider',
                           borderRadius: 1, overflow: 'hidden', cursor: 'pointer',
@@ -276,8 +407,12 @@ export default function EventsJournal() {
                   {visibleRows.map((event) => (
                     <ListItemButton
                       key={event.id ?? event.timestamp}
+                      ref={(element) => {
+                        if (event.id === link.eventUuid && element instanceof HTMLElement)
+                          linkedRowRef.current = element
+                      }}
                       selected={selected?.id === event.id}
-                      onClick={() => setSelectedId(event.id ?? null)}
+                      onClick={() => selectRow(event.id ?? null)}
                       sx={{ borderBottom: 1, borderColor: 'divider', display: 'block' }}
                     >
                       <Stack direction="row" spacing={0.5} alignItems="center">
