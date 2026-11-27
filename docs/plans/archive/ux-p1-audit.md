@@ -1,6 +1,6 @@
 # P1/P2 UX-аудита: навигация, обнаружение управления, шкала и журнал
 
-> План по разделам P1 и P2 из [27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md)
+> План по разделам P1 и P2 из [27-ux-audit-web-frontend.md](../../future_plans/27-ux-audit-web-frontend.md)
 > (аудит 2026-11-27, уже в `master`). P0 закрыт отдельной работой
 > ([ux-p0-confirmations.md](ux-p0-confirmations.md)); его коммиты в `master`, вершина `fd01812b`.
 > Ветка: `ux-p1-audit` от `master`. Составлен 2026-11-27; этапы 0–3 выполнены на этой же ветке
@@ -19,7 +19,7 @@
 - **Семантика `control` и `view_live`** (пустой Control у роли `user`) — это решение о модели прав,
   а не о вёрстке. В Stage 0 оно выносится в отдельный файл `docs/future_plans/`, кода здесь нет.
 - **Форма вместо JSON в маршрутизации событий** — это новая функциональность, а не исправление.
-  Она уже записана в [12-event-routing-followups.md](../future_plans/12-event-routing-followups.md);
+  Она уже записана в [12-event-routing-followups.md](../../future_plans/12-event-routing-followups.md);
   JSON остаётся основным режимом до отдельного решения.
 - **Серверный фильтр журнала по типу и тексту.** Сегодня тип и поиск фильтруют уже загруженные
   страницы; серверного контракта для них нет. Это отдельное изменение VmsMap, вынесенное в
@@ -119,7 +119,7 @@
 
 1. **Два пункта P1 — решения, а не код.** Семантика `control`/`view_live` уходит отдельным файлом в
    `docs/future_plans/` (Stage 0), форма маршрутизации остаётся в
-   [12-event-routing-followups.md](../future_plans/12-event-routing-followups.md). Этот план
+   [12-event-routing-followups.md](../../future_plans/12-event-routing-followups.md). Этот план
    реализует остальные шесть пунктов P1 и все пункты P2.
 2. **Навигация — группы в той же вертикальной панели, без подменю.** Один общий компонент
    группированной навигации для Admin и Operator: заголовок группы, под ним её вкладки. Слаги
@@ -196,7 +196,7 @@
 - Вынести в `docs/future_plans/` два решения, которые этот план не реализует:
   семантику `control`/`view_live` (новый файл) и серверные фильтры журнала (новый файл). Форму
   маршрутизации не дублировать — сослаться на существующий
-  [12-event-routing-followups.md](../future_plans/12-event-routing-followups.md).
+  [12-event-routing-followups.md](../../future_plans/12-event-routing-followups.md).
 - Обновить `docs/future_plans/README.md`: строку 27 — если после сокращения её описание перестанет
   быть точным; добавить в таблицу два новых файла из предыдущего пункта.
 
@@ -398,7 +398,7 @@
 
 - Семантика `control`/`view_live` — отдельный документ и выдача прав, без кода здесь.
 - Форма вместо JSON в маршрутизации событий — новая функциональность, JSON остаётся экспертным
-  режимом; см. [12-event-routing-followups.md](../future_plans/12-event-routing-followups.md).
+  режимом; см. [12-event-routing-followups.md](../../future_plans/12-event-routing-followups.md).
 - Серверный фильтр журнала по имени события и тексту — отдельное изменение контракта VmsMap.
 - Трёхсторонний диалог «сохранить / отменить / остаться» — решение P0 остаётся в силе.
 - Переделка редактора карты, аналитика без воркера, полная проверка архива, узкие экраны,
@@ -531,9 +531,9 @@ Playwright: одна страница за раз (`domcontentloaded`), сцен
 
 ## Связано
 
-[27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md) — исходный аудит;
+[27-ux-audit-web-frontend.md](../../future_plans/27-ux-audit-web-frontend.md) — исходный аудит;
 [ux-p0-confirmations.md](ux-p0-confirmations.md) — закрытый P0 и принятые там контракты;
-[CLAUDE.md](../../CLAUDE.md) — правила фронтенда и «контрол рядом с тем, на что действует»;
-[tests/demo/gui/README.md](../../tests/demo/gui/README.md) — живая проверка через Playwright;
-[12-event-routing-followups.md](../future_plans/12-event-routing-followups.md) — форма
+[CLAUDE.md](../../../CLAUDE.md) — правила фронтенда и «контрол рядом с тем, на что действует»;
+[tests/demo/gui/README.md](../../../tests/demo/gui/README.md) — живая проверка через Playwright;
+[12-event-routing-followups.md](../../future_plans/12-event-routing-followups.md) — форма
 маршрутизации как отдельная работа.

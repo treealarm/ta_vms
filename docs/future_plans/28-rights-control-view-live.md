@@ -30,6 +30,6 @@ UX-аудит 2026-11-27 (P1, [27-ux-audit-web-frontend.md](27-ux-audit-web-fron
 аудита и проход стены под ролью `user`.
 
 Связано: [27-ux-audit-web-frontend.md](27-ux-audit-web-frontend.md) — исходное наблюдение;
-[docs/plans/ux-p1-audit.md](../plans/ux-p1-audit.md) — план P1/P2, где этот пункт явно не входит;
+[docs/plans/archive/ux-p1-audit.md](../plans/archive/ux-p1-audit.md) — план P1/P2, где этот пункт явно не входит;
 [docs/plans/archive/m2.4g-control-panel.md](../plans/archive/m2.4g-control-panel.md) — как пульт
 устроен сейчас.
