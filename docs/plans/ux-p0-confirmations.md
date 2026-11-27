@@ -452,8 +452,28 @@ npm test          # vitest: responseErrorText/parseApiResponse, buildEventsFilte
   `error`/`onDismissError` у `DetailToolbar`; `ConfirmDialog` + `confirmContext` с очередью и
   провайдером в `App`; тест `store/api.test.ts`; строки в `en`/`es`. Прогоны: vitest 148/148,
   `tsc -b` + `vite build`, eslint — чисто.
-- Следующий сеанс начинает с этапа 2: панели камеры и стены подключаются к диалогу, каналу ошибки
-  и `unwrap`; доска получает Undo с частичным восстановлением.
+- **Этап 2 сделан** — `57d44eac`: `CameraSetupPanel` и `MonitorSetupPanel` подключены к
+  `useConfirm`, `usePanelAction` и `DetailToolbar.error`, все thunk'и вызываются через `unwrap`;
+  создание камеры проверяет `addCamera` → `setCameraStorages` → `setCameraSchedules` и называет
+  отказавший шаг (`cameras.storageAssignFailed` / `schedulesAssignFailed`), откат не делается;
+  у стены проверяются `upsertMonitor`, `setMonitorCameras` и каждый `setMonitorSlot`, а
+  `onRemoved` вызывается только после успешного удаления. В `monitorsSlice` появился
+  `restoreMonitor`, возвращающий `{ monitorId, failedStep?, error? }`; `MonitorsView` удаляет
+  доску без вопроса, показывает снекбар «Deleted «имя» · Undo» и восстанавливает имя, раскладку,
+  пул, слоты и закреплённые потоки под новым `monitorId`; при отказе шага называет его, повторный
+  Undo заблокирован через ref, частичная доска удаляется, а если удалить не удалось — остаётся
+  выбранной с сообщением `monitors.restorePartial`. Стена в `MonitorsView` (путь не смонтирован в
+  `OperatorView` сегодня, но условие кнопки его допускает) сохраняет обычное подтверждение.
+- Прогоны: vitest 148/148, `tsc -b` + `vite build`, eslint — чисто. Живая проверка на демо
+  `umd-datacenter` (`cam1`–`cam5`, стена `UMD DC`) через Playwright пройдена: диалог камеры и
+  стены называет объект, `Esc` ничего не удаляет; отказ 500 `{error}` и `200 {success:false}`
+  оставляет деталь открытой с фразой сервера; цепочка создания камеры при отказе
+  `set_camera_storages` показывает «storages were not assigned: …», повторный Apply не создаёт
+  вторую камеру; доска удаляется со снекбаром, Undo возвращает имя, пул, слот и закреплённый
+  поток под новым id и выбирает её, а отказ шага `cameras` даёт «not restored (restoring the
+  camera pool: …)» и убирает частичную доску. Демо-мир возвращён в исходное состояние.
+- Следующий сеанс: этап 3 (правка не теряется — `event-routing`, `nodes`, `onvif-settings`) или
+  независимый этап 4 (стена → журнал); этап 5 идёт после 2.
 
 ## Связано
 
