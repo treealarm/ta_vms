@@ -77,3 +77,16 @@ export function rangeContains(range: WallRange, ms: number): boolean {
 export function rangeWidth(range: WallRange): number {
   return Math.max(0, range.endMs - range.startMs)
 }
+
+/**
+ * 'HH:mm–HH:mm' for a window that stays inside one local day, and dated boundaries as soon as it
+ * crosses midnight — a bare '23:00–02:00' reads backwards.
+ */
+export function windowRangeLabel(range: WallRange): string {
+  const start = new Date(range.startMs)
+  const end = new Date(range.endMs)
+  const clock = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (isSameLocalDay(range.startMs, range.endMs)) return `${clock(start)}–${clock(end)}`
+  const stamped = (d: Date) => `${dayKeyLocal(d.getTime())} ${clock(d)}`
+  return `${stamped(start)} – ${stamped(end)}`
+}

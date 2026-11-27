@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import { Box, Stack, Tab, Tabs } from '@mui/material'
-import { useTranslation } from 'react-i18next'
+import { Box, Stack } from '@mui/material'
 
 import ViewControls from './ViewControls'
+import GroupedNav from './GroupedNav'
+import { OPERATOR_NAV_GROUPS } from './navGroups'
 import MonitorsView from './MonitorsView'
 import EventsJournal from './events/EventsJournal'
 import ArchiveGapsTab from './ArchiveGapsTab'
@@ -12,19 +13,16 @@ import ForensicSearchTab from './ForensicSearchTab'
 import MapsOperatorPanel from './maps/MapsOperatorPanel'
 import ControlPanel from './control/ControlPanel'
 
-const TABS = ['monitors', 'investigations', 'map', 'control', 'events', 'object-findings', 'gaps'] as const
-
 export default function OperatorView() {
-  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
-  const tab = TABS.indexOf(location.pathname.split('/').pop() as typeof TABS[number])
+  const current = location.pathname.split('/').pop() ?? ''
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: { xs: 2, md: 4 }, pt: 1 }}>
-          <ViewControls target="admin" />
+          <ViewControls current="operator" />
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', px: { xs: 2, md: 4 }, pt: 1, pb: { xs: 2, md: 4 } }}>
           <Routes>
@@ -83,26 +81,16 @@ export default function OperatorView() {
           borderColor: 'divider',
           display: 'flex',
           flexDirection: 'column',
+          maxWidth: 240,
         }}
       >
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
-          <Tabs
-            orientation="vertical"
-            value={tab === -1 ? 0 : tab}
-            onChange={(_, v: number) => navigate({ pathname: `/operator/${TABS[v]}` })}
-            sx={{ '& .MuiTab-root': { minWidth: 90 } }}
-          >
-            <Tab label={t('nav.monitors')} />
-            <Tab label={t('nav.investigations')} />
-            <Tab label={t('nav.map')} />
-            <Tab label={t('nav.control')} />
-            <Tab label={t('nav.events')} />
-            <Tab label={t('nav.objectFindings')} />
-            <Tab label={t('nav.gaps')} />
-          </Tabs>
-        </Box>
+        <GroupedNav
+          groups={OPERATOR_NAV_GROUPS}
+          current={current}
+          onSelect={(slug) => navigate(`/operator/${slug}`)}
+        />
 
-        <Stack alignItems="center" sx={{ pb: 1 }}>
+        <Stack alignItems="center" sx={{ pb: 1, pt: 1 }}>
           <LogToggleButton />
           <SimulationFab />
         </Stack>

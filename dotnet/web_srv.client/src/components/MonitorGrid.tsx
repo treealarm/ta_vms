@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, IconButton, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
-import SwitchCameraIcon from '@mui/icons-material/SwitchCamera'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import { useTranslation } from 'react-i18next'
 import type { CameraSetupDto, MonitorDto } from '../dto/dtos'
 import { layoutColumns, layoutFeatureSpan, layoutRows, layoutSlotCount } from '../dto/dtos'
@@ -41,8 +41,14 @@ type SlotProps = {
   span: number
   soloActive: boolean
   canSolo: boolean
+  /** The layout has more than one cell, so a camera can be moved to another one. */
+  canMove: boolean
   focused: boolean
+  /** A move is armed somewhere on this board; this cell is a possible target. */
+  moveTarget: boolean
   onToggleSolo: () => void
+  onStartMove: () => void
+  onMoveHere: () => void
   allCameras: Record<string, CameraSetupDto>
   dragOver: boolean
   onDragSlotStart: () => void
@@ -52,12 +58,14 @@ type SlotProps = {
 }
 
 function CameraSlot({
-  monitor, slotIndex, wallCameraIds, openCameraPool, span, soloActive, canSolo, focused,
-  onToggleSolo, allCameras, dragOver, onDragSlotStart, onDragSlotEnd, onDragSlotOver, onDropSlot,
+  monitor, slotIndex, wallCameraIds, openCameraPool, span, soloActive, canSolo, canMove, focused,
+  moveTarget, onToggleSolo, onStartMove, onMoveHere,
+  allCameras, dragOver, onDragSlotStart, onDragSlotEnd, onDragSlotOver, onDropSlot,
 }: SlotProps) {
   const dispatch = useAppDispatch()
   const { t } = useTranslation()
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [actionsAnchor, setActionsAnchor] = useState<HTMLElement | null>(null)
+  const [switchAnchor, setSwitchAnchor] = useState<HTMLElement | null>(null)
   const wall = useAppSelector(selectWall(monitor.monitorId))
 
   const activeCameraId = effectiveCameraForSlot(monitor, slotIndex)
@@ -66,7 +74,7 @@ function CameraSlot({
   const selectableCameraIds = openCameraPool ? Object.keys(allCameras).sort() : monitor.cameraIds
 
   const handleSelectCamera = async (cameraId: string) => {
-    setMenuAnchor(null)
+    setSwitchAnchor(null)
     // A camera picked from outside the pool has to join it first — the pool is what the wall's
     // coverage query and the "all cameras" timeline lane are built from.
     if (!monitor.cameraIds.includes(cameraId)) {
@@ -79,134 +87,212 @@ function CameraSlot({
   }
 
   return (
-    <Box
-      // Selecting a slot only moves focus — it drives the frame and the timeline's track, and never
-      // swaps which camera a cell shows.
-      onClick={() => dispatch(setFocusedSlot({ monitorId: monitor.monitorId, slotIndex }))}
-      // Snapshot and other per-slot lookups address the video through this attribute; indexing the
-      // Nth <video> in the DOM breaks as soon as an earlier slot is empty.
-      data-slot-index={slotIndex}
-      draggable={camera !== null}
-      onDragStart={(e) => {
-        // The cell is the drag handle, but it is full of things that own the pointer themselves —
-        // the control strip's buttons, and the PTZ / device-I/O overlays, which are dragged around
-        // the video by their own grips. Starting a tile drag from any of those would make them
-        // unusable, so the gesture is refused there and the child keeps the pointer.
-        if ((e.target as HTMLElement).closest?.(NO_TILE_DRAG)) {
+    <Tooltip title={moveTarget ? t('monitors.moveHint') : ''} placement="top">
+      <Box
+        // Selecting a slot only moves focus — it drives the frame and the timeline's track, and never
+        // swaps which camera a cell shows. In move mode the click is the move instead.
+        onClick={() => {
+          if (moveTarget) {
+            onMoveHere()
+            return
+          }
+          dispatch(setFocusedSlot({ monitorId: monitor.monitorId, slotIndex }))
+        }}
+        // Snapshot and other per-slot lookups address the video through this attribute; indexing the
+        // Nth <video> in the DOM breaks as soon as an earlier slot is empty.
+        data-slot-index={slotIndex}
+        draggable={camera !== null}
+        onDragStart={(e) => {
+          // The cell is the drag handle, but it is full of things that own the pointer themselves —
+          // the control strip's buttons, and the PTZ / device-I/O overlays, which are dragged around
+          // the video by their own grips. Starting a tile drag from any of those would make them
+          // unusable, so the gesture is refused there and the child keeps the pointer.
+          if ((e.target as HTMLElement).closest?.(NO_TILE_DRAG)) {
+            e.preventDefault()
+            return
+          }
+          // Firefox ignores dragstart unless some data is set.
+          e.dataTransfer.setData('text/plain', String(slotIndex))
+          e.dataTransfer.effectAllowed = 'move'
+          onDragSlotStart()
+        }}
+        onDragEnd={onDragSlotEnd}
+        onDragOver={(e) => {
+          // preventDefault is what marks an element as a drop target at all.
           e.preventDefault()
-          return
-        }
-        // Firefox ignores dragstart unless some data is set.
-        e.dataTransfer.setData('text/plain', String(slotIndex))
-        e.dataTransfer.effectAllowed = 'move'
-        onDragSlotStart()
-      }}
-      onDragEnd={onDragSlotEnd}
-      onDragOver={(e) => {
-        // preventDefault is what marks an element as a drop target at all.
-        e.preventDefault()
-        e.dataTransfer.dropEffect = 'move'
-        onDragSlotOver()
-      }}
-      onDrop={(e) => {
-        e.preventDefault()
-        onDropSlot()
-      }}
-      sx={{
-        position: 'relative',
-        minWidth: 0,
-        minHeight: 0,
-        display: 'flex',
-        borderRadius: 1,
-        ...(span > 0 ? { gridColumn: `span ${span}`, gridRow: `span ${span}` } : {}),
-        ...(dragOver
-          ? { boxShadow: (th) => `inset 0 0 0 3px ${th.palette.primary.main}`, opacity: 0.75 }
-          : {}),
-        // Focus must stay distinguishable from the retention indicator, which CameraUnifiedCard
-        // draws as a red (palette.error) outline inset by 2px — and in this theme primary is red
-        // too. So focus is a light outline drawn OUTSIDE the card, in the grid gap: different
-        // colour, different position, and both are visible at once on a recording camera.
-        outline: focused ? '2px solid' : 'none',
-        outlineColor: 'common.white',
-        outlineOffset: '2px',
-      }}
-    >
-      {camera ? (
-        <CameraUnifiedCard
-          key={camera.cameraId}
-          slotKey={`${monitor.monitorId}-${slotIndex}`}
-          monitorId={monitor.monitorId}
-          slotIndex={slotIndex}
-          monitorKind={monitor.kind}
-          camera={camera}
-          wallMode={wall.mode}
-          wallCameraIds={wallCameraIds}
-          coverageWindowStartMs={wall.windowStartMs}
-          coverageWindowWidthMs={wall.windowWidthMs}
-          gridSoloActive={soloActive}
-          onToggleGridSolo={canSolo ? onToggleSolo : undefined}
-        />
-      ) : (
-        <Box
-          // On a board an empty cell is the way to add a camera, so the whole cell is the target
-          // rather than a small icon in its corner.
-          onClick={openCameraPool ? (e) => setMenuAnchor(e.currentTarget) : undefined}
-          sx={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px dashed',
-            borderColor: 'divider',
-            borderRadius: 1,
-            ...(openCameraPool && !activeCameraId
-              ? { cursor: 'pointer', '&:hover': { borderColor: 'text.secondary' } }
-              : {}),
-          }}
-        >
-          <Typography variant="body2" color="text.disabled">
-            {activeCameraId
-              ? `Camera "${activeCameraId}" not found`
-              : openCameraPool ? t('monitors.addCamera') : 'Empty slot'}
-          </Typography>
-        </Box>
-      )}
+          e.dataTransfer.dropEffect = 'move'
+          onDragSlotOver()
+        }}
+        onDrop={(e) => {
+          e.preventDefault()
+          onDropSlot()
+        }}
+        sx={{
+          position: 'relative',
+          minWidth: 0,
+          minHeight: 0,
+          display: 'flex',
+          borderRadius: 1,
+          ...(span > 0 ? { gridColumn: `span ${span}`, gridRow: `span ${span}` } : {}),
+          ...(dragOver
+            ? { boxShadow: (th) => `inset 0 0 0 3px ${th.palette.primary.main}`, opacity: 0.75 }
+            : {}),
+          // A move target is marked in warning rather than primary, so it cannot be mistaken for
+          // the cell being dragged over.
+          ...(moveTarget
+            ? { boxShadow: (th) => `inset 0 0 0 3px ${th.palette.warning.main}`, cursor: 'pointer' }
+            : {}),
+          // Focus must stay distinguishable from the retention indicator, which CameraUnifiedCard
+          // draws as a red (palette.error) outline inset by 2px — and in this theme primary is red
+          // too. So focus is a light outline drawn OUTSIDE the card, in the grid gap: different
+          // colour, different position, and both are visible at once on a recording camera.
+          outline: focused ? '2px solid' : 'none',
+          outlineColor: 'common.white',
+          outlineOffset: '2px',
+        }}
+      >
+        {camera ? (
+          <CameraUnifiedCard
+            key={camera.cameraId}
+            slotKey={`${monitor.monitorId}-${slotIndex}`}
+            monitorId={monitor.monitorId}
+            slotIndex={slotIndex}
+            monitorKind={monitor.kind}
+            camera={camera}
+            wallMode={wall.mode}
+            wallCameraIds={wallCameraIds}
+            coverageWindowStartMs={wall.windowStartMs}
+            coverageWindowWidthMs={wall.windowWidthMs}
+            gridSoloActive={soloActive}
+            onToggleGridSolo={canSolo ? onToggleSolo : undefined}
+            captionTooltip={t('monitors.focusHint')}
+          />
+        ) : (
+          <Box
+            // On a board an empty cell is the way to add a camera, so the whole cell is the target
+            // rather than a small icon in its corner.
+            onClick={openCameraPool && !moveTarget ? (e) => setSwitchAnchor(e.currentTarget) : undefined}
+            sx={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px dashed',
+              borderColor: 'divider',
+              borderRadius: 1,
+              ...(openCameraPool && !activeCameraId
+                ? { cursor: 'pointer', '&:hover': { borderColor: 'text.secondary' } }
+                : {}),
+            }}
+          >
+            <Typography variant="body2" color="text.disabled">
+              {activeCameraId
+                ? t('monitors.cameraNotFound', { id: activeCameraId })
+                : openCameraPool ? t('monitors.addCamera') : t('monitors.emptySlot')}
+            </Typography>
+          </Box>
+        )}
 
-      {selectableCameraIds.length > 1 && camera && (
-        <Tooltip title="Switch camera" placement="top">
-          <IconButton
-            size="small"
-            onClick={(e) => setMenuAnchor(e.currentTarget)}
+        {focused && (
+          // The one free spot: statistics are top-left, the cell menu is top-right, and the name
+          // and I/O state sit at the bottom.
+          <Typography
             sx={{
               position: 'absolute',
               top: 4,
-              right: 4,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 4,
+              px: 0.75,
+              borderRadius: 0.5,
               bgcolor: 'background.paper',
-              opacity: 0.85,
-              '&:hover': { opacity: 1 },
+              color: 'text.primary',
+              opacity: 0.9,
+              fontSize: '0.6rem',
+              lineHeight: 1.5,
+              pointerEvents: 'none',
+              whiteSpace: 'nowrap',
             }}
           >
-            <SwitchCameraIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
+            {t('monitors.activeCell')}
+          </Typography>
+        )}
 
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={() => setMenuAnchor(null)}
-      >
-        {selectableCameraIds.map((id) => (
-          <MenuItem
-            key={id}
-            selected={id === activeCameraId}
-            onClick={() => void handleSelectCamera(id)}
-          >
-            {allCameras[id]?.name || id}
-          </MenuItem>
-        ))}
-      </Menu>
-    </Box>
+        {camera && (
+          <Tooltip title={t('monitors.cellActions')} placement="top">
+            <IconButton
+              size="small"
+              aria-label={t('monitors.cellActions')}
+              onClick={(e) => setActionsAnchor(e.currentTarget)}
+              sx={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                bgcolor: 'background.paper',
+                opacity: 0.85,
+                '&:hover': { opacity: 1 },
+              }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        )}
+
+        <Menu
+          anchorEl={actionsAnchor}
+          open={Boolean(actionsAnchor)}
+          onClose={() => setActionsAnchor(null)}
+        >
+          {selectableCameraIds.length > 1 && (
+            <MenuItem
+              onClick={() => {
+                const anchor = actionsAnchor
+                setActionsAnchor(null)
+                setSwitchAnchor(anchor)
+              }}
+            >
+              {t('monitors.switchCamera')}
+            </MenuItem>
+          )}
+          {canMove && camera && (
+            <MenuItem
+              onClick={() => {
+                setActionsAnchor(null)
+                onStartMove()
+              }}
+            >
+              {t('monitors.moveCell')}
+            </MenuItem>
+          )}
+          {camera && (
+            <MenuItem
+              onClick={() => {
+                setActionsAnchor(null)
+                void dispatch(clearMonitorSlot({ monitorId: monitor.monitorId, slotIndex }))
+              }}
+            >
+              {t('monitors.clearCell')}
+            </MenuItem>
+          )}
+        </Menu>
+
+        <Menu
+          anchorEl={switchAnchor}
+          open={Boolean(switchAnchor)}
+          onClose={() => setSwitchAnchor(null)}
+        >
+          {selectableCameraIds.map((id) => (
+            <MenuItem
+              key={id}
+              selected={id === activeCameraId}
+              onClick={() => void handleSelectCamera(id)}
+            >
+              {allCameras[id]?.name || id}
+            </MenuItem>
+          ))}
+        </Menu>
+      </Box>
+    </Tooltip>
   )
 }
 
@@ -214,6 +300,9 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
   const dispatch = useAppDispatch()
   const [soloSlot, setSoloSlot] = useState<number | null>(null)
   const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null)
+  // Armed "Move": the next cell clicked becomes the target, so a camera can be moved without a
+  // drag, which touch screens handle poorly.
+  const [moveFrom, setMoveFrom] = useState<number | null>(null)
   const allCameras = useAppSelector((state) => state.live.cameraStatesById)
   const focusedSlot = useAppSelector(selectFocusedSlot(monitor.monitorId))
 
@@ -224,13 +313,25 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
     wallClockBus.setFocused(focusedSlot === null ? null : `${monitor.monitorId}-${focusedSlot}`)
   }, [monitor.monitorId, focusedSlot])
 
+  // Esc abandons an armed move; the camera stays where it was and focus is untouched.
+  useEffect(() => {
+    if (moveFrom === null) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMoveFrom(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [moveFrom])
+
   // Reset solo when switching monitors or changing layout (stale index would point at a slot that
-  // is not there) — while rendering, so no frame shows a solo cell of another wall.
+  // is not there) — while rendering, so no frame shows a solo cell of another wall. An armed move
+  // points at the same stale index, so it goes with it.
   const soloKey = `${monitor.monitorId}:${slotCount}`
   const [soloFor, setSoloFor] = useState(soloKey)
   if (soloFor !== soloKey) {
     setSoloFor(soloKey)
     setSoloSlot(null)
+    setMoveFrom(null)
   }
   const cols = layoutColumns(monitor.layout)
   const rows = layoutRows(monitor.layout)
@@ -316,8 +417,16 @@ export default function MonitorGrid({ monitor, openCameraPool = false }: Props) 
           span={soloSlot === null && slotIndex === 0 ? featureSpan : 0}
           soloActive={soloSlot === slotIndex}
           canSolo={slotCount > 1}
+          canMove={slotCount > 1}
           focused={focusedSlot === slotIndex}
+          moveTarget={moveFrom !== null && moveFrom !== slotIndex}
           onToggleSolo={() => setSoloSlot((s) => (s === slotIndex ? null : slotIndex))}
+          onStartMove={() => setMoveFrom(slotIndex)}
+          onMoveHere={() => {
+            if (moveFrom === null) return
+            handleDrop(moveFrom, slotIndex)
+            setMoveFrom(null)
+          }}
           allCameras={allCameras}
           dragOver={drag !== null && drag.over === slotIndex && drag.from !== slotIndex}
           onDragSlotStart={() => setDrag({ from: slotIndex, over: null })}

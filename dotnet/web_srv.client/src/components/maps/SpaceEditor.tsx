@@ -290,6 +290,24 @@ export default function SpaceEditor({
   const selectionDrawn = !!selectedFigure
     || (!!selectedNode?.cameraId && here.some((placement) => placement.cameraId === selectedNode.cameraId))
 
+  // What the side tabs act on, named once above them: without it "Select", "Object" and "Rights"
+  // leave the reader to work out which object they are about.
+  const contextName = sideTab === 'space'
+    ? space.name
+    : selectedNode?.name
+      ?? selectedNested?.name
+      ?? selectedLandmark?.name
+      ?? (selectedCameraId ? camerasById[selectedCameraId]?.name : undefined)
+      ?? selection?.id
+  const contextKind = sideTab === 'space'
+    ? (space.kind === 'map' ? t('maps.kindMap') : t('maps.kindPlan'))
+    : selectedNode?.nodeKind
+      ? t(`maps.node.kind.${selectedNode.nodeKind}`)
+      : undefined
+  const contextLabel = contextName
+    ? [contextName, contextKind].filter(Boolean).join(' · ')
+    : t('maps.selectionNone')
+
   // The editor needs the node's properties and look, which the tree read does not carry.
   useEffect(() => {
     if (selectionNodeId) {
@@ -1213,6 +1231,11 @@ export default function SpaceEditor({
             </>
           ) : null}
         </Stack>
+        <Box sx={{ px: 1.5, py: 0.75, borderBottom: 1, borderColor: 'divider', flexShrink: 0 }}>
+          <Typography variant="caption" color="text.secondary" noWrap title={contextLabel} sx={{ display: 'block' }}>
+            {contextLabel}
+          </Typography>
+        </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
           {/* Both stay mounted: the space's form keeps its unsaved edits while an object is looked at. */}
           <Box sx={{ display: sideTab === 'space' ? 'block' : 'none' }}>
