@@ -25,10 +25,13 @@
 - Единственный путь, которым это вызывается снаружи, — `MapServiceImpl.DeleteDiagramTypes`
   (`VmsMap/Grpc/MapServiceImpl.cs:418–423`); ловушки `DiagramTypeConfigException` в нём **нет** —
   она есть только у `UpdateDiagramTypes` (`:402–412`), который отдаёт её как `InvalidArgument`.
-- Две ссылки на тип живут без внешнего ключа:
-  - `dbContext.Diagrams` (`DBDiagram.dgr_type`, `Guid?`) — диаграмма нарисована из типа;
-  - `dbContext.DeviceDiagrams` (`DBDeviceDiagram.diagram_type_id`, `Guid?`) — привязка устройства
-    держит диаграмму по шаблону.
+- Две ссылки на тип: `dbContext.Diagrams` (`DBDiagram.dgr_type`, `Guid?`) — диаграмма нарисована
+  из типа; `dbContext.DeviceDiagrams` (`DBDeviceDiagram.diagram_type_id`, `Guid?`) — привязка
+  устройства держит диаграмму по шаблону. В схеме обе — внешние ключи с `ON DELETE SET NULL`
+  (`Grpc/migrations/0000_init.sql`), то есть база уже умеет молча обнулить ссылку; отказ сервиса —
+  то, что не даёт этому случиться. EF этих связей не знает (навигаций нет), поэтому проверка
+  читает их сама, и только у живых узлов: `diagrams.id` и `device_diagram.object_id` каскадятся с
+  `objects`.
 - Комментарий у привязки (`VmsMap/Db/Models/Diagrams/DBDeviceDiagram.cs:18`) сейчас говорит «Null
   once the type has been deleted: the canvas and its replicas stay, drawn by nothing». После
   отказа этот путь закрывается — комментарий надо переписать, иначе он врёт.
@@ -117,17 +120,20 @@
   которую показывает, со своими хлебными крошками (так уже работает `GetDiagramContent`);
 - реализация — `Grpc/DiagramTypeUsage.cs` (статический помощник, рядом с `DiagramRepresentations`),
   вызов из `MapServiceImpl.Reads.cs`;
-- права: строки фильтруются существующим `VisibleAsync` по `View`, как остальные чтения карты;
-  для администратора фильтр ничего не отсекает;
+- права: строки **не** фильтруются. Словарь типов — глобальная конфигурация, её читает сам
+  редактор; фильтр по `View` сделал бы список пустым у того, кому удаление всё равно откажут, и
+  «ничего не использует» стало бы враньём. Авторитет — отказ, а не список (так и записано в proto и
+  в контроллере);
 - REST: `POST /api/map/diagrams/types/usage` в `MapDiagramsController`; клиент —
   `mapApi.getDiagramTypeUsage(typeId)`.
 
 **GUI (`MapDiagramTypesDialog`):** в раскрытом аккордеоне сохранённого типа — блок «Where this type is
 used»: счётчик мест, две группы (обычные диаграммы, диаграммы устройств), пустой список говорит
-«ничего не использует, тип можно удалить». Клик по строке открывает диаграмму через уже существующий
-`DiagramViewer.onOpen` (в `DiagramElementEditor` обработчика нет — там блок только читается).
-Кнопка удаления гаснет, пока список непуст; отказ сервера при этом остаётся обязательным.
-Строки — в `i18n/locales/{en,es}/translation.json`.
+«ничего не использует, тип можно удалить». Клик по строке открывает диаграмму через **новый**
+`DiagramViewer.onOpenCanvas`: строка стоит на чужом холсте, и `onOpen` хоста такой узел не находит
+(в `DiagramElementEditor` обработчика нет — там блок только читается). Кнопка удаления гаснет, пока
+список непуст; отказ сервера при этом остаётся обязательным. Строки — в
+`i18n/locales/{en,es}/translation.json`.
 
 **Тесты:** `DiagramTypeUsageTests` (in-memory) — обычная диаграмма с репликой на другом холсте
 (две строки, у реплики `is_representation`, холсты названы), привязка устройства попадает в
@@ -155,3 +161,22 @@ dotnet test dotnet/VmsMap.Tests/VmsMap.Tests.csproj --filter "FullyQualifiedName
 
 Postgres-тесты идут, только если задан `VMS_MAP_TEST_DSN`; без него они молча возвращаются — это
 надо сказать в отчёте, чтобы «зелёный» прогон не выдавал себя за проверенный каскад.
+
+## Состояние на 2026-11-27
+
+- Шаги 1–5 сделаны: `f14ebe59` (отказ в `DeleteAsync` + `InvalidArgument` у RPC), `a3bf3be7`
+  (Postgres-тест границ каскада). Стражи — `DiagramTypeDeleteTests`, чтение — `DiagramTypeUsageTests`.
+- Список использований: контракт, чтение, REST и блок в окне — `1ce462bb`; открытие строки —
+  `667418cb`.
+- Живая проверка на поднятом стеке с демо `umd-datacenter`:
+  - «Camera rear panel» — 5 мест: одна обычная диаграмма (`spare` на `diag2`) и четыре у привязок
+    (`cam1`/`cam2`; каноническая на `plan1`, реплика на `diag2` с пометкой «replica»); кнопка
+    удаления погашена;
+  - клик по строке открывает `diag2 / spare` со своими хлебными крошками;
+  - `DELETE` используемого типа — 400 и имя диаграммы в теле; свободный тип создан, показан пустым
+    и удалён.
+- Найдено живой проверкой и исправлено: `onOpen` хоста не открывает холст, которого нет в текущем
+  дереве, — добавлен `onOpenCanvas` (`667418cb`).
+- Прогоны: `VmsMap.Tests` 587/587 с `VMS_MAP_TEST_DSN` на `ta_map_test`; `web_srv.Tests` 37/37;
+  `tsc -b` и eslint — чисто.
+- Стек оставлен поднятым (docker-инфраструктура, сервисы через `dev-up.sh`, Vite на 5173).
