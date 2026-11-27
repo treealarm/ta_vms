@@ -1,6 +1,6 @@
 # Серверный фильтр журнала событий: тип и текст
 
-План P1/P2 ([docs/plans/ux-p1-audit.md](../plans/ux-p1-audit.md)) выносит в журнале событий тип и
+План P1/P2 ([docs/plans/archive/ux-p1-audit.md](../plans/archive/ux-p1-audit.md)) выносит в журнале событий тип и
 поиск на первый уровень, но оба фильтра остаются клиентскими: `EventsJournal` прячет уже
 загруженные строки (`visibleRows`), а страницы идут назад по keyset (`loadEvents`,
 `store/eventsSlice.ts:50-62`). Серверный контракт этого не умеет.
@@ -29,6 +29,6 @@ web-контроллер/DTO и `wireFilter` в клиенте; после не�
 где клиентская фильтрация перестаёт быть незаметной.
 
 Связано: [27-ux-audit-web-frontend.md](27-ux-audit-web-frontend.md) — исходная находка;
-[docs/plans/ux-p1-audit.md](../plans/ux-p1-audit.md) — переработка журнала, где фильтр честно
+[docs/plans/archive/ux-p1-audit.md](../plans/archive/ux-p1-audit.md) — переработка журнала, где фильтр честно
 назван клиентским; [docs/maps/states-and-alarms.md](../maps/states-and-alarms.md) — модель
 журнала.

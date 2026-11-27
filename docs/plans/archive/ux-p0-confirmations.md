@@ -1,6 +1,6 @@
 # P0 UX-аудита: подтверждения, видимый отказ, потеря правки и контекста
 
-> План по разделу P0 из [27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md)
+> План по разделу P0 из [27-ux-audit-web-frontend.md](../../future_plans/27-ux-audit-web-frontend.md)
 > (аудит 2026-11-27, уже в `master`, merge `4768059f`). Ветка: `ux-p0-confirmations` от `master`.
 > Составлен 2026-11-27; кода в этой сессии нет — следующий сеанс начинает отсюда.
 
@@ -536,11 +536,11 @@ npm test          # vitest: responseErrorText/parseApiResponse, buildEventsFilte
   состояние, стенд и Vite остановлены, инфраструктура (postgres, rabbitmq, mediamtx) оставлена.
 - Прогоны этапа 5: vitest 159/159, `tsc -b` + `vite build`, eslint — чисто.
 - P0 закрыт: этапы 0–5 сделаны. Следующая работа — P1/P2 аудита
-  ([27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md)).
+  ([27-ux-audit-web-frontend.md](../../future_plans/27-ux-audit-web-frontend.md)).
 
 ## Связано
 
-[27-ux-audit-web-frontend.md](../future_plans/27-ux-audit-web-frontend.md) — исходный аудит;
-[CLAUDE.md](../../CLAUDE.md) — правила фронтенда и «контрол рядом с тем, на что действует»;
-[tests/demo/gui/README.md](../../tests/demo/gui/README.md) — живая проверка через Playwright;
+[27-ux-audit-web-frontend.md](../../future_plans/27-ux-audit-web-frontend.md) — исходный аудит;
+[CLAUDE.md](../../../CLAUDE.md) — правила фронтенда и «контрол рядом с тем, на что действует»;
+[tests/demo/gui/README.md](../../../tests/demo/gui/README.md) — живая проверка через Playwright;
 [diagram-type-delete-in-use.md](diagram-type-delete-in-use.md) — пример плана того же рода.

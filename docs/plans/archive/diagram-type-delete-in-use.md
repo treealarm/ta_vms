@@ -1,6 +1,6 @@
 # Удаление типа диаграммы, который используется
 
-> Найдено при разборе ревью по [копии как точке входа для правки](archive/copy-as-edit-entry.md)
+> Найдено при разборе ревью по [копии как точке входа для правки](copy-as-edit-entry.md)
 > (2026-11-26), жило в `docs/future_plans/26-deleting-a-diagram-type-in-use.md` и переехало сюда
 > 2026-11-27, когда работа началась. Ветка: `fix/diagram-type-delete-in-use` от `master`.
 
@@ -60,7 +60,7 @@
    поэтому запрос из нескольких id либо проходит целиком, либо не удаляет ничего. Атомарности
    «проверка + удаление» при этом нет: между чтением и коммитом может появиться новая ссылка.
    Это та же гонка, что у соседних проверок, и она остаётся темой
-   [24-map-lock-audit](../future_plans/24-map-lock-audit.md).
+   [24-map-lock-audit](../../future_plans/24-map-lock-audit.md).
 2. **gRPC.** Обернуть вызов в `try/catch (DiagramTypeConfigException)` в
    `MapServiceImpl.DeleteDiagramTypes` и отдать `RpcException(StatusCode.InvalidArgument, …)` —
    ровно как `UpdateDiagramTypes`. У границы свой тест (шаг 4), потому что без него сервисные
@@ -149,7 +149,7 @@ used»: счётчик мест, две группы (обычные диагр�
 ## Что не входит
 
 - Гонка «проверили — удалили»: у обеих соседних проверок та же экспозиция, локи — тема
-  [24-map-lock-audit](../future_plans/24-map-lock-audit.md).
+  [24-map-lock-audit](../../future_plans/24-map-lock-audit.md).
 - Каскадное снятие типа.
 - Удаление nullable-колонки `device_diagram.diagram_type_id` из схемы.
 - Общий механизм «защищённое удаление» и универсальная проверка зависимостей: три проверки живут в
