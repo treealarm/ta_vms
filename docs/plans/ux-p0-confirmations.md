@@ -445,9 +445,15 @@ npm test          # vitest: responseErrorText/parseApiResponse, buildEventsFilte
   реестра ONVIF-правок, преобразование времени существующими помощниками, состояние «событие не
   найдено», очередь подтверждений, уточнённая классификация диалогов и отсутствие режима создания
   узла в `nodes`.
-- Кода нет. Ветка `ux-p0-confirmations` от `master` (`4768059f`, аудит влит).
-- Следующий сеанс начинает с этапа 1; его первый коммит — `responseErrorText` + `parseApiResponse`
-  с тестами, потому что от него зависит видимость отказа во всех остальных этапах.
+- Ветка `ux-p0-confirmations` от `master` (`4768059f`, аудит влит).
+- **Этап 1 сделан** — `116f6d3c`: `responseErrorText` (один разбор `{error}` / `{message}` / текста /
+  `statusText`) в `api/requestJson.ts`, `parseApiResponse` в `store/api.ts` и его применение в
+  `liveSlice`, `monitorsSlice`, `storageSlice`, `scheduleSlice`; `usePanelAction`;
+  `error`/`onDismissError` у `DetailToolbar`; `ConfirmDialog` + `confirmContext` с очередью и
+  провайдером в `App`; тест `store/api.test.ts`; строки в `en`/`es`. Прогоны: vitest 148/148,
+  `tsc -b` + `vite build`, eslint — чисто.
+- Следующий сеанс начинает с этапа 2: панели камеры и стены подключаются к диалогу, каналу ошибки
+  и `unwrap`; доска получает Undo с частичным восстановлением.
 
 ## Связано
 
