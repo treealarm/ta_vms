@@ -1011,6 +1011,12 @@ export default function SpaceEditor({
               if (marker.nodeKind === 'space') { openDiagram(null); onOpenSpace(marker.id) }
               else selectNode(marker.id)
             }}
+            onOpenCanvas={(marker) => {
+              // The type editor lists diagrams that stand on other spaces: open it as a canvas by
+              // node, which a click through the tree cannot do when the node is not loaded here.
+              setSelection({ kind: 'node', id: marker.id })
+              openDiagram(marker.id)
+            }}
             onCreated={(marker) => { setSelection({ kind: 'node', id: marker.id }); openDiagram(marker.id) }}
             onDeleted={() => { openDiagram(null); setSelection(null) }}
           />
